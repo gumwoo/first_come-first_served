@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: flowticket-api
+  datasource:
+    url: jdbc:postgresql://localhost:5432/flowticket
+    username: flowticket
+    password: ${DB_PASSWORD:flowticket}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: flowticket
+      auto-offset-reset: earliest
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+
+# 외부 연동 / 시크릿은 환경변수로만 주입 (application-local.yml은 gitignore)
+kopis:
+  base-url: http://www.kopis.or.kr/openApi/restful
+  service-key: ${KOPIS_SERVICE_KEY:}
+
+jwt:
+  secret: ${JWT_SECRET:}
+  access-token-ttl: 1800
+  refresh-token-ttl: 1209600

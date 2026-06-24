@@ -76,19 +76,63 @@ const apiContract = loadYaml("contracts/api.yaml");
 const contractSet = new Set(
   apiContract.endpoints.map((e) => `${e.method} ${normalize(e.path)}`)
 );
-const classRe = /@RequestMapping\(\s*"([^"]*)"\s*\)/;
-const mapRe = /@(Get|Post|Put|Patch|Delete)Mapping\(\s*(?:value\s*=\s*)?"([^"]*)"/g;
+// 매핑 애너테이션 인자에서 경로 리터럴을 모두 추출.
+// 지원: "x" / value="x" / path="x" / {"a","b"} 배열 / 인자 없음("")
+// 미지원(보수적으로 경고): 상수 참조 등 문자열 리터럴이 없는 경우.
+function extractPaths(args) {
+  // value=/path= 접두 제거 후 첫 인자 그룹만 본다(method= 등은 무시)
+  const trimmed = args.trim();
+  if (trimmed === "") return [""]; // @GetMapping → 클래스 경로만
+  const lits = [...trimmed.matchAll(/"([^"]*)"/g)].map((x) => x[1]);
+  if (lits.length === 0) return [null]; // 리터럴 없음(상수 참조 등) → 검사 불가 표시
+  // value=/path= 키가 명시된 경우 그 값만, 아니면 모든 리터럴(배열 포함)
+  const keyed = [...trimmed.matchAll(/(?:value|path)\s*=\s*(\{[^}]*\}|"[^"]*")/g)];
+  if (keyed.length) {
+    return keyed.flatMap((k) => [...k[1].matchAll(/"([^"]*)"/g)].map((x) => x[1]));
+  }
+  return lits;
+}
+
+// 클래스 레벨 @RequestMapping (value=/path=/직접 리터럴 모두)
+const classMapRe = /@RequestMapping\s*\(([\s\S]*?)\)/;
+const mapRe = /@(Get|Post|Put|Patch|Delete)Mapping\s*\(([\s\S]*?)\)/g;
+// 인자 없는 @GetMapping (괄호 없음) 도 포착
+const mapBareRe = /@(Get|Post|Put|Patch|Delete)Mapping(?!\s*\()/g;
+
 for (const file of javaFiles) {
   const src = read(file);
   if (!/@RestController/.test(src)) continue;
-  const base = src.match(classRe)?.[1] ?? "";
-  for (const m of src.matchAll(mapRe)) {
-    const method = m[1].toUpperCase();
-    const full = normalize((base + (m[2].startsWith("/") || m[2] === "" ? m[2] : "/" + m[2])));
-    const key = `${method} ${full}`;
-    if (!contractSet.has(key)) {
-      r.fail(`계약에 없는 endpoint: ${key} (contracts/api.yaml에 등록 필요)`);
+  const classArgs = src.match(classMapRe)?.[1] ?? "";
+  const bases = classArgs ? extractPaths(classArgs) : [""];
+
+  const join = (base, sub) => {
+    if (sub === null) return null;
+    const b = base ?? "";
+    const s = sub.startsWith("/") || sub === "" ? sub : "/" + sub;
+    return normalize(b + s);
+  };
+
+  const checkOne = (method, subPaths) => {
+    for (const base of bases) {
+      for (const sub of subPaths) {
+        const full = join(base, sub);
+        if (full === null) {
+          r.fail(`endpoint 경로를 정적 추출 불가(상수 참조 등): ${method} in ${path.relative(REPO_ROOT, file)} — 리터럴 경로 사용 권장`);
+          continue;
+        }
+        const key = `${method} ${full}`;
+        if (!contractSet.has(key)) {
+          r.fail(`계약에 없는 endpoint: ${key} (contracts/api.yaml에 등록 필요)`);
+        }
+      }
     }
+  };
+
+  for (const m of src.matchAll(mapRe)) {
+    checkOne(m[1].toUpperCase(), extractPaths(m[2]));
+  }
+  for (const m of src.matchAll(mapBareRe)) {
+    checkOne(m[1].toUpperCase(), [""]);
   }
 }
 

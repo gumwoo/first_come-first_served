@@ -1,0 +1,7 @@
+{
+  "name": "fe-bad-dep-fixture",
+  "dependencies": {
+    "next": "14.2.15",
+    "axios": "1.7.7"
+  }
+}

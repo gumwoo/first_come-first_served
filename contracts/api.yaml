@@ -1,63 +1,63 @@
 # API endpoint 기대 계약 — 컨트롤러에서 추출한 (method, path)와 diff.
 # 추가/변경/삭제는 contracts + FE path fragment + 테스트와 함께(git-pr-rules §3).
-# path 변수는 {id} 형태로 정규화.
+# path 변수는 {id} 형태로 정규화. (YAML flow 충돌 방지 위해 path는 따옴표)
 
 endpoints:
   # S01 인증
-  - { method: POST,   path: /auth/signup,                    slice: S01 }
-  - { method: POST,   path: /auth/login,                     slice: S01 }
-  - { method: POST,   path: /auth/refresh,                   slice: S01 }
-  - { method: POST,   path: /auth/logout,                    slice: S01 }
-  - { method: GET,    path: /me,                             slice: S01 }
-  # 소셜 OAuth2는 Spring Security 필터 체인(컨트롤러 아님) → 검사 제외 목록(harness ignore)
+  - { method: POST,   path: "/auth/signup",              slice: S01 }
+  - { method: POST,   path: "/auth/login",               slice: S01 }
+  - { method: POST,   path: "/auth/refresh",             slice: S01 }
+  - { method: POST,   path: "/auth/logout",              slice: S01 }
+  - { method: GET,    path: "/me",                       slice: S01 }
+  # 소셜 OAuth2는 Spring Security 필터 체인(컨트롤러 아님) → ignore_paths
 
   # S02 공연조회 + KOPIS
-  - { method: GET,    path: /events,                         slice: S02 }
-  - { method: GET,    path: /events/popular,                 slice: S02 }
-  - { method: GET,    path: /events/{id},                    slice: S02 }
-  - { method: GET,    path: /search,                         slice: S02 }
-  - { method: POST,   path: /admin/sync/kopis,               slice: S02 }
+  - { method: GET,    path: "/events",                   slice: S02 }
+  - { method: GET,    path: "/events/popular",           slice: S02 }
+  - { method: GET,    path: "/events/{id}",              slice: S02 }
+  - { method: GET,    path: "/search",                   slice: S02 }
+  - { method: POST,   path: "/admin/sync/kopis",         slice: S02 }
 
   # S03 대기열
-  - { method: POST,   path: /events/{id}/queue/token,        slice: S03 }
-  - { method: GET,    path: /queue/status,                   slice: S03 }
+  - { method: POST,   path: "/events/{id}/queue/token",  slice: S03 }
+  - { method: GET,    path: "/queue/status",             slice: S03 }
 
   # S04 좌석·재고
-  - { method: GET,    path: /events/{id}/seats,              slice: S04 }
-  - { method: POST,   path: /events/{id}/seats/hold,         slice: S04 }
-  - { method: DELETE, path: /seats/hold/{holdId},            slice: S04 }
+  - { method: GET,    path: "/events/{id}/seats",        slice: S04 }
+  - { method: POST,   path: "/events/{id}/seats/hold",   slice: S04 }
+  - { method: DELETE, path: "/seats/hold/{holdId}",      slice: S04 }
 
   # S05 주문·결제
-  - { method: POST,   path: /orders,                         slice: S05 }
-  - { method: GET,    path: /orders/{id},                    slice: S05 }
-  - { method: POST,   path: /orders/{id}/payments,           slice: S05 }
+  - { method: POST,   path: "/orders",                   slice: S05 }
+  - { method: GET,    path: "/orders/{id}",              slice: S05 }
+  - { method: POST,   path: "/orders/{id}/payments",     slice: S05 }
 
   # S06 마이/취소
-  - { method: GET,    path: /me/orders,                      slice: S06 }
-  - { method: GET,    path: /me/orders/{id},                 slice: S06 }
-  - { method: POST,   path: /me/orders/{id}/refund,          slice: S06 }
+  - { method: GET,    path: "/me/orders",                slice: S06 }
+  - { method: GET,    path: "/me/orders/{id}",           slice: S06 }
+  - { method: POST,   path: "/me/orders/{id}/refund",    slice: S06 }
 
   # S07 운영
-  - { method: GET,    path: /admin/dashboard,                slice: S07 }
-  - { method: GET,    path: /admin/orders,                   slice: S07 }
-  - { method: GET,    path: /admin/events,                   slice: S07 }
-  - { method: POST,   path: /admin/events,                   slice: S07 }
-  - { method: GET,    path: /admin/events/{id},              slice: S07 }
-  - { method: PATCH,  path: /admin/events/{id},              slice: S07 }
-  - { method: GET,    path: /admin/dlq,                      slice: S07 }
-  - { method: POST,   path: /admin/dlq/{id}/retry,           slice: S07 }
-  - { method: POST,   path: /admin/dlq/{id}/discard,         slice: S07 }
-  - { method: GET,    path: /admin/alerts,                   slice: S07 }
-  - { method: PUT,    path: /admin/alerts,                   slice: S07 }
+  - { method: GET,    path: "/admin/dashboard",          slice: S07 }
+  - { method: GET,    path: "/admin/orders",             slice: S07 }
+  - { method: GET,    path: "/admin/events",             slice: S07 }
+  - { method: POST,   path: "/admin/events",             slice: S07 }
+  - { method: GET,    path: "/admin/events/{id}",        slice: S07 }
+  - { method: PATCH,  path: "/admin/events/{id}",        slice: S07 }
+  - { method: GET,    path: "/admin/dlq",                slice: S07 }
+  - { method: POST,   path: "/admin/dlq/{id}/retry",     slice: S07 }
+  - { method: POST,   path: "/admin/dlq/{id}/discard",   slice: S07 }
+  - { method: GET,    path: "/admin/alerts",             slice: S07 }
+  - { method: PUT,    path: "/admin/alerts",             slice: S07 }
 
   # S08 부하/모니터링
-  - { method: POST,   path: /dev/loadtest,                   slice: S08 }
-  - { method: GET,    path: /dev/loadtest/{id},              slice: S08 }
-  - { method: GET,    path: /dev/loadtest/{id}/result,       slice: S08 }
-  - { method: GET,    path: /dev/loadtest/report,            slice: S08 }
-  - { method: GET,    path: /dev/monitoring,                 slice: S08 }
+  - { method: POST,   path: "/dev/loadtest",             slice: S08 }
+  - { method: GET,    path: "/dev/loadtest/{id}",        slice: S08 }
+  - { method: GET,    path: "/dev/loadtest/{id}/result", slice: S08 }
+  - { method: GET,    path: "/dev/loadtest/report",      slice: S08 }
+  - { method: GET,    path: "/dev/monitoring",           slice: S08 }
 
 # 컨트롤러 추출에서 제외할 경로(프레임워크 제공)
 ignore_paths:
-  - /oauth2/**
-  - /actuator/**
+  - "/oauth2/**"
+  - "/actuator/**"

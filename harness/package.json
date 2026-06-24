@@ -1,0 +1,14 @@
+{
+  "name": "flowticket-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "backend": "node backend/check.mjs",
+    "frontend": "node frontend/check.mjs",
+    "meta": "node meta-test.mjs"
+  },
+  "dependencies": {
+    "js-yaml": "4.1.0"
+  }
+}

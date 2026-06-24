@@ -22,6 +22,8 @@ backend:
     - org.projectlombok:lombok
     - com.fasterxml.jackson.dataformat:jackson-dataformat-xml   # KOPIS XML
     - org.mapstruct:mapstruct
+    - jakarta.annotation:jakarta.annotation-api                 # querydsl APT
+    - jakarta.persistence:jakarta.persistence-api               # querydsl APT
   test_allowed_artifacts:
     - org.springframework.boot:spring-boot-starter-test
     - org.testcontainers:junit-jupiter
@@ -44,6 +46,7 @@ frontend:
     - tailwind-merge
     - lucide-react            # shadcn 아이콘
     - "class-variance-authority"
+    - eslint-config-next
   # shadcn/ui는 컴포넌트 복사 방식이라 의존성으로 안 셈
   dev_allowed:
     - eslint

@@ -1,0 +1,33 @@
+# Secrets (절대 커밋 금지 — AGENTS.md 절대규칙)
+.env
+.env.*
+*-local.yml
+*-local.yaml
+application-local.yml
+**/secrets/**
+
+# Java / Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+*.class
+out/
+
+# Node / Next
+node_modules/
+.next/
+out/
+dist/
+pnpm-debug.log*
+npm-debug.log*
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+coverage/
+*.log

@@ -1,0 +1,53 @@
+# 허용 의존성 화이트리스트 — 이 목록 밖 의존성이 추가되면 하네스 실패.
+# 새 의존성이 필요하면 이 파일을 같은 PR에서 수정(명시적 승인).
+
+backend:
+  # Spring Boot BOM이 관리하는 것은 group 단위 허용
+  allowed_groups:
+    - org.springframework.boot
+    - org.springframework
+    - org.springframework.security
+    - org.springframework.kafka
+    - org.springframework.data
+  allowed_artifacts:
+    - com.querydsl:querydsl-jpa
+    - com.querydsl:querydsl-apt
+    - io.jsonwebtoken:jjwt-api
+    - io.jsonwebtoken:jjwt-impl
+    - io.jsonwebtoken:jjwt-jackson
+    - org.postgresql:postgresql
+    - org.flywaydb:flyway-core
+    - org.flywaydb:flyway-database-postgresql
+    - io.lettuce:lettuce-core
+    - org.projectlombok:lombok
+    - com.fasterxml.jackson.dataformat:jackson-dataformat-xml   # KOPIS XML
+    - org.mapstruct:mapstruct
+  test_allowed_artifacts:
+    - org.springframework.boot:spring-boot-starter-test
+    - org.testcontainers:junit-jupiter
+    - org.testcontainers:postgresql
+    - org.testcontainers:kafka
+    - com.redis:testcontainers-redis
+
+frontend:
+  allowed:
+    - next
+    - react
+    - react-dom
+    - typescript
+    - tailwindcss
+    - "@tanstack/react-query"
+    - zustand
+    - react-hook-form
+    - zod
+    - clsx
+    - tailwind-merge
+    - lucide-react            # shadcn 아이콘
+    - "class-variance-authority"
+  # shadcn/ui는 컴포넌트 복사 방식이라 의존성으로 안 셈
+  dev_allowed:
+    - eslint
+    - prettier
+    - "@types/*"
+    - postcss
+    - autoprefixer

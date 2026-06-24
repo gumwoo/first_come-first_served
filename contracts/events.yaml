@@ -1,0 +1,46 @@
+# Kafka 이벤트 계약 — BE 발행 목록 ↔ FE 구독 목록 diff.
+# 이벤트명 규약: <aggregate>.<past-tense>  (예: order.paid)
+
+topics:
+  order:
+    - order.created          # 주문 생성(PENDING)
+    - order.paid             # 결제 완료
+    - order.failed           # 결제 실패
+    - order.cancelled        # 취소
+    - order.refunded         # 환불 완료
+  seat:
+    - seat.held              # 좌석 선점
+    - seat.hold.released     # 선점 해제
+    - seat.hold.expired      # 선점 만료(재고 복구)
+  queue:
+    - queue.admitted         # 대기열 입장 허용
+    - queue.expired          # 대기 토큰 만료
+  payment:
+    - payment.vbank.deposited  # 무통장 입금 확인
+
+# BE가 발행하는 전체(위 토픽의 flatten)
+publishes:
+  - order.created
+  - order.paid
+  - order.failed
+  - order.cancelled
+  - order.refunded
+  - seat.held
+  - seat.hold.released
+  - seat.hold.expired
+  - queue.admitted
+  - queue.expired
+  - payment.vbank.deposited
+
+# FE(실시간 갱신용 SSE/WebSocket)가 구독해야 하는 목록.
+# publishes ⊇ fe_subscribes 여야 하고, 누락 시 하네스 실패.
+fe_subscribes:
+  - order.paid
+  - order.failed
+  - seat.hold.expired
+  - queue.admitted
+  - queue.expired
+  - payment.vbank.deposited
+
+# DLQ 토픽 명명규약 (재처리 센터에서 사용)
+dlq_suffix: ".DLT"

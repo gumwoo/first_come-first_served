@@ -1,0 +1,37 @@
+# 도메인 enum 기대 계약 — BE enum / FE 타입과 diff. 변경 시 양쪽 함께 수정.
+
+OrderStatus:
+  values: [PENDING, VBANK_WAITING, PAID, FAILED, EXPIRED, CANCELLED, REFUNDED]
+  # 허용 전이 (domain-rules.md §3 와 일치)
+  transitions:
+    PENDING:        [PAID, FAILED, EXPIRED, VBANK_WAITING]
+    VBANK_WAITING:  [PAID, EXPIRED]
+    PAID:           [CANCELLED]
+    CANCELLED:      [REFUNDED]
+
+QueueStatus:
+  values: [WAITING, ADMITTED, EXPIRED]
+
+SeatHoldStatus:
+  values: [HELD, RELEASED, EXPIRED, CONVERTED]
+
+PaymentMethod:
+  values: [card, easy, vbank]
+
+PaymentProvider:        # easy 결제 provider
+  values: [kakaopay, naverpay, toss, payco]
+
+EventStatus:
+  values: [DRAFT, SCHEDULED, ON_SALE, PAUSED, SOLD_OUT, CLOSED]
+
+RefundReason:
+  values: [CHANGE_OF_MIND, SCHEDULE_CONFLICT, DUPLICATE, OTHER]
+
+DlqStatus:
+  values: [PENDING, RETRYING, RETRIED, DISCARDED]
+
+UserRole:
+  values: [ROLE_USER, ROLE_ADMIN, ROLE_DEV]
+
+LoadTestStatus:
+  values: [QUEUED, RUNNING, PASSED, FAILED, STOPPED]

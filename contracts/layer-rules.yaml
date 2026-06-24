@@ -1,0 +1,27 @@
+# 계층 경계 규칙 — import 정적 검사. 위반 시 하네스 실패.
+
+backend:
+  base_package: com.flowticket
+  # from 글롭이 not_import 글롭을 import하면 위반
+  forbidden_imports:
+    - { from: "**/controller/**", not_import: "**/repository/**", reason: "controller는 service 경유" }
+    - { from: "**/controller/**", not_import: "**/domain/**",     reason: "엔티티 직접 노출 금지, DTO 사용" }
+    - { from: "**/repository/**", not_import: "**/controller/**", reason: "역참조 금지" }
+    - { from: "**/repository/**", not_import: "**/service/**",     reason: "역참조 금지" }
+    - { from: "**/domain/**",     not_import: "**/controller/**", reason: "도메인은 상위계층 모름" }
+    - { from: "**/domain/**",     not_import: "**/service/**",     reason: "도메인은 상위계층 모름" }
+  # 추가 규칙
+  rules:
+    - "@Transactional은 service 패키지에만 허용"
+    - "controller가 엔티티 타입을 반환 타입으로 사용 금지 (*Response만)"
+    - "필드 주입(@Autowired 필드) 금지 — 생성자 주입"
+
+frontend:
+  root: apps/web/src
+  forbidden_imports:
+    - { from: "components/ui/**", not_import: "features/**", reason: "프레젠테이션은 도메인 비참조" }
+    - { from: "app/**",           not_import: "**/repository/**", reason: "" }
+    - { from: "components/**",    not_import: "lib/apiClient", reason: "fetch는 features/*/api·hooks에서만" }
+  rules:
+    - "API 호출 path는 features/*/api 에서만 정의"
+    - "외부 API(KOPIS 등) 직접 호출 금지 — 항상 우리 BE 경유"

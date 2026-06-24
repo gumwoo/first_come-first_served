@@ -1,0 +1,27 @@
+# 에러코드 기대 계약 — 컨트롤러/예외에서 쓰는 코드가 이 목록 안이어야 함.
+
+codes:
+  # 인증/인가
+  - { code: UNAUTHORIZED,    http: 401 }
+  - { code: FORBIDDEN,       http: 403 }
+  - { code: TOKEN_EXPIRED,   http: 401 }
+  # 검증
+  - { code: VALIDATION_ERROR, http: 400 }
+  - { code: DUPLICATE_EMAIL,  http: 409 }
+  # 선착순 핵심
+  - { code: SOLD_OUT,         http: 409 }
+  - { code: QUEUE_EXPIRED,    http: 410 }
+  - { code: HOLD_EXPIRED,     http: 410 }
+  - { code: QUEUE_NOT_ADMITTED, http: 403 }
+  - { code: MAX_PER_USER_EXCEEDED, http: 409 }
+  - { code: DUPLICATE_BOOKING, http: 409 }
+  # 결제
+  - { code: PAYMENT_FAILED,   http: 402 }
+  - { code: PAYMENT_TIMEOUT,  http: 408 }
+  - { code: INVALID_STATE_TRANSITION, http: 409 }
+  # 환불
+  - { code: REFUND_NOT_ALLOWED, http: 409 }
+  # 공통
+  - { code: NOT_FOUND,        http: 404 }
+  - { code: TOO_MANY_REQUESTS, http: 429 }
+  - { code: INTERNAL_ERROR,   http: 500 }

@@ -110,6 +110,31 @@ for (const rule of layer.forbidden_imports) {
   }
 }
 
+// ---------- 7. 금지 패턴 (coding-standards / secure-coding [H]) ----------
+const FORBIDDEN = [
+  { re: /\.printStackTrace\s*\(/, msg: "printStackTrace() 금지 → slf4j 로거 사용" },
+  { re: /System\.(out|err)\s*\.\s*print/, msg: "System.out/err 출력 금지 → 로거 사용" },
+  {
+    re: /\b(password|passwd|secret|apiKey|api_key|privateKey)\s*=\s*"[^"]+"/i,
+    msg: "시크릿 하드코딩 의심 → 환경변수 사용",
+  },
+  {
+    re: /(createQuery|createNativeQuery)\s*\(\s*"[^"]*"\s*\+/,
+    msg: "문자열 연결 SQL/JPQL 금지(인젝션) → 바인드 파라미터",
+  },
+];
+for (const file of javaFiles) {
+  const rel = path.relative(REPO_ROOT, file).replace(/\\/g, "/");
+  const src = read(file);
+  for (const f of FORBIDDEN) {
+    if (f.re.test(src)) r.fail(`금지 패턴: ${f.msg} (${rel})`);
+  }
+  // 컨트롤러 내 try/catch (예외 삼키기) 금지
+  if (/\/controller\//.test(rel) && /\btry\s*\{[\s\S]*\bcatch\s*\(/.test(src)) {
+    r.fail(`컨트롤러 내 try/catch 금지(예외는 전역 핸들러로): ${rel}`);
+  }
+}
+
 function normalize(p) {
   return p.replace(/\{[^}]+\}/g, "{id}").replace(/\/+$/, "") || "/";
 }

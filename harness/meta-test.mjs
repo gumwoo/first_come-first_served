@@ -11,6 +11,8 @@ const cases = [
   { name: "be-undocumented-api", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-undocumented-api" } },
   { name: "be-layer-breach",     script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-layer-breach" } },
   { name: "be-bad-enum",         script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-bad-enum" } },
+  { name: "be-hardcoded-secret", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-hardcoded-secret" } },
+  { name: "be-controller-trycatch", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-controller-trycatch" } },
   { name: "fe-missing-enum",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-enum" } },
   { name: "fe-bad-dep",          script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-bad-dep" } },
 ];

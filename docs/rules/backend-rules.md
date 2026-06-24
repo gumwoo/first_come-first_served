@@ -40,9 +40,31 @@ com.flowticket
 - 에러코드는 `contracts/error-codes.yaml`에 등록된 값만 ★
 
 ## 5. 트랜잭션 / 동시성
-- `@Transactional`은 **service 레이어**에만. controller/repository 금지.
+- `@Transactional`은 **service 레이어**에만 ★. controller/repository 금지.
+- **기본 패턴**: 서비스 클래스에 `@Transactional(readOnly = true)`를 걸고,
+  쓰기 메서드에만 `@Transactional`을 개별로 오버라이드한다.
+  → 조회는 자동 readOnly, 쓰기 지점이 코드에 드러남. (AOP 일괄 적용보다 권장)
+  ```java
+  @Service
+  @Transactional(readOnly = true)
+  public class OrderService {
+      public OrderResponse get(Long id) { ... }      // readOnly 상속
+      @Transactional
+      public OrderResponse create(...) { ... }       // 쓰기만 명시
+  }
+  ```
+- 외부호출(KOPIS/PG)은 트랜잭션 경계 **밖**에서. 커넥션 잡은 채 외부 대기 금지.
 - 선착순 재고 차감은 Redis 원자연산 우선, DB 정합성은 비관락 또는 버전(@Version).
-- 외부호출(KOPIS/PG)은 트랜잭션 경계 **밖**에서.
+- `@Transactional` self-invocation(같은 빈 내부 호출) 함정 주의.
+
+## 5-1. 컨트롤러 금지사항 ★
+- 컨트롤러 내 `try/catch`로 비즈니스 예외 처리·삼키기 금지 → 전역 핸들러 위임
+- 컨트롤러에 비즈니스 로직/조건분기 금지 (service로)
+- `printStackTrace()` / `System.out`·`System.err` 금지 → slf4j
+
+## 5-2. 인젝션/시크릿 ★ (secure-coding.md)
+- 문자열 연결로 SQL/JPQL 생성 금지 → 바인드 파라미터
+- 시크릿(키/비번/secret) 하드코딩 금지 → 환경변수
 
 ## 6. 예외 처리
 - 도메인 예외는 `BusinessException(ErrorCode)` 하나로 통일, 전역 핸들러가 변환.

@@ -1,7 +1,7 @@
 // 프론트 하네스: 스택 / enum 미러 / 이벤트 구독 / API path fragment 를
 // contracts/ 와 diff. 위반 시 exit 1.
 
-import { loadYaml, walk, read, Reporter, REPO_ROOT } from "../lib/util.mjs";
+import { loadYaml, walk, read, globToRe, Reporter, REPO_ROOT } from "../lib/util.mjs";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -87,6 +87,30 @@ for (const file of apiFiles) {
     const known = apiPaths.some((cp) => p.startsWith(cp.replace(/\/+$/, "")) || cp.startsWith(p));
     if (!known) {
       r.fail(`계약에 없는 API path 호출: ${p} in ${path.relative(REPO_ROOT, file)}`);
+    }
+  }
+}
+
+// ---------- 5. 계층 import 위반 (layer-rules.yaml frontend) ----------
+const feLayer = loadYaml("contracts/layer-rules.yaml").frontend;
+const srcRoot = WEB + "/src";
+const tsFiles = walk(srcRoot, [".ts", ".tsx"]);
+for (const rule of feLayer.forbidden_imports ?? []) {
+  const fromRe = globToRe(rule.from);
+  const impRe = globToRe(rule.not_import);
+  for (const file of tsFiles) {
+    // src 기준 상대경로(예: components/ui/button.tsx)로 from 매칭
+    const relToSrc = path
+      .relative(path.join(REPO_ROOT, srcRoot), file)
+      .replace(/\\/g, "/");
+    if (!fromRe.test(relToSrc)) continue;
+    const src = read(file);
+    // import ... from "X" / import "X" 의 모듈 경로(@/ alias는 src 기준으로 정규화)
+    for (const im of src.matchAll(/import\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']/g)) {
+      const mod = im[1].replace(/^@\//, "").replace(/^\.\.?\//, "");
+      if (impRe.test(mod)) {
+        r.fail(`FE 계층 위반: ${relToSrc} → ${im[1]} (${rule.reason || rule.not_import})`);
+      }
     }
   }
 }

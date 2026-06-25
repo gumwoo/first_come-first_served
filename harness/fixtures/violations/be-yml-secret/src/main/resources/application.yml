@@ -1,0 +1,11 @@
+# VIOLATION: client-secret에 실제 리터럴 값 → 하네스가 실패해야 함
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          naver:
+            client-id: my-app-id            # 식별자(허용)
+            client-secret: AbCdEf123456XyZ   # VIOLATION: 하드코딩 시크릿
+jwt:
+  secret: ${JWT_SECRET:}                     # 정상(플레이스홀더) — 걸리면 안 됨

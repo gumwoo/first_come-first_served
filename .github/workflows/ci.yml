@@ -18,6 +18,9 @@ jobs:
       - name: install harness deps
         working-directory: harness
         run: npm ci || npm install
+      - name: contract schema check (계약 형식 검증)
+        working-directory: harness
+        run: node schema-check.mjs
       - name: meta test (false-negative guard)
         working-directory: harness
         run: node meta-test.mjs

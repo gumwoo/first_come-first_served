@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "schema": "node schema-check.mjs",
     "backend": "node backend/check.mjs",
     "frontend": "node frontend/check.mjs",
     "meta": "node meta-test.mjs"
   },
   "dependencies": {
+    "ajv": "8.17.1",
     "js-yaml": "4.1.0"
   }
 }

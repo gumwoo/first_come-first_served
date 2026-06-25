@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "events.yaml",
+  "type": "object",
+  "required": ["publishes", "fe_subscribes"],
+  "properties": {
+    "topics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "publishes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^[a-z]+(\\.[a-z]+)+$" },
+      "uniqueItems": true
+    },
+    "fe_subscribes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "required_fe_subscribes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "dlq_suffix": { "type": "string" }
+  },
+  "additionalProperties": false
+}

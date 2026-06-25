@@ -42,5 +42,14 @@ fe_subscribes:
   - queue.expired
   - payment.vbank.deposited
 
+# 실시간 UI에 반드시 필요한 이벤트 — FE가 구독을 빠뜨리면 하네스 실패.
+# (fe_subscribes ⊇ required_fe_subscribes 검증)
+required_fe_subscribes:
+  - queue.admitted        # 입장 허용 → 좌석선택 이동에 필수
+  - queue.expired         # 대기 만료 → 만료 화면 전환에 필수
+  - seat.hold.expired     # 선점 만료 → 좌석 해제 반영에 필수
+  - order.paid            # 결제 완료 → 완료 화면 전환에 필수
+  - payment.vbank.deposited  # 무통장 입금 확인 → 완료 전환에 필수
+
 # DLQ 토픽 명명규약 (재처리 센터에서 사용)
 dlq_suffix: ".DLT"

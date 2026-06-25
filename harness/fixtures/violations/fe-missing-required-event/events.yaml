@@ -1,0 +1,29 @@
+# VIOLATION: fe_subscribes에서 queue.admitted 누락(required엔 있음) → 하네스 실패해야 함
+publishes:
+  - order.created
+  - order.paid
+  - order.failed
+  - order.cancelled
+  - order.refunded
+  - seat.held
+  - seat.hold.released
+  - seat.hold.expired
+  - queue.admitted
+  - queue.expired
+  - payment.vbank.deposited
+
+fe_subscribes:
+  - order.paid
+  - order.failed
+  - seat.hold.expired
+  - queue.expired
+  - payment.vbank.deposited
+
+required_fe_subscribes:
+  - queue.admitted
+  - queue.expired
+  - seat.hold.expired
+  - order.paid
+  - payment.vbank.deposited
+
+dlq_suffix: ".DLT"

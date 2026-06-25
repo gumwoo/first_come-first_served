@@ -1,0 +1,3 @@
+# VIOLATION: 잘못된 method(FETCH) + slice 누락 → 스키마 검증이 실패해야 함
+endpoints:
+  - { method: FETCH, path: "/oops" }

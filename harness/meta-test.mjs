@@ -17,6 +17,13 @@ const cases = [
   { name: "fe-missing-enum",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-enum" } },
   { name: "fe-bad-dep",          script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-bad-dep" } },
   { name: "fe-layer-breach",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },
+  // ② 필수 이벤트 구독 누락 (계약/웹 둘 다 override해 단독 격리)
+  { name: "fe-missing-required-event", script: "frontend/check.mjs", env: {
+    HARNESS_CONTRACTS_DIR: "harness/fixtures/violations/fe-missing-required-event",
+    HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-required-event/web" } },
+  // ③ 계약 스키마 위반 (깨진 api.yaml만 override, 나머지는 실제 폴백)
+  { name: "contract-bad-schema", script: "schema-check.mjs", env: {
+    HARNESS_CONTRACTS_DIR: "harness/fixtures/violations/contract-bad-schema" } },
 ];
 
 let failed = 0;

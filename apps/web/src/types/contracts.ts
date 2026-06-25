@@ -18,6 +18,9 @@ export type QueueStatus = (typeof QueueStatus)[number];
 export const SeatHoldStatus = ["HELD", "RELEASED", "EXPIRED", "CONVERTED"] as const;
 export type SeatHoldStatus = (typeof SeatHoldStatus)[number];
 
+export const SeatGrade = ["VIP", "R", "S", "A"] as const;
+export type SeatGrade = (typeof SeatGrade)[number];
+
 export const PaymentMethod = ["card", "easy", "vbank"] as const;
 export type PaymentMethod = (typeof PaymentMethod)[number];
 

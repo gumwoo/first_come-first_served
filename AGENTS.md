@@ -33,7 +33,9 @@
 ## 2. 작업 루프 (한 번에 슬라이스 1개)
 
 1. `docs/screens/_index.md`에서 `status: todo`인 **첫 슬라이스** 선택
-2. 슬라이스에 속한 화면 MD + 참조 이미지 + `docs/common/*` 읽기
+2. 슬라이스에 속한 화면 MD + 참조 이미지 + `docs/common/*` + **그 슬라이스의 도메인 규칙**
+   (`docs/rules/domain/<area>.md`, 인덱스는 `docs/rules/domain-rules.md`) 읽기
+   - 횡단 불변식(정합성/enum/SSE)은 `domain-rules.md`만 참조
 3. **세로 슬라이스로 구현**: DB 스키마 → API → 프론트 화면 → 통합검증
 4. 아래 DoD 통과 시 `_index.md`의 status를 `done`으로 변경
 5. 실패 시 최대 3회 재시도 → 그래도 안 되면 `status: blocked` + 사유 기록

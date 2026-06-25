@@ -7,9 +7,20 @@ codes:
   - { code: TOKEN_EXPIRED,   http: 401 }
   # 검증
   - { code: VALIDATION_ERROR, http: 400 }
+  # 가입/계정 (S01)
   - { code: DUPLICATE_EMAIL,  http: 409 }
+  - { code: DUPLICATE_PHONE,  http: 409 }
+  - { code: REGISTRATION_TERMS_NOT_ACCEPTED, http: 400 }
+  - { code: LOCAL_LOGIN_NOT_ALLOWED, http: 400 }
+  # 휴대폰 인증 (S01)
   - { code: PHONE_VERIFICATION_REQUIRED, http: 400 }
   - { code: PHONE_VERIFICATION_FAILED,   http: 400 }
+  - { code: PHONE_VERIFICATION_LIMIT_EXCEEDED, http: 429 }
+  # 토큰 생명주기 / RTR (S01)
+  - { code: INVALID_REFRESH_TOKEN, http: 401 }
+  - { code: REFRESH_TOKEN_EXPIRED, http: 401 }
+  - { code: REFRESH_TOKEN_REUSED,  http: 401 }
+  - { code: ACCESS_TOKEN_BLACKLISTED, http: 401 }
   # 선착순 핵심
   - { code: SOLD_OUT,         http: 409 }
   - { code: QUEUE_EXPIRED,    http: 410 }

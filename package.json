@@ -1,0 +1,14 @@
+{
+  "name": "flowticket",
+  "version": "0.1.0",
+  "private": true,
+  "description": "선착순 티켓팅 — 모노레포 루트(하네스 단일 명령 엔트리)",
+  "scripts": {
+    "harness:install": "npm --prefix harness install",
+    "harness:schema": "node harness/schema-check.mjs",
+    "harness:meta": "node harness/meta-test.mjs",
+    "harness:backend": "node harness/backend/check.mjs",
+    "harness:frontend": "node harness/frontend/check.mjs",
+    "harness:check": "npm run harness:schema && npm run harness:meta && npm run harness:backend && npm run harness:frontend"
+  }
+}

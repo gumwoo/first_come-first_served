@@ -179,6 +179,32 @@ for (const file of javaFiles) {
   }
 }
 
+// ---------- 8. application.yml/properties 시크릿 하드코딩 ----------
+// 민감 키에 ${...} 플레이스홀더가 아닌 리터럴 값이 오면 실패.
+// 정상: client-secret: ${NAVER_CLIENT_SECRET:}  / 위반: client-secret: AbCd123
+const SECRET_KEYS = /(client-secret|secret|password|passwd|private-key|access-key|secret-key|api-key|service-key|token)/i;
+const ymlFiles = [
+  ...walk(API + "/src/main/resources", [".yml", ".yaml", ".properties"]),
+];
+for (const file of ymlFiles) {
+  const rel = path.relative(REPO_ROOT, file).replace(/\\/g, "/");
+  const isProps = file.endsWith(".properties");
+  const lines = read(file).split(/\r?\n/);
+  for (const [i, raw] of lines.entries()) {
+    const line = raw.replace(/#.*$/, ""); // 주석 제거
+    const m = isProps
+      ? line.match(/^\s*([\w.\-]*?(client-secret|secret|password|passwd|private-key|access-key|secret-key|api-key|service-key|token)[\w.\-]*)\s*=\s*(.+)$/i)
+      : line.match(/^\s*([\w.\-]+)\s*:\s*(.+)$/);
+    if (!m) continue;
+    const key = isProps ? m[1] : m[1];
+    const val = (isProps ? m[3] : m[2]).trim().replace(/^["']|["']$/g, "");
+    if (!SECRET_KEYS.test(key)) continue;
+    if (val === "" || val.includes("${")) continue; // 빈 값/플레이스홀더는 정상
+    if (/^\d+(\.\d+)?$/.test(val) || /^(true|false)$/i.test(val)) continue; // 숫자/불린(ttl 등)은 시크릿 아님
+    r.fail(`시크릿 하드코딩(설정파일): ${rel}:${i + 1} '${key}' → 환경변수(\${...}) 사용`);
+  }
+}
+
 function normalize(p) {
   return p.replace(/\{[^}]+\}/g, "{id}").replace(/\/+$/, "") || "/";
 }

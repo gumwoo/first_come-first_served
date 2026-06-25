@@ -59,16 +59,18 @@
 ## 4. 명령어
 
 ```
+# 하네스 (루트에서 단일 명령) — 최초 1회: npm run harness:install
+npm run harness:check    # schema + meta + backend + frontend 전부
+npm run harness:schema   # 계약 형식만
+npm run harness:meta     # 하네스 자체 검증(위반 fixture 차단 확인)
+npm run harness:backend  # 백엔드 계약/패턴 검사
+npm run harness:frontend # 프론트 계약/계층 검사
+
 # api
-./gradlew bootRun        # 실행
-./gradlew build          # 빌드+테스트
-./gradlew test           # 테스트만
+./gradlew build          # 빌드+테스트 (apps/api)
 
 # web
-pnpm dev                 # 개발 서버
-pnpm build               # 빌드
-pnpm typecheck           # 타입체크
-pnpm lint                # 린트
+pnpm dev / pnpm build / pnpm typecheck / pnpm lint   # apps/web
 
 # infra
 docker compose up -d     # postgres/redis/kafka 기동

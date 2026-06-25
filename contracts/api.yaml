@@ -9,6 +9,8 @@ endpoints:
   - { method: POST,   path: "/auth/refresh",             slice: S01 }
   - { method: POST,   path: "/auth/logout",              slice: S01 }
   - { method: GET,    path: "/me",                       slice: S01 }
+  - { method: POST,   path: "/auth/phone/request",       slice: S01 }
+  - { method: POST,   path: "/auth/phone/verify",        slice: S01 }
   # 소셜 OAuth2는 Spring Security 필터 체인(컨트롤러 아님) → ignore_paths
 
   # S02 공연조회 + KOPIS
@@ -49,6 +51,10 @@ endpoints:
   - { method: POST,   path: "/admin/dlq/{id}/discard",   slice: S07 }
   - { method: GET,    path: "/admin/alerts",             slice: S07 }
   - { method: PUT,    path: "/admin/alerts",             slice: S07 }
+
+  # 실시간 푸시 채널 (SSE) — events.yaml fe_subscribes 이벤트를 프론트로 전송
+  - { method: GET,    path: "/sse/queue/{token}",        slice: S03 }
+  - { method: GET,    path: "/sse/orders/{id}",          slice: S05 }
 
   # S08 부하/모니터링
   - { method: POST,   path: "/dev/loadtest",             slice: S08 }

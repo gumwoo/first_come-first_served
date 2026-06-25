@@ -8,6 +8,8 @@ codes:
   # 검증
   - { code: VALIDATION_ERROR, http: 400 }
   - { code: DUPLICATE_EMAIL,  http: 409 }
+  - { code: PHONE_VERIFICATION_REQUIRED, http: 400 }
+  - { code: PHONE_VERIFICATION_FAILED,   http: 400 }
   # 선착순 핵심
   - { code: SOLD_OUT,         http: 409 }
   - { code: QUEUE_EXPIRED,    http: 410 }

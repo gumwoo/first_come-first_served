@@ -15,6 +15,9 @@ QueueStatus:
 SeatHoldStatus:
   values: [HELD, RELEASED, EXPIRED, CONVERTED]
 
+SeatGrade:
+  values: [VIP, R, S, A]   # 등급별 가격은 이벤트별로 events 테이블에 정의(도메인)
+
 PaymentMethod:
   values: [card, easy, vbank]
 

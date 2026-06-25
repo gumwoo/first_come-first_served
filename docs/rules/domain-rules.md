@@ -6,6 +6,16 @@
 - 좌석 잔여는 **0 미만 불가**. 차감은 원자적(Redis DECR / DB 비관락).
 - 좌석 HOLD는 TTL(약 5분). 만료 시 자동 반환되어 재고 복구.
 - 매진(잔여 0) 상태에서 신규 주문 생성 금지 → `SOLD_OUT`.
+- 좌석은 등급(`SeatGrade`: VIP/R/S/A)을 가지며, **등급별 가격은 이벤트별로 정의**.
+  재고·가격은 우리 DB 기준(KOPIS엔 없음).
+
+## 1-1. 휴대폰 인증 (회원가입)
+- 회원가입은 휴대폰 인증 완료가 선행되어야 함 → 미완료 시 `PHONE_VERIFICATION_REQUIRED`.
+- 인증번호 불일치/만료 → `PHONE_VERIFICATION_FAILED`. (데모는 Mock 검증 허용)
+
+## 1-2. 실시간 전송
+- 대기열 입장/만료, 결제 완료/실패, 선점 만료는 SSE로 프론트에 push.
+- events.yaml의 `required_fe_subscribes`는 SSE로 반드시 전달되어야 하는 이벤트.
 
 ## 2. 대기열
 - 한 사용자는 이벤트당 활성 대기 토큰 1개.

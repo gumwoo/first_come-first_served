@@ -8,8 +8,19 @@ import path from "node:path";
 const r = new Reporter("frontend");
 const WEB = process.env.HARNESS_WEB_DIR || "apps/web";
 
+// 계약 파일 경로 해석: override 디렉터리에 있으면 그걸, 없으면 실제 contracts/로 폴백.
+// (메타테스트가 깨진 계약 1개만 fixture로 두고 나머지는 실제값을 쓰게 함)
+const CONTRACTS_OVERRIDE = process.env.HARNESS_CONTRACTS_DIR;
+function contractPath(name) {
+  if (CONTRACTS_OVERRIDE) {
+    const p = path.join(REPO_ROOT, CONTRACTS_OVERRIDE, name);
+    if (fs.existsSync(p)) return `${CONTRACTS_OVERRIDE}/${name}`;
+  }
+  return `contracts/${name}`;
+}
+
 // ---------- 1. 허용 스택 ----------
-const stack = loadYaml("contracts/allowed-stack.yaml").frontend;
+const stack = loadYaml(contractPath("allowed-stack.yaml")).frontend;
 const allowed = new Set(stack.allowed);
 const devAllowed = stack.dev_allowed ?? [];
 const pkgPath = path.join(REPO_ROOT, WEB, "package.json");
@@ -31,7 +42,7 @@ function matchDev(pattern, name) {
 }
 
 // ---------- 2. enum 미러 일치 (contracts ↔ types/contracts.ts) ----------
-const enums = loadYaml("contracts/enums.yaml");
+const enums = loadYaml(contractPath("enums.yaml"));
 const mirrorPath = path.join(REPO_ROOT, WEB, "src/types/contracts.ts");
 if (fs.existsSync(mirrorPath)) {
   const src = read(mirrorPath);
@@ -50,12 +61,19 @@ if (fs.existsSync(mirrorPath)) {
 }
 
 // ---------- 3. 이벤트 구독 일치 ----------
-const events = loadYaml("contracts/events.yaml");
+const events = loadYaml(contractPath("events.yaml"));
 const publishes = new Set(events.publishes);
-// publishes ⊇ fe_subscribes 불변식
+// publishes ⊇ fe_subscribes 불변식 (존재하지 않는 이벤트 구독 방지)
 for (const ev of events.fe_subscribes) {
   if (!publishes.has(ev)) {
     r.fail(`이벤트 계약 위반: FE 구독 '${ev}'를 BE가 발행하지 않음(events.yaml publishes)`);
+  }
+}
+// fe_subscribes ⊇ required_fe_subscribes (필수 실시간 이벤트 구독 누락 방지)
+const feSubsSet = new Set(events.fe_subscribes);
+for (const ev of events.required_fe_subscribes ?? []) {
+  if (!feSubsSet.has(ev)) {
+    r.fail(`필수 이벤트 구독 누락: '${ev}'는 실시간 UI에 필수인데 fe_subscribes에 없음`);
   }
 }
 // FE 코드의 SUBSCRIBED_EVENTS가 계약 fe_subscribes와 일치
@@ -73,7 +91,7 @@ if (fs.existsSync(mirrorPath)) {
 
 // ---------- 4. API path fragment drift ----------
 // features/*/api/*.ts 에서 호출하는 path가 계약 api.yaml의 path prefix와 매칭되는지
-const apiPaths = loadYaml("contracts/api.yaml").endpoints.map((e) =>
+const apiPaths = loadYaml(contractPath("api.yaml")).endpoints.map((e) =>
   e.path.replace(/\{[^}]+\}/g, "")
 );
 const apiFiles = walk(WEB + "/src/features", [".ts", ".tsx"]).filter((f) =>
@@ -92,7 +110,7 @@ for (const file of apiFiles) {
 }
 
 // ---------- 5. 계층 import 위반 (layer-rules.yaml frontend) ----------
-const feLayer = loadYaml("contracts/layer-rules.yaml").frontend;
+const feLayer = loadYaml(contractPath("layer-rules.yaml")).frontend;
 const srcRoot = WEB + "/src";
 const tsFiles = walk(srcRoot, [".ts", ".tsx"]);
 for (const rule of feLayer.forbidden_imports ?? []) {

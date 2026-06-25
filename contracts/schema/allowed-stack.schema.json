@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "allowed-stack.yaml",
+  "type": "object",
+  "required": ["backend", "frontend"],
+  "additionalProperties": false,
+  "properties": {
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed_groups": { "type": "array", "items": { "type": "string" } },
+        "allowed_artifacts": { "type": "array", "items": { "type": "string" } },
+        "test_allowed_artifacts": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "frontend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed": { "type": "array", "items": { "type": "string" } },
+        "dev_allowed": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

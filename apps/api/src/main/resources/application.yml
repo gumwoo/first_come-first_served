@@ -37,3 +37,9 @@ jwt:
   secret: ${JWT_SECRET:}
   access-token-ttl: 1800
   refresh-token-ttl: 1209600
+
+# 휴대폰 인증: 데모는 Mock(고정 코드). 운영은 mock=false + 실제 SMS 연동.
+auth:
+  phone:
+    mock: true
+    mock-code: "123456"

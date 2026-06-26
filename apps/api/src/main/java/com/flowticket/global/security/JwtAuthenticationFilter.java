@@ -33,14 +33,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     @NonNull FilterChain chain)
             throws ServletException, IOException {
         String token = resolveToken(request);
-        if (token != null && jwtProvider.isValid(token) && !blacklist.isBlacklisted(token)) {
+        if (token != null
+                && SecurityContextHolder.getContext().getAuthentication() == null
+                && jwtProvider.isValid(token)
+                && !blacklist.isBlacklisted(token)) {
             Claims claims = jwtProvider.parse(token);
             String role = claims.get("role", String.class);
             var auth = new UsernamePasswordAuthenticationToken(
                     Long.valueOf(claims.getSubject()),
                     null,
                     List.of(new SimpleGrantedAuthority(role)));
-            SecurityContextHolder.getContext().setAuthentication(auth);
+            // 공유 컨텍스트 변경 대신 새 컨텍스트 생성(Spring Security 6 권장)
+            var context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(auth);
+            SecurityContextHolder.setContext(context);
         }
         chain.doFilter(request, response);
     }

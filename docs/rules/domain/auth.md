@@ -80,6 +80,13 @@
 - Redis에 없거나 서명 무효/만료 → 재발급 거절.
   `INVALID_REFRESH_TOKEN` 또는 `REFRESH_TOKEN_EXPIRED`. [T]
 
+### CSRF 전략
+- 일반 API는 Bearer 헤더 기반 stateless → CSRF 무관(전면 disable 유지).
+- 쿠키가 자동 전송되는 엔드포인트는 `/auth/refresh`·`/auth/logout` 뿐.
+  이들은 Refresh 쿠키 `SameSite=Lax`로 1차 방어한다.
+- 운영 전환 시: 쿠키를 `SameSite=Strict`로 강화하거나, 쿠키 기반 경로에
+  한해 CSRF 토큰 전략을 도입한다. [R]
+
 ### 로그인 상태 유지 (Remember-me)
 - Refresh Token은 **httpOnly 쿠키**로 클라이언트에 전달한다(본문 노출 금지, XSS 방어). [T]
 - 로그인 시 "로그인 상태 유지" 체크 → **영구 쿠키**(maxAge=refresh TTL),

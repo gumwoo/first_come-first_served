@@ -9,6 +9,7 @@
     "harness:meta": "node harness/meta-test.mjs",
     "harness:backend": "node harness/backend/check.mjs",
     "harness:frontend": "node harness/frontend/check.mjs",
-    "harness:check": "npm run harness:schema && npm run harness:meta && npm run harness:backend && npm run harness:frontend"
+    "harness:check": "npm run harness:schema && npm run harness:meta && npm run harness:backend && npm run harness:frontend",
+    "metrics:collect": "node scripts/collect-metrics.mjs"
   }
 }

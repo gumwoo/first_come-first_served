@@ -75,12 +75,19 @@ export default function LoginPage() {
                 <span className="h-px flex-1 bg-border" />또는<span className="h-px flex-1 bg-border" />
               </div>
 
-              <a href="/oauth2/authorization/kakao">
-                <Button type="button" variant="kakao" className="w-full">카카오로 계속하기</Button>
-              </a>
-              <a href="/oauth2/authorization/naver">
-                <Button type="button" variant="naver" className="w-full">네이버로 계속하기</Button>
-              </a>
+              {/* 소셜 로그인 — 카카오/네이버 공식 버튼 에셋 사용 */}
+              <div className="space-y-2">
+                <a href="/oauth2/authorization/kakao" className="block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/social/kakao_login.png" alt="카카오 로그인"
+                    className="h-auto w-full rounded-md" />
+                </a>
+                <a href="/oauth2/authorization/naver" className="block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/social/naver_login.png" alt="네이버 로그인"
+                    className="h-auto w-full rounded-md" />
+                </a>
+              </div>
 
               <p className="pt-2 text-center text-sm text-muted-foreground">
                 아직 회원이 아니신가요? <Link href="/signup" className="text-primary">회원가입</Link>

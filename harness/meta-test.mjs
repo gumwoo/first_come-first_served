@@ -17,6 +17,8 @@ const cases = [
   { name: "be-api-pathattr",     script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-api-pathattr" } },
   { name: "be-yml-secret",       script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-yml-secret" } },
   { name: "be-table-no-doc",     script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-table-no-doc" } },
+  { name: "be-jwt-no-type",      script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-jwt-no-type" } },
+  { name: "be-actuator-open",    script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-actuator-open" } },
   { name: "fe-missing-enum",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-enum" } },
   { name: "fe-bad-dep",          script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-bad-dep" } },
   { name: "fe-layer-breach",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "FlowTicket",
@@ -13,7 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
-      <body className="bg-background text-foreground">{children}</body>
+      <body className="bg-background text-foreground">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

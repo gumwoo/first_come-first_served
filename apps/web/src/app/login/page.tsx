@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { ApiError } from "@/lib/apiClient";
 import { useLogin } from "@/features/auth/hooks/useAuth";
+import { useAuthStore } from "@/features/auth/store/authStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +18,13 @@ type Form = { email: string; password: string; remember: boolean };
 export default function LoginPage() {
   const { register, handleSubmit } = useForm<Form>();
   const login = useLogin();
+  const router = useRouter();
+  const user = useAuthStore((s) => s.user);
+
+  // 이미 로그인한 사용자는 로그인 페이지에 머물 이유가 없음 → 홈으로
+  useEffect(() => {
+    if (user) router.replace("/");
+  }, [user, router]);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-12">

@@ -50,6 +50,15 @@ class AuthIntegrationTest {
     @Autowired
     TestRestTemplate rest;
 
+    @org.junit.jupiter.api.BeforeEach
+    void bufferRequestBody() {
+        // JDK HttpURLConnection이 POST 본문 streaming 후 401을 받으면 HttpRetryException을
+        // 던지므로, 본문을 버퍼링(retry 가능)하도록 설정.
+        var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setOutputStreaming(false);
+        rest.getRestTemplate().setRequestFactory(factory);
+    }
+
     private void verifyPhone(String phone) {
         rest.postForEntity("/auth/phone/request", body(Map.of("phone", phone)), String.class);
         rest.postForEntity("/auth/phone/verify", body(Map.of("phone", phone, "code", "123456")), String.class);

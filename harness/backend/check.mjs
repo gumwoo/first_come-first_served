@@ -205,6 +205,25 @@ for (const file of ymlFiles) {
   }
 }
 
+// ---------- 9. Flyway CREATE TABLE ↔ docs/db/<table>.md 존재 ----------
+// 마이그레이션에서 테이블을 만들면 대응 스키마 문서가 반드시 있어야 함(drift 방지).
+const migrationFiles = walk(API + "/src/main/resources/db/migration", [".sql"]);
+const createTableRe = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`']?(\w+)["`']?/gi;
+const seenTables = new Set();
+for (const file of migrationFiles) {
+  const rel = path.relative(REPO_ROOT, file).replace(/\\/g, "/");
+  const src = read(file);
+  for (const m of src.matchAll(createTableRe)) {
+    const table = m[1].toLowerCase();
+    if (seenTables.has(table)) continue;
+    seenTables.add(table);
+    const docPath = path.join(REPO_ROOT, "docs", "db", `${table}.md`);
+    if (!fs.existsSync(docPath)) {
+      r.fail(`스키마 문서 누락: CREATE TABLE ${table} (${rel}) → docs/db/${table}.md 필요`);
+    }
+  }
+}
+
 function normalize(p) {
   return p.replace(/\{[^}]+\}/g, "{id}").replace(/\/+$/, "") || "/";
 }

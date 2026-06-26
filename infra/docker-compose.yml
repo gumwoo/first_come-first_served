@@ -6,7 +6,8 @@ services:
       POSTGRES_USER: flowticket
       POSTGRES_PASSWORD: ${DB_PASSWORD:-flowticket}
     ports:
-      - "5432:5432"
+      # 로컬 PostgreSQL이 5432를 점유하는 환경 대비 — 호스트는 5433으로 노출.
+      - "${DB_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 

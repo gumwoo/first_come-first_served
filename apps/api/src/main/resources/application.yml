@@ -2,7 +2,7 @@ spring:
   application:
     name: flowticket-api
   datasource:
-    url: jdbc:postgresql://localhost:5432/flowticket
+    url: jdbc:postgresql://localhost:${DB_PORT:5433}/flowticket
     username: flowticket
     password: ${DB_PASSWORD:flowticket}
   jpa:

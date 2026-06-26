@@ -67,7 +67,7 @@ export default function LoginPage() {
                 </p>
               )}
 
-              <Button type="submit" disabled={login.isPending} className="w-full">
+              <Button type="submit" disabled={login.isPending} className="w-full text-base font-semibold">
                 {login.isPending ? "로그인 중…" : "로그인"}
               </Button>
 

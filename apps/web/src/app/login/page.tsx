@@ -80,12 +80,12 @@ export default function LoginPage() {
                 <a href="/oauth2/authorization/kakao" className="block">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/social/kakao_login.png" alt="카카오 로그인"
-                    className="h-auto w-full rounded-md" />
+                    className="h-12 w-full rounded-md object-contain" />
                 </a>
                 <a href="/oauth2/authorization/naver" className="block">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/social/naver_login.png" alt="네이버 로그인"
-                    className="h-auto w-full rounded-md" />
+                    className="h-12 w-full rounded-md object-contain" />
                 </a>
               </div>
 

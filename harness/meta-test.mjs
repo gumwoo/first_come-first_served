@@ -22,6 +22,7 @@ const cases = [
   { name: "fe-missing-enum",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-enum" } },
   { name: "fe-bad-dep",          script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-bad-dep" } },
   { name: "fe-layer-breach",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },
+  { name: "fe-dead-api",         script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-dead-api" } },
   // ② 필수 이벤트 구독 누락 (계약/웹 둘 다 override해 단독 격리)
   { name: "fe-missing-required-event", script: "frontend/check.mjs", env: {
     HARNESS_CONTRACTS_DIR: "harness/fixtures/violations/fe-missing-required-event",

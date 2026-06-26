@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { ApiError } from "@/lib/apiClient";
 import { useRequestPhoneCode, useVerifyPhoneCode, useSignup } from "@/features/auth/hooks/useAuth";
+import { useAuthStore } from "@/features/auth/store/authStore";
 import { TERMS_SERVICE, TERMS_PRIVACY, TERMS_MARKETING } from "@/features/auth/terms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,13 +33,19 @@ const TERM_META: Record<TermKey, { label: string; required: boolean; text: strin
 };
 
 export default function SignupPage() {
-  const { register, handleSubmit, getValues } = useForm<Form>();
+  const { register, handleSubmit, getValues, formState: { errors } } = useForm<Form>();
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [agreed, setAgreed] = useState({ service: false, privacy: false, marketing: false });
   const [modal, setModal] = useState<TermKey | null>(null);
   const requestCode = useRequestPhoneCode();
   const verifyCode = useVerifyPhoneCode();
   const signup = useSignup();
+  const router = useRouter();
+  const user = useAuthStore((s) => s.user);
+
+  useEffect(() => {
+    if (user) router.replace("/");
+  }, [user, router]);
 
   const requiredOk = agreed.service && agreed.privacy;
   const allChecked = agreed.service && agreed.privacy && agreed.marketing;
@@ -82,7 +90,14 @@ export default function SignupPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>비밀번호 확인</Label>
-                <Input type="password" placeholder="비밀번호 재입력" {...register("passwordConfirm", { required: true })} />
+                <Input type="password" placeholder="비밀번호 재입력"
+                  {...register("passwordConfirm", {
+                    required: true,
+                    validate: (v) => v === getValues("password") || "비밀번호가 일치하지 않습니다.",
+                  })} />
+                {errors.passwordConfirm && (
+                  <p className="text-sm text-destructive">{errors.passwordConfirm.message}</p>
+                )}
               </div>
 
               <div className="space-y-1.5">

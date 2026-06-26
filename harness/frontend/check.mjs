@@ -114,7 +114,9 @@ const feLayer = loadYaml(contractPath("layer-rules.yaml")).frontend;
 const srcRoot = WEB + "/src";
 const tsFiles = walk(srcRoot, [".ts", ".tsx"]);
 for (const rule of feLayer.forbidden_imports ?? []) {
-  const fromRe = globToRe(rule.from);
+  // from은 src 기준 경로라 시작 위치에 앵커링(예: "components/**"가 features/*/components를
+  // 잘못 매칭하지 않도록). 최상위 디렉터리 규칙만 적용.
+  const fromRe = new RegExp("^" + globToRe(rule.from).source);
   const impRe = globToRe(rule.not_import);
   for (const file of tsFiles) {
     // src 기준 상대경로(예: components/ui/button.tsx)로 from 매칭
@@ -129,6 +131,29 @@ for (const rule of feLayer.forbidden_imports ?? []) {
       if (impRe.test(mod)) {
         r.fail(`FE 계층 위반: ${relToSrc} → ${im[1]} (${rule.reason || rule.not_import})`);
       }
+    }
+  }
+}
+
+// ---------- 6. API 死코드 검사 (백엔드 엔드포인트를 정의만 하고 미사용) ----------
+// features/*/api 의 export 함수가 그 파일 밖 어디서도 안 쓰이면 실패.
+// 의도적 미사용(차기 슬라이스용)은 ALLOW에 등록.
+const DEAD_API_ALLOW = new Set([]);
+const apiFnFiles = walk(WEB + "/src/features", [".ts", ".tsx"]).filter((f) =>
+  f.replace(/\\/g, "/").includes("/api/")
+);
+const allSrcFiles = walk(WEB + "/src", [".ts", ".tsx"]);
+for (const file of apiFnFiles) {
+  const rel = path.relative(REPO_ROOT, file).replace(/\\/g, "/");
+  const src = read(file);
+  const exported = [...src.matchAll(/export\s+const\s+(\w+)\s*=/g)].map((m) => m[1]);
+  for (const name of exported) {
+    if (DEAD_API_ALLOW.has(name)) continue;
+    const usedElsewhere = allSrcFiles.some(
+      (f) => f !== file && new RegExp(`\\b${name}\\b`).test(read(f))
+    );
+    if (!usedElsewhere) {
+      r.fail(`미사용 API 함수(死코드): ${name} (${rel}) — 호출처 없음. 쓰거나 제거/ALLOW 등록`);
     }
   }
 }

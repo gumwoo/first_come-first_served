@@ -15,10 +15,9 @@ import com.flowticket.global.common.ApiResponse;
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
 import com.flowticket.global.security.JwtProvider;
+import com.flowticket.global.security.RefreshCookieFactory;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,25 +30,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class AuthController {
 
-    private static final String REFRESH_COOKIE = "refreshToken";
+    private static final String REFRESH_COOKIE = RefreshCookieFactory.COOKIE_NAME;
 
     private final AuthService authService;
     private final PhoneVerificationService phoneVerificationService;
     private final TokenService tokenService;
     private final TokenBlacklistService blacklistService;
     private final JwtProvider jwtProvider;
-    private final long refreshTtlSeconds;
+    private final RefreshCookieFactory cookieFactory;
 
     public AuthController(AuthService authService, PhoneVerificationService phoneVerificationService,
                           TokenService tokenService, TokenBlacklistService blacklistService,
-                          JwtProvider jwtProvider,
-                          @Value("${jwt.refresh-token-ttl}") long refreshTtlSeconds) {
+                          JwtProvider jwtProvider, RefreshCookieFactory cookieFactory) {
         this.authService = authService;
         this.phoneVerificationService = phoneVerificationService;
         this.tokenService = tokenService;
         this.blacklistService = blacklistService;
         this.jwtProvider = jwtProvider;
-        this.refreshTtlSeconds = refreshTtlSeconds;
+        this.cookieFactory = cookieFactory;
     }
 
     @PostMapping("/auth/phone/request")
@@ -75,7 +73,7 @@ public class AuthController {
             @Valid @RequestBody LoginRequest req) {
         TokenResponse tokens = authService.login(req);
         return org.springframework.http.ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, refreshCookie(tokens.refreshToken(), req.remember()).toString())
+                .header(HttpHeaders.SET_COOKIE, cookieFactory.create(tokens.refreshToken(), req.remember()).toString())
                 .body(ApiResponse.ok(new AccessResponse(tokens.accessToken())));
     }
 
@@ -89,7 +87,7 @@ public class AuthController {
         // 회전된 Refresh의 remember 플래그를 그대로 따라 쿠키 maxAge 결정(세션/영속 보존).
         boolean remember = jwtProvider.isRemember(tokens.refreshToken());
         return org.springframework.http.ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, refreshCookie(tokens.refreshToken(), remember).toString())
+                .header(HttpHeaders.SET_COOKIE, cookieFactory.create(tokens.refreshToken(), remember).toString())
                 .body(ApiResponse.ok(new AccessResponse(tokens.accessToken())));
     }
 
@@ -112,30 +110,12 @@ public class AuthController {
             blacklistService.blacklist(access, jwtProvider.getRemainingSeconds(access));
         }
         return org.springframework.http.ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, expiredRefreshCookie().toString())
+                .header(HttpHeaders.SET_COOKIE, cookieFactory.expired().toString())
                 .body(ApiResponse.ok(null));
     }
 
     @GetMapping("/me")
     public ApiResponse<MeResponse> me(@AuthenticationPrincipal Long userId) {
         return ApiResponse.ok(authService.me(userId));
-    }
-
-    private ResponseCookie refreshCookie(String value, boolean remember) {
-        ResponseCookie.ResponseCookieBuilder b = ResponseCookie.from(REFRESH_COOKIE, value)
-                .httpOnly(true)
-                .secure(false)        // 데모(http). 운영은 true + SameSite=None
-                .sameSite("Lax")
-                .path("/");
-        if (remember) {
-            b.maxAge(refreshTtlSeconds); // 영구 쿠키
-        }
-        // 미체크 시 maxAge 미설정 → 세션 쿠키
-        return b.build();
-    }
-
-    private ResponseCookie expiredRefreshCookie() {
-        return ResponseCookie.from(REFRESH_COOKIE, "")
-                .httpOnly(true).secure(false).sameSite("Lax").path("/").maxAge(0).build();
     }
 }

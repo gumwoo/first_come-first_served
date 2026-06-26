@@ -34,7 +34,8 @@ public class User {
     @Column(nullable = false, length = 50)
     private String name;
 
-    @Column(nullable = false, unique = true, length = 20)
+    /** 로컬 가입은 필수, 소셜 가입은 null 가능. */
+    @Column(unique = true, length = 20)
     private String phone;
 
     @Enumerated(EnumType.STRING)
@@ -68,5 +69,15 @@ public class User {
     /** 소셜 계정 여부 — passwordHash 격리 불변식 확인용. */
     public boolean isSocial() {
         return provider != AuthProvider.local;
+    }
+
+    /** 소셜 로그인 가입 계정 생성(휴대폰/비밀번호 없음, ROLE_USER 강제). */
+    public static User social(String email, String name, AuthProvider provider) {
+        return User.builder()
+                .email(email)
+                .name(name)
+                .provider(provider)
+                .role(UserRole.ROLE_USER)
+                .build();
     }
 }

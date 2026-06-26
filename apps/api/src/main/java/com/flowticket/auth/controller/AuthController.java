@@ -95,9 +95,16 @@ public class AuthController {
     @PostMapping("/auth/logout")
     public org.springframework.http.ResponseEntity<ApiResponse<Void>> logout(
             @AuthenticationPrincipal Long userId,
+            @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
-        if (userId != null) {
-            tokenService.revoke(userId);
+        // access가 없어도(만료/미보유) refresh 쿠키로 사용자를 식별해 서버 Refresh를 폐기.
+        Long target = userId;
+        if (target == null && refreshToken != null
+                && jwtProvider.isValid(refreshToken, JwtProvider.TYPE_REFRESH)) {
+            target = jwtProvider.getUserId(refreshToken);
+        }
+        if (target != null) {
+            tokenService.revoke(target);
         }
         if (authorization != null && authorization.startsWith("Bearer ")) {
             String access = authorization.substring(7);

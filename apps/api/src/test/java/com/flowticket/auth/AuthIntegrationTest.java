@@ -116,27 +116,41 @@ class AuthIntegrationTest {
     }
 
     @Test
-    void RTR_재사용된_refresh는_REUSED_감지() {
-        String email = "rtr@test.com";
-        String phone = "01077778888";
+    void RTR_2세대_이전_refresh_재사용은_REUSED() {
+        String r0 = signupAndLogin("rtr@test.com", "01077778888");
+
+        ResponseEntity<JsonNode> rot1 = refreshWithCookie(r0);   // → r1, r0가 직전(grace)
+        String r1 = extractRefreshCookie(rot1);
+        ResponseEntity<JsonNode> rot2 = refreshWithCookie(r1);   // → r2, r0는 직전에서 밀려남
+        assertThat(rot2.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // r0는 이제 현재도 직전도 아님 → 탈취로 간주
+        ResponseEntity<JsonNode> reused = refreshWithCookie(r0);
+        assertThat(reused.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(reused.getBody().get("error").get("code").asText()).isEqualTo("REFRESH_TOKEN_REUSED");
+    }
+
+    @Test
+    void RTR_grace_직전_refresh_동시요청은_세션유지() {
+        String r0 = signupAndLogin("grace@test.com", "01088889999");
+
+        refreshWithCookie(r0); // → r1, r0는 직전(grace)
+        // 멀티탭: 직전 r0를 다시 보내도 폭파되지 않고 세션 유지 + 새 Access 발급
+        ResponseEntity<JsonNode> grace = refreshWithCookie(r0);
+        assertThat(grace.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(grace.getBody().get("data").get("accessToken").asText()).isNotBlank();
+    }
+
+    /** 가입+로그인 후 refresh 쿠키 값 반환. */
+    private String signupAndLogin(String email, String phone) {
         verifyPhone(phone);
         rest.postForEntity("/auth/signup", body(Map.of("email", email, "password", "password1",
                 "name", "n", "phone", phone, "termsAccepted", true)), String.class);
-
-        // 로그인 → Refresh는 Set-Cookie로 내려옴
         ResponseEntity<JsonNode> login = rest.postForEntity("/auth/login",
                 body(Map.of("email", email, "password", "password1", "remember", true)), JsonNode.class);
-        String oldRefresh = extractRefreshCookie(login);
-        assertThat(oldRefresh).isNotBlank();
-
-        // 1회 회전 — oldRefresh 쿠키는 이제 폐기됨
-        ResponseEntity<JsonNode> rotated = refreshWithCookie(oldRefresh);
-        assertThat(rotated.getStatusCode()).isEqualTo(HttpStatus.OK);
-
-        // 폐기된 oldRefresh 재사용 → REUSED
-        ResponseEntity<JsonNode> reused = refreshWithCookie(oldRefresh);
-        assertThat(reused.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(reused.getBody().get("error").get("code").asText()).isEqualTo("REFRESH_TOKEN_REUSED");
+        String refresh = extractRefreshCookie(login);
+        assertThat(refresh).isNotBlank();
+        return refresh;
     }
 
     private String extractRefreshCookie(ResponseEntity<?> res) {

@@ -32,8 +32,16 @@ const TERM_META: Record<TermKey, { label: string; required: boolean; text: strin
   marketing: { label: "이벤트/혜택 알림 수신", required: false, text: TERMS_MARKETING },
 };
 
+const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,64}$/;
+
 export default function SignupPage() {
-  const { register, handleSubmit, getValues, formState: { errors } } = useForm<Form>();
+  const { register, handleSubmit, getValues, watch, formState: { errors } } = useForm<Form>({
+    mode: "onChange",
+  });
+  const pw = watch("password") ?? "";
+  const pwConfirm = watch("passwordConfirm") ?? "";
+  const pwValid = PASSWORD_RULE.test(pw);
+  const pwMatch = pw.length > 0 && pw === pwConfirm;
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [agreed, setAgreed] = useState({ service: false, privacy: false, marketing: false });
   const [modal, setModal] = useState<TermKey | null>(null);
@@ -86,7 +94,15 @@ export default function SignupPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>비밀번호</Label>
-                <Input type="password" placeholder="8자 이상" {...register("password", { required: true })} />
+                <Input type="password" placeholder="영문·숫자·특수문자 포함 8자 이상"
+                  {...register("password", { required: true, pattern: PASSWORD_RULE })} />
+                <p className={`text-xs ${pw.length === 0 ? "text-muted-foreground" : pwValid ? "text-success" : "text-destructive"}`}>
+                  {pw.length === 0
+                    ? "영문·숫자·특수문자를 모두 포함해 8자 이상"
+                    : pwValid
+                    ? "사용 가능한 비밀번호입니다."
+                    : "영문·숫자·특수문자를 모두 포함해 8자 이상이어야 합니다."}
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label>비밀번호 확인</Label>
@@ -95,8 +111,10 @@ export default function SignupPage() {
                     required: true,
                     validate: (v) => v === getValues("password") || "비밀번호가 일치하지 않습니다.",
                   })} />
-                {errors.passwordConfirm && (
-                  <p className="text-sm text-destructive">{errors.passwordConfirm.message}</p>
+                {pwConfirm.length > 0 && (
+                  <p className={`text-sm ${pwMatch ? "text-success" : "text-destructive"}`}>
+                    {pwMatch ? "비밀번호가 일치합니다." : "비밀번호가 일치하지 않습니다."}
+                  </p>
                 )}
               </div>
 
@@ -156,7 +174,8 @@ export default function SignupPage() {
                 <p className="text-sm text-destructive">{(signup.error as ApiError).message}</p>
               )}
 
-              <Button type="submit" disabled={!phoneVerified || !requiredOk || signup.isPending}
+              <Button type="submit"
+                disabled={!phoneVerified || !requiredOk || !pwValid || !pwMatch || signup.isPending}
                 className="w-full">
                 {signup.isPending ? "가입 중…" : "회원가입"}
               </Button>

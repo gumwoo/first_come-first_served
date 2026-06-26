@@ -77,12 +77,12 @@ class AuthIntegrationTest {
         verifyPhone(phone);
 
         ResponseEntity<String> signup = rest.postForEntity("/auth/signup",
-                body(Map.of("email", email, "password", "password1", "name", "홍길동",
+                body(Map.of("email", email, "password", "Password1!", "name", "홍길동",
                         "phone", phone, "termsAccepted", true)), String.class);
         assertThat(signup.getStatusCode()).isEqualTo(HttpStatus.OK);
 
         ResponseEntity<JsonNode> login = rest.postForEntity("/auth/login",
-                body(Map.of("email", email, "password", "password1")), JsonNode.class);
+                body(Map.of("email", email, "password", "Password1!")), JsonNode.class);
         assertThat(login.getStatusCode()).isEqualTo(HttpStatus.OK);
         String access = login.getBody().get("data").get("accessToken").asText();
 
@@ -104,12 +104,12 @@ class AuthIntegrationTest {
         String phone1 = "01033334444";
         String phone2 = "01055556666";
         verifyPhone(phone1);
-        rest.postForEntity("/auth/signup", body(Map.of("email", "dup@test.com", "password", "password1",
+        rest.postForEntity("/auth/signup", body(Map.of("email", "dup@test.com", "password", "Password1!",
                 "name", "n", "phone", phone1, "termsAccepted", true)), String.class);
 
         verifyPhone(phone2);
         ResponseEntity<JsonNode> dup = rest.postForEntity("/auth/signup",
-                body(Map.of("email", "dup@test.com", "password", "password1",
+                body(Map.of("email", "dup@test.com", "password", "Password1!",
                         "name", "n", "phone", phone2, "termsAccepted", true)), JsonNode.class);
         assertThat(dup.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(dup.getBody().get("error").get("code").asText()).isEqualTo("DUPLICATE_EMAIL");
@@ -146,12 +146,12 @@ class AuthIntegrationTest {
         String email = "session@test.com";
         String phone = "01012121212";
         verifyPhone(phone);
-        rest.postForEntity("/auth/signup", body(Map.of("email", email, "password", "password1",
+        rest.postForEntity("/auth/signup", body(Map.of("email", email, "password", "Password1!",
                 "name", "n", "phone", phone, "termsAccepted", true)), String.class);
 
         // remember=false 로그인 → 세션 쿠키(Max-Age 없음)
         ResponseEntity<JsonNode> login = rest.postForEntity("/auth/login",
-                body(Map.of("email", email, "password", "password1", "remember", false)), JsonNode.class);
+                body(Map.of("email", email, "password", "Password1!", "remember", false)), JsonNode.class);
         assertThat(rawRefreshCookie(login)).doesNotContainIgnoringCase("Max-Age");
 
         // silent refresh 후에도 여전히 세션 쿠키여야 함(영속 쿠키로 승격 금지)
@@ -165,11 +165,11 @@ class AuthIntegrationTest {
         String email = "persist@test.com";
         String phone = "01034343434";
         verifyPhone(phone);
-        rest.postForEntity("/auth/signup", body(Map.of("email", email, "password", "password1",
+        rest.postForEntity("/auth/signup", body(Map.of("email", email, "password", "Password1!",
                 "name", "n", "phone", phone, "termsAccepted", true)), String.class);
 
         ResponseEntity<JsonNode> login = rest.postForEntity("/auth/login",
-                body(Map.of("email", email, "password", "password1", "remember", true)), JsonNode.class);
+                body(Map.of("email", email, "password", "Password1!", "remember", true)), JsonNode.class);
         assertThat(rawRefreshCookie(login)).containsIgnoringCase("Max-Age");
     }
 
@@ -186,10 +186,10 @@ class AuthIntegrationTest {
     /** 가입+로그인 후 refresh 쿠키 값 반환. */
     private String signupAndLogin(String email, String phone) {
         verifyPhone(phone);
-        rest.postForEntity("/auth/signup", body(Map.of("email", email, "password", "password1",
+        rest.postForEntity("/auth/signup", body(Map.of("email", email, "password", "Password1!",
                 "name", "n", "phone", phone, "termsAccepted", true)), String.class);
         ResponseEntity<JsonNode> login = rest.postForEntity("/auth/login",
-                body(Map.of("email", email, "password", "password1", "remember", true)), JsonNode.class);
+                body(Map.of("email", email, "password", "Password1!", "remember", true)), JsonNode.class);
         String refresh = extractRefreshCookie(login);
         assertThat(refresh).isNotBlank();
         return refresh;

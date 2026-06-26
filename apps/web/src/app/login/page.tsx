@@ -67,7 +67,7 @@ export default function LoginPage() {
                 </p>
               )}
 
-              <Button type="submit" disabled={login.isPending} className="w-full">
+              <Button type="submit" disabled={login.isPending} className="w-full text-base font-semibold">
                 {login.isPending ? "로그인 중…" : "로그인"}
               </Button>
 
@@ -80,12 +80,12 @@ export default function LoginPage() {
                 <a href="/oauth2/authorization/kakao" className="block">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/social/kakao_login.png" alt="카카오 로그인"
-                    className="h-auto w-full rounded-md" />
+                    className="h-12 w-full rounded-md object-cover" />
                 </a>
                 <a href="/oauth2/authorization/naver" className="block">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/social/naver_login.png" alt="네이버 로그인"
-                    className="h-auto w-full rounded-md" />
+                    className="h-12 w-full rounded-md object-cover" />
                 </a>
               </div>
 

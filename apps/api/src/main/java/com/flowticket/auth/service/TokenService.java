@@ -39,10 +39,10 @@ public class TokenService {
         this.refreshTtlSeconds = refreshTtlSeconds;
     }
 
-    /** 로그인 성공 등에서 새 토큰쌍 발급 + Refresh 저장. */
-    public TokenResponse issue(User user) {
+    /** 로그인 성공 등에서 새 토큰쌍 발급 + Refresh 저장. remember는 쿠키 maxAge 보존용. */
+    public TokenResponse issue(User user, boolean remember) {
         String access = jwtProvider.createAccessToken(user);
-        String refresh = jwtProvider.createRefreshToken(user);
+        String refresh = jwtProvider.createRefreshToken(user, remember);
         store(user.getId(), refresh);
         return new TokenResponse(access, refresh);
     }
@@ -68,9 +68,9 @@ public class TokenService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 
         if (current.equals(refreshToken)) {
-            // 정상 회전: 현재 → 직전(grace), 새 토큰 발급
+            // 정상 회전: 현재 → 직전(grace), 새 토큰 발급. remember 플래그는 계승.
             redis.opsForValue().set(PREV + userId, current, GRACE);
-            return issue(user);
+            return issue(user, jwtProvider.isRemember(refreshToken));
         }
 
         String prev = redis.opsForValue().get(PREV + userId);

@@ -141,6 +141,48 @@ class AuthIntegrationTest {
         assertThat(grace.getBody().get("data").get("accessToken").asText()).isNotBlank();
     }
 
+    @Test
+    void remember_false면_refresh_후에도_세션쿠키_유지() {
+        String email = "session@test.com";
+        String phone = "01012121212";
+        verifyPhone(phone);
+        rest.postForEntity("/auth/signup", body(Map.of("email", email, "password", "password1",
+                "name", "n", "phone", phone, "termsAccepted", true)), String.class);
+
+        // remember=false 로그인 → 세션 쿠키(Max-Age 없음)
+        ResponseEntity<JsonNode> login = rest.postForEntity("/auth/login",
+                body(Map.of("email", email, "password", "password1", "remember", false)), JsonNode.class);
+        assertThat(rawRefreshCookie(login)).doesNotContainIgnoringCase("Max-Age");
+
+        // silent refresh 후에도 여전히 세션 쿠키여야 함(영속 쿠키로 승격 금지)
+        ResponseEntity<JsonNode> refreshed = refreshWithCookie(extractRefreshCookie(login));
+        assertThat(refreshed.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(rawRefreshCookie(refreshed)).doesNotContainIgnoringCase("Max-Age");
+    }
+
+    @Test
+    void remember_true면_영속쿠키_Max_Age_포함() {
+        String email = "persist@test.com";
+        String phone = "01034343434";
+        verifyPhone(phone);
+        rest.postForEntity("/auth/signup", body(Map.of("email", email, "password", "password1",
+                "name", "n", "phone", phone, "termsAccepted", true)), String.class);
+
+        ResponseEntity<JsonNode> login = rest.postForEntity("/auth/login",
+                body(Map.of("email", email, "password", "password1", "remember", true)), JsonNode.class);
+        assertThat(rawRefreshCookie(login)).containsIgnoringCase("Max-Age");
+    }
+
+    /** Set-Cookie 헤더의 refreshToken 원본 문자열(속성 포함). */
+    private String rawRefreshCookie(ResponseEntity<?> res) {
+        java.util.List<String> cookies = res.getHeaders().get(HttpHeaders.SET_COOKIE);
+        if (cookies == null) return "";
+        for (String c : cookies) {
+            if (c.startsWith("refreshToken=")) return c;
+        }
+        return "";
+    }
+
     /** 가입+로그인 후 refresh 쿠키 값 반환. */
     private String signupAndLogin(String email, String phone) {
         verifyPhone(phone);

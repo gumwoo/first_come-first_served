@@ -51,12 +51,12 @@ class AuthIntegrationTest {
     TestRestTemplate rest;
 
     @org.junit.jupiter.api.BeforeEach
-    void bufferRequestBody() {
-        // JDK HttpURLConnection이 POST 본문 streaming 후 401을 받으면 HttpRetryException을
-        // 던지므로, 본문을 버퍼링(retry 가능)하도록 설정.
-        var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
-        factory.setOutputStreaming(false);
-        rest.getRestTemplate().setRequestFactory(factory);
+    void useJdkHttpClient() {
+        // 레거시 HttpURLConnection은 POST 후 401을 받으면 자동 인증 재시도로
+        // HttpRetryException을 던진다. Java 11+ HttpClient 기반 팩토리는 401을
+        // 정상 응답으로 반환하므로 이를 사용한다. (spring-web 내장, 추가 의존성 없음)
+        rest.getRestTemplate().setRequestFactory(
+                new org.springframework.http.client.JdkClientHttpRequestFactory());
     }
 
     private void verifyPhone(String phone) {

@@ -1,6 +1,7 @@
 import { api } from "@/lib/apiClient";
 
-export type TokenResponse = { accessToken: string; refreshToken: string };
+// Refresh는 httpOnly 쿠키로 오가므로 본문엔 accessToken만.
+export type AccessResponse = { accessToken: string };
 export type Me = { id: number; email: string; name: string; role: string; provider: string };
 
 export type SignupBody = {
@@ -9,6 +10,7 @@ export type SignupBody = {
   name: string;
   phone: string;
   termsAccepted: boolean;
+  marketingOptIn: boolean;
 };
 
 export const requestPhoneCode = (phone: string) =>
@@ -20,8 +22,11 @@ export const verifyPhoneCode = (phone: string, code: string) =>
 export const signup = (body: SignupBody) =>
   api<void>("/auth/signup", { method: "POST", body });
 
-export const login = (email: string, password: string) =>
-  api<TokenResponse>("/auth/login", { method: "POST", body: { email, password } });
+export const login = (email: string, password: string, remember: boolean) =>
+  api<AccessResponse>("/auth/login", { method: "POST", body: { email, password, remember } });
+
+/** 앱 로드 시 httpOnly 쿠키로 Access 재발급(로그인 유지). */
+export const refresh = () => api<AccessResponse>("/auth/refresh", { method: "POST" });
 
 export const logout = (token: string | null) =>
   api<void>("/auth/logout", { method: "POST", token });

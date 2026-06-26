@@ -12,5 +12,6 @@ public record SignupRequest(
         @NotBlank @Size(min = 8, max = 64) String password,
         @NotBlank @Size(max = 50) String name,
         @NotBlank @Pattern(regexp = "^01[0-9]{8,9}$") String phone,
-        @AssertTrue(message = "필수 약관에 동의해야 합니다.") boolean termsAccepted
+        @AssertTrue(message = "필수 약관에 동의해야 합니다.") boolean termsAccepted,
+        boolean marketingOptIn
 ) {}

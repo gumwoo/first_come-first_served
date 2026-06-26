@@ -51,6 +51,7 @@ public class AuthService {
                 .phone(req.phone())
                 .role(UserRole.ROLE_USER)        // 요청 값과 무관하게 강제
                 .provider(AuthProvider.local)
+                .marketingOptIn(req.marketingOptIn())
                 .build();
         userRepository.save(user);
         phoneVerificationService.consumeVerification(req.phone());

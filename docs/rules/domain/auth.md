@@ -80,6 +80,17 @@
 - Redis에 없거나 서명 무효/만료 → 재발급 거절.
   `INVALID_REFRESH_TOKEN` 또는 `REFRESH_TOKEN_EXPIRED`. [T]
 
+### 로그인 상태 유지 (Remember-me)
+- Refresh Token은 **httpOnly 쿠키**로 클라이언트에 전달한다(본문 노출 금지, XSS 방어). [T]
+- 로그인 시 "로그인 상태 유지" 체크 → **영구 쿠키**(maxAge=refresh TTL),
+  미체크 → **세션 쿠키**(브라우저 종료 시 만료).
+- 앱 로드 시 프론트는 `POST /auth/refresh`(쿠키 자동 전송)로 Access Token을 silent 재발급한다.
+- Access Token은 여전히 응답 본문으로 내려가며 클라 메모리에만 보관한다.
+
+### 마케팅 수신 동의
+- 회원가입의 이벤트/혜택 알림(선택 약관) 동의 여부는 `users.marketing_opt_in`에 저장. [T]
+- 선택 약관 미동의로도 가입은 가능하다(필수 약관만 가입 전제).
+
 ### 로그아웃 / Access Token 블랙리스트
 - `POST /auth/logout` 시 Redis의 Refresh Token 삭제.
 - 현재 Access Token의 **남은 TTL 동안** 토큰 값을 Redis 블랙리스트에 등록.

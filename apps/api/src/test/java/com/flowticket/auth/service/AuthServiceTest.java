@@ -33,7 +33,7 @@ class AuthServiceTest {
     @InjectMocks AuthService authService;
 
     private SignupRequest signupReq() {
-        return new SignupRequest("a@b.com", "password1", "홍길동", "01012345678", true);
+        return new SignupRequest("a@b.com", "password1", "홍길동", "01012345678", true, false);
     }
 
     @Test
@@ -62,7 +62,7 @@ class AuthServiceTest {
 
     @Test
     void 약관_미동의면_가입_거절() {
-        SignupRequest req = new SignupRequest("a@b.com", "password1", "홍길동", "01012345678", false);
+        SignupRequest req = new SignupRequest("a@b.com", "password1", "홍길동", "01012345678", false, false);
         assertThatThrownBy(() -> authService.signup(req))
                 .extracting("errorCode").isEqualTo(ErrorCode.REGISTRATION_TERMS_NOT_ACCEPTED);
     }
@@ -88,7 +88,7 @@ class AuthServiceTest {
                 .email("a@b.com").passwordHash(null).name("n").phone("01012345678")
                 .role(UserRole.ROLE_USER).provider(AuthProvider.kakao).build();
         when(userRepository.findByEmail("a@b.com")).thenReturn(java.util.Optional.of(social));
-        assertThatThrownBy(() -> authService.login(new LoginRequest("a@b.com", "password1")))
+        assertThatThrownBy(() -> authService.login(new LoginRequest("a@b.com", "password1", false)))
                 .extracting("errorCode").isEqualTo(ErrorCode.LOCAL_LOGIN_NOT_ALLOWED);
     }
 
@@ -99,7 +99,7 @@ class AuthServiceTest {
                 .role(UserRole.ROLE_USER).provider(AuthProvider.local).build();
         when(userRepository.findByEmail("a@b.com")).thenReturn(java.util.Optional.of(user));
         when(passwordEncoder.matches(any(), any())).thenReturn(false);
-        assertThatThrownBy(() -> authService.login(new LoginRequest("a@b.com", "wrong")))
+        assertThatThrownBy(() -> authService.login(new LoginRequest("a@b.com", "wrong", false)))
                 .extracting("errorCode").isEqualTo(ErrorCode.UNAUTHORIZED);
     }
 }

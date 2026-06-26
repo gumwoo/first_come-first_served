@@ -3,6 +3,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { AuthBootstrap } from "@/features/auth/components/AuthBootstrap";
 
 export const metadata: Metadata = {
   title: "FlowTicket",
@@ -18,6 +19,7 @@ export default function RootLayout({
     <html lang="ko">
       <body className="flex min-h-screen flex-col bg-background text-foreground">
         <Providers>
+          <AuthBootstrap />
           <Header />
           <div className="flex-1">{children}</div>
           <Footer />

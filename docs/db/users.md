@@ -1,7 +1,7 @@
 # Table · users
 
 - 슬라이스: `S01`
-- 마이그레이션(단일 진실원): `apps/api/src/main/resources/db/migration/V1__users.sql`
+- 마이그레이션(단일 진실원): `V1__users.sql`, `V2__users_marketing_opt_in.sql`
 - 도메인 규칙: [[domain/auth]]
 
 ## 목적
@@ -18,6 +18,7 @@
 | role | VARCHAR(20) | N | 'ROLE_USER' | | 가입은 항상 ROLE_USER |
 | provider | VARCHAR(20) | N | 'local' | | local/kakao/naver |
 | created_at | TIMESTAMP | N | now() | | 가입 시각 |
+| marketing_opt_in | BOOLEAN | N | false | | 이벤트/혜택 알림 수신 동의(선택 약관) |
 
 ## 인덱스 / 제약
 | 이름 | 종류 | 컬럼 | 이유 |

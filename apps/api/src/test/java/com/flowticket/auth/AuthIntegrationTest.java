@@ -123,20 +123,38 @@ class AuthIntegrationTest {
         rest.postForEntity("/auth/signup", body(Map.of("email", email, "password", "password1",
                 "name", "n", "phone", phone, "termsAccepted", true)), String.class);
 
+        // 로그인 → Refresh는 Set-Cookie로 내려옴
         ResponseEntity<JsonNode> login = rest.postForEntity("/auth/login",
-                body(Map.of("email", email, "password", "password1")), JsonNode.class);
-        String oldRefresh = login.getBody().get("data").get("refreshToken").asText();
+                body(Map.of("email", email, "password", "password1", "remember", true)), JsonNode.class);
+        String oldRefresh = extractRefreshCookie(login);
+        assertThat(oldRefresh).isNotBlank();
 
-        // 1회 회전 — oldRefresh는 이제 폐기됨
-        ResponseEntity<JsonNode> rotated = rest.postForEntity("/auth/refresh",
-                body(Map.of("refreshToken", oldRefresh)), JsonNode.class);
+        // 1회 회전 — oldRefresh 쿠키는 이제 폐기됨
+        ResponseEntity<JsonNode> rotated = refreshWithCookie(oldRefresh);
         assertThat(rotated.getStatusCode()).isEqualTo(HttpStatus.OK);
 
         // 폐기된 oldRefresh 재사용 → REUSED
-        ResponseEntity<JsonNode> reused = rest.postForEntity("/auth/refresh",
-                body(Map.of("refreshToken", oldRefresh)), JsonNode.class);
+        ResponseEntity<JsonNode> reused = refreshWithCookie(oldRefresh);
         assertThat(reused.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(reused.getBody().get("error").get("code").asText()).isEqualTo("REFRESH_TOKEN_REUSED");
+    }
+
+    private String extractRefreshCookie(ResponseEntity<?> res) {
+        java.util.List<String> cookies = res.getHeaders().get(HttpHeaders.SET_COOKIE);
+        if (cookies == null) return null;
+        for (String c : cookies) {
+            if (c.startsWith("refreshToken=")) {
+                return c.substring("refreshToken=".length(), c.indexOf(';'));
+            }
+        }
+        return null;
+    }
+
+    private ResponseEntity<JsonNode> refreshWithCookie(String refresh) {
+        HttpHeaders h = new HttpHeaders();
+        h.add(HttpHeaders.COOKIE, "refreshToken=" + refresh);
+        return rest.exchange("/auth/refresh", org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(h), JsonNode.class);
     }
 
     private HttpEntity<Void> bearer(String token) {

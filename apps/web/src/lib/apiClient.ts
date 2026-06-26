@@ -22,6 +22,7 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method: options.method ?? "GET",
     headers,
+    credentials: "include", // httpOnly refresh 쿠키 송수신
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 

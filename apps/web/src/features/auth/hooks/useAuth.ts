@@ -7,7 +7,8 @@ export function useLogin() {
   const router = useRouter();
   const setAccessToken = useAuthStore((s) => s.setAccessToken);
   return useMutation({
-    mutationFn: (v: { email: string; password: string }) => authApi.login(v.email, v.password),
+    mutationFn: (v: { email: string; password: string; remember: boolean }) =>
+      authApi.login(v.email, v.password, v.remember),
     onSuccess: (token) => {
       setAccessToken(token.accessToken);
       router.push("/");

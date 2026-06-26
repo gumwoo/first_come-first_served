@@ -6,10 +6,12 @@ import { ShieldCheck } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { ApiError } from "@/lib/apiClient";
 import { useRequestPhoneCode, useVerifyPhoneCode, useSignup } from "@/features/auth/hooks/useAuth";
+import { TERMS_SERVICE, TERMS_PRIVACY, TERMS_MARKETING } from "@/features/auth/terms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
 
 type Form = {
   name: string;
@@ -20,16 +22,26 @@ type Form = {
   code: string;
 };
 
+type TermKey = "service" | "privacy" | "marketing";
+
+const TERM_META: Record<TermKey, { label: string; required: boolean; text: string }> = {
+  service: { label: "서비스 이용약관", required: true, text: TERMS_SERVICE },
+  privacy: { label: "개인정보 수집·이용", required: true, text: TERMS_PRIVACY },
+  marketing: { label: "이벤트/혜택 알림 수신", required: false, text: TERMS_MARKETING },
+};
+
 export default function SignupPage() {
   const { register, handleSubmit, getValues } = useForm<Form>();
   const [phoneVerified, setPhoneVerified] = useState(false);
-  const [terms, setTerms] = useState({ service: false, privacy: false });
+  const [agreed, setAgreed] = useState({ service: false, privacy: false, marketing: false });
+  const [modal, setModal] = useState<TermKey | null>(null);
   const requestCode = useRequestPhoneCode();
   const verifyCode = useVerifyPhoneCode();
   const signup = useSignup();
 
-  const allAgreed = terms.service && terms.privacy;
-  const setAll = (v: boolean) => setTerms({ service: v, privacy: v });
+  const requiredOk = agreed.service && agreed.privacy;
+  const allChecked = agreed.service && agreed.privacy && agreed.marketing;
+  const setAll = (v: boolean) => setAgreed({ service: v, privacy: v, marketing: v });
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-12">
@@ -51,7 +63,8 @@ export default function SignupPage() {
                   password: v.password,
                   name: v.name,
                   phone: v.phone,
-                  termsAccepted: allAgreed,
+                  termsAccepted: requiredOk,
+                  marketingOptIn: agreed.marketing,
                 })
               )}
             >
@@ -103,29 +116,32 @@ export default function SignupPage() {
                 )}
               </div>
 
-              {/* 약관 */}
+              {/* 약관 동의 */}
               <div className="space-y-2 rounded-md border border-border p-3 text-sm">
                 <label className="flex items-center gap-2 font-medium">
-                  <input type="checkbox" checked={allAgreed} onChange={(e) => setAll(e.target.checked)} />
+                  <input type="checkbox" checked={allChecked} onChange={(e) => setAll(e.target.checked)} />
                   전체 동의
                 </label>
-                <label className="flex items-center gap-2 text-muted-foreground">
-                  <input type="checkbox" checked={terms.service}
-                    onChange={(e) => setTerms((t) => ({ ...t, service: e.target.checked }))} />
-                  (필수) 서비스 이용약관 동의
-                </label>
-                <label className="flex items-center gap-2 text-muted-foreground">
-                  <input type="checkbox" checked={terms.privacy}
-                    onChange={(e) => setTerms((t) => ({ ...t, privacy: e.target.checked }))} />
-                  (필수) 개인정보 수집·이용 동의
-                </label>
+                {(Object.keys(TERM_META) as TermKey[]).map((key) => (
+                  <div key={key} className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-muted-foreground">
+                      <input type="checkbox" checked={agreed[key]}
+                        onChange={(e) => setAgreed((a) => ({ ...a, [key]: e.target.checked }))} />
+                      {TERM_META[key].required ? "(필수)" : "(선택)"} {TERM_META[key].label} 동의
+                    </label>
+                    <button type="button" className="text-xs text-muted-foreground underline"
+                      onClick={() => setModal(key)}>
+                      상세보기
+                    </button>
+                  </div>
+                ))}
               </div>
 
               {signup.isError && (
                 <p className="text-sm text-destructive">{(signup.error as ApiError).message}</p>
               )}
 
-              <Button type="submit" disabled={!phoneVerified || !allAgreed || signup.isPending}
+              <Button type="submit" disabled={!phoneVerified || !requiredOk || signup.isPending}
                 className="w-full">
                 {signup.isPending ? "가입 중…" : "회원가입"}
               </Button>
@@ -155,6 +171,27 @@ export default function SignupPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 약관 상세 모달 */}
+      <Dialog
+        open={modal !== null}
+        onClose={() => setModal(null)}
+        title={modal ? TERM_META[modal].label : ""}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setModal(null)}>닫기</Button>
+            <Button
+              onClick={() => {
+                if (modal) setAgreed((a) => ({ ...a, [modal]: true }));
+                setModal(null);
+              }}>
+              동의하고 닫기
+            </Button>
+          </>
+        }
+      >
+        <pre className="whitespace-pre-wrap font-sans">{modal ? TERM_META[modal].text : ""}</pre>
+      </Dialog>
     </main>
   );
 }

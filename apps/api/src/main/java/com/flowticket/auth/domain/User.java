@@ -48,15 +48,20 @@ public class User {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    /** 이벤트/혜택 알림 수신 동의(선택 약관). */
+    @Column(name = "marketing_opt_in", nullable = false)
+    private boolean marketingOptIn;
+
     @Builder
     private User(String email, String passwordHash, String name, String phone,
-                 UserRole role, AuthProvider provider) {
+                 UserRole role, AuthProvider provider, boolean marketingOptIn) {
         this.email = email;
         this.passwordHash = passwordHash;
         this.name = name;
         this.phone = phone;
         this.role = role;
         this.provider = provider;
+        this.marketingOptIn = marketingOptIn;
         this.createdAt = LocalDateTime.now();
     }
 

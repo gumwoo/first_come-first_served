@@ -1,71 +1,98 @@
 "use client";
 
 import Link from "next/link";
+import { ShieldCheck } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { ApiError } from "@/lib/apiClient";
 import { useLogin } from "@/features/auth/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 
-type Form = { email: string; password: string };
+type Form = { email: string; password: string; remember: boolean };
 
 export default function LoginPage() {
   const { register, handleSubmit } = useForm<Form>();
   const login = useLogin();
 
   return (
-    <main className="mx-auto max-w-md p-8">
-      <h1 className="text-2xl font-bold">로그인</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        예매를 위해 FlowTicket 계정으로 로그인하세요.
-      </p>
-
-      <form
-        className="mt-6 space-y-4"
-        onSubmit={handleSubmit((v) => login.mutate(v))}
-      >
-        <div>
-          <label className="block text-sm">이메일</label>
-          <input
-            type="email"
-            className="mt-1 w-full rounded border border-border px-3 py-2"
-            {...register("email", { required: true })}
-          />
-        </div>
-        <div>
-          <label className="block text-sm">비밀번호</label>
-          <input
-            type="password"
-            className="mt-1 w-full rounded border border-border px-3 py-2"
-            {...register("password", { required: true })}
-          />
-        </div>
-
-        {login.isError && (
-          <p className="text-sm text-red-600">
-            {(login.error as ApiError).message ?? "로그인에 실패했습니다."}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={login.isPending}
-          className="w-full rounded bg-primary py-2 text-white disabled:opacity-50"
-        >
-          {login.isPending ? "로그인 중…" : "로그인"}
-        </button>
-      </form>
-
-      <div className="mt-4 space-y-2">
-        <a href="/oauth2/authorization/kakao" className="block rounded border border-border py-2 text-center">
-          카카오로 계속하기
-        </a>
-        <a href="/oauth2/authorization/naver" className="block rounded border border-border py-2 text-center">
-          네이버로 계속하기
-        </a>
+    <main className="mx-auto max-w-4xl px-4 py-12">
+      <div className="mb-8 text-center">
+        <h1 className="text-2xl font-bold">로그인</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          예매를 위해 FlowTicket 계정으로 로그인하세요.
+        </p>
       </div>
 
-      <p className="mt-6 text-center text-sm text-muted-foreground">
-        아직 회원이 아니신가요? <Link href="/signup" className="text-primary">회원가입</Link>
-      </p>
+      <div className="grid gap-6 md:grid-cols-[1fr_300px]">
+        {/* 로그인 폼 */}
+        <Card>
+          <CardContent className="pt-6">
+            <form className="space-y-4" onSubmit={handleSubmit((v) => login.mutate(v))}>
+              <div className="space-y-1.5">
+                <Label htmlFor="email">이메일</Label>
+                <Input id="email" type="email" placeholder="이메일 주소를 입력하세요"
+                  {...register("email", { required: true })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="password">비밀번호</Label>
+                <Input id="password" type="password" placeholder="비밀번호를 입력하세요"
+                  {...register("password", { required: true })} />
+              </div>
+
+              <div className="flex items-center justify-between text-sm">
+                <label className="flex items-center gap-2 text-muted-foreground">
+                  <input type="checkbox" {...register("remember")} />
+                  로그인 상태 유지
+                </label>
+                <Link href="/login" className="text-muted-foreground hover:text-foreground">
+                  비밀번호를 잊으셨나요?
+                </Link>
+              </div>
+
+              {login.isError && (
+                <p className="text-sm text-destructive">
+                  {(login.error as ApiError).message ?? "로그인에 실패했습니다."}
+                </p>
+              )}
+
+              <Button type="submit" disabled={login.isPending} className="w-full">
+                {login.isPending ? "로그인 중…" : "로그인"}
+              </Button>
+
+              <div className="flex items-center gap-3 py-1 text-xs text-muted-foreground">
+                <span className="h-px flex-1 bg-border" />또는<span className="h-px flex-1 bg-border" />
+              </div>
+
+              <a href="/oauth2/authorization/kakao">
+                <Button type="button" variant="kakao" className="w-full">카카오로 계속하기</Button>
+              </a>
+              <a href="/oauth2/authorization/naver">
+                <Button type="button" variant="naver" className="w-full">네이버로 계속하기</Button>
+              </a>
+
+              <p className="pt-2 text-center text-sm text-muted-foreground">
+                아직 회원이 아니신가요? <Link href="/signup" className="text-primary">회원가입</Link>
+              </p>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* 안내 박스 */}
+        <Card className="h-fit bg-muted/30">
+          <CardContent className="space-y-3 pt-6 text-sm">
+            <div className="flex items-center gap-2 font-medium">
+              <ShieldCheck className="h-4 w-4 text-primary" /> 안내
+            </div>
+            <ul className="space-y-2 text-muted-foreground">
+              <li>· 안전한 로그인을 위해 비밀번호는 암호화되어 보관됩니다.</li>
+              <li>· 소셜 로그인 계정은 이메일/비밀번호 로그인을 사용할 수 없습니다.</li>
+              <li>· 로그인 후 예매 진행 시 본인 인증이 필요할 수 있습니다.</li>
+            </ul>
+          </CardContent>
+        </Card>
+      </div>
     </main>
   );
 }

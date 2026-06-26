@@ -224,6 +224,25 @@ for (const file of migrationFiles) {
   }
 }
 
+// ---------- 10. 보안 정적 룰 (리뷰 발견 → feedback-routing 승격) ----------
+for (const file of javaFiles) {
+  const rel = path.relative(REPO_ROOT, file).replace(/\\/g, "/");
+  const src = read(file);
+
+  // (a) JWT 토큰에는 반드시 type claim(access/refresh)이 있어야 함.
+  //     type 미구분 시 refresh를 access로 오용하는 등 보안 결함 발생.
+  for (const m of src.matchAll(/Jwts\.builder\(\)([\s\S]*?)\.compact\(\)/g)) {
+    if (!/\.claim\(\s*"type"/.test(m[1])) {
+      r.fail(`JWT 토큰에 type claim 누락(access/refresh 구분 필요): ${rel}`);
+    }
+  }
+
+  // (b) actuator 전체(/actuator/**) permitAll 금지 — metrics/prometheus 정보 노출.
+  if (/["']\/actuator\/\*\*["']/.test(src) && /permitAll/.test(src)) {
+    r.fail(`actuator 전체 permitAll 금지(정보 노출): ${rel} — health/info만 공개`);
+  }
+}
+
 function normalize(p) {
   return p.replace(/\{[^}]+\}/g, "{id}").replace(/\/+$/, "") || "/";
 }

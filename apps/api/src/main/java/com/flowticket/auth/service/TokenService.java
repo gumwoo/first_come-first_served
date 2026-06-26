@@ -47,7 +47,7 @@ public class TokenService {
     public TokenResponse rotate(String refreshToken) {
         Long userId;
         try {
-            if (!jwtProvider.isValid(refreshToken)) {
+            if (!jwtProvider.isValid(refreshToken, JwtProvider.TYPE_REFRESH)) {
                 throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
             }
             userId = jwtProvider.getUserId(refreshToken);

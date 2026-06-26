@@ -36,10 +36,14 @@ public class JwtProvider {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
+    public static final String TYPE_ACCESS = "access";
+    public static final String TYPE_REFRESH = "refresh";
+
     public String createAccessToken(User user) {
         Date now = new Date();
         return Jwts.builder()
                 .subject(String.valueOf(user.getId()))
+                .claim("type", TYPE_ACCESS)
                 .claim("email", user.getEmail())
                 .claim("role", user.getRole().name())
                 .issuedAt(now)
@@ -54,6 +58,7 @@ public class JwtProvider {
         return Jwts.builder()
                 .subject(String.valueOf(user.getId()))
                 .id(UUID.randomUUID().toString())
+                .claim("type", TYPE_REFRESH)
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + refreshTtlSeconds * 1000))
                 .signWith(key)
@@ -64,10 +69,11 @@ public class JwtProvider {
         return Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
     }
 
-    public boolean isValid(String token) {
+    /** 토큰이 유효하고 기대한 type(access/refresh)인지 검증. */
+    public boolean isValid(String token, String expectedType) {
         try {
-            parse(token);
-            return true;
+            Claims claims = parse(token);
+            return expectedType.equals(claims.get("type", String.class));
         } catch (JwtException | IllegalArgumentException e) {
             return false;
         }

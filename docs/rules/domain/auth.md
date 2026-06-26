@@ -66,6 +66,11 @@
 ### Access Token
 - 서버가 별도 세션 상태를 두지 않고 **JWT 서명 + 만료로 stateless 검증**.
 - 탈취 시 피해 범위를 줄이기 위해 수명 **30분 이내**.
+- **모든 토큰은 `type` claim(access/refresh)을 가진다** ★. 필터는 access만, 회전은
+  refresh만 허용해 토큰 오용(refresh를 access로 사용 등)을 차단한다. (하네스 검사)
+
+### 관측성 노출
+- actuator는 `health`/`info`만 공개하고 metrics/prometheus 등은 인증 필요 ★(정보 노출 방지).
 
 ### Refresh Token Rotation
 - `POST /auth/refresh` 성공 시 요청에 쓰인 Refresh Token은 즉시 사용 불가가 됨.

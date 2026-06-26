@@ -86,9 +86,10 @@ public class AuthController {
             throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
         TokenResponse tokens = tokenService.rotate(refreshToken);
-        // 회전된 새 Refresh를 다시 쿠키로(기존 만료 정책 유지: 영구 가정)
+        // 회전된 Refresh의 remember 플래그를 그대로 따라 쿠키 maxAge 결정(세션/영속 보존).
+        boolean remember = jwtProvider.isRemember(tokens.refreshToken());
         return org.springframework.http.ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, refreshCookie(tokens.refreshToken(), true).toString())
+                .header(HttpHeaders.SET_COOKIE, refreshCookie(tokens.refreshToken(), remember).toString())
                 .body(ApiResponse.ok(new AccessResponse(tokens.accessToken())));
     }
 

@@ -52,17 +52,27 @@ public class JwtProvider {
                 .compact();
     }
 
-    /** Refresh는 식별용 jti를 담는다(저장소의 최신 값과 비교). */
-    public String createRefreshToken(User user) {
+    /**
+     * Refresh는 식별용 jti와 remember 플래그를 담는다.
+     * remember는 회전 시 쿠키 maxAge(영속/세션)를 보존하기 위함.
+     */
+    public String createRefreshToken(User user, boolean remember) {
         Date now = new Date();
         return Jwts.builder()
                 .subject(String.valueOf(user.getId()))
                 .id(UUID.randomUUID().toString())
                 .claim("type", TYPE_REFRESH)
+                .claim("remember", remember)
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + refreshTtlSeconds * 1000))
                 .signWith(key)
                 .compact();
+    }
+
+    /** Refresh 토큰의 remember 플래그. */
+    public boolean isRemember(String refreshToken) {
+        Boolean v = parse(refreshToken).get("remember", Boolean.class);
+        return Boolean.TRUE.equals(v);
     }
 
     public Claims parse(String token) {

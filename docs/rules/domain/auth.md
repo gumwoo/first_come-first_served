@@ -98,6 +98,9 @@
   미체크 → **세션 쿠키**(브라우저 종료 시 만료).
 - 앱 로드 시 프론트는 `POST /auth/refresh`(쿠키 자동 전송)로 Access Token을 silent 재발급한다.
 - Access Token은 여전히 응답 본문으로 내려가며 클라 메모리에만 보관한다.
+- **remember 값은 Refresh 토큰 claim으로 보존**한다. 회전(refresh) 시에도 원래
+  remember를 따라 쿠키 maxAge(세션/영속)를 유지한다 → silent refresh가 세션 쿠키를
+  영속 쿠키로 승격시키지 않는다. [T]
 
 ### 마케팅 수신 동의
 - 회원가입의 이벤트/혜택 알림(선택 약관) 동의 여부는 `users.marketing_opt_in`에 저장. [T]

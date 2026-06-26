@@ -68,7 +68,7 @@ public class AuthService {
         if (!passwordEncoder.matches(req.password(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
-        return tokenService.issue(user);
+        return tokenService.issue(user, req.remember());
     }
 
     public MeResponse me(Long userId) {

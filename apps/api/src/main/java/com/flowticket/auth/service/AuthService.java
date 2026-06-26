@@ -60,13 +60,14 @@ public class AuthService {
     /** 로그인: 소셜 계정은 로컬 로그인 불가, 비번 검증 후 토큰 발급. */
     @Transactional
     public TokenResponse login(LoginRequest req) {
+        // 이메일 없음/비번 불일치를 구분하지 않음(account enumeration 방지) → INVALID_CREDENTIALS
         User user = userRepository.findByEmail(req.email())
-                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
         if (user.isSocial() || user.getPasswordHash() == null) {
             throw new BusinessException(ErrorCode.LOCAL_LOGIN_NOT_ALLOWED);
         }
         if (!passwordEncoder.matches(req.password(), user.getPasswordHash())) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
         return tokenService.issue(user, req.remember());
     }

@@ -3,6 +3,7 @@
 codes:
   # 인증/인가
   - { code: UNAUTHORIZED,    http: 401 }
+  - { code: INVALID_CREDENTIALS, http: 401 }
   - { code: FORBIDDEN,       http: 403 }
   - { code: TOKEN_EXPIRED,   http: 401 }
   # 검증

@@ -93,13 +93,13 @@ class AuthServiceTest {
     }
 
     @Test
-    void 비밀번호_불일치면_UNAUTHORIZED() {
+    void 비밀번호_불일치면_INVALID_CREDENTIALS() {
         User user = User.builder()
                 .email("a@b.com").passwordHash("HASH").name("n").phone("01012345678")
                 .role(UserRole.ROLE_USER).provider(AuthProvider.local).build();
         when(userRepository.findByEmail("a@b.com")).thenReturn(java.util.Optional.of(user));
         when(passwordEncoder.matches(any(), any())).thenReturn(false);
         assertThatThrownBy(() -> authService.login(new LoginRequest("a@b.com", "wrong", false)))
-                .extracting("errorCode").isEqualTo(ErrorCode.UNAUTHORIZED);
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_CREDENTIALS);
     }
 }

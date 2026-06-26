@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import * as authApi from "@/features/auth/api/auth";
 import { useAuthStore } from "@/features/auth/store/authStore";
+import { broadcastAuth } from "@/features/auth/tabSync";
 
 export function useLogin() {
   const router = useRouter();
@@ -16,6 +17,7 @@ export function useLogin() {
       } catch {
         /* 프로필 조회 실패는 치명적이지 않음 */
       }
+      broadcastAuth("login"); // 다른 탭도 로그인 상태로 갱신
       router.push("/");
     },
   });
@@ -27,8 +29,9 @@ export function useLogout() {
   return useMutation({
     mutationFn: () => authApi.logout(accessToken),
     onSettled: () => {
-      // 서버 응답과 무관하게 클라 상태는 정리
+      // 서버 응답과 무관하게 클라 상태는 정리 + 다른 탭에도 즉시 전파
       clear();
+      broadcastAuth("logout");
       router.push("/");
     },
   });

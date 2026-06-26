@@ -15,7 +15,8 @@ _아직 측정 결과 없음 — 성능 슬라이스에서 k6 실행 후 자동 
 ### 설계 개선 (정성 사례)
 | 사례 | before | after | 근거 |
 |------|--------|-------|------|
-| RTR 멀티탭 | 탭 2개=로그아웃 | grace로 세션 유지 | [IMP-001](IMP-001-rtr-multitab-grace.md) |
+| RTR 멀티탭(서버) | 탭 2개=로그아웃 | grace로 세션 유지 | [IMP-001](IMP-001-rtr-multitab-grace.md) |
+| 멀티탭 로그아웃(프론트) | 다른 탭 행동 전까지 로그인된 듯 | 즉시 비로그인 전환 | [IMP-002](IMP-002-multitab-logout-sync.md) |
 
 ### 서사/요약 (사람이 작성)
 | 지표 | before | after | 변화 | 근거 |

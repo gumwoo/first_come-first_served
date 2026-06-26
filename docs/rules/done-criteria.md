@@ -11,6 +11,7 @@
 - [ ] `./gradlew harnessCheck` 통과 (stack/enum/api/layer 계약)
 - [ ] `./gradlew test` 통과 (단위 + 통합)
 - [ ] enum/이벤트/endpoint 변경 시 `contracts/*` 동기 수정
+- [ ] Flyway `CREATE TABLE` 추가 시 `docs/db/<table>.md` 작성(하네스 강제)
 - [ ] @Transactional 경계·생성자주입·공통 래퍼 준수
 
 ## 프론트엔드

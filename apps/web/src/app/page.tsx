@@ -3,14 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LayoutGrid, List } from "lucide-react";
+import { LayoutGrid, List, Search } from "lucide-react";
 import { usePopular, useEvents, useRealtimeRanking } from "@/features/event/hooks/useEvents";
 import { EventCard } from "@/features/event/components/EventCard";
 import type { EventSummary } from "@/features/event/api/event";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-// label(표시) ↔ genre 파라미터. "전체"는 메인 유지, 나머지는 /search로 라우팅(중복필터 금지).
+// label(표시) ↔ genre 값. 탭은 메인에서 그 자리 필터(이동 X).
 const CATEGORIES: [string, string][] = [
   ["전체", ""], ["대중음악", "대중음악"], ["연극", "연극"],
   ["뮤지컬", "뮤지컬"], ["클래식", "서양음악(클래식)"], ["무용", "무용"],
@@ -22,11 +23,25 @@ export default function Home() {
   const all = useEvents({ size: 24 });
   const realtime = useRealtimeRanking();
   const [view, setView] = useState<"grid" | "list">("grid");
+  const [category, setCategory] = useState(""); // "" = 전체
+  const [keyword, setKeyword] = useState("");
 
   const items = all.data?.items ?? [];
   const featured = popular.data?.[0] ?? items[0];
   const upcoming = items.filter((e) => e.status === "SCHEDULED").slice(0, 8);
   const ranking = (realtime.data ?? []).slice(0, 5);
+  // 탭은 그 자리 필터(전체 공연 섹션). 카테고리 선택 시 인기/오픈예정(전 장르)은 숨김.
+  const filtered = category === "" ? items : items.filter((e) => e.genre === category);
+  const browsing = category !== "";
+
+  // 명시적 검색(검색 버튼/Enter)일 때만 검색 결과 페이지로 이동.
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const p = new URLSearchParams();
+    if (keyword.trim()) p.set("q", keyword.trim());
+    if (category) p.set("genre", category);
+    router.push(`/search?${p.toString()}`);
+  };
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -48,13 +63,18 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 카테고리 탭(클릭 → 검색 라우팅) + 뷰 토글 */}
+      {/* 검색창 — 검색 버튼/Enter일 때만 검색 결과 페이지로 이동 */}
+      <form className="mb-4 flex gap-2" onSubmit={submitSearch}>
+        <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="공연명, 아티스트, 장소 검색" />
+        <Button type="submit" className="shrink-0 gap-1"><Search className="h-4 w-4" /> 검색</Button>
+      </form>
+
+      {/* 카테고리 탭(그 자리 필터, 이동 없음) + 뷰 토글 */}
       <div className="mb-6 flex items-center justify-between border-b border-border">
         <div className="flex gap-1 overflow-x-auto">
           {CATEGORIES.map(([label, value]) => (
-            <button key={label}
-              onClick={() => value && router.push(`/search?genre=${encodeURIComponent(value)}`)}
-              className={`whitespace-nowrap px-3 py-2 text-sm ${value === "" ? "border-b-2 border-primary font-semibold" : "text-muted-foreground hover:text-foreground"}`}>
+            <button key={label} onClick={() => setCategory(value)}
+              className={`whitespace-nowrap px-3 py-2 text-sm ${category === value ? "border-b-2 border-primary font-semibold" : "text-muted-foreground hover:text-foreground"}`}>
               {label}
             </button>
           ))}
@@ -67,24 +87,26 @@ export default function Home() {
 
       <div className="grid gap-8 lg:grid-cols-[1fr_260px]">
         <div className="space-y-10">
-          {/* 인기 공연 TOP */}
-          <Section title="인기 공연 TOP" loading={popular.isLoading} empty={popular.data?.length === 0} emptyMsg="인기 공연이 없습니다.">
-            <Grid items={popular.data ?? []} />
-          </Section>
+          {/* 인기/오픈예정은 전 장르 큐레이션 → 카테고리 둘러보는 중엔 숨김 */}
+          {!browsing && (
+            <>
+              <Section title="인기 공연 TOP" loading={popular.isLoading} empty={popular.data?.length === 0} emptyMsg="인기 공연이 없습니다.">
+                <Grid items={popular.data ?? []} />
+              </Section>
+              <Section title="오픈 예정 공연" loading={all.isLoading} empty={upcoming.length === 0} emptyMsg="오픈 예정 공연이 없습니다.">
+                <Grid items={upcoming} />
+              </Section>
+            </>
+          )}
 
-          {/* 오픈 예정 */}
-          <Section title="오픈 예정 공연" loading={all.isLoading} empty={upcoming.length === 0} emptyMsg="오픈 예정 공연이 없습니다.">
-            <Grid items={upcoming} />
-          </Section>
-
-          {/* 전체(뷰 모드 적용) */}
+          {/* 전체/카테고리 목록(뷰 모드 적용) */}
           <Section
-            title="전체 공연"
+            title={browsing ? `${CATEGORIES.find(([, v]) => v === category)?.[0] ?? category} 공연` : "전체 공연"}
             loading={all.isLoading}
-            empty={items.length === 0}
-            emptyMsg="등록된 공연이 없습니다. (KOPIS 동기화 필요)"
+            empty={filtered.length === 0}
+            emptyMsg={items.length === 0 ? "등록된 공연이 없습니다. (KOPIS 동기화 필요)" : "해당 카테고리 공연이 없습니다."}
           >
-            {view === "grid" ? <Grid items={items} /> : <ListView items={items} />}
+            {view === "grid" ? <Grid items={filtered} /> : <ListView items={filtered} />}
           </Section>
         </div>
 

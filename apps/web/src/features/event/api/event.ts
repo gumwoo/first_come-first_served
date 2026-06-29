@@ -35,5 +35,15 @@ export const getPopular = () => api<EventSummary[]>("/events/popular");
 
 export const getEvent = (id: number) => api<EventDetail>(`/events/${id}`);
 
-export const searchEvents = (q: string, page = 0, size = 20) =>
-  api<Page<EventSummary>>(`/search?q=${encodeURIComponent(q)}&page=${page}&size=${size}`);
+export const searchEvents = (
+  q: string,
+  opts: { genre?: string; status?: string; page?: number; size?: number } = {}
+) => {
+  const p = new URLSearchParams();
+  if (q) p.set("q", q);
+  if (opts.genre) p.set("genre", opts.genre);
+  if (opts.status) p.set("status", opts.status);
+  p.set("page", String(opts.page ?? 0));
+  p.set("size", String(opts.size ?? 20));
+  return api<Page<EventSummary>>(`/search?${p.toString()}`);
+};

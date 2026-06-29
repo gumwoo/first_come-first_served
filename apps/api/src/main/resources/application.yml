@@ -75,6 +75,9 @@ app:
   oauth2:
     success-redirect: ${OAUTH_SUCCESS_REDIRECT:http://localhost:3000}
     failure-redirect: ${OAUTH_FAILURE_REDIRECT:http://localhost:3000/login?error=oauth}
+  cookie:
+    # 데모는 http라 false. 운영(HTTPS)에서는 COOKIE_SECURE=true로 주입.
+    secure: ${COOKIE_SECURE:false}
 
 # 휴대폰 인증: 데모는 Mock(고정 코드). 운영은 mock=false + 실제 SMS 연동.
 auth:

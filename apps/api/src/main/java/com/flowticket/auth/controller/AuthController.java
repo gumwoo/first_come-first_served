@@ -107,7 +107,10 @@ public class AuthController {
         }
         if (authorization != null && authorization.startsWith("Bearer ")) {
             String access = authorization.substring(7);
-            blacklistService.blacklist(access, jwtProvider.getRemainingSeconds(access));
+            // 깨진/위조 토큰이면 getRemainingSeconds가 예외→500이 되므로 유효할 때만 블랙리스트
+            if (jwtProvider.isValid(access, JwtProvider.TYPE_ACCESS)) {
+                blacklistService.blacklist(access, jwtProvider.getRemainingSeconds(access));
+            }
         }
         return org.springframework.http.ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookieFactory.expired().toString())

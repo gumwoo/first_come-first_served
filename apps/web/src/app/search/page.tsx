@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Heart } from "lucide-react";
+import { Heart, LayoutGrid, List } from "lucide-react";
 import { useSearch } from "@/features/event/hooks/useEvents";
+import { EventCard } from "@/features/event/components/EventCard";
 import type { EventSummary } from "@/features/event/api/event";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -34,11 +35,22 @@ function SearchInner() {
   const [genre, setGenre] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(0);
+  const [sort, setSort] = useState<"asc" | "desc">("asc");
+  const [view, setView] = useState<"list" | "grid">("list");
   const result = useSearch(query, { genre, status, page });
-  const items = result.data?.items ?? [];
   const total = result.data?.total ?? 0;
   const size = result.data?.size ?? 20;
   const totalPages = Math.max(1, Math.ceil(total / size));
+  // 현재 페이지 결과를 공연일 기준 정렬(클라이언트). null 일자는 뒤로.
+  const items = useMemo(() => {
+    const list = [...(result.data?.items ?? [])];
+    return list.sort((a, b) => {
+      const x = a.startDate ?? "", y = b.startDate ?? "";
+      if (!x) return 1;
+      if (!y) return -1;
+      return sort === "asc" ? x.localeCompare(y) : y.localeCompare(x);
+    });
+  }, [result.data, sort]);
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -59,6 +71,21 @@ function SearchInner() {
           className="h-9 rounded-md border border-input bg-background px-2 text-sm">
           {STATUSES.map(([label, value]) => <option key={label} value={value}>상태: {label}</option>)}
         </select>
+        <select aria-label="정렬" value={sort} onChange={(e) => setSort(e.target.value as "asc" | "desc")}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm">
+          <option value="asc">정렬: 공연일 빠른순</option>
+          <option value="desc">정렬: 공연일 늦은순</option>
+        </select>
+        <div className="ml-auto flex gap-1">
+          <button aria-label="리스트 보기" aria-pressed={view === "list"} onClick={() => setView("list")}
+            className={`rounded p-1.5 ${view === "list" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            <List className="h-4 w-4" />
+          </button>
+          <button aria-label="그리드 보기" aria-pressed={view === "grid"} onClick={() => setView("grid")}
+            className={`rounded p-1.5 ${view === "grid" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            <LayoutGrid className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-6 md:grid-cols-[1fr_240px]">
@@ -71,7 +98,13 @@ function SearchInner() {
           {result.data && items.length === 0 && (
             <p className="text-sm text-muted-foreground">조건에 맞는 검색 결과가 없습니다.</p>
           )}
-          {items.map((e) => <SearchRow key={e.id} event={e} />)}
+          {view === "list"
+            ? items.map((e) => <SearchRow key={e.id} event={e} />)
+            : items.length > 0 && (
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  {items.map((e) => <EventCard key={e.id} event={e} />)}
+                </div>
+              )}
 
           {/* 페이지네이션 */}
           {total > size && (

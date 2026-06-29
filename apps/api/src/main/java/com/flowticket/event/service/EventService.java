@@ -38,18 +38,19 @@ public class EventService {
         this.rankingService = rankingService;
     }
 
-    /** 목록(장르/상태/기간 필터 + 페이징). status 문자열은 enum으로 변환. */
-    public PageResponse<EventSummaryResponse> list(String genre, String status,
+    /** 목록(장르/지역/상태/기간 필터 + 페이징). status 문자열은 enum으로 변환. */
+    public PageResponse<EventSummaryResponse> list(String genre, String region, String status,
                                                    LocalDate from, LocalDate to, int page, int size) {
-        var condition = new EventSearchCondition(null, genre, parseStatus(status), from, to);
+        var condition = new EventSearchCondition(null, genre, region, parseStatus(status), from, to);
         return search(condition, PageRequest.of(page, size));
     }
 
-    /** 키워드 + 장르/상태 필터 검색 + 페이징. 검색 실행은 인기검색어로 기록(best-effort). */
+    /** 키워드 + 장르/지역/상태 필터 검색 + 페이징. 검색 실행은 인기검색어로 기록(best-effort). */
     public PageResponse<EventSummaryResponse> searchByKeyword(String keyword, String genre,
-                                                              String status, int page, int size) {
+                                                              String region, String status,
+                                                              int page, int size) {
         rankingService.recordSearch(keyword);
-        var condition = new EventSearchCondition(keyword, genre, parseStatus(status), null, null);
+        var condition = new EventSearchCondition(keyword, genre, region, parseStatus(status), null, null);
         return search(condition, PageRequest.of(page, size));
     }
 
@@ -81,7 +82,7 @@ public class EventService {
 
     /** 랭킹 데이터가 없을 때(초기/유입 전) 보여줄 기본: 판매중 최신순. */
     private List<EventSummaryResponse> fallbackLatest() {
-        var onSale = new EventSearchCondition(null, null, EventStatus.ON_SALE, null, null);
+        var onSale = new EventSearchCondition(null, null, null, EventStatus.ON_SALE, null, null);
         return eventRepository.search(onSale, Pageable.ofSize(POPULAR_SIZE)).stream()
                 .map(EventSummaryResponse::from)
                 .toList();

@@ -16,6 +16,9 @@ public class KopisEvent {
     @JacksonXmlProperty(localName = "fcltynm")
     public String venue;
 
+    @JacksonXmlProperty(localName = "area")
+    public String region; // 시도 단위 지역(예: 서울특별시)
+
     @JacksonXmlProperty(localName = "genrenm")
     public String genre;
 

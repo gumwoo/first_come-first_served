@@ -57,9 +57,9 @@ class EventIntegrationTest {
     void seed() {
         eventRepository.deleteAll();
         upserter.upsertAll(List.of(
-                kopis("PF001", "2026 여름 콘서트", "대중음악", "공연중"),     // ON_SALE
-                kopis("PF002", "겨울 재즈의 밤", "대중음악", "공연예정"),     // SCHEDULED
-                kopis("PF003", "셰익스피어 연극", "연극", "공연중")));        // ON_SALE
+                kopis("PF001", "2026 여름 콘서트", "대중음악", "서울특별시", "공연중"),  // ON_SALE
+                kopis("PF002", "겨울 재즈의 밤", "대중음악", "부산광역시", "공연예정"),  // SCHEDULED
+                kopis("PF003", "셰익스피어 연극", "연극", "서울특별시", "공연중")));     // ON_SALE
     }
 
     @Test
@@ -68,11 +68,21 @@ class EventIntegrationTest {
         var saved = eventRepository.findByKopisId("PF001").orElseThrow();
         assertThat(saved.getTitle()).isEqualTo("2026 여름 콘서트");
         assertThat(saved.getGenre()).isEqualTo("대중음악");
+        assertThat(saved.getRegion()).isEqualTo("서울특별시");
+    }
+
+    @Test
+    void 검색은_지역으로_필터된다_시도전체명에_짧은라벨_contains() {
+        // "서울" → "서울특별시" contains 매칭
+        PageResponse<EventSummaryResponse> page =
+                eventService.searchByKeyword(null, null, "서울", null, 0, 20);
+        assertThat(page.items()).extracting(EventSummaryResponse::title)
+                .containsExactlyInAnyOrder("2026 여름 콘서트", "셰익스피어 연극");
     }
 
     @Test
     void upsert는_같은_kopisId면_갱신만_한다() {
-        upserter.upsertAll(List.of(kopis("PF001", "수정된 콘서트", "대중음악", "공연완료")));
+        upserter.upsertAll(List.of(kopis("PF001", "수정된 콘서트", "대중음악", "서울특별시", "공연완료")));
         assertThat(eventRepository.count()).isEqualTo(3); // 신규 X
         var updated = eventRepository.findByKopisId("PF001").orElseThrow();
         assertThat(updated.getTitle()).isEqualTo("수정된 콘서트");
@@ -81,7 +91,7 @@ class EventIntegrationTest {
     @Test
     void 검색은_장르로_필터된다() {
         PageResponse<EventSummaryResponse> page =
-                eventService.searchByKeyword(null, "연극", null, 0, 20);
+                eventService.searchByKeyword(null, "연극", null, null, 0, 20);
         assertThat(page.items()).extracting(EventSummaryResponse::title)
                 .containsExactly("셰익스피어 연극");
     }
@@ -89,7 +99,7 @@ class EventIntegrationTest {
     @Test
     void 검색은_상태로_필터된다() {
         PageResponse<EventSummaryResponse> page =
-                eventService.searchByKeyword(null, null, "ON_SALE", 0, 20);
+                eventService.searchByKeyword(null, null, null, "ON_SALE", 0, 20);
         assertThat(page.items()).hasSize(2)
                 .extracting(EventSummaryResponse::status).containsOnly("ON_SALE");
     }
@@ -97,14 +107,14 @@ class EventIntegrationTest {
     @Test
     void 검색은_키워드와_장르를_동시에_적용한다() {
         PageResponse<EventSummaryResponse> page =
-                eventService.searchByKeyword("재즈", "대중음악", null, 0, 20);
+                eventService.searchByKeyword("재즈", "대중음악", null, null, 0, 20);
         assertThat(page.items()).extracting(EventSummaryResponse::title)
                 .containsExactly("겨울 재즈의 밤");
     }
 
     @Test
     void 잘못된_상태값은_검증오류() {
-        assertThatThrownBy(() -> eventService.searchByKeyword(null, null, "NOPE", 0, 20))
+        assertThatThrownBy(() -> eventService.searchByKeyword(null, null, null, "NOPE", 0, 20))
                 .isInstanceOf(BusinessException.class);
     }
 
@@ -114,11 +124,12 @@ class EventIntegrationTest {
                 .isInstanceOf(BusinessException.class);
     }
 
-    private static KopisEvent kopis(String id, String title, String genre, String state) {
+    private static KopisEvent kopis(String id, String title, String genre, String region, String state) {
         KopisEvent k = new KopisEvent();
         k.kopisId = id;
         k.title = title;
         k.venue = "테스트홀";
+        k.region = region;
         k.genre = genre;
         k.posterUrl = "http://img/" + id + ".jpg";
         k.startDate = "2026.07.01";

@@ -1,7 +1,7 @@
 # Table · events
 
 - 슬라이스: `S02`
-- 마이그레이션(단일 진실원): `V4__events.sql`
+- 마이그레이션(단일 진실원): `V4__events.sql`, `V5__events_region.sql`(지역)
 - 도메인 규칙: [[domain-rules]] (S02 카탈로그), KOPIS 동기화
 
 ## 목적
@@ -15,6 +15,7 @@
 | kopis_id | VARCHAR(50) | Y | | UNIQUE | KOPIS 공연ID(동기화 upsert 키). 시드/수동은 null |
 | title | VARCHAR(200) | N | | | 공연명 |
 | venue | VARCHAR(200) | Y | | | 공연장 |
+| region | VARCHAR(50) | Y | | | KOPIS area(시도, 예 서울특별시). 지역 필터 |
 | genre | VARCHAR(50) | Y | | | 장르 |
 | poster_url | VARCHAR(500) | Y | | | 포스터 이미지 URL |
 | start_date | DATE | Y | | | 공연 시작일 |
@@ -33,6 +34,7 @@
 | uq_events_kopis_id | UNIQUE | kopis_id | KOPIS 동기화 멱등(upsert) |
 | ix_events_status_start | INDEX | status, start_date | 목록/필터 조회 가속 |
 | ix_events_genre | INDEX | genre | 장르 필터 |
+| ix_events_region | INDEX | region | 지역 필터 (V5) |
 
 ## 관계
 - 없음(S02). 이후 seats/orders 등이 event_id로 참조 예정.

@@ -4,6 +4,7 @@ export type EventSummary = {
   id: number;
   title: string;
   venue: string | null;
+  region: string | null;
   genre: string | null;
   posterUrl: string | null;
   startDate: string | null;
@@ -41,11 +42,12 @@ export const getEvent = (id: number) => api<EventDetail>(`/events/${id}`);
 
 export const searchEvents = (
   q: string,
-  opts: { genre?: string; status?: string; page?: number; size?: number } = {}
+  opts: { genre?: string; region?: string; status?: string; page?: number; size?: number } = {}
 ) => {
   const p = new URLSearchParams();
   if (q) p.set("q", q);
   if (opts.genre) p.set("genre", opts.genre);
+  if (opts.region) p.set("region", opts.region);
   if (opts.status) p.set("status", opts.status);
   p.set("page", String(opts.page ?? 0));
   p.set("size", String(opts.size ?? 20));

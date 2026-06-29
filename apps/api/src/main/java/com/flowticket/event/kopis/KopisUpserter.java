@@ -35,12 +35,12 @@ public class KopisUpserter {
             LocalDate end = parseDate(k.endDate);
 
             eventRepository.findByKopisId(k.kopisId).ifPresentOrElse(
-                    existing -> existing.updateFromSync(k.title, k.venue, k.genre, k.posterUrl,
-                            start, end, null, null, status),
+                    existing -> existing.updateFromSync(k.title, k.venue, k.region, k.genre,
+                            k.posterUrl, start, end, null, null, status),
                     () -> eventRepository.save(Event.builder()
-                            .kopisId(k.kopisId).title(k.title).venue(k.venue).genre(k.genre)
-                            .posterUrl(k.posterUrl).startDate(start).endDate(end).status(status)
-                            .build()));
+                            .kopisId(k.kopisId).title(k.title).venue(k.venue).region(k.region)
+                            .genre(k.genre).posterUrl(k.posterUrl).startDate(start).endDate(end)
+                            .status(status).build()));
             count++;
         }
         log.info("[kopis] upsert 완료 {}건", count);

@@ -11,8 +11,10 @@
 - 상세는 KOPIS 상세(관람시간/연령/가격/출연/줄거리)를 진입 시 lazy 호출. 실패/미연동 시 DB 기본만 반환.
 
 ## 검색/필터
-- 목록 `GET /events`: page/size + genre(정확일치)/status/from~to 필터.
-- 검색 `GET /search`: 키워드(title 부분일치) + genre/status 필터, 페이징.
+- 목록 `GET /events`: page/size + genre(정확일치)/region/status/from~to 필터.
+- 검색 `GET /search`: 키워드(title 부분일치) + genre/region/status 필터, 페이징.
+- 지역(region): KOPIS `area`(시도 전체명)를 저장하고, 짧은 라벨("서울")이
+  전체명("서울특별시")에 매칭되도록 **contains**로 필터한다.
 
 ## 조회수 / 랭킹 (Redis)
 "인기"와 "실시간"은 **같은 조회 이벤트를 다른 방식으로 집계**한다(둘이 같은 결과면 안 됨). [T]
@@ -26,8 +28,9 @@
 - **인기 검색어**: 검색 실행 시 `search:keywords` ZSET `ZINCRBY`. 상위 N 노출. [T]
   - 연관 검색어는 범위 외(목업 유지).
 
-## 미반영(스키마/선행 슬라이스 부재 — 후속)
-- 지역/가격 필터: events에 region/price 세분 필드 없음(S04 좌석·가격에서 확장).
+## 미반영(선행 슬라이스 부재 — 후속)
+- 가격 필터: KOPIS는 자유텍스트(`pcseguidance`)뿐이고 상세는 lazy 호출이라
+  목록 시점 가격이 없음. 등급별 가격·재고는 S04 좌석에서 확장(구조화 가격 본령).
 - 관심(찜): wishlist 도메인 필요(별도). 현재 상세의 관심 버튼은 비활성(UI only).
 - 예매수 기반 인기: 주문(S05) 이후 가능. 현재 랭킹은 조회수 기준.
 

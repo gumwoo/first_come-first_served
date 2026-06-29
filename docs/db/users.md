@@ -1,7 +1,7 @@
 # Table · users
 
 - 슬라이스: `S01`
-- 마이그레이션(단일 진실원): `V1__users.sql`, `V2__users_marketing_opt_in.sql`
+- 마이그레이션(단일 진실원): `V1__users.sql`, `V2__users_marketing_opt_in.sql`, `V3__users_phone_nullable.sql`
 - 도메인 규칙: [[domain/auth]]
 
 ## 목적
@@ -14,7 +14,7 @@
 | email | VARCHAR(255) | N | | UNIQUE | 로그인 아이디, 전역 유일 |
 | password_hash | VARCHAR(60) | Y | | | BCrypt 해시. **소셜 계정은 null** |
 | name | VARCHAR(50) | N | | | 이름 |
-| phone | VARCHAR(20) | N | | UNIQUE | 휴대폰. 1폰1계정 |
+| phone | VARCHAR(20) | Y | | UNIQUE | 휴대폰. 로컬=필수(1폰1계정), 소셜=null 가능 |
 | role | VARCHAR(20) | N | 'ROLE_USER' | | 가입은 항상 ROLE_USER |
 | provider | VARCHAR(20) | N | 'local' | | local/kakao/naver |
 | created_at | TIMESTAMP | N | now() | | 가입 시각 |

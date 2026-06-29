@@ -201,6 +201,7 @@ for (const file of ymlFiles) {
     if (!SECRET_KEYS.test(key)) continue;
     if (val === "" || val.includes("${")) continue; // 빈 값/플레이스홀더는 정상
     if (/^\d+(\.\d+)?$/.test(val) || /^(true|false)$/i.test(val)) continue; // 숫자/불린(ttl 등)은 시크릿 아님
+    if (/^https?:\/\//.test(val)) continue; // URL(token-uri 등 공개 엔드포인트)은 시크릿 아님
     r.fail(`시크릿 하드코딩(설정파일): ${rel}:${i + 1} '${key}' → 환경변수(\${...}) 사용`);
   }
 }

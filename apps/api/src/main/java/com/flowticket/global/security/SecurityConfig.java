@@ -1,5 +1,9 @@
 package com.flowticket.global.security;
 
+import com.flowticket.auth.oauth.CookieAuthorizationRequestRepository;
+import com.flowticket.auth.oauth.CustomOAuth2UserService;
+import com.flowticket.auth.oauth.OAuth2FailureHandler;
+import com.flowticket.auth.oauth.OAuth2SuccessHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -15,9 +19,21 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final CustomOAuth2UserService oAuth2UserService;
+    private final OAuth2SuccessHandler oAuth2SuccessHandler;
+    private final OAuth2FailureHandler oAuth2FailureHandler;
+    private final CookieAuthorizationRequestRepository authorizationRequestRepository;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
+                          CustomOAuth2UserService oAuth2UserService,
+                          OAuth2SuccessHandler oAuth2SuccessHandler,
+                          OAuth2FailureHandler oAuth2FailureHandler,
+                          CookieAuthorizationRequestRepository authorizationRequestRepository) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.oAuth2UserService = oAuth2UserService;
+        this.oAuth2SuccessHandler = oAuth2SuccessHandler;
+        this.oAuth2FailureHandler = oAuth2FailureHandler;
+        this.authorizationRequestRepository = authorizationRequestRepository;
     }
 
     @Bean
@@ -49,9 +65,16 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // actuator는 health/info만 공개, metrics·prometheus 등은 인증 필요(정보 노출 방지)
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                        .requestMatchers("/auth/**", "/oauth2/**", "/sse/**",
+                        .requestMatchers("/auth/**", "/oauth2/**", "/login/oauth2/**", "/sse/**",
                                 "/events/**", "/search").permitAll()
                         .anyRequest().authenticated())
+                // 소셜 로그인(stateless): 인가요청은 쿠키 저장, 성공 시 우리 JWT 발급
+                .oauth2Login(oauth -> oauth
+                        .authorizationEndpoint(a -> a
+                                .authorizationRequestRepository(authorizationRequestRepository))
+                        .userInfoEndpoint(u -> u.userService(oAuth2UserService))
+                        .successHandler(oAuth2SuccessHandler)
+                        .failureHandler(oAuth2FailureHandler))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

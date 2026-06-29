@@ -25,11 +25,11 @@ public class KopisSyncService {
         this.kopisUpserter = kopisUpserter;
     }
 
-    /** 오늘 ~ +3개월 공연 동기화. 수동 트리거/스케줄 공용. */
+    /** 오늘 ~ +30일 공연 동기화(KOPIS는 최대 31일 조회 제한). 수동 트리거/스케줄 공용. */
     public int sync() {
         LocalDate today = LocalDate.now();
         String st = today.format(YMD);
-        String ed = today.plusMonths(3).format(YMD);
+        String ed = today.plusDays(30).format(YMD); // KOPIS 31일 제한
         List<KopisEvent> items = kopisClient.fetchList(st, ed, 1, ROWS); // 외부 호출
         return kopisUpserter.upsertAll(items);                            // 트랜잭션 DB
     }

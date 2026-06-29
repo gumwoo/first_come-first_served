@@ -15,6 +15,10 @@ export type EventDetail = EventSummary & {
   endDate: string | null;
   runningTime: string | null;
   ageLimit: string | null;
+  priceText: string | null;
+  cast: string | null;
+  synopsis: string | null;
+  schedule: string | null;
 };
 
 export type Page<T> = { items: T[]; page: number; size: number; total: number };

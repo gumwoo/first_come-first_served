@@ -42,9 +42,13 @@ export default function EventDetailPage() {
             <Row label="관람연령" value={event.ageLimit} />
           </dl>
           <div className="mt-4 rounded-md bg-muted/40 p-3">
-            <span className="text-xs text-muted-foreground">최저가</span>
+            <span className="text-xs text-muted-foreground">가격</span>
             <p className="text-lg font-bold text-primary">
-              {event.basePrice ? `${event.basePrice.toLocaleString()}원` : "가격 미정"}
+              {event.priceText
+                ? event.priceText
+                : event.basePrice
+                ? `${event.basePrice.toLocaleString()}원`
+                : "가격 미정"}
             </p>
           </div>
           <div className="mt-4 flex gap-2">
@@ -82,9 +86,23 @@ export default function EventDetailPage() {
             </button>
           ))}
         </div>
-        <div className="py-6 text-sm leading-relaxed text-muted-foreground">
-          {tab === "공연정보" && <p>{event.title} 공연 정보입니다. 장소: {event.venue ?? "-"}, 장르: {event.genre ?? "-"}.</p>}
-          {tab === "판매정보" && <p>선착순 예매로 진행되며, 1인당 구매 수량 제한이 적용될 수 있습니다.</p>}
+        <div className="space-y-3 py-6 text-sm leading-relaxed text-muted-foreground">
+          {tab === "공연정보" && (
+            <>
+              {event.synopsis && <p className="whitespace-pre-wrap">{event.synopsis}</p>}
+              {event.cast && <p><span className="font-medium text-foreground">출연: </span>{event.cast}</p>}
+              {event.schedule && <p><span className="font-medium text-foreground">공연시간: </span>{event.schedule}</p>}
+              {!event.synopsis && !event.cast && (
+                <p>{event.title} · 장소 {event.venue ?? "-"} · 장르 {event.genre ?? "-"}</p>
+              )}
+            </>
+          )}
+          {tab === "판매정보" && (
+            <>
+              <p><span className="font-medium text-foreground">가격: </span>{event.priceText ?? "미정"}</p>
+              <p>선착순 예매로 진행되며, 1인당 구매 수량 제한이 적용될 수 있습니다.</p>
+            </>
+          )}
           {tab === "유의사항" && <p>예매 후 취소/환불은 환불 규정에 따릅니다. 공연 당일 신분 확인이 필요할 수 있습니다.</p>}
         </div>
       </div>

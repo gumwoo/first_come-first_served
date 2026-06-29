@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -49,4 +50,28 @@ public class KopisClient {
             return Collections.emptyList();
         }
     }
+
+    /** 공연상세 조회(관람시간/연령/가격 등). 실패 시 empty. */
+    public Optional<KopisEventDetail> fetchDetail(String kopisId) {
+        try {
+            String xml = restClient.get()
+                    .uri(uriBuilder -> uriBuilder.path("/pblprfr/{id}")
+                            .queryParam("service", serviceKey)
+                            .build(kopisId))
+                    .retrieve()
+                    .body(String.class);
+            if (xml == null || xml.isBlank()) {
+                return Optional.empty();
+            }
+            KopisDetailResponse parsed = xmlMapper.readValue(xml, KopisDetailResponse.class);
+            if (parsed.items == null || parsed.items.isEmpty()) {
+                return Optional.empty();
+            }
+            return Optional.of(parsed.items.get(0));
+        } catch (Exception e) {
+            log.warn("[kopis] 상세 조회 실패 id={}: {}", kopisId, e.getMessage());
+            return Optional.empty();
+        }
+    }
 }
+

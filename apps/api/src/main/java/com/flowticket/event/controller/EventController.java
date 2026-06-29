@@ -1,0 +1,54 @@
+package com.flowticket.event.controller;
+
+import com.flowticket.event.dto.EventDetailResponse;
+import com.flowticket.event.dto.EventSummaryResponse;
+import com.flowticket.event.service.EventService;
+import com.flowticket.global.common.ApiResponse;
+import com.flowticket.global.common.PageResponse;
+import java.time.LocalDate;
+import java.util.List;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+/** 공연 조회(목록/인기/상세/검색). 비로그인 열람 가능. 입출력/매핑만(변환·조회는 service). */
+@RestController
+public class EventController {
+
+    private final EventService eventService;
+
+    public EventController(EventService eventService) {
+        this.eventService = eventService;
+    }
+
+    @GetMapping("/events")
+    public ApiResponse<PageResponse<EventSummaryResponse>> list(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String genre,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ApiResponse.ok(eventService.list(genre, status, from, to, page, size));
+    }
+
+    @GetMapping("/events/popular")
+    public ApiResponse<List<EventSummaryResponse>> popular() {
+        return ApiResponse.ok(eventService.popular());
+    }
+
+    @GetMapping("/events/{id}")
+    public ApiResponse<EventDetailResponse> detail(@PathVariable Long id) {
+        return ApiResponse.ok(eventService.detail(id));
+    }
+
+    @GetMapping("/search")
+    public ApiResponse<PageResponse<EventSummaryResponse>> search(
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.ok(eventService.searchByKeyword(q, page, size));
+    }
+}

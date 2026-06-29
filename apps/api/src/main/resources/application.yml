@@ -24,8 +24,10 @@ spring:
         registration:
           naver:
             client-name: naver
-            client-id: ${NAVER_CLIENT_ID:}
-            client-secret: ${NAVER_CLIENT_SECRET:}
+            # 키 미설정 환경(CI/키 없는 dev)에서도 부팅되도록 비어있지 않은 기본값.
+            # 실제 값은 환경변수로 주입. 미설정 시 네이버 로그인만 런타임에 실패.
+            client-id: ${NAVER_CLIENT_ID:not-configured}
+            client-secret: ${NAVER_CLIENT_SECRET:not-configured}
             redirect-uri: "{baseUrl}/login/oauth2/code/naver"
             authorization-grant-type: authorization_code
             scope: name, email

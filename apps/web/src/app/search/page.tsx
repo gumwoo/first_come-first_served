@@ -19,6 +19,11 @@ const GENRES: [string, string][] = [
 const STATUSES: [string, string][] = [
   ["전체", ""], ["예매중", "ON_SALE"], ["오픈예정", "SCHEDULED"], ["매진", "SOLD_OUT"],
 ];
+// 지역은 KOPIS area(시도 전체명)에 contains 매칭 → 짧은 라벨로 충분.
+const REGIONS: [string, string][] = [
+  ["전체", ""], ["서울", "서울"], ["경기", "경기"], ["인천", "인천"],
+  ["부산", "부산"], ["대구", "대구"], ["대전", "대전"], ["광주", "광주"],
+];
 
 export default function SearchPage() {
   return (
@@ -34,12 +39,13 @@ function SearchInner() {
   const [keyword, setKeyword] = useState(initial);
   const [query, setQuery] = useState(initial);
   const [genre, setGenre] = useState(params.get("genre") ?? ""); // 메인 카테고리 탭에서 유입
+  const [region, setRegion] = useState("");
   const [status, setStatus] = useState("");
   const popularKeywords = usePopularKeywords();
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<"asc" | "desc">("asc");
   const [view, setView] = useState<"list" | "grid">("list");
-  const result = useSearch(query, { genre, status, page });
+  const result = useSearch(query, { genre, region, status, page });
   const total = result.data?.total ?? 0;
   const size = result.data?.size ?? 20;
   const totalPages = Math.max(1, Math.ceil(total / size));
@@ -69,6 +75,10 @@ function SearchInner() {
           className="h-9 rounded-md border border-input bg-background px-2 text-sm">
           {GENRES.map(([label, value]) => <option key={label} value={value}>장르: {label}</option>)}
         </select>
+        <select aria-label="지역" value={region} onChange={(e) => { setPage(0); setRegion(e.target.value); }}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm">
+          {REGIONS.map(([label, value]) => <option key={label} value={value}>지역: {label}</option>)}
+        </select>
         <select aria-label="상태" value={status} onChange={(e) => { setPage(0); setStatus(e.target.value); }}
           className="h-9 rounded-md border border-input bg-background px-2 text-sm">
           {STATUSES.map(([label, value]) => <option key={label} value={value}>상태: {label}</option>)}
@@ -93,7 +103,7 @@ function SearchInner() {
       <div className="mt-6 grid gap-6 md:grid-cols-[1fr_240px]">
         {/* 결과 리스트(리스트형) */}
         <div className="space-y-3">
-          {query.length === 0 && !genre && !status && (
+          {query.length === 0 && !genre && !region && !status && (
             <p className="text-sm text-muted-foreground">검색어를 입력하거나 필터를 선택하세요.</p>
           )}
           {result.isLoading && <p className="text-sm text-muted-foreground">검색 중…</p>}
@@ -169,7 +179,7 @@ function SearchRow({ event }: { event: EventSummary }) {
         </Link>
         <div className="min-w-0 flex-1">
           <Link href={`/events/${event.id}`} className="line-clamp-1 font-medium hover:text-primary">{event.title}</Link>
-          <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">{event.venue ?? "-"}</p>
+          <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">{[event.region, event.venue].filter(Boolean).join(" · ") || "-"}</p>
           <p className="text-xs text-muted-foreground">{event.startDate ?? ""}</p>
           <p className="mt-1 text-sm font-semibold">{event.basePrice ? `${event.basePrice.toLocaleString()}원~` : "가격 미정"}</p>
         </div>

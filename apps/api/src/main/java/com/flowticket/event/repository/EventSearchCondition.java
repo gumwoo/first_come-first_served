@@ -7,6 +7,7 @@ import java.time.LocalDate;
 public record EventSearchCondition(
         String keyword,      // 제목 contains
         String genre,
+        String region,       // 지역 contains (KOPIS area 시도명, 예 "서울"→"서울특별시")
         EventStatus status,
         LocalDate from,      // start_date >= from
         LocalDate to         // start_date <= to

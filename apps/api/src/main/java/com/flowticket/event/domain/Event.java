@@ -35,6 +35,10 @@ public class Event {
     @Column(length = 200)
     private String venue;
 
+    /** KOPIS area(시도). 지역 필터용. */
+    @Column(length = 50)
+    private String region;
+
     @Column(length = 50)
     private String genre;
 
@@ -68,12 +72,13 @@ public class Event {
     private LocalDateTime updatedAt;
 
     @Builder
-    private Event(String kopisId, String title, String venue, String genre, String posterUrl,
-                  LocalDate startDate, LocalDate endDate, String runningTime, String ageLimit,
-                  EventStatus status, Integer basePrice) {
+    private Event(String kopisId, String title, String venue, String region, String genre,
+                  String posterUrl, LocalDate startDate, LocalDate endDate, String runningTime,
+                  String ageLimit, EventStatus status, Integer basePrice) {
         this.kopisId = kopisId;
         this.title = title;
         this.venue = venue;
+        this.region = region;
         this.genre = genre;
         this.posterUrl = posterUrl;
         this.startDate = startDate;
@@ -87,11 +92,12 @@ public class Event {
     }
 
     /** KOPIS 동기화 시 변경 가능한 메타 갱신(upsert). */
-    public void updateFromSync(String title, String venue, String genre, String posterUrl,
-                               LocalDate startDate, LocalDate endDate, String runningTime,
-                               String ageLimit, EventStatus status) {
+    public void updateFromSync(String title, String venue, String region, String genre,
+                               String posterUrl, LocalDate startDate, LocalDate endDate,
+                               String runningTime, String ageLimit, EventStatus status) {
         this.title = title;
         this.venue = venue;
+        this.region = region;
         this.genre = genre;
         this.posterUrl = posterUrl;
         this.startDate = startDate;

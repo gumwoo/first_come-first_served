@@ -9,6 +9,7 @@ public record EventDetailResponse(
         Long id,
         String title,
         String venue,
+        String region,
         String genre,
         String posterUrl,
         LocalDate startDate,
@@ -26,7 +27,7 @@ public record EventDetailResponse(
     /** DB 기본만(상세 호출 실패/없음). */
     public static EventDetailResponse from(Event e) {
         return new EventDetailResponse(
-                e.getId(), e.getTitle(), e.getVenue(), e.getGenre(), e.getPosterUrl(),
+                e.getId(), e.getTitle(), e.getVenue(), e.getRegion(), e.getGenre(), e.getPosterUrl(),
                 e.getStartDate(), e.getEndDate(), e.getStatus().name(), e.getBasePrice(),
                 e.getRunningTime(), e.getAgeLimit(), null, null, null, null);
     }
@@ -34,7 +35,7 @@ public record EventDetailResponse(
     /** DB + KOPIS 상세 병합. */
     public static EventDetailResponse from(Event e, KopisEventDetail d) {
         return new EventDetailResponse(
-                e.getId(), e.getTitle(), e.getVenue(), e.getGenre(), e.getPosterUrl(),
+                e.getId(), e.getTitle(), e.getVenue(), e.getRegion(), e.getGenre(), e.getPosterUrl(),
                 e.getStartDate(), e.getEndDate(), e.getStatus().name(), e.getBasePrice(),
                 d.runningTime, d.ageLimit, d.priceText, d.cast, d.synopsis, d.schedule);
     }

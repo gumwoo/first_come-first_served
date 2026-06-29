@@ -27,6 +27,7 @@ public class EventRepositoryImpl implements EventRepositoryCustom {
         BooleanBuilder where = new BooleanBuilder()
                 .and(keywordContains(c.keyword()))
                 .and(genreEq(c.genre()))
+                .and(regionContains(c.region()))
                 .and(statusEq(c.status()))
                 .and(startFrom(c.from()))
                 .and(startTo(c.to()));
@@ -48,6 +49,11 @@ public class EventRepositoryImpl implements EventRepositoryCustom {
 
     private BooleanExpression genreEq(String genre) {
         return StringUtils.hasText(genre) ? event.genre.eq(genre) : null;
+    }
+
+    private BooleanExpression regionContains(String region) {
+        // 시도 전체명("서울특별시")에 짧은 라벨("서울")이 매칭되도록 contains
+        return StringUtils.hasText(region) ? event.region.containsIgnoreCase(region) : null;
     }
 
     private BooleanExpression statusEq(EventStatus status) {

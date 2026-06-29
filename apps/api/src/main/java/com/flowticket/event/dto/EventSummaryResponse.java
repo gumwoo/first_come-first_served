@@ -8,6 +8,7 @@ public record EventSummaryResponse(
         Long id,
         String title,
         String venue,
+        String region,
         String genre,
         String posterUrl,
         LocalDate startDate,
@@ -16,7 +17,7 @@ public record EventSummaryResponse(
 ) {
     public static EventSummaryResponse from(Event e) {
         return new EventSummaryResponse(
-                e.getId(), e.getTitle(), e.getVenue(), e.getGenre(), e.getPosterUrl(),
+                e.getId(), e.getTitle(), e.getVenue(), e.getRegion(), e.getGenre(), e.getPosterUrl(),
                 e.getStartDate(), e.getStatus().name(), e.getBasePrice());
     }
 }

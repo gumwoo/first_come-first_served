@@ -34,10 +34,11 @@ public class EventController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String genre,
+            @RequestParam(required = false) String region,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return ApiResponse.ok(eventService.list(genre, status, from, to, page, size));
+        return ApiResponse.ok(eventService.list(genre, region, status, from, to, page, size));
     }
 
     @GetMapping("/events/popular")
@@ -60,10 +61,11 @@ public class EventController {
     public ApiResponse<PageResponse<EventSummaryResponse>> search(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String genre,
+            @RequestParam(required = false) String region,
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.ok(eventService.searchByKeyword(q, genre, status, page, size));
+        return ApiResponse.ok(eventService.searchByKeyword(q, genre, region, status, page, size));
     }
 
     @GetMapping("/search/popular-keywords")

@@ -13,7 +13,7 @@
 ## 테이블 목록
 | 테이블 | 슬라이스 | 문서 | 상태 |
 |--------|----------|------|------|
-| users | S01 | [users.md](users.md) | 예정(S01 구현 시 작성) |
-| (events) | S02 | (예정) | |
+| users | S01 | [users.md](users.md) | 구현(V1~V3) |
+| events | S02 | [events.md](events.md) | 구현(V4__events.sql) |
 | (seats) | S04 | (예정) | |
 | (orders) | S05 | (예정) | |

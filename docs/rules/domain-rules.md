@@ -9,7 +9,7 @@
 | 슬라이스 | 파일 | 범위 |
 |---|---|---|
 | S01 | [domain/auth.md](domain/auth.md) | 계정/가입, 휴대폰 인증, 토큰 |
-| S02 | (예정) | 공연 조회 / KOPIS 동기화 |
+| S02 | [domain/event.md](domain/event.md) | 공연 조회 / KOPIS 동기화 |
 | S03 | [domain/queue.md](domain/queue.md) | 대기열 토큰 |
 | S04 | [domain/seat.md](domain/seat.md) | 재고/좌석/등급/HOLD |
 | S05 | [domain/order-payment.md](domain/order-payment.md) | 주문·결제 상태전이, 구매제한 |

@@ -19,6 +19,7 @@ export default function EventDetailPage() {
   if (isError || !event) return <main className="mx-auto max-w-5xl p-8 text-destructive">공연을 찾을 수 없습니다.</main>;
 
   const soldOut = event.status === "SOLD_OUT";
+  const beforeOpen = event.status === "SCHEDULED";
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -51,11 +52,26 @@ export default function EventDetailPage() {
                 : "가격 미정"}
             </p>
           </div>
+          {/* 오픈 예정 안내(before-open) */}
+          {beforeOpen && (
+            <div className="mt-4 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+              <p className="flex items-center gap-1.5 font-medium text-primary">
+                <CalendarClock className="h-4 w-4" /> 예매 오픈 예정
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                {event.startDate ? `${event.startDate} 공연 · 오픈 일정은 추후 공지됩니다.` : "오픈 일정은 추후 공지됩니다."}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">· 1인당 구매 수량이 제한될 수 있습니다.</p>
+            </div>
+          )}
           <div className="mt-4 flex gap-2">
-            <Button className="flex-1" disabled={soldOut} onClick={() => router.push(`/events/${event.id}/queue`)}>
-              {soldOut ? "매진" : "예매하기"}
+            <Button className="flex-1" disabled={soldOut || beforeOpen}
+              onClick={() => router.push(`/events/${event.id}/queue`)}>
+              {soldOut ? "매진" : beforeOpen ? "오픈 예정" : "예매하기"}
             </Button>
-            <Button variant="outline" className="gap-1"><Heart className="h-4 w-4" /> 관심</Button>
+            <Button variant="outline" className="gap-1" disabled title="준비 중인 기능입니다">
+              <Heart className="h-4 w-4" /> 관심
+            </Button>
           </div>
         </div>
 

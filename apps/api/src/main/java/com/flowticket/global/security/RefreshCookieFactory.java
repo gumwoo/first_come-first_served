@@ -11,15 +11,18 @@ public class RefreshCookieFactory {
     public static final String COOKIE_NAME = "refreshToken";
 
     private final long refreshTtlSeconds;
+    private final boolean secure;
 
-    public RefreshCookieFactory(@Value("${jwt.refresh-token-ttl}") long refreshTtlSeconds) {
+    public RefreshCookieFactory(@Value("${jwt.refresh-token-ttl}") long refreshTtlSeconds,
+                                @Value("${app.cookie.secure:false}") boolean secure) {
         this.refreshTtlSeconds = refreshTtlSeconds;
+        this.secure = secure; // 운영(HTTPS)은 true
     }
 
     public ResponseCookie create(String value, boolean remember) {
         ResponseCookie.ResponseCookieBuilder b = ResponseCookie.from(COOKIE_NAME, value)
                 .httpOnly(true)
-                .secure(false)        // 데모(http). 운영은 true + SameSite=None
+                .secure(secure)
                 .sameSite("Lax")
                 .path("/");
         if (remember) {
@@ -30,6 +33,6 @@ public class RefreshCookieFactory {
 
     public ResponseCookie expired() {
         return ResponseCookie.from(COOKIE_NAME, "")
-                .httpOnly(true).secure(false).sameSite("Lax").path("/").maxAge(0).build();
+                .httpOnly(true).secure(secure).sameSite("Lax").path("/").maxAge(0).build();
     }
 }

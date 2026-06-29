@@ -2,6 +2,7 @@ package com.flowticket.auth.service;
 
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
+import java.security.SecureRandom;
 import java.time.Duration;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,10 +20,14 @@ public class PhoneVerificationService {
     private static final String CODE = "phone:code:";
     private static final String VERIFIED = "phone:verified:";
     private static final String COUNT = "phone:count:";
+    private static final String FAIL = "phone:fail:";
     private static final Duration CODE_TTL = Duration.ofMinutes(3);
     private static final Duration VERIFIED_TTL = Duration.ofMinutes(10);
     private static final Duration COUNT_TTL = Duration.ofHours(1);
     private static final int MAX_SEND_PER_HOUR = 5;
+    private static final int MAX_VERIFY_ATTEMPTS = 5;
+
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final StringRedisTemplate redis;
     private final boolean mock;
@@ -50,13 +55,24 @@ public class PhoneVerificationService {
         log.info("[phone] 인증번호 발송 phone={} (mock={})", phone, mock);
     }
 
-    /** 인증번호 확인 → 성공 플래그 저장. */
+    /** 인증번호 확인 → 성공 플래그 저장. 입력 실패 횟수 제한으로 brute force 방어. */
     public void verifyCode(String phone, String inputCode) {
+        // 입력 실패 누적이 임계 초과면 코드 무효화 후 차단
+        String failStr = redis.opsForValue().get(FAIL + phone);
+        if (failStr != null && Integer.parseInt(failStr) >= MAX_VERIFY_ATTEMPTS) {
+            redis.delete(CODE + phone);
+            throw new BusinessException(ErrorCode.PHONE_VERIFICATION_LIMIT_EXCEEDED);
+        }
         String saved = redis.opsForValue().get(CODE + phone);
         if (saved == null || !saved.equals(inputCode)) {
+            Long fail = redis.opsForValue().increment(FAIL + phone);
+            if (fail != null && fail == 1L) {
+                redis.expire(FAIL + phone, CODE_TTL);
+            }
             throw new BusinessException(ErrorCode.PHONE_VERIFICATION_FAILED);
         }
         redis.delete(CODE + phone);
+        redis.delete(FAIL + phone);
         redis.opsForValue().set(VERIFIED + phone, "1", VERIFIED_TTL);
     }
 
@@ -73,6 +89,6 @@ public class PhoneVerificationService {
     }
 
     private String generateCode() {
-        return String.valueOf((int) (Math.random() * 900000) + 100000);
+        return String.valueOf(RANDOM.nextInt(900000) + 100000); // SecureRandom 6자리
     }
 }

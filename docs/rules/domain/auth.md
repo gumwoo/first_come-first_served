@@ -70,6 +70,10 @@
 - 동일 번호 인증번호 발송은 **1시간 5회**까지. 초과 → `PHONE_VERIFICATION_LIMIT_EXCEEDED`. [T]
 - SMS 비용 폭탄·발송 API 남용·자동 다계정 시도 방지.
 
+### 인증번호 입력 brute force 차단
+- 인증번호 **입력 실패 5회** 초과 시 코드 무효화 + `PHONE_VERIFICATION_LIMIT_EXCEEDED`. [T]
+- 인증번호 생성은 `SecureRandom`(운영 SMS 모드).
+
 ---
 
 ## 3. 토큰 생명주기 / Refresh Token Rotation
@@ -87,6 +91,8 @@
 - `POST /auth/refresh` 성공 시 요청에 쓰인 Refresh Token은 즉시 사용 불가가 됨.
 - 새 Refresh Token 발급 + Redis 최신 토큰 정보 갱신.
 - 하나의 Refresh Token은 **1회 재발급에만** 사용 가능. [T]
+- **원자성**: current 비교→prev 저장→새 토큰 저장을 **Redis Lua 스크립트로 단일 원자 실행**.
+  동일 토큰 동시 요청도 직렬화되어, 첫 요청만 회전·나머지는 grace로 처리(이중 회전/오탐 방지). [T]
 
 ### 재사용 탐지
 - 이미 사용·폐기된 Refresh Token으로 재발급 요청이 오면 **탈취 가능성**으로 간주.

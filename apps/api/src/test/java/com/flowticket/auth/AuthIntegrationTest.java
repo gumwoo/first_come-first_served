@@ -131,6 +131,33 @@ class AuthIntegrationTest {
     }
 
     @Test
+    void RTR_동일refresh_진짜동시요청은_세션폭파없이_처리() throws Exception {
+        String r0 = signupAndLogin("race@test.com", "01099990000");
+
+        int n = 6;
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(n);
+        var latch = new java.util.concurrent.CountDownLatch(1);
+        var statuses = java.util.Collections.synchronizedList(new java.util.ArrayList<Integer>());
+        var futures = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+        for (int i = 0; i < n; i++) {
+            futures.add(pool.submit(() -> {
+                try {
+                    latch.await();
+                    statuses.add(refreshWithCookie(r0).getStatusCode().value());
+                } catch (Exception e) {
+                    statuses.add(-1);
+                }
+            }));
+        }
+        latch.countDown(); // 동시 출발
+        for (var f : futures) f.get();
+        pool.shutdown();
+
+        // Lua 원자 회전: 첫 요청만 회전, 나머지는 grace → 전부 200, REUSED(401)로 인한 폭파 없음
+        assertThat(statuses).allMatch(s -> s == 200);
+    }
+
+    @Test
     void RTR_grace_직전_refresh_동시요청은_세션유지() {
         String r0 = signupAndLogin("grace@test.com", "01088889999");
 

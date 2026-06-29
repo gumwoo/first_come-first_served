@@ -47,8 +47,10 @@ public class EventController {
     @GetMapping("/search")
     public ApiResponse<PageResponse<EventSummaryResponse>> search(
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) String genre,
+            @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.ok(eventService.searchByKeyword(q, page, size));
+        return ApiResponse.ok(eventService.searchByKeyword(q, genre, status, page, size));
     }
 }

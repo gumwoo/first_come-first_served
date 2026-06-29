@@ -39,9 +39,10 @@ public class EventService {
         return search(condition, PageRequest.of(page, size));
     }
 
-    /** 키워드 검색 + 페이징. */
-    public PageResponse<EventSummaryResponse> searchByKeyword(String keyword, int page, int size) {
-        var condition = new EventSearchCondition(keyword, null, null, null, null);
+    /** 키워드 + 장르/상태 필터 검색 + 페이징. */
+    public PageResponse<EventSummaryResponse> searchByKeyword(String keyword, String genre,
+                                                              String status, int page, int size) {
+        var condition = new EventSearchCondition(keyword, genre, parseStatus(status), null, null);
         return search(condition, PageRequest.of(page, size));
     }
 

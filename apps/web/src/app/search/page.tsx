@@ -10,8 +10,14 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-const GENRES = ["전체", "대중음악", "연극", "뮤지컬", "클래식", "콘서트"];
-const STATUSES = ["전체", "예매중", "오픈예정", "매진"];
+// label(표시) ↔ value(API 파라미터). value=""이면 필터 없음(전체).
+const GENRES: [string, string][] = [
+  ["전체", ""], ["대중음악", "대중음악"], ["연극", "연극"],
+  ["뮤지컬", "뮤지컬"], ["클래식", "서양음악(클래식)"], ["무용", "무용"],
+];
+const STATUSES: [string, string][] = [
+  ["전체", ""], ["예매중", "ON_SALE"], ["오픈예정", "SCHEDULED"], ["매진", "SOLD_OUT"],
+];
 
 export default function SearchPage() {
   return (
@@ -25,8 +31,14 @@ function SearchInner() {
   const initial = useSearchParams().get("q") ?? "";
   const [keyword, setKeyword] = useState(initial);
   const [query, setQuery] = useState(initial);
-  const result = useSearch(query);
+  const [genre, setGenre] = useState("");
+  const [status, setStatus] = useState("");
+  const [page, setPage] = useState(0);
+  const result = useSearch(query, { genre, status, page });
   const items = result.data?.items ?? [];
+  const total = result.data?.total ?? 0;
+  const size = result.data?.size ?? 20;
+  const totalPages = Math.max(1, Math.ceil(total / size));
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -34,30 +46,41 @@ function SearchInner() {
       <p className="mt-1 text-sm text-muted-foreground">원하는 공연을 찾아 예매하세요.</p>
 
       {/* 검색 + 필터 바 */}
-      <form className="mt-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); setQuery(keyword); }}>
+      <form className="mt-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); setPage(0); setQuery(keyword); }}>
         <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="공연명, 아티스트, 장소 검색" />
         <Button type="submit" className="shrink-0">검색</Button>
       </form>
       <div className="mt-3 flex flex-wrap gap-2">
-        {[["장르", GENRES], ["상태", STATUSES]].map(([label, opts]) => (
-          <select key={label as string} className="h-9 rounded-md border border-input bg-background px-2 text-sm text-muted-foreground">
-            {(opts as string[]).map((o) => <option key={o}>{label as string}: {o}</option>)}
-          </select>
-        ))}
-        <select className="h-9 rounded-md border border-input bg-background px-2 text-sm text-muted-foreground">
-          <option>정렬: 최신순</option><option>정렬: 인기순</option>
+        <select aria-label="장르" value={genre} onChange={(e) => { setPage(0); setGenre(e.target.value); }}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm">
+          {GENRES.map(([label, value]) => <option key={label} value={value}>장르: {label}</option>)}
+        </select>
+        <select aria-label="상태" value={status} onChange={(e) => { setPage(0); setStatus(e.target.value); }}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm">
+          {STATUSES.map(([label, value]) => <option key={label} value={value}>상태: {label}</option>)}
         </select>
       </div>
 
       <div className="mt-6 grid gap-6 md:grid-cols-[1fr_240px]">
         {/* 결과 리스트(리스트형) */}
         <div className="space-y-3">
-          {query.length === 0 && <p className="text-sm text-muted-foreground">검색어를 입력하세요.</p>}
+          {query.length === 0 && !genre && !status && (
+            <p className="text-sm text-muted-foreground">검색어를 입력하거나 필터를 선택하세요.</p>
+          )}
           {result.isLoading && <p className="text-sm text-muted-foreground">검색 중…</p>}
           {result.data && items.length === 0 && (
-            <p className="text-sm text-muted-foreground">&quot;{query}&quot; 검색 결과가 없습니다.</p>
+            <p className="text-sm text-muted-foreground">조건에 맞는 검색 결과가 없습니다.</p>
           )}
           {items.map((e) => <SearchRow key={e.id} event={e} />)}
+
+          {/* 페이지네이션 */}
+          {total > size && (
+            <div className="flex items-center justify-center gap-3 pt-4">
+              <Button variant="outline" size="sm" disabled={page <= 0} onClick={() => setPage((p) => p - 1)}>이전</Button>
+              <span className="text-sm text-muted-foreground">{page + 1} / {totalPages}</span>
+              <Button variant="outline" size="sm" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}>다음</Button>
+            </div>
+          )}
         </div>
 
         {/* 사이드: 연관/인기 검색어 (UI) */}

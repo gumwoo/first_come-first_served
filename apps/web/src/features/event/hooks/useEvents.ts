@@ -20,10 +20,13 @@ export function useEvent(id: number) {
   });
 }
 
-export function useSearch(keyword: string) {
+export function useSearch(
+  keyword: string,
+  filters: { genre?: string; status?: string; page?: number } = {}
+) {
   return useQuery({
-    queryKey: ["events", "search", keyword],
-    queryFn: () => eventApi.searchEvents(keyword),
-    enabled: keyword.length > 0,
+    queryKey: ["events", "search", keyword, filters],
+    queryFn: () => eventApi.searchEvents(keyword, filters),
+    enabled: keyword.length > 0 || !!filters.genre || !!filters.status,
   });
 }

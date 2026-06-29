@@ -19,9 +19,10 @@ public class KopisClient {
     private final String serviceKey;
     private final XmlMapper xmlMapper;
 
-    public KopisClient(@Value("${kopis.base-url}") String baseUrl,
+    public KopisClient(RestClient.Builder builder,
+                       @Value("${kopis.base-url}") String baseUrl,
                        @Value("${kopis.service-key:}") String serviceKey) {
-        this.restClient = RestClient.builder().baseUrl(baseUrl).build();
+        this.restClient = builder.baseUrl(baseUrl).build();
         this.serviceKey = serviceKey;
         this.xmlMapper = (XmlMapper) new XmlMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);

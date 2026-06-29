@@ -12,12 +12,13 @@
 - `empty` (결과 없음)
 
 ## 사용 API
-- `GET /search?q=&genre=&region=&period=...`
+- `GET /search?q=&genre=&status=&page=&size=` — 검색(실행 시 인기검색어 +1)
+- `GET /search/popular-keywords` — 인기 검색어 TOP N (Redis ZSET)
 
 ## 화면 요소 (DoD 체크리스트)
 - [~] 상단 필터 바 — 장르/상태 구현. 지역/기간/가격은 스키마 부재로 후속(domain/event.md)
 - [x] 결과 리스트(포스터/제목/일시/장소/가격/상태배지/예매 버튼)
-- [x] 우측 인기검색어 · 연관검색어 (UI)
+- [~] 우측 인기검색어(Redis ZSET 실연동 예정) · 연관검색어(목업 유지)
 - [x] 정렬(공연일순)/리스트·그리드 토글
 - [x] 페이지네이션
 

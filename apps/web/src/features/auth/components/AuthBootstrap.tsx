@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { refresh, getMe } from "@/features/auth/api/auth";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { setTokenRefresher } from "@/lib/apiClient";
-import { onAuthBroadcast } from "@/features/auth/tabSync";
+import { onAuthBroadcast, broadcastAuth } from "@/features/auth/tabSync";
 
 /**
  * 앱 로드 시 silent 재발급 + apiClient 401 refresher 등록 +
@@ -43,7 +43,18 @@ export function AuthBootstrap() {
       }
     });
 
-    restore();
+    // 소셜 로그인 리다이렉트(?login=social)로 막 돌아온 경우:
+    // 복원 후 다른 탭에도 로그인 전파 + URL의 표식 제거.
+    const params = new URLSearchParams(window.location.search);
+    const fromSocial = params.get("login") === "social";
+    restore().then(() => {
+      if (fromSocial) {
+        broadcastAuth("login");
+        params.delete("login");
+        const qs = params.toString();
+        window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+      }
+    });
 
     // 다른 탭의 로그인/로그아웃을 즉시 반영
     const unsub = onAuthBroadcast((e) => {

@@ -52,6 +52,8 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
         TokenResponse tokens = tokenService.issue(user, true);
         response.addHeader(HttpHeaders.SET_COOKIE, cookieFactory.create(tokens.refreshToken(), true).toString());
 
-        getRedirectStrategy().sendRedirect(request, response, successRedirect);
+        // 프론트가 "소셜 로그인으로 복원됨"을 인지해 탭 동기화 신호를 쏘도록 표식 부착
+        String target = successRedirect + (successRedirect.contains("?") ? "&" : "?") + "login=social";
+        getRedirectStrategy().sendRedirect(request, response, target);
     }
 }

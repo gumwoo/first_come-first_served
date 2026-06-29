@@ -2,26 +2,31 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { LayoutGrid, List } from "lucide-react";
-import { usePopular, useEvents } from "@/features/event/hooks/useEvents";
+import { usePopular, useEvents, useRealtimeRanking } from "@/features/event/hooks/useEvents";
 import { EventCard } from "@/features/event/components/EventCard";
 import type { EventSummary } from "@/features/event/api/event";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-const CATEGORIES = ["전체", "대중음악", "연극", "뮤지컬", "서양음악(클래식)", "무용"];
+// label(표시) ↔ genre 파라미터. "전체"는 메인 유지, 나머지는 /search로 라우팅(중복필터 금지).
+const CATEGORIES: [string, string][] = [
+  ["전체", ""], ["대중음악", "대중음악"], ["연극", "연극"],
+  ["뮤지컬", "뮤지컬"], ["클래식", "서양음악(클래식)"], ["무용", "무용"],
+];
 
 export default function Home() {
+  const router = useRouter();
   const popular = usePopular();
   const all = useEvents({ size: 24 });
-  const [category, setCategory] = useState("전체");
+  const realtime = useRealtimeRanking();
   const [view, setView] = useState<"grid" | "list">("grid");
 
   const items = all.data?.items ?? [];
   const featured = popular.data?.[0] ?? items[0];
   const upcoming = items.filter((e) => e.status === "SCHEDULED").slice(0, 8);
-  const ranking = (popular.data ?? items).slice(0, 5);
-  const filtered = category === "전체" ? items : items.filter((e) => e.genre === category);
+  const ranking = (realtime.data ?? []).slice(0, 5);
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -43,13 +48,14 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 카테고리 탭 + 뷰 토글 */}
+      {/* 카테고리 탭(클릭 → 검색 라우팅) + 뷰 토글 */}
       <div className="mb-6 flex items-center justify-between border-b border-border">
         <div className="flex gap-1 overflow-x-auto">
-          {CATEGORIES.map((c) => (
-            <button key={c} onClick={() => setCategory(c)}
-              className={`whitespace-nowrap px-3 py-2 text-sm ${category === c ? "border-b-2 border-primary font-semibold" : "text-muted-foreground hover:text-foreground"}`}>
-              {c}
+          {CATEGORIES.map(([label, value]) => (
+            <button key={label}
+              onClick={() => value && router.push(`/search?genre=${encodeURIComponent(value)}`)}
+              className={`whitespace-nowrap px-3 py-2 text-sm ${value === "" ? "border-b-2 border-primary font-semibold" : "text-muted-foreground hover:text-foreground"}`}>
+              {label}
             </button>
           ))}
         </div>
@@ -71,14 +77,14 @@ export default function Home() {
             <Grid items={upcoming} />
           </Section>
 
-          {/* 전체(카테고리 필터 + 뷰 모드 적용) */}
+          {/* 전체(뷰 모드 적용) */}
           <Section
-            title={category === "전체" ? "전체 공연" : category}
+            title="전체 공연"
             loading={all.isLoading}
-            empty={filtered.length === 0}
-            emptyMsg={items.length === 0 ? "등록된 공연이 없습니다. (KOPIS 동기화 필요)" : "해당 카테고리 공연이 없습니다."}
+            empty={items.length === 0}
+            emptyMsg="등록된 공연이 없습니다. (KOPIS 동기화 필요)"
           >
-            {view === "grid" ? <Grid items={filtered} /> : <ListView items={filtered} />}
+            {view === "grid" ? <Grid items={items} /> : <ListView items={items} />}
           </Section>
         </div>
 

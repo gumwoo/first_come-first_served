@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Heart, LayoutGrid, List } from "lucide-react";
-import { useSearch } from "@/features/event/hooks/useEvents";
+import { useSearch, usePopularKeywords } from "@/features/event/hooks/useEvents";
 import { EventCard } from "@/features/event/components/EventCard";
 import type { EventSummary } from "@/features/event/api/event";
 import { Input } from "@/components/ui/input";
@@ -29,11 +29,13 @@ export default function SearchPage() {
 }
 
 function SearchInner() {
-  const initial = useSearchParams().get("q") ?? "";
+  const params = useSearchParams();
+  const initial = params.get("q") ?? "";
   const [keyword, setKeyword] = useState(initial);
   const [query, setQuery] = useState(initial);
-  const [genre, setGenre] = useState("");
+  const [genre, setGenre] = useState(params.get("genre") ?? ""); // 메인 카테고리 탭에서 유입
   const [status, setStatus] = useState("");
+  const popularKeywords = usePopularKeywords();
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<"asc" | "desc">("asc");
   const [view, setView] = useState<"list" | "grid">("list");
@@ -116,7 +118,7 @@ function SearchInner() {
           )}
         </div>
 
-        {/* 사이드: 연관/인기 검색어 (UI) */}
+        {/* 사이드: 연관(목업)/인기(실연동) 검색어 */}
         <aside className="space-y-4">
           <Card className="bg-muted/30">
             <CardContent className="pt-5 text-sm">
@@ -130,9 +132,17 @@ function SearchInner() {
             <CardContent className="pt-5 text-sm">
               <p className="mb-2 font-medium">인기 검색어</p>
               <ol className="space-y-1 text-xs text-muted-foreground">
-                {["2026 FLOW SUMMER LIVE", "재즈 페스티벌", "어쿠스틱 나이트"].map((t, i) => (
-                  <li key={t}><span className="mr-1.5 font-semibold text-primary">{i + 1}</span>{t}</li>
+                {(popularKeywords.data ?? []).map((t, i) => (
+                  <li key={t}>
+                    <button onClick={() => { setKeyword(t); setQuery(t); setPage(0); }}
+                      className="text-left hover:text-primary">
+                      <span className="mr-1.5 font-semibold text-primary">{i + 1}</span>{t}
+                    </button>
+                  </li>
                 ))}
+                {(popularKeywords.data ?? []).length === 0 && (
+                  <li className="text-muted-foreground">아직 인기 검색어가 없습니다.</li>
+                )}
               </ol>
             </CardContent>
           </Card>

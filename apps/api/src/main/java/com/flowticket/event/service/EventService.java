@@ -12,6 +12,9 @@ import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -22,14 +25,17 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class EventService {
 
-    private static final int POPULAR_SIZE = 8;
+    private static final int POPULAR_SIZE = 10;
 
     private final EventRepository eventRepository;
     private final KopisClient kopisClient;
+    private final RankingService rankingService;
 
-    public EventService(EventRepository eventRepository, KopisClient kopisClient) {
+    public EventService(EventRepository eventRepository, KopisClient kopisClient,
+                        RankingService rankingService) {
         this.eventRepository = eventRepository;
         this.kopisClient = kopisClient;
+        this.rankingService = rankingService;
     }
 
     /** 목록(장르/상태/기간 필터 + 페이징). status 문자열은 enum으로 변환. */
@@ -39,15 +45,42 @@ public class EventService {
         return search(condition, PageRequest.of(page, size));
     }
 
-    /** 키워드 + 장르/상태 필터 검색 + 페이징. */
+    /** 키워드 + 장르/상태 필터 검색 + 페이징. 검색 실행은 인기검색어로 기록(best-effort). */
     public PageResponse<EventSummaryResponse> searchByKeyword(String keyword, String genre,
                                                               String status, int page, int size) {
+        rankingService.recordSearch(keyword);
         var condition = new EventSearchCondition(keyword, genre, parseStatus(status), null, null);
         return search(condition, PageRequest.of(page, size));
     }
 
-    /** 인기 TOP — 조회수 집계 전이라 판매중 우선 최신순 N개. 후속 랭킹 지표로 교체 예정. */
+    /** 인기 공연 TOP — 누적 조회수 ZSET 상위. 데이터 없으면 ON_SALE 최신순으로 폴백. */
     public List<EventSummaryResponse> popular() {
+        List<EventSummaryResponse> ranked = byIdsOrdered(rankingService.topTotal(POPULAR_SIZE));
+        return ranked.isEmpty() ? fallbackLatest() : ranked;
+    }
+
+    /** 실시간 랭킹 — 지수감쇠 조회수 ZSET 상위. 데이터 없으면 ON_SALE 최신순으로 폴백. */
+    public List<EventSummaryResponse> realtimeRanking() {
+        List<EventSummaryResponse> ranked = byIdsOrdered(rankingService.topHot(POPULAR_SIZE));
+        return ranked.isEmpty() ? fallbackLatest() : ranked;
+    }
+
+    /** ZSET 순서(내림차순)를 유지하며 events를 조회해 요약으로 변환. */
+    private List<EventSummaryResponse> byIdsOrdered(List<Long> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Event> byId = eventRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Event::getId, Function.identity()));
+        return ids.stream()
+                .map(byId::get)
+                .filter(e -> e != null)
+                .map(EventSummaryResponse::from)
+                .toList();
+    }
+
+    /** 랭킹 데이터가 없을 때(초기/유입 전) 보여줄 기본: 판매중 최신순. */
+    private List<EventSummaryResponse> fallbackLatest() {
         var onSale = new EventSearchCondition(null, null, EventStatus.ON_SALE, null, null);
         return eventRepository.search(onSale, Pageable.ofSize(POPULAR_SIZE)).stream()
                 .map(EventSummaryResponse::from)

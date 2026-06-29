@@ -66,7 +66,7 @@ public class SecurityConfig {
                         // actuator는 health/info만 공개, metrics·prometheus 등은 인증 필요(정보 노출 방지)
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/auth/**", "/oauth2/**", "/login/oauth2/**", "/sse/**",
-                                "/events/**", "/search").permitAll()
+                                "/events/**", "/search", "/search/**").permitAll()
                         .anyRequest().authenticated())
                 // 소셜 로그인(stateless): 인가요청은 쿠키 저장, 성공 시 우리 JWT 발급
                 .oauth2Login(oauth -> oauth

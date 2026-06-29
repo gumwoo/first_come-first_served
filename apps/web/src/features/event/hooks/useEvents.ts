@@ -5,6 +5,18 @@ export function usePopular() {
   return useQuery({ queryKey: ["events", "popular"], queryFn: eventApi.getPopular });
 }
 
+export function useRealtimeRanking() {
+  return useQuery({
+    queryKey: ["events", "ranking", "realtime"],
+    queryFn: eventApi.getRealtimeRanking,
+    refetchInterval: 60_000, // 실시간 — 1분마다 갱신
+  });
+}
+
+export function usePopularKeywords() {
+  return useQuery({ queryKey: ["search", "popular-keywords"], queryFn: eventApi.getPopularKeywords });
+}
+
 export function useEvents(params: { page?: number; size?: number; genre?: string } = {}) {
   return useQuery({
     queryKey: ["events", "list", params],

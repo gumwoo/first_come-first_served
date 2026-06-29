@@ -42,7 +42,10 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
                 // 동일 이메일이 다른 방식으로 이미 가입됨 → 계정 연결 미지원
                 throw new OAuth2AuthenticationException(new OAuth2Error("email_already_registered"));
             }
-        }, () -> userRepository.save(User.social(attrs.email(), attrs.name(), provider)));
+        }, () -> {
+            String name = attrs.name() != null ? attrs.name() : "사용자"; // 닉네임 미제공 대비
+            userRepository.save(User.social(attrs.email(), name, provider));
+        });
 
         String nameAttributeKey = request.getClientRegistration()
                 .getProviderDetails().getUserInfoEndpoint().getUserNameAttributeName();

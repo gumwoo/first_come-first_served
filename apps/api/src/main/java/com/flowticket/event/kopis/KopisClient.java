@@ -30,7 +30,8 @@ public class KopisClient {
     /** 공연목록 조회(기간/페이지). 실패 시 빈 목록 반환(동기화는 best-effort). */
     public List<KopisEvent> fetchList(String stdate, String eddate, int cpage, int rows) {
         try {
-            String xml = restClient.get()
+            // byte[]로 받아 XML 선언(UTF-8)을 XmlMapper가 직접 감지(String 변환 시 ISO-8859-1 깨짐 방지)
+            byte[] xml = restClient.get()
                     .uri(uriBuilder -> uriBuilder.path("/pblprfr")
                             .queryParam("service", serviceKey)
                             .queryParam("stdate", stdate)
@@ -39,8 +40,8 @@ public class KopisClient {
                             .queryParam("rows", rows)
                             .build())
                     .retrieve()
-                    .body(String.class);
-            if (xml == null || xml.isBlank()) {
+                    .body(byte[].class);
+            if (xml == null || xml.length == 0) {
                 return Collections.emptyList();
             }
             KopisListResponse parsed = xmlMapper.readValue(xml, KopisListResponse.class);
@@ -54,13 +55,13 @@ public class KopisClient {
     /** 공연상세 조회(관람시간/연령/가격 등). 실패 시 empty. */
     public Optional<KopisEventDetail> fetchDetail(String kopisId) {
         try {
-            String xml = restClient.get()
+            byte[] xml = restClient.get()
                     .uri(uriBuilder -> uriBuilder.path("/pblprfr/{id}")
                             .queryParam("service", serviceKey)
                             .build(kopisId))
                     .retrieve()
-                    .body(String.class);
-            if (xml == null || xml.isBlank()) {
+                    .body(byte[].class);
+            if (xml == null || xml.length == 0) {
                 return Optional.empty();
             }
             KopisDetailResponse parsed = xmlMapper.readValue(xml, KopisDetailResponse.class);

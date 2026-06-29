@@ -82,7 +82,7 @@ class EventIntegrationTest {
 
     @Test
     void upsert는_같은_kopisId면_갱신만_한다() {
-        upserter.upsertAll(List.of(kopis("PF001", "수정된 콘서트", "대중음악", "공연완료")));
+        upserter.upsertAll(List.of(kopis("PF001", "수정된 콘서트", "대중음악", "서울특별시", "공연완료")));
         assertThat(eventRepository.count()).isEqualTo(3); // 신규 X
         var updated = eventRepository.findByKopisId("PF001").orElseThrow();
         assertThat(updated.getTitle()).isEqualTo("수정된 콘서트");

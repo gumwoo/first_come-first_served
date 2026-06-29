@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LayoutGrid, List, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { usePopular, useEvents, useRealtimeRanking } from "@/features/event/hooks/useEvents";
 import { EventCard } from "@/features/event/components/EventCard";
 import type { EventSummary } from "@/features/event/api/event";
@@ -22,7 +22,6 @@ export default function Home() {
   const popular = usePopular();
   const all = useEvents({ size: 24 });
   const realtime = useRealtimeRanking();
-  const [view, setView] = useState<"grid" | "list">("grid");
   const [category, setCategory] = useState(""); // "" = 전체
   const [keyword, setKeyword] = useState("");
 
@@ -69,20 +68,14 @@ export default function Home() {
         <Button type="submit" className="shrink-0 gap-1"><Search className="h-4 w-4" /> 검색</Button>
       </form>
 
-      {/* 카테고리 탭(그 자리 필터, 이동 없음) + 뷰 토글 */}
-      <div className="mb-6 flex items-center justify-between border-b border-border">
-        <div className="flex gap-1 overflow-x-auto">
-          {CATEGORIES.map(([label, value]) => (
-            <button key={label} onClick={() => setCategory(value)}
-              className={`whitespace-nowrap px-3 py-2 text-sm ${category === value ? "border-b-2 border-primary font-semibold" : "text-muted-foreground hover:text-foreground"}`}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex shrink-0 gap-1 pb-1">
-          <ViewButton active={view === "grid"} onClick={() => setView("grid")} label="그리드 보기"><LayoutGrid className="h-4 w-4" /></ViewButton>
-          <ViewButton active={view === "list"} onClick={() => setView("list")} label="리스트 보기"><List className="h-4 w-4" /></ViewButton>
-        </div>
+      {/* 카테고리 탭(그 자리 필터, 이동 없음) */}
+      <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border">
+        {CATEGORIES.map(([label, value]) => (
+          <button key={label} onClick={() => setCategory(value)}
+            className={`whitespace-nowrap px-3 py-2 text-sm ${category === value ? "border-b-2 border-primary font-semibold" : "text-muted-foreground hover:text-foreground"}`}>
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[1fr_260px]">
@@ -106,7 +99,7 @@ export default function Home() {
             empty={filtered.length === 0}
             emptyMsg={items.length === 0 ? "등록된 공연이 없습니다. (KOPIS 동기화 필요)" : "해당 카테고리 공연이 없습니다."}
           >
-            {view === "grid" ? <Grid items={filtered} /> : <ListView items={filtered} />}
+            <Grid items={filtered} />
           </Section>
         </div>
 
@@ -155,35 +148,3 @@ function Grid({ items }: { items: EventSummary[] }) {
   );
 }
 
-function ListView({ items }: { items: EventSummary[] }) {
-  return (
-    <div className="divide-y divide-border rounded-lg border border-border">
-      {items.map((e) => (
-        <Link key={e.id} href={`/events/${e.id}`} className="flex items-center gap-4 p-3 hover:bg-muted/40">
-          <div className="h-16 w-12 shrink-0 overflow-hidden rounded bg-muted">
-            {e.posterUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={e.posterUrl} alt="" className="h-full w-full object-cover" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="line-clamp-1 font-medium">{e.title}</p>
-            <p className="line-clamp-1 text-sm text-muted-foreground">{[e.genre, e.venue].filter(Boolean).join(" · ")}</p>
-          </div>
-          <span className="shrink-0 text-sm text-muted-foreground">{e.startDate ?? ""}</span>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function ViewButton({ active, onClick, label, children }: {
-  active: boolean; onClick: () => void; label: string; children: React.ReactNode;
-}) {
-  return (
-    <button onClick={onClick} aria-label={label} aria-pressed={active}
-      className={`rounded p-1.5 ${active ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-      {children}
-    </button>
-  );
-}

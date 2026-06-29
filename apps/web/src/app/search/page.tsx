@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Heart, LayoutGrid, List } from "lucide-react";
+import { Heart } from "lucide-react";
 import { useSearch, usePopularKeywords } from "@/features/event/hooks/useEvents";
-import { EventCard } from "@/features/event/components/EventCard";
 import type { EventSummary } from "@/features/event/api/event";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -44,7 +43,6 @@ function SearchInner() {
   const popularKeywords = usePopularKeywords();
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<"asc" | "desc">("asc");
-  const [view, setView] = useState<"list" | "grid">("list");
   const result = useSearch(query, { genre, region, status, page });
   const total = result.data?.total ?? 0;
   const size = result.data?.size ?? 20;
@@ -88,16 +86,6 @@ function SearchInner() {
           <option value="asc">정렬: 공연일 빠른순</option>
           <option value="desc">정렬: 공연일 늦은순</option>
         </select>
-        <div className="ml-auto flex gap-1">
-          <button aria-label="리스트 보기" aria-pressed={view === "list"} onClick={() => setView("list")}
-            className={`rounded p-1.5 ${view === "list" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-            <List className="h-4 w-4" />
-          </button>
-          <button aria-label="그리드 보기" aria-pressed={view === "grid"} onClick={() => setView("grid")}
-            className={`rounded p-1.5 ${view === "grid" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-            <LayoutGrid className="h-4 w-4" />
-          </button>
-        </div>
       </div>
 
       <div className="mt-6 grid gap-6 md:grid-cols-[1fr_240px]">
@@ -110,13 +98,7 @@ function SearchInner() {
           {result.data && items.length === 0 && (
             <p className="text-sm text-muted-foreground">조건에 맞는 검색 결과가 없습니다.</p>
           )}
-          {view === "list"
-            ? items.map((e) => <SearchRow key={e.id} event={e} />)
-            : items.length > 0 && (
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                  {items.map((e) => <EventCard key={e.id} event={e} />)}
-                </div>
-              )}
+          {items.map((e) => <SearchRow key={e.id} event={e} />)}
 
           {/* 페이지네이션 */}
           {total > size && (

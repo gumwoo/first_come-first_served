@@ -33,6 +33,10 @@ export const listEvents = (params: { page?: number; size?: number; genre?: strin
 
 export const getPopular = () => api<EventSummary[]>("/events/popular");
 
+export const getRealtimeRanking = () => api<EventSummary[]>("/events/ranking/realtime");
+
+export const getPopularKeywords = () => api<string[]>("/search/popular-keywords");
+
 export const getEvent = (id: number) => api<EventDetail>(`/events/${id}`);
 
 export const searchEvents = (

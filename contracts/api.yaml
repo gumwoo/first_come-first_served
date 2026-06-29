@@ -16,8 +16,10 @@ endpoints:
   # S02 공연조회 + KOPIS
   - { method: GET,    path: "/events",                   slice: S02 }
   - { method: GET,    path: "/events/popular",           slice: S02 }
+  - { method: GET,    path: "/events/ranking/realtime",  slice: S02 }
   - { method: GET,    path: "/events/{id}",              slice: S02 }
   - { method: GET,    path: "/search",                   slice: S02 }
+  - { method: GET,    path: "/search/popular-keywords",  slice: S02 }
   - { method: POST,   path: "/admin/sync/kopis",         slice: S02 }
 
   # S03 대기열

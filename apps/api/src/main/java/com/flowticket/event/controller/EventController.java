@@ -3,8 +3,10 @@ package com.flowticket.event.controller;
 import com.flowticket.event.dto.EventDetailResponse;
 import com.flowticket.event.dto.EventSummaryResponse;
 import com.flowticket.event.service.EventService;
+import com.flowticket.event.service.RankingService;
 import com.flowticket.global.common.ApiResponse;
 import com.flowticket.global.common.PageResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -13,14 +15,18 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 공연 조회(목록/인기/상세/검색). 비로그인 열람 가능. 입출력/매핑만(변환·조회는 service). */
+/** 공연 조회(목록/인기/실시간/상세/검색). 비로그인 열람 가능. 입출력/매핑만(변환·조회는 service). */
 @RestController
 public class EventController {
 
-    private final EventService eventService;
+    private static final int KEYWORDS_SIZE = 10;
 
-    public EventController(EventService eventService) {
+    private final EventService eventService;
+    private final RankingService rankingService;
+
+    public EventController(EventService eventService, RankingService rankingService) {
         this.eventService = eventService;
+        this.rankingService = rankingService;
     }
 
     @GetMapping("/events")
@@ -39,8 +45,14 @@ public class EventController {
         return ApiResponse.ok(eventService.popular());
     }
 
+    @GetMapping("/events/ranking/realtime")
+    public ApiResponse<List<EventSummaryResponse>> realtimeRanking() {
+        return ApiResponse.ok(eventService.realtimeRanking());
+    }
+
     @GetMapping("/events/{id}")
-    public ApiResponse<EventDetailResponse> detail(@PathVariable Long id) {
+    public ApiResponse<EventDetailResponse> detail(@PathVariable Long id, HttpServletRequest request) {
+        rankingService.recordView(id, clientIp(request)); // 조회수 기록(best-effort)
         return ApiResponse.ok(eventService.detail(id));
     }
 
@@ -52,5 +64,19 @@ public class EventController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return ApiResponse.ok(eventService.searchByKeyword(q, genre, status, page, size));
+    }
+
+    @GetMapping("/search/popular-keywords")
+    public ApiResponse<List<String>> popularKeywords() {
+        return ApiResponse.ok(rankingService.topKeywords(KEYWORDS_SIZE));
+    }
+
+    /** 프록시 뒤 실제 클라이언트 IP. X-Forwarded-For 우선(첫 값), 없으면 remoteAddr. */
+    private String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }

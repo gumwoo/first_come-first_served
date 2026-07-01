@@ -1,0 +1,9 @@
+{
+  "topic": "queue-admission-overadmit",
+  "phase": "before",
+  "date": "2026-07-01",
+  "method": "동시 승격 비원자(GET admitcount → 비교 → ZPOPMIN → INCR), 레이스 창 sleep 20ms",
+  "config": { "capacity": 3, "concurrentThreads": 10 },
+  "result": { "admitted": 10, "overAdmit": 7 },
+  "note": "레이스로 모든 스레드가 count<capacity를 통과 → 정원 초과. 값은 타이밍에 따라 변동하나 항상 > capacity. 근거 테스트: QueueIntegrationTest.비교후행동_naive_승격은_정원을_초과한다"
+}

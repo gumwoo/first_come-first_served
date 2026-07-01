@@ -87,6 +87,13 @@ app:
     # 비어 있으면(기본) XFF 무시 → remoteAddr 사용(위조 방지). 운영 LB IP를 주입.
     trusted: ${TRUSTED_PROXIES:}
 
+# 대기열(S03) — Redis ZSet 기반 선착순 직렬화
+queue:
+  capacity: ${QUEUE_CAPACITY:100}            # 이벤트당 동시 입장 정원
+  token-ttl: ${QUEUE_TOKEN_TTL:1800}         # 대기 토큰 수명(초)
+  admit-ttl: ${QUEUE_ADMIT_TTL:300}          # 입장 후 좌석선택 제한(초)
+  admit-interval-ms: ${QUEUE_ADMIT_INTERVAL:1500}  # 승격 워커 주기(ms)
+
 # 휴대폰 인증: 데모는 Mock(고정 코드). 운영은 mock=false + 실제 SMS 연동.
 auth:
   phone:

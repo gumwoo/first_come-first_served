@@ -82,6 +82,10 @@ app:
   cookie:
     # 데모는 http라 false. 운영(HTTPS)에서는 COOKIE_SECURE=true로 주입.
     secure: ${COOKIE_SECURE:false}
+  proxy:
+    # 신뢰하는 프록시 IP(콤마 구분). 이 IP에서 온 요청의 X-Forwarded-For만 신뢰한다.
+    # 비어 있으면(기본) XFF 무시 → remoteAddr 사용(위조 방지). 운영 LB IP를 주입.
+    trusted: ${TRUSTED_PROXIES:}
 
 # 휴대폰 인증: 데모는 Mock(고정 코드). 운영은 mock=false + 실제 SMS 연동.
 auth:

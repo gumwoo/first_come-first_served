@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { usePopular, useEvents, useRealtimeRanking } from "@/features/event/hooks/useEvents";
 import { EventCard } from "@/features/event/components/EventCard";
+import { HeroCarousel } from "@/features/event/components/HeroCarousel";
 import type { EventSummary } from "@/features/event/api/event";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,7 @@ export default function Home() {
   const [keyword, setKeyword] = useState("");
 
   const items = all.data?.items ?? [];
-  const featured = popular.data?.[0] ?? items[0];
+  const heroItems = (popular.data ?? items).slice(0, 5);
   const upcoming = items.filter((e) => e.status === "SCHEDULED").slice(0, 8);
   const ranking = (realtime.data ?? []).slice(0, 5);
   // 탭은 그 자리 필터(전체 공연 섹션). 카테고리 선택 시 인기/오픈예정(전 장르)은 숨김.
@@ -44,23 +45,8 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      {/* 히어로 */}
-      <section className="relative mb-10 overflow-hidden rounded-xl bg-foreground text-primary-foreground">
-        {featured?.posterUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={featured.posterUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-40" />
-        )}
-        <div className="relative flex flex-col justify-end gap-2 p-10" style={{ minHeight: 240 }}>
-          <p className="text-sm opacity-80">{featured?.genre ?? "지금 가장 핫한 공연"}</p>
-          <h1 className="text-3xl font-bold">{featured?.title ?? "FLOW SUMMER LIVE"}</h1>
-          <p className="opacity-90">{[featured?.venue, featured?.startDate].filter(Boolean).join(" · ")}</p>
-          {featured && (
-            <Link href={`/events/${featured.id}`} className="mt-2">
-              <Button className="bg-primary">예매하기</Button>
-            </Link>
-          )}
-        </div>
-      </section>
+      {/* 히어로 슬라이더(대표 공연 자동 회전) */}
+      <HeroCarousel items={heroItems} />
 
       {/* 검색창 — 검색 버튼/Enter일 때만 검색 결과 페이지로 이동 */}
       <form className="mb-4 flex gap-2" onSubmit={submitSearch}>

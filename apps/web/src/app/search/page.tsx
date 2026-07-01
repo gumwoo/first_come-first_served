@@ -60,9 +60,11 @@ function SearchInner() {
     });
   }, [result.data, sort]);
 
+  const isBrowsing = query.length === 0 && !genre && !region && !status;
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="text-2xl font-bold">검색 결과</h1>
+      <h1 className="text-2xl font-bold">{isBrowsing ? "전체 공연" : "검색 결과"}</h1>
       <p className="mt-1 text-sm text-muted-foreground">원하는 공연을 찾아 예매하세요.</p>
 
       {/* 검색 + 필터 바 */}
@@ -91,11 +93,8 @@ function SearchInner() {
       </div>
 
       <div className="mt-6 grid gap-6 md:grid-cols-[1fr_240px]">
-        {/* 결과 리스트(리스트형) */}
+        {/* 결과 리스트(리스트형). 필터 없으면 전체 공연을 페이징 조회. */}
         <div className="space-y-3">
-          {query.length === 0 && !genre && !region && !status && (
-            <p className="text-sm text-muted-foreground">검색어를 입력하거나 필터를 선택하세요.</p>
-          )}
           {result.isLoading && Array.from({ length: 4 }).map((_, i) => (
             <Card key={i}>
               <CardContent className="flex gap-4 p-4">

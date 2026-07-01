@@ -20,7 +20,10 @@
 ## 조회수 / 랭킹 (Redis)
 "인기"와 "실시간"은 **같은 조회 이벤트를 다른 방식으로 집계**한다(둘이 같은 결과면 안 됨). [T]
 - **조회 정의**: 상세 진입(`GET /events/:id`)이면 출처(메인/검색/직접)와 무관하게 1회. [T]
+  - **상세 조회 성공 후에만 기록**(없는 ID는 NOT_FOUND → 유령 기록 방지).
   - 중복방지: `view:dedup:{eventId}:{ip}` TTL 60s — 같은 IP 60초 내 재조회는 카운트하지 않는다. [T]
+  - dedup 기준 IP는 **신뢰 프록시 경계**로 해석: `remoteAddr`가 `app.proxy.trusted`일 때만
+    XFF 신뢰(기본은 XFF 무시). XFF 무검증 신뢰 시 위조로 dedup 우회 가능([[IMP-006-xff-dedup-bypass]]). [T]
   - 조회 기록은 DB가 아닌 Redis(부수효과). 기록 실패가 조회 응답을 막지 않는다(best-effort). [T]
 - **인기 공연 TOP 10 = 누적 조회수**: `event:views:total` ZSET, 감쇠 없음. 장기·안정적. [T]
 - **실시간 랭킹 = 지수감쇠 조회수**: `event:views:hot` ZSET. 휘발성. [T]

@@ -4,7 +4,8 @@
 - 동기화는 백엔드만 호출(프론트에서 KOPIS 직접 호출 금지). XML 파싱 → `events` upsert.
 - 외부 호출(KOPIS)은 트랜잭션 경계 밖에서 수행한다(목록/상세 모두). DB upsert만 트랜잭션 안. [T]
 - KOPIS 응답은 byte[]로 받아 UTF-8로 파싱한다(String 변환 시 한글 깨짐 — 회귀방지 테스트 보유). [T]
-- KOPIS 조회 기간은 최대 31일(명세 제한). 일배치는 오늘~+30일. [T]
+- KOPIS 단일 조회는 최대 31일(명세 제한). 이를 우회해 **오늘~+`kopis.sync.days`(기본 90)**를
+  31일 청크로 나누고, 각 청크는 페이지 끝까지(반환<rows까지, `max-pages` 상한) 수집한다. [T]
 - 공연 상태(`status`)는 `contracts/enums.yaml` EventStatus와 일치(하네스 검사).
   - KOPIS `prfstate` 매핑: 공연중→ON_SALE, 공연완료→CLOSED, 그 외(공연예정 등)→SCHEDULED.
 - 조회는 비로그인 열람 가능(예매는 회원 — S03 이후). [T]

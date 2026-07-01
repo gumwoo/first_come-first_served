@@ -64,6 +64,10 @@ management:
 kopis:
   base-url: http://www.kopis.or.kr/openApi/restful
   service-key: ${KOPIS_SERVICE_KEY:}
+  sync:
+    days: ${KOPIS_SYNC_DAYS:90}            # 오늘부터 며칠치 수집(31일 청크로 분할)
+    rows: ${KOPIS_SYNC_ROWS:100}          # 페이지당 행 수(KOPIS 최대 100)
+    max-pages: ${KOPIS_SYNC_MAX_PAGES:10} # 청크당 페이지 상한(안전장치)
 
 jwt:
   secret: ${JWT_SECRET:}

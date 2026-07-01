@@ -2,11 +2,9 @@ package com.flowticket.queue;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.flowticket.queue.dto.QueueTokenResponse;
 import com.flowticket.queue.service.QueueAdmissionService;
 import com.flowticket.queue.service.QueueService;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -36,7 +34,7 @@ class QueueIntegrationTest {
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
     @Container
-    static GenericContainer<?> redis =
+    static GenericContainer<?> redisContainer =
             new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
 
     @DynamicPropertySource
@@ -44,8 +42,8 @@ class QueueIntegrationTest {
         r.add("spring.datasource.url", postgres::getJdbcUrl);
         r.add("spring.datasource.username", postgres::getUsername);
         r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.data.redis.host", redis::getHost);
-        r.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
+        r.add("spring.data.redis.host", redisContainer::getHost);
+        r.add("spring.data.redis.port", () -> redisContainer.getMappedPort(6379));
         r.add("jwt.secret", () -> "integration-test-secret-0123456789-0123456789-0123456789");
         r.add("spring.kafka.bootstrap-servers", () -> "localhost:59092");
         r.add("queue.capacity", () -> "3");
@@ -55,13 +53,13 @@ class QueueIntegrationTest {
 
     @Autowired QueueService queueService;
     @Autowired QueueAdmissionService admissionService;
-    @Autowired StringRedisTemplate redis;
+    @Autowired StringRedisTemplate redisTemplate;
 
     private static final Long EVENT = 42L;
 
     @BeforeEach
     void flush() {
-        redis.getConnectionFactory().getConnection().serverCommands().flushAll();
+        redisTemplate.getConnectionFactory().getConnection().serverCommands().flushAll();
     }
 
     @Test
@@ -78,7 +76,7 @@ class QueueIntegrationTest {
         ExecutorService pool = Executors.newFixedThreadPool(16);
         CountDownLatch start = new CountDownLatch(1);
         for (int i = 0; i < n; i++) {
-            long userId = 1000 + i;
+            long userId = 1000L + i;
             pool.submit(() -> {
                 try {
                     start.await();
@@ -93,13 +91,13 @@ class QueueIntegrationTest {
         assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
 
         assertThat(tokens).hasSize(n); // 토큰 유일
-        assertThat(redis.opsForZSet().zCard("queue:wait:" + EVENT)).isEqualTo((long) n);
+        assertThat(redisTemplate.opsForZSet().zCard("queue:wait:" + EVENT)).isEqualTo((long) n);
     }
 
     @Test
     void 원자_승격은_정원을_초과하지_않는다() {
         for (int i = 0; i < 10; i++) {
-            queueService.issue(2000 + i, EVENT); // 10명 대기
+            queueService.issue(2000L + i, EVENT); // 10명 대기
         }
         int first = admissionService.admit(EVENT);
         int second = admissionService.admit(EVENT); // 이미 정원 → 0
@@ -112,7 +110,7 @@ class QueueIntegrationTest {
     @Test
     void 만료된_입장은_회수되어_슬롯이_반환된다() throws Exception {
         for (int i = 0; i < 6; i++) {
-            queueService.issue(3000 + i, EVENT);
+            queueService.issue(3000L + i, EVENT);
         }
         assertThat(admissionService.admit(EVENT)).isEqualTo(3);
         assertThat(admitCount()).isEqualTo(3);
@@ -129,7 +127,7 @@ class QueueIntegrationTest {
     void 비교후행동_naive_승격은_정원을_초과한다() throws Exception {
         // IMP-004 before 근거: 원자화하지 않으면 동시 실행 시 over-admit이 발생함을 재현.
         for (int i = 0; i < 10; i++) {
-            queueService.issue(4000 + i, EVENT);
+            queueService.issue(4000L + i, EVENT);
         }
         int cap = 3, threads = 10;
         ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -139,12 +137,12 @@ class QueueIntegrationTest {
                 try {
                     start.await();
                     // naive: GET → 비교 → (지연) → POP → INCR (비원자)
-                    String c = redis.opsForValue().get("queue:admitcount:" + EVENT);
+                    String c = redisTemplate.opsForValue().get("queue:admitcount:" + EVENT);
                     long count = c == null ? 0 : Long.parseLong(c);
                     if (count < cap) {
                         Thread.sleep(20); // 레이스 창 확대
-                        redis.opsForZSet().popMin("queue:wait:" + EVENT);
-                        redis.opsForValue().increment("queue:admitcount:" + EVENT);
+                        redisTemplate.opsForZSet().popMin("queue:wait:" + EVENT);
+                        redisTemplate.opsForValue().increment("queue:admitcount:" + EVENT);
                     }
                 } catch (InterruptedException ignored) {
                     Thread.currentThread().interrupt();
@@ -159,7 +157,7 @@ class QueueIntegrationTest {
     }
 
     private long admitCount() {
-        String c = redis.opsForValue().get("queue:admitcount:" + EVENT);
+        String c = redisTemplate.opsForValue().get("queue:admitcount:" + EVENT);
         return c == null ? 0 : Long.parseLong(c);
     }
 }

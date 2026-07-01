@@ -17,7 +17,9 @@ export function usePopularKeywords() {
   return useQuery({ queryKey: ["search", "popular-keywords"], queryFn: eventApi.getPopularKeywords });
 }
 
-export function useEvents(params: { page?: number; size?: number; genre?: string } = {}) {
+export function useEvents(
+  params: { page?: number; size?: number; genre?: string; status?: string } = {}
+) {
   return useQuery({
     queryKey: ["events", "list", params],
     queryFn: () => eventApi.listEvents(params),
@@ -36,9 +38,9 @@ export function useSearch(
   keyword: string,
   filters: { genre?: string; region?: string; status?: string; page?: number } = {}
 ) {
+  // 검색어·필터가 없어도 전체를 페이징 조회(= 전체 공연 둘러보기). 항상 조회.
   return useQuery({
     queryKey: ["events", "search", keyword, filters],
     queryFn: () => eventApi.searchEvents(keyword, filters),
-    enabled: keyword.length > 0 || !!filters.genre || !!filters.region || !!filters.status,
   });
 }

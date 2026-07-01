@@ -23,13 +23,14 @@ export default function Home() {
   const router = useRouter();
   const popular = usePopular();
   const all = useEvents({ size: 24 });
+  const upcomingQ = useEvents({ status: "SCHEDULED", size: 8 }); // 오픈예정 전용 조회
   const realtime = useRealtimeRanking();
   const [category, setCategory] = useState(""); // "" = 전체
   const [keyword, setKeyword] = useState("");
 
   const items = all.data?.items ?? [];
   const heroItems = (popular.data ?? items).slice(0, 5);
-  const upcoming = items.filter((e) => e.status === "SCHEDULED").slice(0, 8);
+  const upcoming = upcomingQ.data?.items ?? [];
   const ranking = (realtime.data ?? []).slice(0, 5);
   // 탭은 그 자리 필터(전체 공연 섹션). 카테고리 선택 시 인기/오픈예정(전 장르)은 숨김.
   const filtered = category === "" ? items : items.filter((e) => e.genre === category);
@@ -73,18 +74,24 @@ export default function Home() {
               <Section title="인기 공연 TOP" loading={popular.isLoading} empty={popular.data?.length === 0} emptyMsg="인기 공연이 없습니다.">
                 <Grid items={popular.data ?? []} />
               </Section>
-              <Section title="오픈 예정 공연" loading={all.isLoading} empty={upcoming.length === 0} emptyMsg="오픈 예정 공연이 없습니다.">
+              <Section title="오픈 예정 공연" loading={upcomingQ.isLoading} empty={upcoming.length === 0} emptyMsg="오픈 예정 공연이 없습니다.">
                 <Grid items={upcoming} />
               </Section>
             </>
           )}
 
-          {/* 전체/카테고리 목록(뷰 모드 적용) */}
+          {/* 전체/카테고리 목록 — 24개 티저 + 전체 보기(→ /search 페이지네이션) */}
           <Section
             title={browsing ? `${CATEGORIES.find(([, v]) => v === category)?.[0] ?? category} 공연` : "전체 공연"}
             loading={all.isLoading}
             empty={filtered.length === 0}
             emptyMsg={items.length === 0 ? "등록된 공연이 없습니다. (KOPIS 동기화 필요)" : "해당 카테고리 공연이 없습니다."}
+            action={
+              <Link href={category ? `/search?genre=${encodeURIComponent(category)}` : "/search"}
+                className="text-sm text-muted-foreground hover:text-primary">
+                전체 보기 →
+              </Link>
+            }
           >
             <Grid items={filtered} />
           </Section>
@@ -114,12 +121,16 @@ export default function Home() {
   );
 }
 
-function Section({ title, loading, empty, emptyMsg, children }: {
-  title: string; loading: boolean; empty: boolean; emptyMsg: string; children: React.ReactNode;
+function Section({ title, loading, empty, emptyMsg, action, children }: {
+  title: string; loading: boolean; empty: boolean; emptyMsg: string;
+  action?: React.ReactNode; children: React.ReactNode;
 }) {
   return (
     <section>
-      <h2 className="mb-4 text-xl font-bold">{title}</h2>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-xl font-bold">{title}</h2>
+        {action}
+      </div>
       {loading ? <CardSkeletonGrid />
         : empty ? <p className="text-sm text-muted-foreground">{emptyMsg}</p>
         : children}

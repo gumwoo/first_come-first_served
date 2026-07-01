@@ -24,11 +24,14 @@ export type EventDetail = EventSummary & {
 
 export type Page<T> = { items: T[]; page: number; size: number; total: number };
 
-export const listEvents = (params: { page?: number; size?: number; genre?: string } = {}) => {
+export const listEvents = (
+  params: { page?: number; size?: number; genre?: string; status?: string } = {}
+) => {
   const q = new URLSearchParams();
   if (params.page != null) q.set("page", String(params.page));
   if (params.size != null) q.set("size", String(params.size));
   if (params.genre) q.set("genre", params.genre);
+  if (params.status) q.set("status", params.status);
   return api<Page<EventSummary>>(`/events?${q.toString()}`);
 };
 

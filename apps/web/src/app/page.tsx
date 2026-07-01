@@ -6,10 +6,12 @@ import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { usePopular, useEvents, useRealtimeRanking } from "@/features/event/hooks/useEvents";
 import { EventCard } from "@/features/event/components/EventCard";
+import { HeroCarousel } from "@/features/event/components/HeroCarousel";
 import type { EventSummary } from "@/features/event/api/event";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // label(표시) ↔ genre 값. 탭은 메인에서 그 자리 필터(이동 X).
 const CATEGORIES: [string, string][] = [
@@ -26,7 +28,7 @@ export default function Home() {
   const [keyword, setKeyword] = useState("");
 
   const items = all.data?.items ?? [];
-  const featured = popular.data?.[0] ?? items[0];
+  const heroItems = (popular.data ?? items).slice(0, 5);
   const upcoming = items.filter((e) => e.status === "SCHEDULED").slice(0, 8);
   const ranking = (realtime.data ?? []).slice(0, 5);
   // 탭은 그 자리 필터(전체 공연 섹션). 카테고리 선택 시 인기/오픈예정(전 장르)은 숨김.
@@ -44,23 +46,8 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      {/* 히어로 */}
-      <section className="relative mb-10 overflow-hidden rounded-xl bg-foreground text-primary-foreground">
-        {featured?.posterUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={featured.posterUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-40" />
-        )}
-        <div className="relative flex flex-col justify-end gap-2 p-10" style={{ minHeight: 240 }}>
-          <p className="text-sm opacity-80">{featured?.genre ?? "지금 가장 핫한 공연"}</p>
-          <h1 className="text-3xl font-bold">{featured?.title ?? "FLOW SUMMER LIVE"}</h1>
-          <p className="opacity-90">{[featured?.venue, featured?.startDate].filter(Boolean).join(" · ")}</p>
-          {featured && (
-            <Link href={`/events/${featured.id}`} className="mt-2">
-              <Button className="bg-primary">예매하기</Button>
-            </Link>
-          )}
-        </div>
-      </section>
+      {/* 히어로 슬라이더(대표 공연 자동 회전) */}
+      <HeroCarousel items={heroItems} />
 
       {/* 검색창 — 검색 버튼/Enter일 때만 검색 결과 페이지로 이동 */}
       <form className="mb-4 flex gap-2" onSubmit={submitSearch}>
@@ -133,9 +120,9 @@ function Section({ title, loading, empty, emptyMsg, children }: {
   return (
     <section>
       <h2 className="mb-4 text-xl font-bold">{title}</h2>
-      {loading && <p className="text-sm text-muted-foreground">불러오는 중…</p>}
-      {!loading && empty && <p className="text-sm text-muted-foreground">{emptyMsg}</p>}
-      {children}
+      {loading ? <CardSkeletonGrid />
+        : empty ? <p className="text-sm text-muted-foreground">{emptyMsg}</p>
+        : children}
     </section>
   );
 }
@@ -144,6 +131,21 @@ function Grid({ items }: { items: EventSummary[] }) {
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
       {items.map((e) => <EventCard key={e.id} event={e} />)}
+    </div>
+  );
+}
+
+/** 카드 그리드 로딩 자리표시자. */
+function CardSkeletonGrid({ count = 4 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="space-y-2">
+          <Skeleton className="aspect-[3/4] w-full" />
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-3 w-1/2" />
+        </div>
+      ))}
     </div>
   );
 }

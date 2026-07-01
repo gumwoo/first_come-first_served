@@ -46,6 +46,7 @@ frontend:
     - tailwind-merge
     - lucide-react            # shadcn 아이콘
     - "class-variance-authority"
+    - embla-carousel-react    # 메인 히어로 슬라이더
     - eslint-config-next
   # shadcn/ui는 컴포넌트 복사 방식이라 의존성으로 안 셈
   dev_allowed:

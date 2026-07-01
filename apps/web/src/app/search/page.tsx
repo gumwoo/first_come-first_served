@@ -6,9 +6,11 @@ import { useSearchParams } from "next/navigation";
 import { Heart } from "lucide-react";
 import { useSearch, usePopularKeywords } from "@/features/event/hooks/useEvents";
 import type { EventSummary } from "@/features/event/api/event";
+import { EventBadge } from "@/features/event/components/EventBadge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // label(표시) ↔ value(API 파라미터). value=""이면 필터 없음(전체).
 const GENRES: [string, string][] = [
@@ -94,7 +96,18 @@ function SearchInner() {
           {query.length === 0 && !genre && !region && !status && (
             <p className="text-sm text-muted-foreground">검색어를 입력하거나 필터를 선택하세요.</p>
           )}
-          {result.isLoading && <p className="text-sm text-muted-foreground">검색 중…</p>}
+          {result.isLoading && Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="flex gap-4 p-4">
+                <Skeleton className="h-24 w-20 shrink-0" />
+                <div className="flex-1 space-y-2 py-1">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-1/2" />
+                  <Skeleton className="h-3 w-1/3" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
           {result.data && items.length === 0 && (
             <p className="text-sm text-muted-foreground">조건에 맞는 검색 결과가 없습니다.</p>
           )}
@@ -144,10 +157,6 @@ function SearchInner() {
   );
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  ON_SALE: "예매중", SCHEDULED: "오픈예정", SOLD_OUT: "매진", PAUSED: "일시중단", CLOSED: "종료", DRAFT: "준비중",
-};
-
 function SearchRow({ event }: { event: EventSummary }) {
   const soldOut = event.status === "SOLD_OUT";
   return (
@@ -160,7 +169,10 @@ function SearchRow({ event }: { event: EventSummary }) {
           )}
         </Link>
         <div className="min-w-0 flex-1">
-          <Link href={`/events/${event.id}`} className="line-clamp-1 font-medium hover:text-primary">{event.title}</Link>
+          <div className="flex items-center gap-2">
+            <Link href={`/events/${event.id}`} className="line-clamp-1 font-medium hover:text-primary">{event.title}</Link>
+            <EventBadge event={event} />
+          </div>
           <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">{[event.region, event.venue].filter(Boolean).join(" · ") || "-"}</p>
           <p className="text-xs text-muted-foreground">{event.startDate ?? ""}</p>
           <p className="mt-1 text-sm font-semibold">{event.basePrice ? `${event.basePrice.toLocaleString()}원~` : "가격 미정"}</p>

@@ -65,6 +65,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // actuator는 health/info만 공개, metrics·prometheus 등은 인증 필요(정보 노출 방지)
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        // 대기열 진입/상태는 회원 — /events/** permitAll보다 먼저 매칭해야 함
+                        .requestMatchers("/events/*/queue/**", "/queue/**").authenticated()
                         .requestMatchers("/auth/**", "/oauth2/**", "/login/oauth2/**", "/sse/**",
                                 "/events/**", "/search", "/search/**").permitAll()
                         .anyRequest().authenticated())

@@ -14,5 +14,7 @@
 - 인증: 발급은 회원(Bearer), status/SSE는 토큰으로 접근(EventSource 헤더 제약).
 
 ## 실시간
-- 입장 허용/만료는 SSE(`/sse/queue/{token}`)로 push. 폴링(`/queue/status`)은 폴백. (횡단: domain-rules.md)
-- SSE는 단일 서버 가정(다중=Redis Pub/Sub, 후속). (feat/queue-sse에서 구현)
+- 입장 허용/만료는 SSE(`/sse/queue/{token}`)로 push: 승격 시 `queue.admitted`(redirect 포함),
+  만료 시 `queue.expired` 후 스트림 종료. 폴링(`/queue/status`)은 폴백. (횡단: domain-rules.md)
+- 전송 실패(느린/끊긴 클라이언트)는 emitter 제거로 격리. SSE는 단일 서버 가정
+  (다중=Redis Pub/Sub, 후속). [ADR-002]

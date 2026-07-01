@@ -1,8 +1,10 @@
 package com.flowticket.queue.service;
 
+import com.flowticket.queue.sse.QueueSseRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,13 +50,15 @@ public class QueueAdmissionService {
     private static final DefaultRedisScript<List> RECLAIM_SCRIPT = new DefaultRedisScript<>(RECLAIM_LUA, List.class);
 
     private final StringRedisTemplate redis;
+    private final QueueSseRegistry sse;
     private final int capacity;
     private final long admitTtl;
 
-    public QueueAdmissionService(StringRedisTemplate redis,
+    public QueueAdmissionService(StringRedisTemplate redis, QueueSseRegistry sse,
                                  @Value("${queue.capacity:100}") int capacity,
                                  @Value("${queue.admit-ttl:300}") long admitTtl) {
         this.redis = redis;
+        this.sse = sse;
         this.capacity = capacity;
         this.admitTtl = admitTtl;
     }
@@ -73,6 +77,7 @@ public class QueueAdmissionService {
             String token = String.valueOf(popped.get(i));
             redis.opsForValue().set(QueueKeys.admit(token), "1", Duration.ofSeconds(admitTtl));
             redis.opsForZSet().add(QueueKeys.admitExp(eventId), token, expiresAt);
+            sse.send(token, "queue.admitted", Map.of("redirect", "/events/" + eventId + "/seats"));
             admitted++;
         }
         return admitted;
@@ -80,10 +85,18 @@ public class QueueAdmissionService {
 
     /** 입장창 만료 토큰 회수(슬롯 반환). 회수된 토큰 목록 반환(SSE queue.expired 발행용). */
     public List<String> reclaim(Long eventId) {
-        List<?> expired = redis.execute(RECLAIM_SCRIPT,
+        List<?> raw = redis.execute(RECLAIM_SCRIPT,
                 List.of(QueueKeys.admitExp(eventId), QueueKeys.admitCount(eventId)),
                 String.valueOf(Instant.now().getEpochSecond()));
-        return expired == null ? List.of() : expired.stream().map(String::valueOf).toList();
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+        List<String> expired = raw.stream().map(String::valueOf).toList();
+        for (String token : expired) {
+            sse.send(token, "queue.expired");   // 만료 알림
+            sse.complete(token);                // 스트림 종료
+        }
+        return expired;
     }
 
     /** 승격 워커: 대기 발생 이벤트를 순회하며 회수→승격. */

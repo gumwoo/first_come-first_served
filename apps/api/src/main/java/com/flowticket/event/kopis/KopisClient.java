@@ -28,6 +28,22 @@ public class KopisClient {
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
+    /**
+     * 기간 내 공연을 페이지 끝까지 수집. 반환 건수가 rows 미만이면 마지막 페이지로 보고 중단.
+     * maxPages로 페이지 수를 제한한다(무한 루프/과호출 방지). best-effort.
+     */
+    public List<KopisEvent> fetchListAll(String stdate, String eddate, int rows, int maxPages) {
+        List<KopisEvent> all = new java.util.ArrayList<>();
+        for (int page = 1; page <= maxPages; page++) {
+            List<KopisEvent> batch = fetchList(stdate, eddate, page, rows);
+            all.addAll(batch);
+            if (batch.size() < rows) {
+                break; // 마지막 페이지(가득 차지 않음) → 중단
+            }
+        }
+        return all;
+    }
+
     /** 공연목록 조회(기간/페이지). 실패 시 빈 목록 반환(동기화는 best-effort). */
     public List<KopisEvent> fetchList(String stdate, String eddate, int cpage, int rows) {
         try {

@@ -112,4 +112,28 @@ class KopisClientTest {
 
         assertThat(f.client().fetchDetail("PF260001")).isEmpty();
     }
+
+    @Test
+    void fetchListAll_가득찬_페이지는_계속_부족하면_중단한다() {
+        Fixture f = fixture();
+        // page1: rows(2)만큼 가득 → 다음 페이지 요청, page2: 1건(부족) → 중단
+        f.server().expect(requestTo(containsString("pblprfr")))
+                .andRespond(withSuccess(listXml(2).getBytes(StandardCharsets.UTF_8), MediaType.APPLICATION_XML));
+        f.server().expect(requestTo(containsString("pblprfr")))
+                .andRespond(withSuccess(listXml(1).getBytes(StandardCharsets.UTF_8), MediaType.APPLICATION_XML));
+
+        List<KopisEvent> result = f.client().fetchListAll("20260701", "20260731", 2, 10);
+
+        f.server().verify(); // 정확히 2번 호출(3번째 없음)
+        assertThat(result).hasSize(3);
+    }
+
+    /** db 항목 n개를 가진 KOPIS 목록 XML 생성. */
+    private static String listXml(int n) {
+        StringBuilder sb = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?><dbs>");
+        for (int i = 0; i < n; i++) {
+            sb.append("<db><mt20id>PF").append(i).append("</mt20id><prfnm>공연").append(i).append("</prfnm></db>");
+        }
+        return sb.append("</dbs>").toString();
+    }
 }

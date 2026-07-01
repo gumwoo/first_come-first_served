@@ -6,6 +6,7 @@ import com.flowticket.event.service.EventService;
 import com.flowticket.event.service.RankingService;
 import com.flowticket.global.common.ApiResponse;
 import com.flowticket.global.common.PageResponse;
+import com.flowticket.global.web.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
 import java.util.List;
@@ -23,10 +24,13 @@ public class EventController {
 
     private final EventService eventService;
     private final RankingService rankingService;
+    private final ClientIpResolver clientIpResolver;
 
-    public EventController(EventService eventService, RankingService rankingService) {
+    public EventController(EventService eventService, RankingService rankingService,
+                           ClientIpResolver clientIpResolver) {
         this.eventService = eventService;
         this.rankingService = rankingService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @GetMapping("/events")
@@ -53,8 +57,9 @@ public class EventController {
 
     @GetMapping("/events/{id}")
     public ApiResponse<EventDetailResponse> detail(@PathVariable Long id, HttpServletRequest request) {
-        rankingService.recordView(id, clientIp(request)); // 조회수 기록(best-effort)
-        return ApiResponse.ok(eventService.detail(id));
+        EventDetailResponse detail = eventService.detail(id); // 없는 ID면 NOT_FOUND
+        rankingService.recordView(id, clientIpResolver.resolve(request)); // 성공 후에만 기록(유령 ID 방지)
+        return ApiResponse.ok(detail);
     }
 
     @GetMapping("/search")
@@ -71,14 +76,5 @@ public class EventController {
     @GetMapping("/search/popular-keywords")
     public ApiResponse<List<String>> popularKeywords() {
         return ApiResponse.ok(rankingService.topKeywords(KEYWORDS_SIZE));
-    }
-
-    /** 프록시 뒤 실제 클라이언트 IP. X-Forwarded-For 우선(첫 값), 없으면 remoteAddr. */
-    private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
     }
 }

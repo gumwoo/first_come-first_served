@@ -1,0 +1,9 @@
+{
+  "topic": "kopis-sync-coverage",
+  "phase": "after",
+  "date": "2026-07-01",
+  "trigger": "POST /admin/sync/kopis",
+  "config": { "days": 90, "rows": 100, "maxPages": 10, "chunkDays": 31, "chunks": 3 },
+  "result": { "syncedUpserts": 2083, "dbRows": 1907 },
+  "note": "오늘~+90일을 31일 3청크로 분할, 청크별 페이지 끝까지 수집. syncedUpserts=upsert 호출 수(청크 경계 중복 포함), dbRows=kopis_id 유니크 저장 수."
+}

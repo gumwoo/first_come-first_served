@@ -1,0 +1,9 @@
+{
+  "topic": "queue-admission-overadmit",
+  "phase": "after",
+  "date": "2026-07-01",
+  "method": "Lua 원자 승격(정원 확인 + ZPOPMIN(free) + INCRBY 단일 스크립트), 동일 조건",
+  "config": { "capacity": 3, "concurrentThreads": 10 },
+  "result": { "admitted": 3, "overAdmit": 0 },
+  "note": "정원 확인부터 카운트 증가까지 원자 실행이라 초과 불가. 근거 테스트: QueueIntegrationTest.원자_승격은_정원을_초과하지_않는다"
+}

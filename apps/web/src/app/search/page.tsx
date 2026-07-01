@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Heart } from "lucide-react";
 import { useSearch, usePopularKeywords } from "@/features/event/hooks/useEvents";
 import type { EventSummary } from "@/features/event/api/event";
+import { EventBadge } from "@/features/event/components/EventBadge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -144,10 +145,6 @@ function SearchInner() {
   );
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  ON_SALE: "예매중", SCHEDULED: "오픈예정", SOLD_OUT: "매진", PAUSED: "일시중단", CLOSED: "종료", DRAFT: "준비중",
-};
-
 function SearchRow({ event }: { event: EventSummary }) {
   const soldOut = event.status === "SOLD_OUT";
   return (
@@ -160,7 +157,10 @@ function SearchRow({ event }: { event: EventSummary }) {
           )}
         </Link>
         <div className="min-w-0 flex-1">
-          <Link href={`/events/${event.id}`} className="line-clamp-1 font-medium hover:text-primary">{event.title}</Link>
+          <div className="flex items-center gap-2">
+            <Link href={`/events/${event.id}`} className="line-clamp-1 font-medium hover:text-primary">{event.title}</Link>
+            <EventBadge event={event} />
+          </div>
           <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">{[event.region, event.venue].filter(Boolean).join(" · ") || "-"}</p>
           <p className="text-xs text-muted-foreground">{event.startDate ?? ""}</p>
           <p className="mt-1 text-sm font-semibold">{event.basePrice ? `${event.basePrice.toLocaleString()}원~` : "가격 미정"}</p>

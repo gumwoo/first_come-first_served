@@ -11,6 +11,7 @@ import type { EventSummary } from "@/features/event/api/event";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // label(표시) ↔ genre 값. 탭은 메인에서 그 자리 필터(이동 X).
 const CATEGORIES: [string, string][] = [
@@ -119,9 +120,9 @@ function Section({ title, loading, empty, emptyMsg, children }: {
   return (
     <section>
       <h2 className="mb-4 text-xl font-bold">{title}</h2>
-      {loading && <p className="text-sm text-muted-foreground">불러오는 중…</p>}
-      {!loading && empty && <p className="text-sm text-muted-foreground">{emptyMsg}</p>}
-      {children}
+      {loading ? <CardSkeletonGrid />
+        : empty ? <p className="text-sm text-muted-foreground">{emptyMsg}</p>
+        : children}
     </section>
   );
 }
@@ -130,6 +131,21 @@ function Grid({ items }: { items: EventSummary[] }) {
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
       {items.map((e) => <EventCard key={e.id} event={e} />)}
+    </div>
+  );
+}
+
+/** 카드 그리드 로딩 자리표시자. */
+function CardSkeletonGrid({ count = 4 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="space-y-2">
+          <Skeleton className="aspect-[3/4] w-full" />
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-3 w-1/2" />
+        </div>
+      ))}
     </div>
   );
 }

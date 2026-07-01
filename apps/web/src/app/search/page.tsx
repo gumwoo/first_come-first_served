@@ -10,6 +10,7 @@ import { EventBadge } from "@/features/event/components/EventBadge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // label(표시) ↔ value(API 파라미터). value=""이면 필터 없음(전체).
 const GENRES: [string, string][] = [
@@ -95,7 +96,18 @@ function SearchInner() {
           {query.length === 0 && !genre && !region && !status && (
             <p className="text-sm text-muted-foreground">검색어를 입력하거나 필터를 선택하세요.</p>
           )}
-          {result.isLoading && <p className="text-sm text-muted-foreground">검색 중…</p>}
+          {result.isLoading && Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="flex gap-4 p-4">
+                <Skeleton className="h-24 w-20 shrink-0" />
+                <div className="flex-1 space-y-2 py-1">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-1/2" />
+                  <Skeleton className="h-3 w-1/3" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
           {result.data && items.length === 0 && (
             <p className="text-sm text-muted-foreground">조건에 맞는 검색 결과가 없습니다.</p>
           )}

@@ -2,9 +2,10 @@
 
 - 슬라이스: `S02`
 - 날짜: 2026-07-01
-- 유형: 정량(수치) — after는 실제 재sync 후 확정
+- 유형: 정량(수치) — 완료
 - 관련 커밋: `a8eb4a0` (feat: KOPIS 수집 확장)
-- 벤치 파일: `benchmarks/kopis-sync-before.json` → `benchmarks/kopis-sync-after.json` (재sync 후 기록)
+- 벤치 파일: [`benchmarks/kopis-sync-before.json`](../../benchmarks/kopis-sync-before.json)
+  → [`benchmarks/kopis-sync-after.json`](../../benchmarks/kopis-sync-after.json)
 
 > 흐름: 문제 정의 → 증상(수치) → 가설 → 도구로 검증 → 해결 → 재측정 → 한계.
 
@@ -43,15 +44,18 @@ S02 공연 카탈로그는 KOPIS OpenAPI에서 공연 목록을 동기화한다.
   upsert(kopis_id 멱등 → 청크 경계 중복 안전).
 - 수집량을 `kopis.sync.*`로 외부화(코드 수정 없이 조절).
 
-## 7. 결과 (재측정 — 재sync 후 확정)
-- 측정 방법: 동일하게 `POST /admin/sync/kopis` → `events` count 비교.
+## 7. 결과 (재측정 — 실제 KOPIS 키로 재sync)
+- 측정 방법: 동일하게 `POST /admin/sync/kopis` → 응답 `synced` + `events` count 비교.
 - after 수치:
   | 지표 | before | after | 변화 |
   |------|--------|-------|------|
-  | 동기화 건수 | 100(상한) | _재sync 후 기입_ | _+N_ |
+  | DB 저장 공연 수(dbRows) | 100(상한) | **1,907** | **약 19배** |
+  | upsert 호출 수(synced) | 100 | 2,083 | (청크 경계 중복 포함) |
   | 조회 기간 | +30일 | +90일(3청크) | 3배 |
 
-> after는 실제 KOPIS 키로 재sync한 뒤 수치를 채우고 benchmarks JSON을 커밋한다.
+> `synced`(2,083) > `dbRows`(1,907)인 이유: 31일 청크가 경계에서 겹치는 공연을
+> 두 번 upsert하기 때문. `kopis_id` UNIQUE 멱등이라 **중복 저장은 없음**(갱신만).
+> 근거: `benchmarks/kopis-sync-{before,after}.json`.
 
 ## 8. 트레이드오프 / 한계 / 다음 개선
 - 외부 호출 횟수↑(청크 × 페이지) → 동기화 소요시간·KOPIS 부하 증가. best-effort로

@@ -17,7 +17,7 @@ naive → 측정 → 개선 → 재측정 순서로 수치를 **커밋으로 박
 |----|------|----------|------|------|
 | [IMP-001](IMP-001-rtr-multitab-grace.md) | RTR 멀티탭 세션 폭파 — grace 윈도 | S01 | 멀티탭 동시요청→세션유지 (정성) | 완료 |
 | [IMP-002](IMP-002-multitab-logout-sync.md) | 멀티탭 로그아웃 즉시 동기화 — BroadcastChannel | S01 | 다른 탭 즉시 반영 (정성) | 완료 |
-| [IMP-005](IMP-005-kopis-coverage.md) | KOPIS 동기화 커버리지 — 청크·페이지 전량 수집 | S02 | 100건 상한→+90일 전량 | 진행중(after 대기) |
+| [IMP-005](IMP-005-kopis-coverage.md) | KOPIS 동기화 커버리지 — 청크·페이지 전량 수집 | S02 | 100건→1,907건(약 19배) | 완료 |
 | [IMP-006](IMP-006-xff-dedup-bypass.md) | 조회수 dedup 우회 — XFF 신뢰 경계 | S02 | 위조 100→1건 수렴 | 완료 |
 | (예) IMP-003 | 재고 동시성 — 락 도입 | S04 | 초과판매 37건→0건 | 예정 |
 | (예) IMP-004 | 대기열 Redis ZSet | S03 | DB부하 / p95 | 예정 |

@@ -6,15 +6,30 @@ import com.flowticket.queue.domain.QueueStatus;
 import com.flowticket.queue.dto.QueueStatusResponse;
 import com.flowticket.queue.dto.QueueTokenResponse;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 /** 대기 진입/상태. 1인 1이벤트 1토큰(멱등). 순서는 Redis ZSet(score=진입 seq). */
 @Service
 public class QueueService {
+
+    // 입장 슬롯 반환 원자화: admitExp에서 실제로 제거한 요청만 카운트 감소(중복 DECR 방지).
+    // 동시 leave / leave↔만료 sweep이 같은 토큰을 이중 차감하는 것을 막는다.
+    private static final String LEAVE_ADMIT_LUA = """
+            if redis.call('ZREM', KEYS[1], ARGV[1]) == 1 then
+              redis.call('DECR', KEYS[2])
+              redis.call('DEL', KEYS[3])
+              return 1
+            end
+            return 0
+            """;
+    private static final DefaultRedisScript<Long> LEAVE_ADMIT_SCRIPT =
+            new DefaultRedisScript<>(LEAVE_ADMIT_LUA, Long.class);
 
     private final StringRedisTemplate redis;
     private final int capacity;
@@ -57,7 +72,11 @@ public class QueueService {
         return tokenResponse(token, eventId);
     }
 
-    /** 대기열 이탈: 대기/입장 상태에 따라 슬롯·순번을 정리한다(나가기 실동작). */
+    /**
+     * 대기열 이탈: 대기/입장 상태에 따라 슬롯·순번을 정리한다(나가기 실동작).
+     * 입장 슬롯 반환은 Lua로 원자화 — admitExp에서 실제로 제거한 요청만 카운트를 줄여
+     * 동시 leave나 만료 sweep과 겹쳐도 이중 차감(음수)이 나지 않는다.
+     */
     public void leave(String token) {
         Map<Object, Object> meta = redis.opsForHash().entries(QueueKeys.token(token));
         if (meta.isEmpty()) {
@@ -65,12 +84,13 @@ public class QueueService {
         }
         Long eventId = Long.valueOf((String) meta.get("eventId"));
         Long userId = Long.valueOf((String) meta.get("userId"));
-        if (Boolean.TRUE.equals(redis.hasKey(QueueKeys.admit(token)))) {
-            redis.delete(QueueKeys.admit(token));                     // 입장 슬롯 반환
-            redis.opsForZSet().remove(QueueKeys.admitExp(eventId), token);
-            redis.opsForValue().decrement(QueueKeys.admitCount(eventId));
-        } else {
-            redis.opsForZSet().remove(QueueKeys.wait(eventId), token); // 대기열에서 제거
+
+        Long freed = redis.execute(LEAVE_ADMIT_SCRIPT,
+                List.of(QueueKeys.admitExp(eventId), QueueKeys.admitCount(eventId), QueueKeys.admit(token)),
+                token);
+        if (freed == null || freed == 0L) {
+            // 입장 상태가 아니었음 → 대기열에서 제거(ZREM은 멱등, 카운터 없음)
+            redis.opsForZSet().remove(QueueKeys.wait(eventId), token);
         }
         redis.delete(QueueKeys.token(token));
         redis.delete(QueueKeys.user(eventId, userId));

@@ -24,6 +24,7 @@ endpoints:
 
   # S03 대기열
   - { method: POST,   path: "/events/{id}/queue/token",  slice: S03 }
+  - { method: DELETE, path: "/queue/token",              slice: S03 }
   - { method: GET,    path: "/queue/status",             slice: S03 }
 
   # S04 좌석·재고

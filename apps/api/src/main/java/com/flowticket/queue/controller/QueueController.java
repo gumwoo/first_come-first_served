@@ -5,6 +5,7 @@ import com.flowticket.queue.dto.QueueStatusResponse;
 import com.flowticket.queue.dto.QueueTokenResponse;
 import com.flowticket.queue.service.QueueService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,5 +33,12 @@ public class QueueController {
     @GetMapping("/queue/status")
     public ApiResponse<QueueStatusResponse> status(@RequestParam String token) {
         return ApiResponse.ok(queueService.status(token));
+    }
+
+    /** 대기열 이탈(나가기) — 대기/입장 슬롯 정리. */
+    @DeleteMapping("/queue/token")
+    public ApiResponse<Void> leave(@RequestParam String token) {
+        queueService.leave(token);
+        return ApiResponse.ok(null);
     }
 }

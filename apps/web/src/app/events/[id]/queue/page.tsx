@@ -18,8 +18,13 @@ function fmtEta(sec: number): string {
 export default function QueuePage() {
   const id = Number(useParams().id);
   const router = useRouter();
-  const { phase, rank, total, eta, progress, redirect } = useQueue(id);
+  const { phase, rank, total, eta, progress, redirect, leave } = useQueue(id);
   const { data: event } = useEvent(id);
+
+  const exitQueue = async () => {
+    await leave();
+    router.push(`/events/${id}`);
+  };
 
   if (phase === "loading") {
     return <main className="mx-auto max-w-5xl p-10 text-center text-muted-foreground">대기열에 진입하는 중…</main>;
@@ -113,10 +118,8 @@ export default function QueuePage() {
             </div>
 
             <div className="flex justify-center gap-2">
-              <Link href={`/events/${id}`}>
-                <Button variant="outline">예매 취소하고 나가기</Button>
-              </Link>
-              <Button variant="ghost" onClick={() => router.back()}>← 이전으로</Button>
+              <Button variant="outline" onClick={exitQueue}>예매 취소하고 나가기</Button>
+              <Button variant="ghost" onClick={exitQueue}>← 이전으로</Button>
             </div>
           </CardContent>
         </Card>

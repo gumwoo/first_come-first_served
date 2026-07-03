@@ -11,5 +11,9 @@ export const issueQueueToken = (eventId: number, token: string | null) =>
 export const getQueueStatus = (queueToken: string) =>
   api<QueueStatus>(`/queue/status?token=${encodeURIComponent(queueToken)}`);
 
+/** 대기열 이탈(나가기) — 대기/입장 슬롯 정리. */
+export const leaveQueue = (queueToken: string, token: string | null) =>
+  api<null>(`/queue/token?token=${encodeURIComponent(queueToken)}`, { method: "DELETE", token });
+
 /** SSE 스트림 URL(/api 프록시 경유, 토큰이 접근 비밀값). */
 export const queueSseUrl = (queueToken: string) => `/api/sse/queue/${queueToken}`;

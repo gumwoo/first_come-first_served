@@ -70,6 +70,52 @@ class QueueIntegrationTest {
     }
 
     @Test
+    void 같은_유저_동시발급도_토큰이_하나만_생긴다() throws Exception {
+        int threads = 20;
+        var tokens = ConcurrentHashMap.<String>newKeySet();
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        for (int i = 0; i < threads; i++) {
+            pool.submit(() -> {
+                try {
+                    start.await();
+                    tokens.add(queueService.issue(999L, EVENT).token());
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+        start.countDown();
+        pool.shutdown();
+        assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(tokens).hasSize(1); // SET NX 원자 예약 → 1인1토큰
+        assertThat(redisTemplate.opsForZSet().zCard("queue:wait:" + EVENT)).isEqualTo(1L);
+    }
+
+    @Test
+    void 나가기는_대기열에서_제거한다() {
+        String token = queueService.issue(500L, EVENT).token();
+        assertThat(redisTemplate.opsForZSet().zCard("queue:wait:" + EVENT)).isEqualTo(1L);
+
+        queueService.leave(token);
+
+        assertThat(redisTemplate.opsForZSet().zCard("queue:wait:" + EVENT)).isEqualTo(0L);
+        assertThat(redisTemplate.hasKey("queue:token:" + token)).isFalse();
+    }
+
+    @Test
+    void 입장상태_나가기는_슬롯을_반환한다() {
+        String token = queueService.issue(600L, EVENT).token();
+        admissionService.admit(EVENT);
+        assertThat(admitCount()).isEqualTo(1);
+
+        queueService.leave(token);
+
+        assertThat(admitCount()).isEqualTo(0); // 입장 슬롯 반환
+    }
+
+    @Test
     void N명_동시발급_토큰_유일하고_순번_일관() throws Exception {
         int n = 30;
         var tokens = ConcurrentHashMap.<String>newKeySet();

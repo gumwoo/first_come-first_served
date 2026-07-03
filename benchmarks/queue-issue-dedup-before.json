@@ -1,0 +1,9 @@
+{
+  "topic": "queue-issue-token-dedup",
+  "phase": "before",
+  "date": "2026-07-02",
+  "method": "비원자 1인1토큰(GET user → 없으면 토큰 생성+SET), 레이스 창 sleep 20ms",
+  "config": { "sameUserConcurrentRequests": 20 },
+  "result": { "tokensCreated": 20, "duplicates": 19 },
+  "note": "같은 유저 동시 요청이 모두 GET=null을 통과 → 중복 토큰. 값은 타이밍에 따라 변동하나 항상 >1. 근거 테스트: QueueIntegrationTest.비원자_GET후SET은_같은유저_중복토큰을_만든다"
+}

@@ -202,6 +202,37 @@ class QueueIntegrationTest {
         assertThat(admitCount()).isGreaterThan(cap); // 정원 초과 발생(원자화 필요성 입증)
     }
 
+    @Test
+    void 비원자_GET후SET은_같은유저_중복토큰을_만든다() throws Exception {
+        // IMP-007 before 근거: SET NX 없이 GET→없으면 SET이면 같은 유저 동시 요청에 중복 발급.
+        String userKey = "queue:user:" + EVENT + ":888";
+        int threads = 20;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        for (int i = 0; i < threads; i++) {
+            pool.submit(() -> {
+                try {
+                    start.await();
+                    // naive: GET → 없으면 (지연) → 토큰 생성 + wait 등록 + SET (비원자)
+                    if (redisTemplate.opsForValue().get(userKey) == null) {
+                        Thread.sleep(20); // 레이스 창 확대
+                        String tok = java.util.UUID.randomUUID().toString();
+                        redisTemplate.opsForZSet().add("queue:wait:" + EVENT, tok, System.nanoTime());
+                        redisTemplate.opsForValue().set(userKey, tok);
+                    }
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+        start.countDown();
+        pool.shutdown();
+        pool.awaitTermination(10, TimeUnit.SECONDS);
+
+        Long dup = redisTemplate.opsForZSet().zCard("queue:wait:" + EVENT);
+        assertThat(dup).isGreaterThan(1L); // 같은 유저인데 대기열에 여러 토큰(중복 발급)
+    }
+
     private long admitCount() {
         String c = redisTemplate.opsForValue().get("queue:admitcount:" + EVENT);
         return c == null ? 0 : Long.parseLong(c);

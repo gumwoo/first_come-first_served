@@ -116,6 +116,33 @@ class QueueIntegrationTest {
     }
 
     @Test
+    void 동시_leave는_admitCount를_음수로_만들지_않는다() throws Exception {
+        // 입장 슬롯 반환을 Lua로 원자화 → admitExp에서 실제 제거한 요청만 DECR(이중 차감 방지).
+        String token = queueService.issue(700L, EVENT).token();
+        admissionService.admit(EVENT);
+        assertThat(admitCount()).isEqualTo(1);
+
+        int threads = 10;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        for (int i = 0; i < threads; i++) {
+            pool.submit(() -> {
+                try {
+                    start.await();
+                    queueService.leave(token); // 같은 토큰 동시 이탈
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+        start.countDown();
+        pool.shutdown();
+        assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(admitCount()).isEqualTo(0); // 정확히 1회만 반환(음수 아님)
+    }
+
+    @Test
     void N명_동시발급_토큰_유일하고_순번_일관() throws Exception {
         int n = 30;
         var tokens = ConcurrentHashMap.<String>newKeySet();

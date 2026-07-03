@@ -1,6 +1,9 @@
 # Domain · S03 대기열
 
-- 한 사용자는 이벤트당 활성 대기 토큰 1개(멱등: 재요청 시 기존 토큰 반환). [T]
+- 한 사용자는 이벤트당 활성 대기 토큰 1개. user 키를 **SET NX로 원자 예약**해 동시 요청
+  (더블클릭)에도 토큰이 하나만 생긴다(멱등: 재요청 시 기존 토큰 반환). [T]
+- 이탈(`DELETE /queue/token`): 대기 중이면 wait ZSet에서 제거, 입장 상태면 슬롯 반환
+  (admitCount 감소). 나가기 버튼이 실제로 정리한다. [T]
 - 토큰 상태: `WAITING → ADMITTED → (좌석선택)` / TTL 만료 시 `EXPIRED`. [T]
 - ADMITTED 안 된 토큰으로 좌석/주문 접근 금지 → `QUEUE_NOT_ADMITTED`. (실차단은 S04 좌석 API)
 - 대기 만료 → `QUEUE_EXPIRED`.

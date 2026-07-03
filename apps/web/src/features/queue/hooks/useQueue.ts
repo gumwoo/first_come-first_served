@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/apiClient";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import * as queueApi from "@/features/queue/api/queue";
@@ -18,6 +18,7 @@ export function useQueue(eventId: number) {
   const [total, setTotal] = useState(0);
   const [eta, setEta] = useState(0);
   const [redirect, setRedirect] = useState<string | null>(null);
+  const [queueToken, setQueueToken] = useState<string | null>(null);
   const initialRank = useRef<number | null>(null);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export function useQueue(eventId: number) {
       try {
         const t = await queueApi.issueQueueToken(eventId, accessToken);
         if (cancelled) return;
+        setQueueToken(t.token);
         apply(t);
 
         es = new EventSource(queueApi.queueSseUrl(t.token));
@@ -82,5 +84,15 @@ export function useQueue(eventId: number) {
       ? Math.min(100, Math.max(0, Math.round((1 - rank / initialRank.current) * 100)))
       : 0;
 
-  return { phase, rank, total, eta, progress, redirect };
+  /** 나가기 — 대기열에서 실제로 이탈(슬롯 정리). best-effort. */
+  const leave = useCallback(async () => {
+    if (!queueToken) return;
+    try {
+      await queueApi.leaveQueue(queueToken, accessToken);
+    } catch {
+      /* 이미 만료/정리됐을 수 있음 — 무시 */
+    }
+  }, [queueToken, accessToken]);
+
+  return { phase, rank, total, eta, progress, redirect, leave };
 }

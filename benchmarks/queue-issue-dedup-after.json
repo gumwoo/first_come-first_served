@@ -1,0 +1,9 @@
+{
+  "topic": "queue-issue-token-dedup",
+  "phase": "after",
+  "date": "2026-07-02",
+  "method": "SET NX 원자 예약(setIfAbsent user key)로 1인1토큰, 동일 조건",
+  "config": { "sameUserConcurrentRequests": 20 },
+  "result": { "tokensCreated": 1, "duplicates": 0 },
+  "note": "user 키 예약을 원자로 하니 첫 요청만 소유권 획득, 나머지는 기존 토큰 반환. 근거 테스트: QueueIntegrationTest.같은_유저_동시발급도_토큰이_하나만_생긴다"
+}

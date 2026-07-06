@@ -14,6 +14,10 @@ public interface SeatRepository extends JpaRepository<Seat, Long> {
 
     List<Seat> findByEventId(Long eventId);
 
+    /** 주어진 이벤트들 중 이미 좌석이 있는 id(자동 시딩에서 건너뛸 대상). */
+    @Query("select distinct s.eventId from Seat s where s.eventId in :ids")
+    List<Long> findSeededEventIds(@Param("ids") List<Long> ids);
+
     /**
      * 좌석 선점 — 조건부 UPDATE로 원자화. AVAILABLE인 좌석만 HELD로 바꾸고 바뀐 행 수를 반환.
      * 반환 수 != 요청 수 이면 일부가 이미 선점됨(SOLD_OUT). 초과판매 원천 차단(ADR-003).

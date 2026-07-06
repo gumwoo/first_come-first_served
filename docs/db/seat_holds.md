@@ -12,7 +12,7 @@
 |------|------|------|--------|------|------|
 | id | BIGINT | N | identity | PK | holdId |
 | event_id | BIGINT | N | | FK→events | 공연 |
-| user_id | BIGINT | N | | FK→users | 선점자 |
+| user_id | BIGINT | N | | (FK 미설정) | 선점자 — 인증 JWT userId 신뢰, 결합 완화 |
 | status | VARCHAR(20) | N | 'HELD' | | SeatHoldStatus(HELD/RELEASED/EXPIRED/CONVERTED) |
 | expires_at | TIMESTAMP | N | | | 선점 만료 시각(~5분) |
 | created_at | TIMESTAMP | N | now() | | |

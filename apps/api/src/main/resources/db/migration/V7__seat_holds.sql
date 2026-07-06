@@ -2,7 +2,8 @@
 CREATE TABLE seat_holds (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     event_id   BIGINT      NOT NULL REFERENCES events(id),
-    user_id    BIGINT      NOT NULL REFERENCES users(id),
+    user_id    BIGINT      NOT NULL,  -- 인증 JWT의 userId(신뢰). FK 미설정(결합 완화)
+
     status     VARCHAR(20) NOT NULL DEFAULT 'HELD',
     expires_at TIMESTAMP   NOT NULL,
     created_at TIMESTAMP   NOT NULL DEFAULT now()

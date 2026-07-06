@@ -244,6 +244,59 @@ for (const file of javaFiles) {
   }
 }
 
+// ---------- 11. JPA / Spring 정적 지뢰 가드 ----------
+for (const file of javaFiles) {
+  const rel = path.relative(REPO_ROOT, file).replace(/\\/g, "/");
+  const src = read(file);
+
+  // (a) @Enumerated는 STRING이어야 함(기본 ORDINAL은 enum 순서 변경 시 DB 값 어긋남).
+  for (const m of src.matchAll(/@Enumerated\s*(\([^)]*\))?/g)) {
+    if (!/EnumType\.STRING/.test(m[1] || "")) {
+      r.fail(`@Enumerated는 EnumType.STRING 필수(ORDINAL 지뢰): ${rel}`);
+    }
+  }
+
+  // (b) @Entity에 Lombok @Data/@EqualsAndHashCode 금지(프록시·연관관계 equals/hashCode 지뢰).
+  if (/@Entity\b/.test(src) && /(@Data|@EqualsAndHashCode)\b/.test(src)) {
+    r.fail(`@Entity에 @Data/@EqualsAndHashCode 금지 → @Getter 등 사용: ${rel}`);
+  }
+
+  // (c) 필드/세터 주입 금지 — 생성자 주입만(layer-rules). @Autowired 사용 자체를 차단.
+  if (/@Autowired\b/.test(src)) {
+    r.fail(`@Autowired 금지 → 생성자 주입 사용: ${rel}`);
+  }
+
+  // (d) private 메서드 @Transactional 금지(프록시 미적용으로 트랜잭션이 조용히 안 걸림).
+  //     주석에 방해받지 않도록 주석 제거 후 검사.
+  const noComments = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  if (/@Transactional\b(?:\([^)]*\))?\s*(?:@\w+(?:\([^)]*\))?\s*)*private\b/.test(noComments)) {
+    r.fail(`private 메서드에 @Transactional 금지(프록시 미적용): ${rel}`);
+  }
+
+  // (e) 전체 개방 금지 — anyRequest().permitAll() 또는 "/**" permitAll.
+  if (/anyRequest\(\)\s*\.\s*permitAll/.test(src)) {
+    r.fail(`anyRequest().permitAll() 금지(전체 API 개방): ${rel}`);
+  }
+  if (/["']\/\*\*["'][^;]*permitAll/.test(src)) {
+    r.fail(`"/**" permitAll 금지(전체 경로 개방): ${rel}`);
+  }
+}
+
+// ---------- 12. Flyway 버전 유일성 ----------
+// 같은 버전 번호(V6__* 두 개 등)는 Flyway가 실패시키는 지뢰 → 정적으로 미리 차단.
+const versionSeen = new Map();
+for (const file of migrationFiles) {
+  const base = path.basename(file);
+  const vm = base.match(/^V(\d+(?:[._]\d+)*)__/);
+  if (!vm) continue;
+  const v = vm[1];
+  if (versionSeen.has(v)) {
+    r.fail(`Flyway 버전 중복: V${v} (${base} ↔ ${versionSeen.get(v)}) — 새 버전 번호 사용`);
+  } else {
+    versionSeen.set(v, base);
+  }
+}
+
 function normalize(p) {
   return p.replace(/\{[^}]+\}/g, "{id}").replace(/\/+$/, "") || "/";
 }

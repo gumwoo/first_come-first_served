@@ -96,6 +96,15 @@ public class QueueService {
         redis.delete(QueueKeys.user(eventId, userId));
     }
 
+    /** 좌석(S04) 게이트: 이 토큰이 해당 이벤트에 입장(ADMITTED)했는가. */
+    public boolean isAdmitted(String token, Long eventId) {
+        if (token == null || !Boolean.TRUE.equals(redis.hasKey(QueueKeys.admit(token)))) {
+            return false;
+        }
+        Object tokenEvent = redis.opsForHash().get(QueueKeys.token(token), "eventId");
+        return tokenEvent != null && eventId.equals(Long.valueOf((String) tokenEvent));
+    }
+
     /** 소유자가 아직 대기열 등록 전(경합)이면 EXPIRED로 보일 수 있어 WAITING으로 낙관 처리. */
     private QueueTokenResponse currentOrWaiting(String token, Long eventId) {
         QueueStatus st = statusOf(token, eventId);

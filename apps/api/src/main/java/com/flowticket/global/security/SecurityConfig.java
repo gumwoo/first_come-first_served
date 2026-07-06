@@ -70,6 +70,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/queue/status").permitAll()
                         // 대기열 진입(POST)/이탈(DELETE)은 회원 — /events/** permitAll보다 먼저 매칭해야 함
                         .requestMatchers("/events/*/queue/**", "/queue/**").authenticated()
+                        // 좌석 선점(POST)은 회원 — 좌석 조회(GET)는 /events/** permitAll로 공개
+                        .requestMatchers(HttpMethod.POST, "/events/*/seats/hold").authenticated()
                         .requestMatchers("/auth/**", "/oauth2/**", "/login/oauth2/**", "/sse/**",
                                 "/events/**", "/search", "/search/**").permitAll()
                         .anyRequest().authenticated())

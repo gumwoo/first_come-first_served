@@ -109,4 +109,10 @@ public class Event {
         }
         this.updatedAt = LocalDateTime.now();
     }
+
+    /** 좌석 시딩 시 표시용 최저가(등급 최저가)를 기록(S04). */
+    public void applyBasePrice(Integer basePrice) {
+        this.basePrice = basePrice;
+        this.updatedAt = LocalDateTime.now();
+    }
 }

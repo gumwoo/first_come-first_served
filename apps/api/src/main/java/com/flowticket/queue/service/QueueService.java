@@ -57,10 +57,14 @@ public class QueueService {
                 .setIfAbsent(userKey, token, Duration.ofSeconds(tokenTtl)); // SET NX
         if (!Boolean.TRUE.equals(reserved)) {
             String existing = redis.opsForValue().get(userKey);
-            if (existing != null) {
-                return currentOrWaiting(existing, eventId); // 기존 토큰(1인1토큰)
+            if (existing != null && isReusable(existing, eventId)) {
+                return currentOrWaiting(existing, eventId); // 살아있는 토큰(1인1토큰)
             }
-            // 극히 드문 경합(예약 확인~조회 사이 만료): 이 요청이 소유권을 가져간다
+            // (1) 입장 후 만료된 죽은 토큰이 유저키에 남아 재예매를 막던 것, 또는
+            // (2) 극히 드문 경합(예약 확인~조회 사이 만료) → 소유권을 이 요청이 회수하고 새로 발급.
+            if (existing != null) {
+                redis.delete(QueueKeys.token(existing)); // 죽은 토큰 메타 정리
+            }
             redis.opsForValue().set(userKey, token, Duration.ofSeconds(tokenTtl));
         }
         Long seq = redis.opsForValue().increment(QueueKeys.seq(eventId)); // 진입 순번
@@ -133,6 +137,20 @@ public class QueueService {
         long total = card(eventId);
         long rank = st == QueueStatus.WAITING ? rankOf(token, eventId) : 0;
         return new QueueTokenResponse(token, st.name(), rank, total);
+    }
+
+    /**
+     * 유저키에 남아있는 기존 토큰이 재사용 가능한(살아있는) 토큰인가.
+     * WAITING/ADMITTED면 재사용(1인1토큰 유지). 입장 후 만료돼 wait/admit 어디에도 없는
+     * '죽은 토큰'이면 false → 호출부가 정리하고 새 토큰을 발급(재예매 허용).
+     * 단, 아직 wait 등록 전인 '경합 중 신규 토큰'은 메타가 없어 EXPIRED로 보이므로
+     * 이 경우엔 true를 반환해 중복 발급을 막는다.
+     */
+    private boolean isReusable(String token, Long eventId) {
+        if (statusOf(token, eventId) != QueueStatus.EXPIRED) {
+            return true; // WAITING 또는 ADMITTED
+        }
+        return !Boolean.TRUE.equals(redis.hasKey(QueueKeys.token(token))); // 메타 없으면 경합 중 신규 → 재사용
     }
 
     private QueueStatus statusOf(String token, Long eventId) {

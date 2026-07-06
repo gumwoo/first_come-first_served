@@ -14,19 +14,26 @@ import { Card, CardContent } from "@/components/ui/card";
 
 const MAX_PER_USER = 4;
 const SELECT_SECONDS = 300; // 좌석 선택 제한(5분)
+const PER_ROW = 10; // 표시용 열 분할 단위(백엔드엔 열 데이터가 없어 seatCol을 프론트에서 나눔)
 
-// 등급 표시 순서(가격 내림차순)와 아레나 구역 색상.
+// 등급 표시 순서(무대 앞=최고가 → 뒤=최저가)와 구역 밴드 색상.
 const GRADE_ORDER: Record<string, number> = { VIP: 0, R: 1, S: 2, A: 3 };
-const GRADE_ZONE: Record<string, string> = {
-  VIP: "bg-purple-200 text-purple-900 border-purple-300",
-  R: "bg-rose-200 text-rose-900 border-rose-300",
-  S: "bg-emerald-200 text-emerald-900 border-emerald-300",
-  A: "bg-sky-200 text-sky-900 border-sky-300",
+const GRADE_BAND: Record<string, string> = {
+  VIP: "border-purple-200 bg-purple-50",
+  R: "border-rose-200 bg-rose-50",
+  S: "border-emerald-200 bg-emerald-50",
+  A: "border-sky-200 bg-sky-50",
 };
 
 function mmss(s: number) {
   const m = Math.floor(s / 60);
   return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
 export default function SeatSelectPage() {
@@ -41,7 +48,6 @@ export default function SeatSelectPage() {
   const [held, setHeld] = useState<seatApi.HoldResult | null>(null);
   const [remain, setRemain] = useState(SELECT_SECONDS);
   const [submitting, setSubmitting] = useState(false);
-  const [activeGrade, setActiveGrade] = useState<string | null>(null);
 
   // 선택 제한 타이머
   useEffect(() => {
@@ -54,16 +60,11 @@ export default function SeatSelectPage() {
     return () => clearTimeout(t);
   }, [remain, held, id, router]);
 
-  // 가격 desc 정렬된 등급
+  // 가격 desc(무대 앞→뒤) 정렬된 등급
   const grades = useMemo(
     () => (map ? [...map.grades].sort((a, b) => (GRADE_ORDER[a.grade] ?? 9) - (GRADE_ORDER[b.grade] ?? 9)) : []),
     [map]
   );
-
-  // 최초 로드 시 첫 등급 활성화
-  useEffect(() => {
-    if (!activeGrade && grades.length) setActiveGrade(grades[0].grade);
-  }, [grades, activeGrade]);
 
   const priceByGrade = useMemo(() => {
     const m = new Map<string, number>();
@@ -77,15 +78,22 @@ export default function SeatSelectPage() {
     return m;
   }, [map]);
 
+  // 등급별 좌석을 seatCol 순으로(열 분할용)
+  const seatsByGrade = useMemo(() => {
+    const m = new Map<string, seatApi.SeatInfo[]>();
+    map?.seats.forEach((s) => {
+      const list = m.get(s.grade) ?? [];
+      list.push(s);
+      m.set(s.grade, list);
+    });
+    m.forEach((list) => list.sort((a, b) => (a.seatCol ?? 0) - (b.seatCol ?? 0)));
+    return m;
+  }, [map]);
+
   const total = selected.reduce((sum, sid) => {
     const s = seatById.get(sid);
     return sum + (s ? priceByGrade.get(s.grade) ?? 0 : 0);
   }, 0);
-
-  const activeSeats = useMemo(
-    () => (map && activeGrade ? map.seats.filter((s) => s.grade === activeGrade) : []),
-    [map, activeGrade]
-  );
 
   const toggle = (s: seatApi.SeatInfo) => {
     if (s.status !== "AVAILABLE") return;
@@ -141,6 +149,15 @@ export default function SeatSelectPage() {
     );
   }
 
+  const seatBtnClass = (s: seatApi.SeatInfo) => {
+    const sel = selected.includes(s.id);
+    const avail = s.status === "AVAILABLE";
+    return `h-7 w-7 rounded text-[10px] transition ${
+      sel ? "bg-primary text-primary-foreground"
+      : avail ? "bg-white hover:bg-primary/20 border border-border"
+      : "cursor-not-allowed bg-muted/40 text-muted-foreground/40 line-through"}`;
+  };
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
       <div className="flex items-end gap-3">
@@ -148,73 +165,56 @@ export default function SeatSelectPage() {
         <p className="pb-1 text-sm text-muted-foreground">{event?.title ?? "공연"}</p>
       </div>
       <p className="mt-1 flex flex-wrap gap-4 text-sm text-muted-foreground">
-        <span>원하는 구역을 선택한 후 좌석을 선택해 주세요.</span>
+        <span>무대와 가까운 앞줄(VIP)부터 배치돼요. 원하는 좌석을 선택해 주세요.</span>
         <span className="flex items-center gap-1"><Users className="h-4 w-4" /> 1인 최대 {MAX_PER_USER}매</span>
         <span>현재 선택 {selected.length}매</span>
       </p>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
-        <div className="space-y-5">
-          {/* 스타일 아레나맵(구역=등급) */}
-          <Card>
-            <CardContent className="p-5">
-              <div className="mx-auto max-w-lg space-y-2">
-                <div className="rounded bg-foreground/90 py-2 text-center text-sm font-semibold text-primary-foreground">STAGE</div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {grades.map((g) => {
-                    const on = activeGrade === g.grade;
-                    return (
-                      <button key={g.grade} onClick={() => setActiveGrade(g.grade)}
-                        className={`rounded-lg border py-4 text-center text-sm font-semibold transition ${GRADE_ZONE[g.grade] ?? "bg-muted"} ${on ? "ring-2 ring-primary ring-offset-1" : "opacity-90 hover:opacity-100"}`}>
-                        {g.grade}
-                        <span className="mt-0.5 block text-[11px] font-normal opacity-80">잔여 {g.available}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="rounded bg-muted py-1.5 text-center text-xs text-muted-foreground">CONSOLE</div>
-              </div>
-              <div className="mt-4 flex justify-center gap-4 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1"><i className="inline-block h-3 w-3 rounded bg-muted" /> 선택 가능</span>
-                <span className="flex items-center gap-1"><i className="inline-block h-3 w-3 rounded bg-primary" /> 선택 좌석</span>
-                <span className="flex items-center gap-1"><i className="inline-block h-3 w-3 rounded bg-muted/40" /> 판매 완료</span>
-              </div>
-            </CardContent>
-          </Card>
+        {/* 극장식 좌석맵: STAGE 아래로 VIP→R→S→A, 등급마다 열×번호 */}
+        <Card>
+          <CardContent className="p-5">
+            <div className="mx-auto mb-5 w-2/3 rounded-t-[2rem] bg-foreground/90 py-2.5 text-center text-sm font-semibold tracking-[0.3em] text-primary-foreground">
+              STAGE
+            </div>
 
-          {/* 선택 구역의 좌석 그리드 */}
-          <Card>
-            <CardContent className="p-5">
-              <div className="mb-3 flex items-center justify-between text-sm">
-                <span className="font-semibold">
-                  {activeGrade}석 · {(priceByGrade.get(activeGrade ?? "") ?? 0).toLocaleString()}원
-                </span>
-                <span className="text-muted-foreground">
-                  잔여 {grades.find((g) => g.grade === activeGrade)?.available ?? 0} / {grades.find((g) => g.grade === activeGrade)?.total ?? 0}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {activeSeats.map((s) => {
-                  const sel = selected.includes(s.id);
-                  const avail = s.status === "AVAILABLE";
-                  return (
-                    <button key={s.id} onClick={() => toggle(s)} disabled={!avail}
-                      title={`${s.grade} ${s.seatCol}번`}
-                      className={`h-8 w-8 rounded text-[11px] transition ${
-                        sel ? "bg-primary text-primary-foreground"
-                        : avail ? "bg-muted hover:bg-primary/20"
-                        : "cursor-not-allowed bg-muted/40 text-muted-foreground/40 line-through"}`}>
-                      {s.seatCol}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
-                <Info className="h-3.5 w-3.5" /> 구역/열 배치는 예매 시점에 따라 일부 변경될 수 있습니다.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+            <div className="space-y-3">
+              {grades.map((g) => {
+                const rows = chunk(seatsByGrade.get(g.grade) ?? [], PER_ROW);
+                return (
+                  <div key={g.grade} className={`rounded-lg border p-3 ${GRADE_BAND[g.grade] ?? "bg-muted/30"}`}>
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                      <span className="font-semibold">{g.grade}석 · {g.price.toLocaleString()}원</span>
+                      <span className="text-muted-foreground">잔여 {g.available} / {g.total}</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {rows.map((row, ri) => (
+                        <div key={ri} className="flex items-center justify-center gap-1.5">
+                          <span className="w-14 shrink-0 text-right text-[10px] text-muted-foreground">{g.grade} {ri + 1}열</span>
+                          {row.map((s) => (
+                            <button key={s.id} onClick={() => toggle(s)} disabled={s.status !== "AVAILABLE"}
+                              title={`${g.grade} ${ri + 1}열 ${s.seatCol}번`} className={seatBtnClass(s)}>
+                              {s.seatCol}
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex justify-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1"><i className="inline-block h-3 w-3 rounded border border-border bg-white" /> 선택 가능</span>
+              <span className="flex items-center gap-1"><i className="inline-block h-3 w-3 rounded bg-primary" /> 선택 좌석</span>
+              <span className="flex items-center gap-1"><i className="inline-block h-3 w-3 rounded bg-muted/40" /> 판매 완료</span>
+            </div>
+            <p className="mt-2 flex items-center justify-center gap-1 text-xs text-muted-foreground">
+              <Info className="h-3.5 w-3.5" /> 열·번호는 표시용이며 실제 공연장 배치와 다를 수 있습니다.
+            </p>
+          </CardContent>
+        </Card>
 
         {/* 우측: 예매정보 + 타이머 + 합계 + 안내 */}
         <aside className="space-y-4">

@@ -1,0 +1,9 @@
+{
+  "topic": "seat-oversell",
+  "phase": "before",
+  "date": "2026-07-06",
+  "method": "비원자 check-then-act(SELECT status → AVAILABLE면 → 무조건 UPDATE HELD), 레이스 창 sleep 20ms",
+  "config": { "seats": 1, "concurrentThreads": 20 },
+  "result": { "sold": 20, "overSold": 19 },
+  "note": "동시 스레드가 모두 AVAILABLE을 읽고 각자 UPDATE → 1석에 20명 선점(초과판매). 근거 테스트: SeatInventoryIntegrationTest.비교후행동_naive는_초과판매된다"
+}

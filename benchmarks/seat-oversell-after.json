@@ -1,0 +1,9 @@
+{
+  "topic": "seat-oversell",
+  "phase": "after",
+  "date": "2026-07-06",
+  "method": "DB 조건부 UPDATE(UPDATE seats SET status='HELD' WHERE id=? AND status='AVAILABLE'), 동일 조건",
+  "config": { "seats": 1, "concurrentThreads": 20 },
+  "result": { "sold": 1, "overSold": 0 },
+  "note": "행 락으로 동시 트랜잭션 중 하나만 통과. 근거 테스트: SeatInventoryIntegrationTest.조건부UPDATE_동시선점은_초과판매되지_않는다"
+}

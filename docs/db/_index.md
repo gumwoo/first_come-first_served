@@ -15,5 +15,7 @@
 |--------|----------|------|------|
 | users | S01 | [users.md](users.md) | 구현(V1~V3) |
 | events | S02 | [events.md](events.md) | 구현(V4__events.sql) |
-| (seats) | S04 | (예정) | |
+| seats | S04 | [seats.md](seats.md) | 설계(마이그레이션 후속 V6) |
+| event_seat_prices | S04 | [event_seat_prices.md](event_seat_prices.md) | 설계(V6) |
+| seat_holds | S04 | [seat_holds.md](seat_holds.md) | 설계(V7) |
 | (orders) | S05 | (예정) | |

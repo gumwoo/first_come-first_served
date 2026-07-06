@@ -1,6 +1,7 @@
 package com.flowticket.seat.service;
 
 import com.flowticket.event.domain.Event;
+import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
@@ -10,7 +11,10 @@ import com.flowticket.seat.domain.SeatGrade;
 import com.flowticket.seat.repository.EventSeatPriceRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,11 +22,13 @@ import org.springframework.transaction.annotation.Transactional;
  * 좌석·가격 기본 시딩(멱등). KOPIS엔 좌석·가격이 없어 기본 템플릿으로 생성한다.
  * 가격은 장르 티어(ADR-004), 좌석은 VIP10/R20/S30/A40. base_price는 등급 최저가로 기록.
  */
+@Slf4j
 @Service
 public class SeatSeeder {
 
     private static final SeatGrade[] GRADES = {SeatGrade.VIP, SeatGrade.R, SeatGrade.S, SeatGrade.A};
     private static final int[] COUNTS = {10, 20, 30, 40};
+    private static final List<EventStatus> SELLABLE = List.of(EventStatus.ON_SALE, EventStatus.SCHEDULED);
 
     private final SeatRepository seatRepository;
     private final EventSeatPriceRepository priceRepository;
@@ -33,6 +39,32 @@ public class SeatSeeder {
         this.seatRepository = seatRepository;
         this.priceRepository = priceRepository;
         this.eventRepository = eventRepository;
+    }
+
+    /**
+     * 판매 가능(ON_SALE/SCHEDULED)한데 좌석이 없는 이벤트에 좌석·가격을 생성.
+     * KOPIS 동기화 후 호출(자동 시딩). 이벤트별 트랜잭션 분리 + best-effort(한 건 실패가 전체 안 막음).
+     * 반환: 새로 시딩한 이벤트 수.
+     */
+    public int seedSellable() {
+        List<Long> sellable = eventRepository.findIdsByStatusIn(SELLABLE);
+        if (sellable.isEmpty()) {
+            return 0;
+        }
+        Set<Long> already = new HashSet<>(seatRepository.findSeededEventIds(sellable));
+        int seeded = 0;
+        for (Long eventId : sellable) {
+            if (already.contains(eventId)) {
+                continue;
+            }
+            try {
+                seedForEvent(eventId);
+                seeded++;
+            } catch (Exception e) {
+                log.warn("[seat] 좌석 시딩 실패 event={}: {}", eventId, e.getMessage());
+            }
+        }
+        return seeded;
     }
 
     /** 관리자/수동 트리거: eventId로 조회 후 시딩. */

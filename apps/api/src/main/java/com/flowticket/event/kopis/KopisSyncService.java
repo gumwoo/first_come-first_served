@@ -1,5 +1,6 @@
 package com.flowticket.event.kopis;
 
+import com.flowticket.seat.service.SeatSeeder;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -22,16 +23,18 @@ public class KopisSyncService {
 
     private final KopisClient kopisClient;
     private final KopisUpserter kopisUpserter;
+    private final SeatSeeder seatSeeder;
     private final int syncDays;
     private final int rows;
     private final int maxPages;
 
-    public KopisSyncService(KopisClient kopisClient, KopisUpserter kopisUpserter,
+    public KopisSyncService(KopisClient kopisClient, KopisUpserter kopisUpserter, SeatSeeder seatSeeder,
                             @Value("${kopis.sync.days:90}") int syncDays,
                             @Value("${kopis.sync.rows:100}") int rows,
                             @Value("${kopis.sync.max-pages:10}") int maxPages) {
         this.kopisClient = kopisClient;
         this.kopisUpserter = kopisUpserter;
+        this.seatSeeder = seatSeeder;
         this.syncDays = syncDays;
         this.rows = rows;
         this.maxPages = maxPages;
@@ -46,7 +49,16 @@ public class KopisSyncService {
             LocalDate ed = st.plusDays(CHUNK_DAYS - 1).isAfter(end) ? end : st.plusDays(CHUNK_DAYS - 1);
             all.addAll(kopisClient.fetchListAll(st.format(YMD), ed.format(YMD), rows, maxPages)); // 외부 호출
         }
-        return kopisUpserter.upsertAll(all); // 트랜잭션 DB (kopis_id 기준 멱등 — 청크 경계 중복 안전)
+        int upserted = kopisUpserter.upsertAll(all); // 트랜잭션 DB (kopis_id 멱등)
+        try {
+            int seeded = seatSeeder.seedSellable(); // 판매 가능 공연에 좌석 자동 생성(멱등, best-effort)
+            if (seeded > 0) {
+                log.info("[seat] 자동 좌석 시딩 {}건", seeded);
+            }
+        } catch (Exception e) {
+            log.warn("[seat] 자동 좌석 시딩 실패: {}", e.getMessage()); // 시딩 실패가 동기화를 막지 않음
+        }
+        return upserted;
     }
 
     /** 매일 새벽 4시 자동 동기화. */

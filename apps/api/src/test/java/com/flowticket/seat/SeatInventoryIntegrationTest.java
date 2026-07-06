@@ -126,6 +126,20 @@ class SeatInventoryIntegrationTest {
     }
 
     @Test
+    void 자동시딩은_판매가능_미시딩_이벤트만_생성한다() {
+        Event onSale = eventRepository.save(Event.builder()
+                .kopisId("SEAT2").title("판매중").genre("연극").status(EventStatus.ON_SALE).build());
+        Event closed = eventRepository.save(Event.builder()
+                .kopisId("SEAT3").title("종료").genre("연극").status(EventStatus.CLOSED).build());
+
+        int seeded = seatSeeder.seedSellable();
+
+        assertThat(seatRepository.existsByEventId(onSale.getId())).isTrue();   // 판매가능 → 시딩
+        assertThat(seatRepository.existsByEventId(closed.getId())).isFalse();  // 종료 → 미시딩
+        assertThat(seeded).isEqualTo(1); // @BeforeEach 이벤트는 이미 시딩 → 건너뜀
+    }
+
+    @Test
     void 입장하지_않은_토큰은_선점이_거부된다() {
         assertThatThrownBy(() -> seatService.hold(1L, eventId, List.of(aSeatId), "not-admitted"))
                 .isInstanceOf(BusinessException.class); // QUEUE_NOT_ADMITTED

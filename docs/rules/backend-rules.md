@@ -56,6 +56,13 @@ com.flowticket
 - 외부호출(KOPIS/PG)은 트랜잭션 경계 **밖**에서. 커넥션 잡은 채 외부 대기 금지.
 - 선착순 재고 차감은 Redis 원자연산 우선, DB 정합성은 비관락 또는 버전(@Version).
 - `@Transactional` self-invocation(같은 빈 내부 호출) 함정 주의.
+- `private` 메서드에 `@Transactional` 금지 ★ (프록시 미적용으로 트랜잭션이 안 걸림).
+
+## 5-3. JPA 엔티티 ★
+- `@Enumerated`는 반드시 `EnumType.STRING` ★ (기본 ORDINAL은 enum 순서 변경 시 DB 값 어긋남).
+- 엔티티에 Lombok `@Data`/`@EqualsAndHashCode` 금지 ★ → `@Getter` 등 사용
+  (프록시·연관관계에서 equals/hashCode 오작동).
+- Flyway 마이그레이션 버전 번호 중복 금지 ★ (같은 `V6__` 둘 → 새 번호 사용).
 
 ## 5-1. 컨트롤러 금지사항 ★
 - 컨트롤러 내 `try/catch`로 비즈니스 예외 처리·삼키기 금지 → 전역 핸들러 위임
@@ -101,5 +108,6 @@ com.flowticket
 ## 7. 금지 ★
 - `contracts/allowed-stack.yaml` 밖 의존성 추가 금지
 - 컨트롤러/엔티티에 비즈니스 로직
-- 필드 주입(`@Autowired` 필드) 금지 → 생성자 주입만
+- 필드 주입(`@Autowired`) 금지 → 생성자 주입만 ★ (이제 하네스가 강제)
+- SecurityConfig에서 `anyRequest().permitAll()` / `"/**"` permitAll 금지 ★ (전체 개방 방지)
 - `System.out` 로깅 금지

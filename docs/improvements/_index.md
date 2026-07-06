@@ -20,7 +20,7 @@ naive → 측정 → 개선 → 재측정 순서로 수치를 **커밋으로 박
 | [IMP-005](IMP-005-kopis-coverage.md) | KOPIS 동기화 커버리지 — 청크·페이지 전량 수집 | S02 | 100건→1,907건(약 19배) | 완료 |
 | [IMP-006](IMP-006-xff-dedup-bypass.md) | 조회수 dedup 우회 — XFF 신뢰 경계 | S02 | 위조 100→1건 수렴 | 완료 |
 | [IMP-007](IMP-007-token-issue-dedup.md) | 1인1토큰 중복 발급 — SET NX 원자화 | S03 | 중복 19→0(단일서버 실재) | 완료 |
-| (예) IMP-003 | 재고 동시성 — 락 도입 | S04 | 초과판매 37건→0건 | 예정 |
+| [IMP-003](IMP-003-oversell.md) | 재고 초과판매 — DB 조건부 UPDATE | S04 | oversell 19→0 | 완료 |
 | [IMP-004](IMP-004-queue-admission.md) | 대기열 정원 초과 — 승격 Lua 원자화 | S03 | over-admit 7→0 | 완료 |
 
 ## 누적 지표 보드

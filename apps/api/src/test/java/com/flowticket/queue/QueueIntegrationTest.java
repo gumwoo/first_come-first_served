@@ -168,6 +168,25 @@ class QueueIntegrationTest {
     }
 
     @Test
+    void 입장창이_만료된_토큰으로_재진입하면_새_순번을_받는다() throws Exception {
+        // 버그 재현·수정 근거: 입장 후 미진행으로 만료된 토큰이 유저키에 남아
+        // 1인1토큰 때문에 재예매가 막히던 것을 self-heal(죽은 토큰 정리 후 재발급)로 해결.
+        Long user = 800L;
+        String t1 = queueService.issue(user, EVENT).token();
+        admissionService.admit(EVENT); // t1 입장(ADMITTED)
+        assertThat(redisTemplate.hasKey("queue:admit:" + t1)).isTrue();
+
+        Thread.sleep(2000);            // admit-ttl(1s) 경과 → 입장창 만료
+        admissionService.reclaim(EVENT); // 슬롯 회수(유저키·메타는 남음 = 죽은 토큰)
+
+        var reissued = queueService.issue(user, EVENT); // 재진입
+        assertThat(reissued.token()).isNotEqualTo(t1);  // 죽은 토큰 대신 새 토큰
+        assertThat(reissued.status()).isEqualTo("WAITING");
+        assertThat(redisTemplate.opsForZSet().rank("queue:wait:" + EVENT, reissued.token()))
+                .isNotNull(); // 다시 대기열에 등록됨
+    }
+
+    @Test
     void 원자_승격은_정원을_초과하지_않는다() {
         for (int i = 0; i < 10; i++) {
             queueService.issue(2000L + i, EVENT); // 10명 대기

@@ -5,10 +5,16 @@ import com.flowticket.seat.domain.SeatHoldStatus;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface SeatHoldRepository extends JpaRepository<SeatHold, Long> {
+
+    /** 만료 sweep: 홀드 일괄 EXPIRED. */
+    @Modifying(clearAutomatically = true)
+    @Query("update SeatHold h set h.status = com.flowticket.seat.domain.SeatHoldStatus.EXPIRED where h.id in :ids")
+    int expireHolds(@Param("ids") List<Long> ids);
 
     /** 1인 구매 한도 검사용 — 유저의 활성(HELD) 홀드 id. */
     @Query("select h.id from SeatHold h where h.userId = :userId and h.eventId = :eventId and h.status = :status")

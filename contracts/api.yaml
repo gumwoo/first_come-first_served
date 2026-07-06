@@ -58,6 +58,7 @@ endpoints:
 
   # 실시간 푸시 채널 (SSE) — events.yaml fe_subscribes 이벤트를 프론트로 전송
   - { method: GET,    path: "/sse/queue/{token}",        slice: S03 }
+  - { method: GET,    path: "/sse/events/{id}/seats",    slice: S04 }
   - { method: GET,    path: "/sse/orders/{id}",          slice: S05 }
 
   # S08 부하/모니터링

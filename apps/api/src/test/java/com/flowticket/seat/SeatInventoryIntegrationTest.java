@@ -62,10 +62,13 @@ class SeatInventoryIntegrationTest {
         r.add("queue.capacity", () -> "100");
         r.add("queue.admit-interval-ms", () -> "3600000"); // 워커 자동실행 비활성
         r.add("seat.max-per-user", () -> "4");
+        r.add("seat.hold-ttl", () -> "1");                 // 만료 테스트용(1초)
+        r.add("seat.sweep-interval-ms", () -> "3600000");  // 만료 워커 자동실행 비활성
     }
 
     @Autowired SeatService seatService;
     @Autowired SeatSeeder seatSeeder;
+    @Autowired com.flowticket.seat.service.SeatHoldExpiryService expiryService;
     @Autowired SeatRepository seatRepository;
     @Autowired EventSeatPriceRepository priceRepository;
     @Autowired SeatHoldRepository holdRepository;
@@ -154,7 +157,23 @@ class SeatInventoryIntegrationTest {
                 .isInstanceOf(BusinessException.class); // 이미 HELD → SOLD_OUT
     }
 
+    @Test
+    void 만료된_선점은_sweep으로_좌석이_복구된다() throws Exception {
+        String token = admittedToken(8L, eventId);
+        seatService.hold(8L, eventId, List.of(aSeatId), token);
+        assertThat(seatStatus(aSeatId)).isEqualTo("HELD");
+
+        Thread.sleep(1500); // hold-ttl(1s) 경과
+        expiryService.sweepExpired();
+
+        assertThat(seatStatus(aSeatId)).isEqualTo("AVAILABLE"); // 재고 복구
+    }
+
     // --- helpers ---
+
+    private String seatStatus(Long seatId) {
+        return jdbc.queryForObject("select status from seats where id=?", String.class, seatId);
+    }
 
     private Long availableSeatId() {
         return seatRepository.findByEventId(eventId).stream()

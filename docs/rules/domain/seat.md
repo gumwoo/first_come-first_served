@@ -44,6 +44,8 @@
 ## 실시간
 - `seat.held` / `seat.hold.released` / `seat.hold.expired` 발행. **`seat.hold.expired`는
   required_fe_subscribes** → 좌석맵/타이머가 SSE로 반영(하네스). 폴링 폴백.
+- 채널: `GET /sse/events/{id}/seats`(이벤트별 다중 구독). 만료 sweep(`@Scheduled`)이 좌석을
+  AVAILABLE로 복구하고 그 이벤트 구독자에 `seat.hold.expired`(freed seatIds) push. 단일 서버 가정.
 
 ## 테스트 계획 ([T] 요약)
 - **oversell(IMP-003)**: 재고 1석 N동시 선점 → 성공 1·초과 0(조건부 UPDATE). naive 재현(before).

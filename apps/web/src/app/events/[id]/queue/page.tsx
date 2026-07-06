@@ -18,7 +18,8 @@ function fmtEta(sec: number): string {
 export default function QueuePage() {
   const id = Number(useParams().id);
   const router = useRouter();
-  const { phase, rank, total, eta, progress, redirect, leave } = useQueue(id);
+  const { phase, rank, total, eta, progress, queueToken, leave } = useQueue(id);
+  const seatsHref = `/events/${id}/seats${queueToken ? `?qt=${queueToken}` : ""}`;
   const { data: event } = useEvent(id);
 
   const exitQueue = async () => {
@@ -50,11 +51,9 @@ export default function QueuePage() {
         <CheckCircle2 className="mx-auto mb-3 h-12 w-12 text-primary" />
         <h1 className="text-xl font-bold">입장 완료!</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          좌석 선택 단계는 준비 중입니다(S04). 입장 제한 시간 내 진행해주세요.
+          지금 좌석을 선택할 수 있어요. 입장 제한 시간 내 진행해주세요.
         </p>
-        {redirect && (
-          <Button className="mt-4" onClick={() => router.push(redirect)}>좌석 선택으로</Button>
-        )}
+        <Button className="mt-4" onClick={() => router.push(seatsHref)}>좌석 선택으로</Button>
       </main>
     );
   }

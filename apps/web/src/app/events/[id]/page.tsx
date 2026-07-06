@@ -43,14 +43,15 @@ export default function EventDetailPage() {
             <Row label="관람연령" value={event.ageLimit} />
           </dl>
           <div className="mt-4 rounded-md bg-muted/40 p-3">
-            <span className="text-xs text-muted-foreground">가격</span>
+            <span className="text-xs text-muted-foreground">예매 기준 가격</span>
             <p className="text-lg font-bold text-primary">
-              {event.priceText
-                ? event.priceText
-                : event.basePrice
-                ? `${event.basePrice.toLocaleString()}원`
-                : "가격 미정"}
+              {event.basePrice ? `${event.basePrice.toLocaleString()}원 ~` : "가격 미정"}
             </p>
+            {showOriginalPrice(event.priceText) && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                원 공연 안내(KOPIS 제공): {event.priceText}
+              </p>
+            )}
           </div>
           {/* 오픈 예정 안내(before-open) */}
           {beforeOpen && (
@@ -115,7 +116,13 @@ export default function EventDetailPage() {
           )}
           {tab === "판매정보" && (
             <>
-              <p><span className="font-medium text-foreground">가격: </span>{event.priceText ?? "미정"}</p>
+              <p>
+                <span className="font-medium text-foreground">예매 기준 가격: </span>
+                {event.basePrice ? `${event.basePrice.toLocaleString()}원 ~` : "미정"}
+              </p>
+              {showOriginalPrice(event.priceText) && (
+                <p><span className="font-medium text-foreground">원 공연 안내(KOPIS 제공): </span>{event.priceText}</p>
+              )}
               <p>선착순 예매로 진행되며, 1인당 구매 수량 제한이 적용될 수 있습니다.</p>
             </>
           )}
@@ -124,6 +131,14 @@ export default function EventDetailPage() {
       </div>
     </main>
   );
+}
+
+/** priceText는 자유텍스트(무료/미정/등급표기 등)라 신뢰 불가 → 참고용 문구로만, 무의미하면 숨김. */
+function showOriginalPrice(priceText: string | null | undefined): priceText is string {
+  if (!priceText) return false;
+  const t = priceText.trim();
+  if (!t) return false;
+  return !/(무료|미정|없음|추후|별도\s*안내)/.test(t);
 }
 
 function Row({ label, value }: { label: string; value: string | null | undefined }) {

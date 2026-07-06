@@ -31,6 +31,7 @@ endpoints:
   - { method: GET,    path: "/events/{id}/seats",        slice: S04 }
   - { method: POST,   path: "/events/{id}/seats/hold",   slice: S04 }
   - { method: DELETE, path: "/seats/hold/{holdId}",      slice: S04 }
+  - { method: POST,   path: "/admin/events/{id}/seats",  slice: S04 }
 
   # S05 주문·결제
   - { method: POST,   path: "/orders",                   slice: S05 }

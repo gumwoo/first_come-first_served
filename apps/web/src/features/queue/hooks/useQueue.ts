@@ -94,5 +94,5 @@ export function useQueue(eventId: number) {
     }
   }, [queueToken, accessToken]);
 
-  return { phase, rank, total, eta, progress, redirect, leave };
+  return { phase, rank, total, eta, progress, redirect, queueToken, leave };
 }

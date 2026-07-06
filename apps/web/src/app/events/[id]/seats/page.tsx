@@ -1,0 +1,213 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { Clock, Users, CalendarClock, CheckCircle2 } from "lucide-react";
+import { useSeats } from "@/features/seat/hooks/useSeats";
+import * as seatApi from "@/features/seat/api/seat";
+import { useEvent } from "@/features/event/hooks/useEvents";
+import { useAuthStore } from "@/features/auth/store/authStore";
+import { ApiError } from "@/lib/apiClient";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+
+const MAX_PER_USER = 4;
+const SELECT_SECONDS = 300; // 좌석 선택 제한(5분)
+
+function mmss(s: number) {
+  const m = Math.floor(s / 60);
+  return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+export default function SeatSelectPage() {
+  const id = Number(useParams().id);
+  const router = useRouter();
+  const queueToken = useSearchParams().get("qt") ?? "";
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const { map, loading, error, refresh } = useSeats(id);
+  const { data: event } = useEvent(id);
+
+  const [selected, setSelected] = useState<number[]>([]);
+  const [held, setHeld] = useState<seatApi.HoldResult | null>(null);
+  const [remain, setRemain] = useState(SELECT_SECONDS);
+  const [submitting, setSubmitting] = useState(false);
+
+  // 선택 제한 타이머
+  useEffect(() => {
+    if (held) return;
+    if (remain <= 0) {
+      router.replace(`/events/${id}/seats/expired`);
+      return;
+    }
+    const t = setTimeout(() => setRemain((r) => r - 1), 1000);
+    return () => clearTimeout(t);
+  }, [remain, held, id, router]);
+
+  const priceByGrade = useMemo(() => {
+    const m = new Map<string, number>();
+    map?.grades.forEach((g) => m.set(g.grade, g.price));
+    return m;
+  }, [map]);
+
+  const seatById = useMemo(() => {
+    const m = new Map<number, seatApi.SeatInfo>();
+    map?.seats.forEach((s) => m.set(s.id, s));
+    return m;
+  }, [map]);
+
+  const total = selected.reduce((sum, sid) => {
+    const s = seatById.get(sid);
+    return sum + (s ? priceByGrade.get(s.grade) ?? 0 : 0);
+  }, 0);
+
+  const toggle = (s: seatApi.SeatInfo) => {
+    if (s.status !== "AVAILABLE") return;
+    setSelected((cur) =>
+      cur.includes(s.id)
+        ? cur.filter((x) => x !== s.id)
+        : cur.length >= MAX_PER_USER
+        ? cur
+        : [...cur, s.id]
+    );
+  };
+
+  const complete = async () => {
+    if (selected.length === 0 || submitting) return;
+    setSubmitting(true);
+    try {
+      const result = await seatApi.holdSeats(id, selected, queueToken, accessToken);
+      setHeld(result);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "SOLD_OUT") {
+        router.replace(`/events/${id}/sold-out`);
+      } else if (e instanceof ApiError && e.code === "QUEUE_NOT_ADMITTED") {
+        router.replace(`/events/${id}/queue`);
+      } else {
+        await refresh();
+        setSelected([]);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) return <main className="mx-auto max-w-6xl p-10 text-center text-muted-foreground">좌석 정보를 불러오는 중…</main>;
+  if (error || !map) return <main className="mx-auto max-w-6xl p-10 text-center text-destructive">좌석 정보를 불러올 수 없습니다.</main>;
+
+  // 선점 완료 상태(결제 S05 전 임시)
+  if (held) {
+    return (
+      <main className="mx-auto max-w-md p-10 text-center">
+        <CheckCircle2 className="mx-auto mb-3 h-12 w-12 text-primary" />
+        <h1 className="text-xl font-bold">좌석 선점 완료!</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {held.seatIds.length}석 · 총 {held.total.toLocaleString()}원 · 결제 단계는 준비 중입니다(S05).
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">제한 시간 내 미결제 시 선점이 자동 해제됩니다.</p>
+        <div className="mt-4 flex justify-center gap-2">
+          <Button variant="outline" onClick={async () => { await seatApi.releaseHold(held.holdId, accessToken); router.replace(`/events/${id}/seats?qt=${queueToken}`); }}>
+            선점 취소
+          </Button>
+          <Link href={`/events/${id}`}><Button>공연 상세로</Button></Link>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="mx-auto max-w-6xl px-4 py-8">
+      <div className="flex items-end gap-3">
+        <h1 className="text-2xl font-bold">좌석 선택</h1>
+        <p className="pb-1 text-sm text-muted-foreground">{event?.title ?? "공연"}</p>
+      </div>
+      <p className="mt-1 flex flex-wrap gap-4 text-sm text-muted-foreground">
+        <span>원하는 등급의 좌석을 선택해 주세요.</span>
+        <span className="flex items-center gap-1"><Users className="h-4 w-4" /> 1인 최대 {MAX_PER_USER}매</span>
+        <span>현재 선택 {selected.length}매</span>
+      </p>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_300px]">
+        {/* 좌석맵(등급 구역) */}
+        <div className="space-y-5">
+          <div className="rounded bg-foreground/90 py-2 text-center text-sm font-semibold text-primary-foreground">STAGE</div>
+          {map.grades.map((g) => (
+            <Card key={g.grade}>
+              <CardContent className="p-4">
+                <div className="mb-2 flex items-center justify-between text-sm">
+                  <span className="font-semibold">{g.grade}석 · {g.price.toLocaleString()}원</span>
+                  <span className="text-muted-foreground">잔여 {g.available} / {g.total}</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {map.seats.filter((s) => s.grade === g.grade).map((s) => {
+                    const sel = selected.includes(s.id);
+                    const avail = s.status === "AVAILABLE";
+                    return (
+                      <button key={s.id} onClick={() => toggle(s)} disabled={!avail}
+                        title={`${s.grade} ${s.seatCol}`}
+                        className={`h-7 w-7 rounded text-[10px] ${
+                          sel ? "bg-primary text-primary-foreground"
+                          : avail ? "bg-muted hover:bg-primary/20"
+                          : "cursor-not-allowed bg-muted/40 text-muted-foreground/40 line-through"}`}>
+                        {s.seatCol}
+                      </button>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          <div className="flex gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1"><i className="inline-block h-3 w-3 rounded bg-muted" /> 선택 가능</span>
+            <span className="flex items-center gap-1"><i className="inline-block h-3 w-3 rounded bg-primary" /> 선택 좌석</span>
+            <span className="flex items-center gap-1"><i className="inline-block h-3 w-3 rounded bg-muted/40" /> 판매 완료</span>
+          </div>
+        </div>
+
+        {/* 우측: 예매정보 + 타이머 + 합계 */}
+        <aside className="space-y-4">
+          <Card className="bg-muted/30">
+            <CardContent className="space-y-2 pt-5 text-sm">
+              <p className="flex items-center gap-1.5 font-medium"><CalendarClock className="h-4 w-4 text-primary" /> 예매 정보</p>
+              <p className="line-clamp-2 font-medium">{event?.title ?? "-"}</p>
+              <p className="text-xs text-muted-foreground">장소 {event?.venue ?? "-"}</p>
+              <p className="text-xs text-muted-foreground">일시 {event?.startDate ?? "-"}</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="flex items-center justify-between pt-5">
+              <div className="flex items-center gap-1.5 text-sm text-muted-foreground"><Clock className="h-4 w-4" /> 남은 선택 시간</div>
+              <span className="text-xl font-bold text-primary">{mmss(remain)}</span>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="space-y-2 pt-5 text-sm">
+              <p className="font-medium">선택 좌석</p>
+              {selected.length === 0 && <p className="text-xs text-muted-foreground">좌석을 선택해 주세요.</p>}
+              {selected.map((sid) => {
+                const s = seatById.get(sid);
+                return s ? (
+                  <div key={sid} className="flex justify-between text-xs">
+                    <span>{s.grade}석 {s.seatCol}번</span>
+                    <span>{(priceByGrade.get(s.grade) ?? 0).toLocaleString()}원</span>
+                  </div>
+                ) : null;
+              })}
+              <div className="flex justify-between border-t border-border pt-2 font-semibold">
+                <span>총 결제 금액</span>
+                <span className="text-primary">{total.toLocaleString()}원</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Button className="w-full" disabled={selected.length === 0 || submitting} onClick={complete}>
+            {submitting ? "처리 중…" : "선택 완료"}
+          </Button>
+          <Button variant="ghost" className="w-full" onClick={() => router.back()}>← 이전으로</Button>
+        </aside>
+      </div>
+    </main>
+  );
+}

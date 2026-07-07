@@ -48,6 +48,7 @@ export default function SeatSelectPage() {
   const [held, setHeld] = useState<seatApi.HoldResult | null>(null);
   const [remain, setRemain] = useState(SELECT_SECONDS);
   const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // 선택 제한 타이머
   useEffect(() => {
@@ -97,6 +98,7 @@ export default function SeatSelectPage() {
 
   const toggle = (s: seatApi.SeatInfo) => {
     if (s.status !== "AVAILABLE") return;
+    setErrorMsg(null);
     setSelected((cur) =>
       cur.includes(s.id)
         ? cur.filter((x) => x !== s.id)
@@ -109,6 +111,7 @@ export default function SeatSelectPage() {
   const complete = async () => {
     if (selected.length === 0 || submitting) return;
     setSubmitting(true);
+    setErrorMsg(null);
     try {
       const result = await seatApi.holdSeats(id, selected, queueToken, accessToken);
       setHeld(result);
@@ -117,7 +120,12 @@ export default function SeatSelectPage() {
         router.replace(`/events/${id}/sold-out`);
       } else if (e instanceof ApiError && e.code === "QUEUE_NOT_ADMITTED") {
         router.replace(`/events/${id}/queue`);
+      } else if (e instanceof ApiError && e.code === "MAX_PER_USER_EXCEEDED") {
+        // 이미 보유한 선점 + 이번 선택이 한도를 넘음 — 선택은 유지하고 안내만.
+        setErrorMsg(e.message || `1인 최대 ${MAX_PER_USER}매까지 예매할 수 있습니다.`);
       } else {
+        // HOLD_EXPIRED / 이미 선점된 좌석 등 — 최신 재고로 갱신하고 선택 초기화 후 안내.
+        setErrorMsg(e instanceof ApiError ? e.message : "선점에 실패했습니다. 다시 시도해 주세요.");
         await refresh();
         setSelected([]);
       }
@@ -283,6 +291,11 @@ export default function SeatSelectPage() {
             </CardContent>
           </Card>
 
+          {errorMsg && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-xs font-medium text-destructive">
+              {errorMsg}
+            </p>
+          )}
           <Button className="w-full" disabled={selected.length === 0 || submitting} onClick={complete}>
             {submitting ? "처리 중…" : "선택 완료"}
           </Button>

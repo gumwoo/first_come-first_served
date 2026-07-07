@@ -187,6 +187,30 @@ class QueueIntegrationTest {
     }
 
     @Test
+    void 입장상태에서_재발급하면_같은_토큰이_유지된다() {
+        // 상태기계 분기: ADMITTED 토큰은 재발급 시 그대로 재사용(1인1토큰) — 죽은 토큰만 새로 발급.
+        String t1 = queueService.issue(50L, EVENT).token();
+        admissionService.admit(EVENT);
+        assertThat(redisTemplate.hasKey("queue:admit:" + t1)).isTrue();
+
+        var again = queueService.issue(50L, EVENT);
+        assertThat(again.token()).isEqualTo(t1);          // 살아있는 입장 토큰 유지
+        assertThat(again.status()).isEqualTo("ADMITTED");
+    }
+
+    @Test
+    void 이탈_후_재발급하면_새_토큰을_받는다() {
+        // 상태기계 분기: leave로 소유권이 정리되면 재진입은 새 순번(WAITING)이어야 함.
+        String t1 = queueService.issue(60L, EVENT).token();
+        queueService.leave(t1);
+
+        var reissued = queueService.issue(60L, EVENT);
+        assertThat(reissued.token()).isNotEqualTo(t1);    // 새 토큰
+        assertThat(reissued.status()).isEqualTo("WAITING");
+        assertThat(redisTemplate.opsForZSet().rank("queue:wait:" + EVENT, reissued.token())).isNotNull();
+    }
+
+    @Test
     void 원자_승격은_정원을_초과하지_않는다() {
         for (int i = 0; i < 10; i++) {
             queueService.issue(2000L + i, EVENT); // 10명 대기

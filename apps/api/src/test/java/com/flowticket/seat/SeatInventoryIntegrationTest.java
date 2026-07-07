@@ -169,6 +169,32 @@ class SeatInventoryIntegrationTest {
         assertThat(seatStatus(aSeatId)).isEqualTo("AVAILABLE"); // 재고 복구
     }
 
+    @Test
+    void 만료_복구된_좌석은_다른_유저가_다시_선점할_수_있다() throws Exception {
+        // 상태기계 분기: sweep은 status만 되돌리는 게 아니라 실제 재선점까지 가능해야 함.
+        String t8 = admittedToken(8L, eventId);
+        seatService.hold(8L, eventId, List.of(aSeatId), t8);
+
+        Thread.sleep(1500); // hold-ttl(1s) 경과
+        expiryService.sweepExpired();
+
+        String t9 = admittedToken(9L, eventId);
+        assertThat(seatService.hold(9L, eventId, List.of(aSeatId), t9).seatIds())
+                .containsExactly(aSeatId); // 복구된 좌석을 다른 유저가 선점 성공
+    }
+
+    @Test
+    void 누적_선점이_1인_최대매수를_초과하면_거부된다() {
+        // 상태기계 분기: 이미 보유한 HELD 수 + 요청 수 > max 면 거부(seat.max-per-user=4).
+        String token = admittedToken(10L, eventId);
+        List<Long> ids = availableSeatIds(5);
+
+        seatService.hold(10L, eventId, ids.subList(0, 4), token); // 4매 → OK
+
+        assertThatThrownBy(() -> seatService.hold(10L, eventId, ids.subList(4, 5), token))
+                .isInstanceOf(BusinessException.class); // 4 + 1 > 4 → MAX_PER_USER_EXCEEDED
+    }
+
     // --- helpers ---
 
     private String seatStatus(Long seatId) {
@@ -179,6 +205,12 @@ class SeatInventoryIntegrationTest {
         return seatRepository.findByEventId(eventId).stream()
                 .filter(s -> s.getStatus() == SeatStatus.AVAILABLE)
                 .map(Seat::getId).findFirst().orElseThrow();
+    }
+
+    private List<Long> availableSeatIds(int n) {
+        return seatRepository.findByEventId(eventId).stream()
+                .filter(s -> s.getStatus() == SeatStatus.AVAILABLE)
+                .map(Seat::getId).limit(n).toList();
     }
 
     private String admittedToken(long userId, Long ev) {

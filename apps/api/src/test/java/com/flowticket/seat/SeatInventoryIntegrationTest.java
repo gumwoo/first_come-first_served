@@ -11,6 +11,7 @@ import com.flowticket.queue.service.QueueAdmissionService;
 import com.flowticket.queue.service.QueueService;
 import com.flowticket.seat.domain.Seat;
 import com.flowticket.seat.domain.SeatStatus;
+import com.flowticket.seat.dto.HoldResponse;
 import com.flowticket.seat.repository.EventSeatPriceRepository;
 import com.flowticket.seat.repository.SeatHoldItemRepository;
 import com.flowticket.seat.repository.SeatHoldRepository;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -76,6 +78,7 @@ class SeatInventoryIntegrationTest {
     @Autowired EventRepository eventRepository;
     @Autowired QueueService queueService;
     @Autowired QueueAdmissionService admissionService;
+    @Autowired StringRedisTemplate redisTemplate;
     @Autowired JdbcTemplate jdbc;
 
     private Long eventId;
@@ -193,6 +196,29 @@ class SeatInventoryIntegrationTest {
 
         assertThatThrownBy(() -> seatService.hold(10L, eventId, ids.subList(4, 5), token))
                 .isInstanceOf(BusinessException.class); // 4 + 1 > 4 → MAX_PER_USER_EXCEEDED
+    }
+
+    @Test
+    void 만료된_hold를_해제하려_하면_거부된다() throws Exception {
+        // 상태기계 분기: sweep으로 EXPIRED된 hold는 더 이상 해제 대상이 아님(중복 상태전이 방지).
+        String token = admittedToken(11L, eventId);
+        HoldResponse held = seatService.hold(11L, eventId, List.of(aSeatId), token);
+
+        Thread.sleep(1500); // hold-ttl(1s) 경과
+        expiryService.sweepExpired(); // hold → EXPIRED
+
+        assertThatThrownBy(() -> seatService.release(held.holdId(), 11L))
+                .isInstanceOf(BusinessException.class); // INVALID_STATE_TRANSITION
+    }
+
+    @Test
+    void 입장창이_만료된_토큰으로_선점하면_거부된다() {
+        // 상태기계 분기: 입장(ADMITTED) 후 입장창이 만료되면 좌석 선점 게이트가 막아야 함.
+        String token = admittedToken(12L, eventId);
+        redisTemplate.delete("queue:admit:" + token); // 입장창 만료 시뮬레이션(admit 키 소멸)
+
+        assertThatThrownBy(() -> seatService.hold(12L, eventId, List.of(aSeatId), token))
+                .isInstanceOf(BusinessException.class); // QUEUE_NOT_ADMITTED
     }
 
     // --- helpers ---

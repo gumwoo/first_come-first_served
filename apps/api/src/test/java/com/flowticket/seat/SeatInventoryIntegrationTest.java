@@ -10,6 +10,7 @@ import com.flowticket.global.error.BusinessException;
 import com.flowticket.queue.service.QueueAdmissionService;
 import com.flowticket.queue.service.QueueService;
 import com.flowticket.seat.domain.Seat;
+import com.flowticket.seat.domain.SeatHoldStatus;
 import com.flowticket.seat.domain.SeatStatus;
 import com.flowticket.seat.dto.HoldResponse;
 import com.flowticket.seat.repository.EventSeatPriceRepository;
@@ -170,6 +171,24 @@ class SeatInventoryIntegrationTest {
         expiryService.sweepExpired();
 
         assertThat(seatStatus(aSeatId)).isEqualTo("AVAILABLE"); // 재고 복구
+    }
+
+    @Test
+    void 선점_해제는_좌석과_홀드_상태를_함께_되돌린다() {
+        // 회귀 방지: releaseSeats(@Modifying clearAutomatically)가 컨텍스트를 비워
+        // hold.release()가 detached로 유실되던 버그 — 좌석은 풀리는데 홀드가 HELD로 남음.
+        String token = admittedToken(20L, eventId);
+        HoldResponse held = seatService.hold(20L, eventId, List.of(aSeatId), token);
+        assertThat(seatStatus(aSeatId)).isEqualTo("HELD");
+
+        seatService.release(held.holdId(), 20L);
+
+        assertThat(seatStatus(aSeatId)).isEqualTo("AVAILABLE"); // 좌석 복구
+        assertThat(holdRepository.findById(held.holdId()).orElseThrow().getStatus())
+                .isEqualTo(SeatHoldStatus.RELEASED);            // 홀드도 함께 RELEASED
+        // 한도가 회복돼 같은 유저가 다시 선점 가능(스테일 HELD 홀드가 카운트에 남지 않음)
+        assertThat(seatService.hold(20L, eventId, List.of(aSeatId), token).seatIds())
+                .containsExactly(aSeatId);
     }
 
     @Test

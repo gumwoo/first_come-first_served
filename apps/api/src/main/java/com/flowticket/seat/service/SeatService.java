@@ -81,6 +81,10 @@ public class SeatService {
         if (!queueService.isAdmitted(queueToken, eventId)) {
             throw new BusinessException(ErrorCode.QUEUE_NOT_ADMITTED);
         }
+        // 좌석이 이 이벤트 소속인지 검증(다른 이벤트 좌석 id 혼입 차단). 원자 UPDATE에도 eventId 가드를 둔다.
+        if (seatRepository.countByIdInAndEventId(seatIds, eventId) != seatIds.size()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+        }
         // 1인 구매 한도
         List<Long> activeHolds = holdRepository.findIdsByUser(userId, eventId, SeatHoldStatus.HELD);
         long current = activeHolds.isEmpty() ? 0 : holdItemRepository.countByHoldIdIn(activeHolds);
@@ -88,7 +92,7 @@ public class SeatService {
             throw new BusinessException(ErrorCode.MAX_PER_USER_EXCEEDED);
         }
         // 원자적 선점 — AVAILABLE인 좌석만 HELD. 요청 수와 다르면 일부 매진 → 롤백.
-        int held = seatRepository.holdIfAvailable(seatIds, SeatStatus.HELD, SeatStatus.AVAILABLE);
+        int held = seatRepository.holdIfAvailable(seatIds, eventId, SeatStatus.HELD, SeatStatus.AVAILABLE);
         if (held != seatIds.size()) {
             throw new BusinessException(ErrorCode.SOLD_OUT);
         }

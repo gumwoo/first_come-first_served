@@ -147,6 +147,21 @@ class SeatInventoryIntegrationTest {
     }
 
     @Test
+    void 다른_이벤트_좌석은_선점할_수_없다() {
+        // 보안/정합성: 이벤트 A 입장 토큰으로 이벤트 B 좌석 id를 넣어도 선점되면 안 됨(IDOR 방지).
+        Event other = eventRepository.save(Event.builder()
+                .kopisId("SEATX").title("다른 공연").genre("연극").status(EventStatus.ON_SALE).build());
+        seatSeeder.seedForEvent(other.getId());
+        Long otherSeat = seatRepository.findByEventId(other.getId()).get(0).getId();
+
+        String token = admittedToken(30L, eventId); // 이벤트 A 입장
+
+        assertThatThrownBy(() -> seatService.hold(30L, eventId, List.of(otherSeat), token))
+                .isInstanceOf(BusinessException.class); // 다른 이벤트 좌석 → VALIDATION_ERROR
+        assertThat(seatStatus(otherSeat)).isEqualTo("AVAILABLE"); // B 좌석은 그대로
+    }
+
+    @Test
     void 입장하지_않은_토큰은_선점이_거부된다() {
         assertThatThrownBy(() -> seatService.hold(1L, eventId, List.of(aSeatId), "not-admitted"))
                 .isInstanceOf(BusinessException.class); // QUEUE_NOT_ADMITTED

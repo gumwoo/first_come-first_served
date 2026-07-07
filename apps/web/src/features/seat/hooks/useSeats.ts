@@ -23,7 +23,10 @@ export function useSeats(eventId: number) {
     if (!Number.isFinite(eventId)) return;
     refresh();
     const es = new EventSource(seatApi.seatSseUrl(eventId));
-    es.addEventListener("seat.hold.expired", () => refresh()); // 좌석 풀리면 재조회
+    // 다른 사용자의 선점/해제/만료를 실시간 반영(재고 최신화).
+    es.addEventListener("seat.held", () => refresh());
+    es.addEventListener("seat.hold.released", () => refresh());
+    es.addEventListener("seat.hold.expired", () => refresh());
     es.onerror = () => {
       /* 재조회로 커버 */
     };

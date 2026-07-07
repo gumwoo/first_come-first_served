@@ -51,5 +51,15 @@ required_fe_subscribes:
   - order.paid            # 결제 완료 → 완료 화면 전환에 필수
   - payment.vbank.deposited  # 무통장 입금 확인 → 완료 전환에 필수
 
+# 이미 구현되어 백엔드가 "실제로 발행"해야 하는 이벤트(슬라이스 완료분).
+# 하네스가 백엔드 소스에서 각 이벤트명 문자열 발행부를 찾지 못하면 실패.
+# (publishes ⊇ implemented. 미구현 이벤트는 여기 넣지 않는다 — 계약 선언만은 허용.)
+implemented:
+  - seat.held
+  - seat.hold.released
+  - seat.hold.expired
+  - queue.admitted
+  - queue.expired
+
 # DLQ 토픽 명명규약 (재처리 센터에서 사용)
 dlq_suffix: ".DLT"

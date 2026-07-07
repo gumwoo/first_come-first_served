@@ -7,7 +7,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-/** 좌석맵 실시간(이벤트별). 선점 만료 시 seat.hold.expired 를 구독자에 push. /sse는 permitAll. */
+/** 좌석맵 실시간(이벤트별). 선점/해제/만료 시 seat.held·seat.hold.released·seat.hold.expired 를
+ *  구독자에 push. /sse는 permitAll. */
 @RestController
 public class SeatSseController {
 

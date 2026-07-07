@@ -27,6 +27,11 @@
       "items": { "type": "string" },
       "uniqueItems": true
     },
+    "implemented": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
     "dlq_suffix": { "type": "string" }
   },
   "additionalProperties": false

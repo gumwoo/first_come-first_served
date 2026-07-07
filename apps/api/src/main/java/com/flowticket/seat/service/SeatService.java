@@ -17,6 +17,7 @@ import com.flowticket.seat.repository.EventSeatPriceRepository;
 import com.flowticket.seat.repository.SeatHoldItemRepository;
 import com.flowticket.seat.repository.SeatHoldRepository;
 import com.flowticket.seat.repository.SeatRepository;
+import com.flowticket.seat.sse.SeatSseRegistry;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,12 +37,13 @@ public class SeatService {
     private final SeatHoldRepository holdRepository;
     private final SeatHoldItemRepository holdItemRepository;
     private final QueueService queueService;
+    private final SeatSseRegistry sse;
     private final long holdTtl;
     private final int maxPerUser;
 
     public SeatService(SeatRepository seatRepository, EventSeatPriceRepository priceRepository,
                        SeatHoldRepository holdRepository, SeatHoldItemRepository holdItemRepository,
-                       QueueService queueService,
+                       QueueService queueService, SeatSseRegistry sse,
                        @Value("${seat.hold-ttl:300}") long holdTtl,
                        @Value("${seat.max-per-user:4}") int maxPerUser) {
         this.seatRepository = seatRepository;
@@ -49,6 +51,7 @@ public class SeatService {
         this.holdRepository = holdRepository;
         this.holdItemRepository = holdItemRepository;
         this.queueService = queueService;
+        this.sse = sse;
         this.holdTtl = holdTtl;
         this.maxPerUser = maxPerUser;
     }
@@ -103,6 +106,7 @@ public class SeatService {
             holdItemRepository.save(SeatHoldItem.builder().holdId(hold.getId()).seatId(seatId).build());
         }
         int total = totalPrice(eventId, seatIds);
+        sse.broadcast(eventId, "seat.held", Map.of("seatIds", seatIds)); // 실시간 좌석맵 반영
         return new HoldResponse(hold.getId(), seatIds, total, hold.getExpiresAt());
     }
 
@@ -124,6 +128,7 @@ public class SeatService {
         hold.release();
         holdRepository.saveAndFlush(hold);
         seatRepository.releaseSeats(seatIds, SeatStatus.AVAILABLE);
+        sse.broadcast(hold.getEventId(), "seat.hold.released", Map.of("seatIds", seatIds)); // 재고 복구 반영
     }
 
     private Map<SeatGrade, Integer> priceMap(Long eventId) {

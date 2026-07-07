@@ -31,5 +31,5 @@ export const holdSeats = (
 export const releaseHold = (holdId: number, token: string | null) =>
   api<null>(`/seats/hold/${holdId}`, { method: "DELETE", token });
 
-/** 좌석맵 실시간 SSE(이벤트별). seat.hold.expired 시 재고 복구 반영. */
+/** 좌석맵 실시간 SSE(이벤트별). seat.held·seat.hold.released·seat.hold.expired 시 재고 최신화. */
 export const seatSseUrl = (eventId: number) => `/api/sse/events/${eventId}/seats`;

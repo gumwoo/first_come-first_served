@@ -20,7 +20,7 @@ FlowTicket(선착순 예매 시스템) 포트폴리오 프로젝트. 아래는 *
 
 ## 검증
 - 프론트: `corepack pnpm@9.12.0 --dir apps/web typecheck | lint | build`
-- 계약/정적 가드: `npm run harness:check` (meta 23 + backend + frontend)
+- 계약/정적 가드: `npm run harness:check` (meta 24 + backend + frontend)
 - 백엔드 컴파일/통합테스트: **로컬 gradle 없음 → CI(Testcontainers)에서만 검증**.
 
 ## 문서 규율

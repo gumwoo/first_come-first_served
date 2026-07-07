@@ -297,6 +297,22 @@ for (const file of migrationFiles) {
   }
 }
 
+// ---------- 13. 구현된 이벤트는 실제로 발행돼야 함 ----------
+// events.yaml의 implemented(= 완료 슬라이스가 발행해야 하는 이벤트)가 백엔드 소스에
+// 문자열로 존재하는지 확인. 계약엔 선언했는데 발행부가 없는 "미구현 stale"을 잡는다.
+// (미구현 이벤트는 implemented에 넣지 않으므로 걸리지 않음 = 미구현 허용 철학 유지.)
+const eventsContract = loadYaml("contracts/events.yaml");
+const publishSet = new Set(eventsContract.publishes ?? []);
+const allJavaSrc = javaFiles.map((f) => read(f)).join("\n");
+for (const ev of eventsContract.implemented ?? []) {
+  if (!publishSet.has(ev)) {
+    r.fail(`이벤트 계약 위반: implemented '${ev}'가 publishes에 없음(events.yaml)`);
+  }
+  if (!allJavaSrc.includes(`"${ev}"`)) {
+    r.fail(`이벤트 미발행: implemented '${ev}'를 백엔드가 발행하지 않음(소스에 "${ev}" 없음)`);
+  }
+}
+
 function normalize(p) {
   return p.replace(/\{[^}]+\}/g, "{id}").replace(/\/+$/, "") || "/";
 }

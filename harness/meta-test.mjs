@@ -25,6 +25,7 @@ const cases = [
   { name: "be-tx-private",       script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-tx-private" } },
   { name: "be-open-security",    script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-open-security" } },
   { name: "be-flyway-dup-version", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-flyway-dup-version" } },
+  { name: "be-event-not-broadcast", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-event-not-broadcast" } },
   { name: "fe-missing-enum",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-enum" } },
   { name: "fe-bad-dep",          script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-bad-dep" } },
   { name: "fe-layer-breach",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },

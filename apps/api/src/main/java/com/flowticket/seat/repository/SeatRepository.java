@@ -14,6 +14,9 @@ public interface SeatRepository extends JpaRepository<Seat, Long> {
 
     List<Seat> findByEventId(Long eventId);
 
+    /** 주어진 좌석들 중 해당 이벤트 소속인 개수(요청 좌석의 event 소속 검증용). */
+    long countByIdInAndEventId(List<Long> ids, Long eventId);
+
     /** 주어진 이벤트들 중 이미 좌석이 있는 id(자동 시딩에서 건너뛸 대상). */
     @Query("select distinct s.eventId from Seat s where s.eventId in :ids")
     List<Long> findSeededEventIds(@Param("ids") List<Long> ids);
@@ -24,8 +27,9 @@ public interface SeatRepository extends JpaRepository<Seat, Long> {
      */
     @Modifying(clearAutomatically = true)
     @Query("update Seat s set s.status = :held, s.updatedAt = CURRENT_TIMESTAMP "
-            + "where s.id in :ids and s.status = :available")
+            + "where s.id in :ids and s.eventId = :eventId and s.status = :available")
     int holdIfAvailable(@Param("ids") List<Long> ids,
+                        @Param("eventId") Long eventId,
                         @Param("held") SeatStatus held,
                         @Param("available") SeatStatus available);
 

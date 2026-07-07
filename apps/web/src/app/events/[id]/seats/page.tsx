@@ -134,6 +134,21 @@ export default function SeatSelectPage() {
     }
   };
 
+  const cancelHold = async () => {
+    if (!held) return;
+    try {
+      await seatApi.releaseHold(held.holdId, accessToken);
+    } catch {
+      /* 이미 만료/해제됐을 수 있음 — 무시하고 좌석 선택으로 복귀 */
+    }
+    // 같은 경로라 router 이동으론 상태가 안 풀림 → 상태를 직접 초기화하고 최신 재고 반영.
+    setHeld(null);
+    setSelected([]);
+    setErrorMsg(null);
+    setRemain(SELECT_SECONDS);
+    await refresh();
+  };
+
   if (loading) return <main className="mx-auto max-w-6xl p-10 text-center text-muted-foreground">좌석 정보를 불러오는 중…</main>;
   if (error || !map) return <main className="mx-auto max-w-6xl p-10 text-center text-destructive">좌석 정보를 불러올 수 없습니다.</main>;
 
@@ -148,9 +163,7 @@ export default function SeatSelectPage() {
         </p>
         <p className="mt-1 text-xs text-muted-foreground">제한 시간 내 미결제 시 선점이 자동 해제됩니다.</p>
         <div className="mt-4 flex justify-center gap-2">
-          <Button variant="outline" onClick={async () => { await seatApi.releaseHold(held.holdId, accessToken); router.replace(`/events/${id}/seats?qt=${queueToken}`); }}>
-            선점 취소
-          </Button>
+          <Button variant="outline" onClick={cancelHold}>선점 취소</Button>
           <Link href={`/events/${id}`}><Button>공연 상세로</Button></Link>
         </div>
       </main>

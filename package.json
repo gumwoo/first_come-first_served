@@ -10,6 +10,8 @@
     "harness:backend": "node harness/backend/check.mjs",
     "harness:frontend": "node harness/frontend/check.mjs",
     "harness:check": "npm run harness:schema && npm run harness:meta && npm run harness:backend && npm run harness:frontend",
-    "metrics:collect": "node scripts/collect-metrics.mjs"
+    "metrics:collect": "node scripts/collect-metrics.mjs",
+    "e2e": "npm --prefix e2e test",
+    "e2e:burn": "npm --prefix e2e run test:burn"
   }
 }

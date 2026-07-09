@@ -8,11 +8,16 @@ import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.order.dto.OrderResponse;
+import com.flowticket.order.repository.OrderItemRepository;
+import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.order.service.OrderService;
 import com.flowticket.queue.service.QueueAdmissionService;
 import com.flowticket.queue.service.QueueService;
 import com.flowticket.seat.domain.Seat;
 import com.flowticket.seat.domain.SeatStatus;
+import com.flowticket.seat.repository.EventSeatPriceRepository;
+import com.flowticket.seat.repository.SeatHoldItemRepository;
+import com.flowticket.seat.repository.SeatHoldRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.service.SeatSeeder;
 import com.flowticket.seat.service.SeatService;
@@ -66,11 +71,25 @@ class OrderIntegrationTest {
     @Autowired EventRepository eventRepository;
     @Autowired QueueService queueService;
     @Autowired QueueAdmissionService admissionService;
+    @Autowired OrderRepository orderRepository;
+    @Autowired OrderItemRepository orderItemRepository;
+    @Autowired SeatHoldRepository holdRepository;
+    @Autowired SeatHoldItemRepository holdItemRepository;
+    @Autowired EventSeatPriceRepository priceRepository;
 
     private Long eventId;
 
     @BeforeEach
     void seed() {
+        // 테스트 격리 — FK 순서대로 정리(order_items→orders→hold_items→holds→seats→prices→events)
+        orderItemRepository.deleteAll();
+        orderRepository.deleteAll();
+        holdItemRepository.deleteAll();
+        holdRepository.deleteAll();
+        seatRepository.deleteAll();
+        priceRepository.deleteAll();
+        eventRepository.deleteAll();
+
         Event e = eventRepository.save(Event.builder()
                 .kopisId("ORD1").title("주문 테스트").genre("연극").status(EventStatus.ON_SALE).build());
         eventId = e.getId();

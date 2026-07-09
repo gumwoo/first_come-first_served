@@ -41,6 +41,8 @@ Playwright로 **Critical User Flow만** 검증한다. 목적은 FE↔BE 경계·
 - `E2E_BASE_URL`(기본 `http://localhost:3000`). 로컬은 dev 서버 재사용, CI는 풀스택 기동 후 주입.
 - Redis는 5.0+(ZPOPMIN) 필수 — 로컬 버전 불일치 주의(TS-002).
 
-## CI (P3에서)
-- PR에서 critical-flow E2E 실행 → 실패 시 머지 차단 + trace(zip) 아티팩트 업로드.
+## CI (구현 완료 — ci.yml `e2e` 잡)
+- PR마다 풀스택(postgres16+redis7.4 → 백엔드 bootJar → 좌석 시드 → 프론트 → Playwright) 기동해
+  critical-flow E2E 실행 → 실패 시 머지 차단 + trace/로그 아티팩트 업로드.
+- CI 빈 DB는 KOPIS 없으니 `e2e/ci/seed.sql`로 판매중 이벤트·좌석을 멱등 시드.
 - 실패 trace는 에이전트가 파싱해 원인 분석·수정(자가 개선 루프).

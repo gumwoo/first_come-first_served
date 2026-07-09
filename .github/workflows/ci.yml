@@ -79,3 +79,107 @@ jobs:
       - name: build
         working-directory: apps/web
         run: pnpm build
+
+  e2e:
+    name: E2E (Playwright, 풀스택)
+    runs-on: ubuntu-latest
+    needs: harness-meta
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: flowticket
+          POSTGRES_USER: flowticket
+          POSTGRES_PASSWORD: flowticket
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U flowticket"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:7.4 # ZPOPMIN(5.0+) 필수 — 대기열 승격 Lua (TS-002)
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DB_PORT: "5432"
+      DB_PASSWORD: flowticket
+      JWT_SECRET: ci-e2e-secret-0123456789-0123456789-0123456789
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      # 1) 백엔드 빌드 → 백그라운드 기동 → health 대기(Flyway 마이그레이션 완료)
+      - name: build backend jar
+        working-directory: apps/api
+        run: gradle bootJar --no-daemon -x test
+      - name: run backend
+        run: |
+          JAR=$(ls apps/api/build/libs/*.jar | grep -v -- '-plain' | head -1)
+          echo "starting $JAR"
+          nohup java -jar "$JAR" > backend.log 2>&1 &
+      - name: wait for backend
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/actuator/health && { echo "backend up"; exit 0; }
+            sleep 3
+          done
+          echo "::error::backend failed to start"; tail -120 backend.log; exit 1
+
+      # 2) E2E 테스트 데이터 시드(판매중 이벤트 + 좌석)
+      - name: seed e2e data
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          PGPASSWORD=flowticket psql -h localhost -U flowticket -d flowticket -f e2e/ci/seed.sql
+
+      # 3) 프론트 빌드 → 백그라운드 기동 → 대기
+      - name: build & run web
+        working-directory: apps/web
+        run: |
+          pnpm install --frozen-lockfile || pnpm install
+          pnpm build
+          nohup pnpm start > ../../web.log 2>&1 &
+      - name: wait for web
+        run: |
+          for i in $(seq 1 40); do
+            curl -sf http://localhost:3000 > /dev/null && { echo "web up"; exit 0; }
+            sleep 3
+          done
+          echo "::error::web failed to start"; tail -120 web.log; exit 1
+
+      # 4) Playwright 실행(풀스택 대상)
+      - name: install e2e deps
+        working-directory: e2e
+        run: |
+          npm ci || npm install
+          npx playwright install --with-deps chromium
+      - name: run e2e
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: http://localhost:3000
+        run: npx playwright test
+
+      # 5) 실패 시 trace(CCTV) 아티팩트 업로드 — 에이전트 디버깅용
+      - name: upload playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+            backend.log
+            web.log
+          retention-days: 7

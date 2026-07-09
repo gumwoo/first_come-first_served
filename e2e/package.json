@@ -1,0 +1,15 @@
+{
+  "name": "flowticket-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FlowTicket E2E(Playwright) — Critical User Flow 검증. 웹 앱 의존성과 분리된 독립 인프라.",
+  "scripts": {
+    "install:browsers": "playwright install chromium",
+    "test": "playwright test",
+    "test:burn": "playwright test --repeat-each=20",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.48.2"
+  }
+}

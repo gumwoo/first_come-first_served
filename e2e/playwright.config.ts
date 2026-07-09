@@ -6,7 +6,10 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./tests",
-  fullyParallel: true,
+  // KOPIS 이벤트/좌석은 공유 자원이라 병렬 워커가 같은 좌석을 다투면 경합(SOLD_OUT)한다.
+  // 크리티컬 플로우 소수라 직렬 실행으로 결정론 확보(속도 > 결정론이 아니라 결정론 우선).
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env.CI, // CI에선 test.only 금지(실수 방지)
   retries: 0,                   // flaky는 retry로 숨기지 않고 번인(--repeat-each)으로 잡는다
   reporter: [["list"], ["html", { open: "never" }]],

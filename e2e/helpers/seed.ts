@@ -52,17 +52,20 @@ export async function seedAdmittedUser(page: Page): Promise<Admitted> {
   const accessToken = (await loginRes.json()).data.accessToken as string;
 
   // 4) 판매중 + 좌석 여유가 있는 이벤트 선택
-  const listRes = await req.get("/api/events?status=ON_SALE&size=5");
+  const listRes = await req.get("/api/events?status=ON_SALE&size=20");
   const items = (await listRes.json()).data.items as Array<{ id: number }>;
+  // 랜덤 순회로 이벤트를 분산 선택(테스트 간 좌석 충돌·고갈 완화). 충분한 여유(>=8) 있는 것만.
+  const shuffled = [...items].sort(() => Math.random() - 0.5);
   let eventId = 0;
-  for (const e of items) {
+  for (const e of shuffled) {
     const map = (await (await req.get(`/api/events/${e.id}/seats`)).json()).data;
-    if (map.seats?.some((s: { status: string }) => s.status === "AVAILABLE")) {
+    const free = (map.seats ?? []).filter((s: { status: string }) => s.status === "AVAILABLE").length;
+    if (free >= 8) {
       eventId = e.id;
       break;
     }
   }
-  if (!eventId) throw new Error("판매중이면서 좌석 여유가 있는 이벤트를 찾지 못함");
+  if (!eventId) throw new Error("판매중이면서 좌석 여유(>=8)가 있는 이벤트를 찾지 못함");
 
   // 5) 대기열 입장 토큰 발급 후 승격(ADMITTED) 대기
   const tokRes = await req.post(`/api/events/${eventId}/queue/token`, {

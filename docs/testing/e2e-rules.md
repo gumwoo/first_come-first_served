@@ -30,6 +30,8 @@ Playwright로 **Critical User Flow만** 검증한다. 목적은 FE↔BE 경계·
   E2E 전용 env(SSR/프록시)로 고정 응답.
 
 ## 환경
+- **최초 1회 셋업**: `cd e2e && npm install && npm run install:browsers`(Chromium 다운로드).
+  이후 `npm run e2e`. CI는 `npx playwright install --with-deps chromium` 스텝으로 동일 처리.
 - `E2E_BASE_URL`(기본 `http://localhost:3000`). 로컬은 dev 서버 재사용, CI는 풀스택 기동 후 주입.
 - Redis는 5.0+(ZPOPMIN) 필수 — 로컬 버전 불일치 주의(TS-002).
 

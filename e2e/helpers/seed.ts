@@ -11,7 +11,24 @@ import { Page, expect } from "@playwright/test";
  */
 const PASSWORD = "Test1234!";
 
-export type Admitted = { eventId: number; queueToken: string; email: string };
+export type Admitted = { eventId: number; queueToken: string; accessToken: string; email: string };
+
+/** 좌석맵에서 화면(등급 VIP→R→S→A, seatCol 오름차순)이 처음 렌더할 '선택 가능' 좌석. */
+export function firstSelectable(
+  map: { seats: Array<{ id: number; grade: string; seatCol: number; status: string }> }
+): { id: number; grade: string; col: number } {
+  const order: Record<string, number> = { VIP: 0, R: 1, S: 2, A: 3 };
+  const s = map.seats
+    .filter((x) => x.status === "AVAILABLE")
+    .sort((a, b) => (order[a.grade] - order[b.grade]) || a.seatCol - b.seatCol)[0];
+  if (!s) throw new Error("선택 가능한 좌석 없음");
+  return { id: s.id, grade: s.grade, col: s.seatCol };
+}
+
+/** 좌석 버튼 title = "<등급> N열 M번" (열은 10석 단위 분할). */
+export function seatTitle(grade: string, col: number): string {
+  return `${grade} ${Math.floor((col - 1) / 10) + 1}열 ${col}번`;
+}
 
 export async function seedAdmittedUser(page: Page): Promise<Admitted> {
   const req = page.request;
@@ -63,5 +80,5 @@ export async function seedAdmittedUser(page: Page): Promise<Admitted> {
     )
     .toBe("ADMITTED");
 
-  return { eventId, queueToken, email };
+  return { eventId, queueToken, accessToken, email };
 }

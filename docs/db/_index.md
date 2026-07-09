@@ -18,4 +18,6 @@
 | seats | S04 | [seats.md](seats.md) | 설계(마이그레이션 후속 V6) |
 | event_seat_prices | S04 | [event_seat_prices.md](event_seat_prices.md) | 설계(V6) |
 | seat_holds | S04 | [seat_holds.md](seat_holds.md) | 설계(V7) |
-| (orders) | S05 | (예정) | |
+| orders | S05 | [orders.md](orders.md) | 설계(V8) |
+| order_items | S05 | [order_items.md](order_items.md) | 설계(V8) |
+| payments | S05 | [payments.md](payments.md) | 설계(V9) |

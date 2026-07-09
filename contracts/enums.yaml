@@ -24,6 +24,9 @@ PaymentMethod:
 PaymentProvider:        # easy 결제 provider
   values: [kakaopay, naverpay, toss, payco]
 
+PaymentStatus:          # 개별 결제 시도 상태(한 주문에 여러 시도 가능)
+  values: [READY, APPROVED, FAILED, CANCELLED]
+
 EventStatus:
   values: [DRAFT, SCHEDULED, ON_SALE, PAUSED, SOLD_OUT, CLOSED]
 

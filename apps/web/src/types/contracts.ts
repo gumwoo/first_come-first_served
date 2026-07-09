@@ -27,6 +27,9 @@ export type PaymentMethod = (typeof PaymentMethod)[number];
 export const PaymentProvider = ["kakaopay", "naverpay", "toss", "payco"] as const;
 export type PaymentProvider = (typeof PaymentProvider)[number];
 
+export const PaymentStatus = ["READY", "APPROVED", "FAILED", "CANCELLED"] as const;
+export type PaymentStatus = (typeof PaymentStatus)[number];
+
 export const EventStatus = [
   "DRAFT",
   "SCHEDULED",

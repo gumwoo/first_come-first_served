@@ -100,6 +100,10 @@ seat:
   max-per-user: ${SEAT_MAX_PER_USER:4}    # 이벤트당 1인 구매 한도
   sweep-interval-ms: ${SEAT_SWEEP_INTERVAL:60000}  # 만료 회수 워커 주기(ms)
 
+# 주문·결제(S05)
+order:
+  sweep-interval-ms: ${ORDER_SWEEP_INTERVAL:60000}  # 미완료 주문 만료 회수 주기(ms)
+
 # 휴대폰 인증: 데모는 Mock(고정 코드). 운영은 mock=false + 실제 SMS 연동.
 auth:
   phone:

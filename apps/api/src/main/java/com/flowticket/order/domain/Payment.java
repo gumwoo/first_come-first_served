@@ -79,4 +79,10 @@ public class Payment {
     public void fail() {
         this.status = PaymentStatus.FAILED;
     }
+
+    /** 무통장 — 가상계좌·입금기한 배정(상태는 READY 유지, 입금 확인 시 approve). */
+    public void assignVbank(String account, LocalDateTime deadline) {
+        this.vbankAccount = account;
+        this.depositDeadline = deadline;
+    }
 }

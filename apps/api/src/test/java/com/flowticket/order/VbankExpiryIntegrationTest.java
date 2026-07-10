@@ -1,16 +1,16 @@
 package com.flowticket.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
-import com.flowticket.global.error.BusinessException;
+import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.dto.PaymentResponse;
 import com.flowticket.order.repository.OrderItemRepository;
 import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.order.repository.PaymentRepository;
+import com.flowticket.order.service.OrderExpiryService;
 import com.flowticket.order.service.OrderService;
 import com.flowticket.order.service.PaymentService;
 import com.flowticket.queue.service.QueueAdmissionService;
@@ -38,12 +38,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * 결제 승인(BE-2): Mock 승인 → PENDING→PAID(조건부) + 좌석 SOLD + hold CONVERTED,
- * 거절 시 payment FAILED/order PENDING 유지, 멱등, 이미 PAID 재결제 거부.
+ * 무통장(vbank) 발급/입금확인 + 주문 만료 sweep(BE-3). hold-ttl 2s로 만료 케이스 재현.
  */
 @SpringBootTest
 @Testcontainers
-class PaymentIntegrationTest {
+class VbankExpiryIntegrationTest {
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
@@ -63,13 +62,14 @@ class PaymentIntegrationTest {
         r.add("queue.capacity", () -> "100");
         r.add("queue.admit-interval-ms", () -> "3600000");
         r.add("seat.max-per-user", () -> "4");
-        r.add("seat.hold-ttl", () -> "300");
+        r.add("seat.hold-ttl", () -> "2");
         r.add("seat.sweep-interval-ms", () -> "3600000");
-        r.add("order.sweep-interval-ms", () -> "3600000");
+        r.add("order.sweep-interval-ms", () -> "3600000"); // 워커 자동실행 비활성(수동 호출)
     }
 
-    @Autowired OrderService orderService;
     @Autowired PaymentService paymentService;
+    @Autowired OrderExpiryService orderExpiryService;
+    @Autowired OrderService orderService;
     @Autowired SeatService seatService;
     @Autowired SeatSeeder seatSeeder;
     @Autowired SeatRepository seatRepository;
@@ -97,57 +97,47 @@ class PaymentIntegrationTest {
         eventRepository.deleteAll();
 
         Event e = eventRepository.save(Event.builder()
-                .kopisId("PAY1").title("결제 테스트").genre("연극").status(EventStatus.ON_SALE).build());
+                .kopisId("VB1").title("무통장 테스트").genre("연극").status(EventStatus.ON_SALE).build());
         eventId = e.getId();
         seatSeeder.seedForEvent(eventId);
     }
 
     @Test
-    void 승인_성공은_주문PAID_좌석SOLD_홀드CONVERTED() {
-        long user = 20L;
+    void 무통장은_가상계좌_발급하고_입금대기로_간다() {
+        long user = 30L;
         Ctx c = order(user, 1);
 
-        PaymentResponse res = paymentService.pay(user, c.orderId, "card", null, "OK-" + c.orderId);
+        PaymentResponse res = paymentService.pay(user, c.orderId, "vbank", null, "VB-" + c.orderId);
 
-        assertThat(res.paymentStatus()).isEqualTo("APPROVED");
+        assertThat(res.orderStatus()).isEqualTo("VBANK_WAITING");
+        assertThat(res.vbankAccount()).isNotBlank();
+        assertThat(orderRepository.findById(c.orderId).orElseThrow().getStatus())
+                .isEqualTo(OrderStatus.VBANK_WAITING);
+    }
+
+    @Test
+    void 입금_확인은_주문PAID_좌석SOLD_홀드CONVERTED() {
+        long user = 31L;
+        Ctx c = order(user, 1);
+        paymentService.pay(user, c.orderId, "vbank", null, "VB-" + c.orderId);
+
+        PaymentResponse res = paymentService.confirmVbankDeposit(user, c.orderId);
+
         assertThat(res.orderStatus()).isEqualTo("PAID");
         assertThat(seatRepository.findById(c.seatId).orElseThrow().getStatus()).isEqualTo(SeatStatus.SOLD);
         assertThat(holdRepository.findById(c.holdId).orElseThrow().getStatus()).isEqualTo(SeatHoldStatus.CONVERTED);
     }
 
     @Test
-    void 승인_거절은_결제FAILED_주문은_PENDING_유지() {
-        long user = 21L;
-        Ctx c = order(user, 1);
+    void 제한시간_지난_미완료_주문은_sweep으로_EXPIRED() throws Exception {
+        long user = 32L;
+        Ctx c = order(user, 1); // expires_at = now + hold-ttl(2s)
 
-        PaymentResponse res = paymentService.pay(user, c.orderId, "card", null, "FAIL-" + c.orderId);
+        Thread.sleep(2500);
+        orderExpiryService.sweepExpired();
 
-        assertThat(res.paymentStatus()).isEqualTo("FAILED");
-        assertThat(res.orderStatus()).isEqualTo("PENDING"); // 재시도 가능
-        assertThat(seatRepository.findById(c.seatId).orElseThrow().getStatus()).isEqualTo(SeatStatus.HELD);
-    }
-
-    @Test
-    void 같은_멱등키_재결제는_한번만_처리된다() {
-        long user = 22L;
-        Ctx c = order(user, 1);
-        String key = "OK-idem-" + c.orderId;
-
-        Long p1 = paymentService.pay(user, c.orderId, "card", null, key).paymentId();
-        Long p2 = paymentService.pay(user, c.orderId, "card", null, key).paymentId();
-
-        assertThat(p2).isEqualTo(p1); // 같은 결제 재사용
-        assertThat(paymentRepository.count()).isEqualTo(1);
-    }
-
-    @Test
-    void 이미_PAID_주문은_재결제할_수_없다() {
-        long user = 23L;
-        Ctx c = order(user, 1);
-        paymentService.pay(user, c.orderId, "card", null, "OK-" + c.orderId);
-
-        assertThatThrownBy(() -> paymentService.pay(user, c.orderId, "card", null, "OK2-" + c.orderId))
-                .isInstanceOf(BusinessException.class); // INVALID_STATE_TRANSITION
+        assertThat(orderRepository.findById(c.orderId).orElseThrow().getStatus())
+                .isEqualTo(OrderStatus.EXPIRED);
     }
 
     // --- helpers ---

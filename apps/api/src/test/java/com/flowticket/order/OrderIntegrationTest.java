@@ -62,6 +62,7 @@ class OrderIntegrationTest {
         r.add("seat.max-per-user", () -> "4");
         r.add("seat.hold-ttl", () -> "1");
         r.add("seat.sweep-interval-ms", () -> "3600000");
+        r.add("order.sweep-interval-ms", () -> "3600000");
     }
 
     @Autowired OrderService orderService;

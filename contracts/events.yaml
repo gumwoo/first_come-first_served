@@ -60,6 +60,7 @@ implemented:
   - seat.hold.expired
   - queue.admitted
   - queue.expired
+  - order.paid
 
 # DLQ 토픽 명명규약 (재처리 센터에서 사용)
 dlq_suffix: ".DLT"

@@ -115,6 +115,7 @@ public class OrderService {
         List<OrderItemResponse> items = orderItemRepository.findByOrderId(o.getId()).stream()
                 .map(i -> new OrderItemResponse(i.getSeatId(), i.getGrade().name(), i.getPrice()))
                 .toList();
-        return new OrderResponse(o.getId(), o.getStatus().name(), o.getAmount(), o.getExpiresAt(), items);
+        return new OrderResponse(o.getId(), o.getEventId(), o.getStatus().name(),
+                o.getAmount(), o.getExpiresAt(), items);
     }
 }

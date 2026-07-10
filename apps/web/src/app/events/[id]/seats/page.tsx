@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Clock, Users, CalendarClock, CheckCircle2, MapPin, Info } from "lucide-react";
 import { useSeats } from "@/features/seat/hooks/useSeats";
 import * as seatApi from "@/features/seat/api/seat";
+import { createOrder } from "@/features/order/api/order";
 import { useEvent } from "@/features/event/hooks/useEvents";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { ApiError } from "@/lib/apiClient";
@@ -49,6 +50,7 @@ export default function SeatSelectPage() {
   const [remain, setRemain] = useState(SELECT_SECONDS);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [goingPay, setGoingPay] = useState(false);
 
   // 선택 제한 타이머
   useEffect(() => {
@@ -149,22 +151,41 @@ export default function SeatSelectPage() {
     await refresh();
   };
 
+  const goPay = async () => {
+    if (!held || goingPay) return;
+    setGoingPay(true);
+    setErrorMsg(null);
+    try {
+      const order = await createOrder(held.holdId, accessToken);
+      router.push(`/orders/${order.orderId}/pay`);
+    } catch {
+      setErrorMsg("주문 생성에 실패했습니다. 다시 시도해 주세요.");
+      setGoingPay(false);
+    }
+  };
+
   if (loading) return <main className="mx-auto max-w-6xl p-10 text-center text-muted-foreground">좌석 정보를 불러오는 중…</main>;
   if (error || !map) return <main className="mx-auto max-w-6xl p-10 text-center text-destructive">좌석 정보를 불러올 수 없습니다.</main>;
 
-  // 선점 완료 상태(결제 S05 전 임시)
+  // 선점 완료 → 결제로
   if (held) {
     return (
       <main className="mx-auto max-w-md p-10 text-center">
         <CheckCircle2 className="mx-auto mb-3 h-12 w-12 text-primary" />
         <h1 className="text-xl font-bold">좌석 선점 완료!</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {held.seatIds.length}석 · 총 {held.total.toLocaleString()}원 · 결제 단계는 준비 중입니다(S05).
+          {held.seatIds.length}석 · 총 {held.total.toLocaleString()}원 · 제한 시간 내 결제를 완료해 주세요.
         </p>
-        <p className="mt-1 text-xs text-muted-foreground">제한 시간 내 미결제 시 선점이 자동 해제됩니다.</p>
-        <div className="mt-4 flex justify-center gap-2">
-          <Button variant="outline" onClick={cancelHold}>선점 취소</Button>
-          <Link href={`/events/${id}`}><Button>공연 상세로</Button></Link>
+        <p className="mt-1 text-xs text-muted-foreground">미결제 시 선점이 자동 해제됩니다.</p>
+        {errorMsg && <p className="mt-3 text-xs text-destructive">{errorMsg}</p>}
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <Button className="w-56" disabled={goingPay} onClick={goPay}>
+            {goingPay ? "주문 생성 중…" : "결제하기"}
+          </Button>
+          <div className="flex justify-center gap-2">
+            <Button variant="outline" onClick={cancelHold}>선점 취소</Button>
+            <Link href={`/events/${id}`}><Button variant="ghost">공연 상세로</Button></Link>
+          </div>
         </div>
       </main>
     );

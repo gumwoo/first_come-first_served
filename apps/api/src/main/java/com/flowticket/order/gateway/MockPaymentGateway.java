@@ -16,4 +16,9 @@ public class MockPaymentGateway implements PaymentGateway {
         }
         return ApproveResult.ok("MOCK-" + idempotencyKey);
     }
+
+    @Override
+    public String issueVbank(Long orderId, int amount) {
+        return "MOCK-VBANK-" + orderId;
+    }
 }

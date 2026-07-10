@@ -9,6 +9,9 @@ public interface PaymentGateway {
     /** 카드/간편 즉시 승인. 성공 시 pgTid, 실패 시 사유. */
     ApproveResult approve(Long orderId, int amount, String method, String provider, String idempotencyKey);
 
+    /** 무통장 — 가상계좌 발급(입금은 나중에 웹훅/트리거로 확인). 반환: 가상계좌 번호. */
+    String issueVbank(Long orderId, int amount);
+
     /** 승인 결과. */
     record ApproveResult(boolean success, String pgTid, String failReason) {
         public static ApproveResult ok(String pgTid) {

@@ -1,0 +1,9 @@
+{
+  "topic": "payment-idempotency",
+  "phase": "after",
+  "date": "2026-07-10",
+  "method": "payments.idempotency_key UNIQUE + 주문 상태 조건부 UPDATE(PENDING→PAID) + 충돌 시 기존 결과 반환. 동일 조건",
+  "config": { "sameOrderConcurrentClicks": 10, "raceWindowMs": 20 },
+  "result": { "paidTransitions": 1, "duplicatePaid": 0, "paymentRows": 1 },
+  "note": "같은 idempotencyKey 10개 동시 요청에도 결제행 1개·PAID 전이 1회·좌석 1회 SOLD. 패자는 기존 결과를 멱등 반환(예외 0). 근거 테스트: PaymentIdempotencyIntegrationTest.동시_더블클릭_같은키는_정확히_한번만_결제된다"
+}

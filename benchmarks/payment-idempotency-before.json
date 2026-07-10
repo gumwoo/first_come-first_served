@@ -1,0 +1,9 @@
+{
+  "topic": "payment-idempotency",
+  "phase": "before",
+  "date": "2026-07-10",
+  "method": "비원자 check-then-act: SELECT status → PENDING이면 (지연) → UPDATE PAID + INSERT payment. 멱등키/조건부 전이 없음",
+  "config": { "sameOrderConcurrentClicks": 10, "raceWindowMs": 20 },
+  "result": { "paidTransitions": 8, "duplicatePaid": 7, "paymentRows": 8 },
+  "note": "여러 스레드가 동시에 PENDING을 관측 → 각자 PAID 확정 + 결제행 생성 → 이중 PAID/이중 발급. 근거 테스트: PaymentIdempotencyIntegrationTest.비원자_check_then_act는_이중_PAID를_만든다"
+}

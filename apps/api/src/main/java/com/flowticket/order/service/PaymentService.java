@@ -21,6 +21,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,11 +42,12 @@ public class PaymentService {
     private final SeatHoldRepository holdRepository;
     private final PaymentGateway gateway;
     private final OrderSseRegistry orderSse;
+    private final ObjectProvider<PaymentService> self; // 트랜잭션 프록시 self-호출용
 
     public PaymentService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                           PaymentRepository paymentRepository, SeatRepository seatRepository,
                           SeatHoldRepository holdRepository, PaymentGateway gateway,
-                          OrderSseRegistry orderSse) {
+                          OrderSseRegistry orderSse, ObjectProvider<PaymentService> self) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.paymentRepository = paymentRepository;
@@ -52,10 +55,25 @@ public class PaymentService {
         this.holdRepository = holdRepository;
         this.gateway = gateway;
         this.orderSse = orderSse;
+        this.self = self;
+    }
+
+    /**
+     * 결제 진입. 동시 같은 idempotencyKey(더블클릭)로 UNIQUE 충돌이 나면 —
+     * 이미 다른 스레드가 처리한 것이므로 기존 결과를 멱등하게 반환(이중 PAID/발급 0, IMP-008).
+     */
+    public PaymentResponse pay(Long userId, Long orderId, String method, String provider, String idemKey) {
+        try {
+            return self.getObject().payTx(userId, orderId, method, provider, idemKey);
+        } catch (DataIntegrityViolationException e) {
+            return paymentRepository.findByIdempotencyKey(idemKey)
+                    .map(p -> PaymentResponse.of(p.getId(), p.getStatus().name(), currentStatus(orderId).name()))
+                    .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+        }
     }
 
     @Transactional
-    public PaymentResponse pay(Long userId, Long orderId, String method, String provider, String idemKey) {
+    public PaymentResponse payTx(Long userId, Long orderId, String method, String provider, String idemKey) {
         if (idemKey == null || idemKey.isBlank() || method == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }

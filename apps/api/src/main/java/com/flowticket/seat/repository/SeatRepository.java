@@ -37,4 +37,12 @@ public interface SeatRepository extends JpaRepository<Seat, Long> {
     @Modifying(clearAutomatically = true)
     @Query("update Seat s set s.status = :available, s.updatedAt = CURRENT_TIMESTAMP where s.id in :ids")
     int releaseSeats(@Param("ids") List<Long> ids, @Param("available") SeatStatus available);
+
+    /** 결제 확정 — HELD 좌석만 SOLD로(조건부). 반환 수 != 요청 수면 일부가 이미 풀림. */
+    @Modifying(clearAutomatically = true)
+    @Query("update Seat s set s.status = :sold, s.updatedAt = CURRENT_TIMESTAMP "
+            + "where s.id in :ids and s.status = :held")
+    int sellSeats(@Param("ids") List<Long> ids,
+                  @Param("sold") SeatStatus sold,
+                  @Param("held") SeatStatus held);
 }

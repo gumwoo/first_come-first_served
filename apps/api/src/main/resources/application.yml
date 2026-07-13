@@ -104,6 +104,10 @@ seat:
 order:
   sweep-interval-ms: ${ORDER_SWEEP_INTERVAL:60000}  # 미완료 주문 만료 회수 주기(ms)
 
+# 결제 게이트웨이 선택(ADR-005). mock=결정론(테스트/E2E/CI 기본), toss=실 PG 테스트 연동(데모).
+payment:
+  gateway: ${PAYMENT_GATEWAY:mock}
+
 # 휴대폰 인증: 데모는 Mock(고정 코드). 운영은 mock=false + 실제 SMS 연동.
 auth:
   phone:

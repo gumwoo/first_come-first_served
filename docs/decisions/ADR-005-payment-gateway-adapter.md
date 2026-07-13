@@ -13,11 +13,16 @@
 
 ## 결정
 1. **`PaymentGateway` 인터페이스(포트)** 로 결제 외부 의존을 격리한다.
-   `approve(승인)` / `issueVbank(가상계좌)` / `verifyWebhook(서명검증)`.
+   `approve(서버 단독 승인)` / `issueVbank(가상계좌)` / `confirm(결제창 인증 확정)`.
+   - 토스 카드는 **서버 단독 승인이 불가** — 결제창(SDK, 클라이언트 키)에서 사용자 인증 후 받은
+     `paymentKey`를 서버가 `POST /v1/payments/confirm`(비밀키)으로 확정한다. 그래서 별도
+     `POST /orders/{id}/payments/confirm` 엔드포인트를 두고, 멱등키로 `paymentKey`(주문당 유일)를 사용한다.
+   - Mock은 `confirm`에서 `paymentKey`를 무시하고 통과(테스트/E2E 결정론 유지).
 2. 구현체 2개:
    - **MockPaymentGateway** — 테스트/E2E/CI. 금액·플래그로 성공/실패를 **결정론적**으로. 네트워크 X.
    - **TossPaymentGateway** — 로컬/데모. 토스 **테스트모드**(테스트키) 승인 API + 웹훅 서명검증.
-3. 설정 `payment.gateway=mock|toss`로 주입. **비밀키(TOSS_SECRET_KEY 등)는 환경변수로만.**
+3. 설정 `payment.gateway=mock|toss`로 주입(`@ConditionalOnProperty`, 미설정 시 mock).
+   **비밀키(TOSS_SECRET_KEY)·클라이언트키(NEXT_PUBLIC_TOSS_CLIENT_KEY)는 환경변수로만.**
 4. 자동 테스트(통합/E2E)는 항상 Mock → 결정론·독립성. 실 연동은 로컬/데모에서 Toss로 시연.
 
 ## 고려한 대안

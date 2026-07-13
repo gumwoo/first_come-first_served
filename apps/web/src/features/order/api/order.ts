@@ -31,6 +31,14 @@ export const payOrder = (
   token: string | null
 ) => api<PaymentResult>(`/orders/${orderId}/payments`, { method: "POST", token, body });
 
+/** 결제창(Toss) 인증 확정. 결제창이 발급한 paymentKey로 서버 승인(BE-5). */
+export const confirmPayment = (orderId: number, paymentKey: string, token: string | null) =>
+  api<PaymentResult>(`/orders/${orderId}/payments/confirm`, {
+    method: "POST",
+    token,
+    body: { paymentKey },
+  });
+
 /** 무통장 입금 확인(개발/데모 트리거). 실운영은 PG 웹훅. */
 export const confirmVbankDeposit = (orderId: number, token: string | null) =>
   api<PaymentResult>(`/dev/vbank/${orderId}/deposit`, { method: "POST", token });

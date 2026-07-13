@@ -85,3 +85,26 @@ export async function seedAdmittedUser(page: Page): Promise<Admitted> {
 
   return { eventId, queueToken, accessToken, email };
 }
+
+/** 결제까지 순간이동: seedAdmittedUser → 좌석 1개 선점(API) → 주문 생성(API). 반환 {orderId, eventId}. */
+export async function seedOrder(page: Page): Promise<{ orderId: number; eventId: number }> {
+  const req = page.request;
+  const { eventId, queueToken, accessToken } = await seedAdmittedUser(page);
+
+  const map = (await (await req.get(`/api/events/${eventId}/seats`)).json()).data;
+  const seat = firstSelectable(map);
+
+  const holdRes = await req.post(`/api/events/${eventId}/seats/hold`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    data: { seatIds: [seat.id], queueToken },
+  });
+  const holdId = (await holdRes.json()).data.holdId as number;
+
+  const orderRes = await req.post("/api/orders", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    data: { holdId },
+  });
+  const orderId = (await orderRes.json()).data.orderId as number;
+
+  return { orderId, eventId };
+}

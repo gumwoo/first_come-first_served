@@ -55,7 +55,7 @@ test("결제 거절 → 실패 화면 + 재시도 복귀", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "예매를 완료하지 못했습니다" })).toBeVisible();
 
   // 재시도 → 결제 화면 복귀
-  await page.getByText("다시 시도").click();
+  await page.getByRole("button", { name: "다시 시도" }).click();
   await expect(page).toHaveURL(new RegExp(`/orders/${orderId}/pay`));
   await expect(page.getByRole("heading", { name: "결제" })).toBeVisible();
 });

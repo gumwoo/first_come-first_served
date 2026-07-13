@@ -50,6 +50,9 @@ public class Payment {
     @Column(name = "vbank_account", length = 50)
     private String vbankAccount;
 
+    @Column(name = "vbank_secret", length = 64)
+    private String vbankSecret;
+
     @Column(name = "deposit_deadline")
     private LocalDateTime depositDeadline;
 
@@ -80,9 +83,10 @@ public class Payment {
         this.status = PaymentStatus.FAILED;
     }
 
-    /** 무통장 — 가상계좌·입금기한 배정(상태는 READY 유지, 입금 확인 시 approve). */
-    public void assignVbank(String account, LocalDateTime deadline) {
+    /** 무통장 — 가상계좌·입금기한·secret 배정(상태는 READY 유지, 입금 웹훅 확인 시 approve). */
+    public void assignVbank(String account, LocalDateTime deadline, String secret) {
         this.vbankAccount = account;
         this.depositDeadline = deadline;
+        this.vbankSecret = secret;
     }
 }

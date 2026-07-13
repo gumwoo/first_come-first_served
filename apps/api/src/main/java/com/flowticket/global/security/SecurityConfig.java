@@ -72,6 +72,8 @@ public class SecurityConfig {
                         .requestMatchers("/events/*/queue/**", "/queue/**").authenticated()
                         // 좌석 선점(POST)은 회원 — 좌석 조회(GET)는 /events/** permitAll로 공개
                         .requestMatchers(HttpMethod.POST, "/events/*/seats/hold").authenticated()
+                        // PG 웹훅은 Bearer 없이 공개 — 위조는 서비스단 secret 대조로 방어(ADR-005)
+                        .requestMatchers(HttpMethod.POST, "/webhooks/payments").permitAll()
                         .requestMatchers("/auth/**", "/oauth2/**", "/login/oauth2/**", "/sse/**",
                                 "/events/**", "/search", "/search/**").permitAll()
                         .anyRequest().authenticated())

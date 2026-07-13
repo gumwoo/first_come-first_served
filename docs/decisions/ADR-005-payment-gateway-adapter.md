@@ -31,7 +31,24 @@
 - **아임포트/포트원(어그리게이터)**: 여러 PG 추상화 이점은 있으나, 포트 인터페이스는 우리가 이미
   두므로 어댑터만 갈아끼우면 됨(향후 옵션).
 
+## 웹훅 — 가상계좌 입금 확인(DEPOSIT_CALLBACK)
+무통장 입금은 사용자가 언제 입금할지 모르므로, Toss가 입금 시점에 **웹훅**으로 알린다.
+`POST /webhooks/payments`(Bearer 없이 공개) 수신 → `VBANK_WAITING→PAID` 확정.
+
+**위조·재전송 방어(토스 공식 규약 확인 결과):**
+- **인증 = secret 대조.** HMAC 서명 헤더(`tosspayments-webhook-signature`)는 **지급대행 웹훅
+  (`payout/seller.changed`) 전용**이고, 가상계좌 입금 콜백은 서명이 없다. 대신 결제 승인 응답에
+  담겨오는 **`secret` 값을 발급 시 저장**(`payments.vbank_secret`)해 두고, 웹훅 body의 `secret`과
+  `equals` 비교해 정상 요청만 처리한다(불일치 → 403).
+- **멱등 필수.** Toss는 2xx를 10초 내 못 받으면 실패로 보고 **최대 7회 재전송**한다. 이미 PAID면
+  no-op로 200 반환(READY 결제 없음 = 이미 확정). 상태 전이는 조건부 UPDATE로 이중 확정 차단([[ADR-006]]).
+- `status`가 완료(`DONE`)일 때만 확정 — 그 외 상태는 대기 유지.
+
+> 근거: 토스페이먼츠 개발자센터 「웹훅 이벤트」·「가상계좌 웹훅」 문서(2026-07 확인).
+
 ## 결과 / 한계
 - 테스트는 Mock으로 안정적, 실 연동은 어댑터 교체로 확보(도메인 코드 불변).
-- 토스 **웹훅 로컬 수신엔 공개 URL(ngrok 등)** 이 필요 — 실행 이슈이며 설계엔 무관.
-- 웹훅은 서명검증 통과분만 신뢰(위조 방지). 멱등 처리는 [[ADR-006]]·`payments.idempotency_key`.
+- 웹훅 검증 로직(secret 대조·멱등·상태 확정)은 Mock으로 **CI 통합테스트 검증**됨
+  (`PaymentWebhookIntegrationTest`).
+- 한계: 실 Toss 가상계좌 발급은 결제창 흐름이 필요해 데모 배선은 후속. 라이브 웹훅 수신엔
+  공개 URL(cloudflared/ngrok)이 필요 — 실행 이슈이며 설계엔 무관.

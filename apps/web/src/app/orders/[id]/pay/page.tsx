@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { loadTossPayments } from "@tosspayments/payment-sdk";
 import { CreditCard, Smartphone, Landmark, Clock, TimerOff } from "lucide-react";
 import { useOrder } from "@/features/order/hooks/useOrder";
 import * as orderApi from "@/features/order/api/order";
@@ -24,9 +25,14 @@ function mmss(s: number) {
   return `${String(m).padStart(2, "0")}:${String(Math.max(0, s % 60)).padStart(2, "0")}`;
 }
 
+// Toss 결제창(실 PG 데모): 클라이언트 키가 설정되면 카드는 결제창 인증 경로를 사용.
+const TOSS_CLIENT_KEY = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY;
+const tossOrderId = (orderId: number) => `FLOWTICKET-ORDER-${orderId}`;
+
 export default function PayPage() {
   const orderId = Number(useParams().id);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const token = useAuthStore((s) => s.accessToken);
   const { order, loading, error } = useOrder(orderId, token);
   const { data: event } = useEvent(order?.eventId ?? NaN);
@@ -42,6 +48,23 @@ export default function PayPage() {
   useEffect(() => {
     if (order?.status === "PAID") router.replace(`/orders/${orderId}/complete`);
   }, [order?.status, orderId, router]);
+
+  // Toss 결제창 인증 후 리다이렉트 복귀(paymentKey 쿼리) → 서버 확정
+  useEffect(() => {
+    const paymentKey = searchParams.get("paymentKey");
+    if (!paymentKey || !token) return;
+    setSubmitting(true);
+    orderApi
+      .confirmPayment(orderId, paymentKey, token)
+      .then((res) =>
+        router.replace(`/orders/${orderId}/${res.orderStatus === "PAID" ? "complete" : "failed"}`)
+      )
+      .catch(() => {
+        setFailMsg("결제 승인에 실패했습니다. 다시 시도해 주세요.");
+        setSubmitting(false);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, token, orderId]);
 
   // 제한시간 카운트다운(주문 expiresAt 기준)
   useEffect(() => {
@@ -59,6 +82,20 @@ export default function PayPage() {
     setSubmitting(true);
     setFailMsg(null);
     try {
+      // 카드 + Toss 클라이언트 키가 있으면 실 PG 결제창 인증 경로(BE-5).
+      if (method === "card" && TOSS_CLIENT_KEY) {
+        const toss = await loadTossPayments(TOSS_CLIENT_KEY);
+        const origin = window.location.origin;
+        await toss.requestPayment("카드", {
+          amount: order.amount,
+          orderId: tossOrderId(orderId),
+          orderName: event?.title ?? "FlowTicket 예매",
+          successUrl: `${origin}/orders/${orderId}/pay`,
+          failUrl: `${origin}/orders/${orderId}/pay`,
+        });
+        return; // 결제창으로 리다이렉트 — 복귀 시 useEffect가 확정
+      }
+
       const key = crypto.randomUUID();
       const res = await orderApi.payOrder(
         orderId,

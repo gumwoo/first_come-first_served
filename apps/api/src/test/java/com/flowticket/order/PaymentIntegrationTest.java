@@ -150,6 +150,31 @@ class PaymentIntegrationTest {
                 .isInstanceOf(BusinessException.class); // INVALID_STATE_TRANSITION
     }
 
+    @Test
+    void 결제창_확정은_주문PAID_좌석SOLD() {
+        long user = 24L;
+        Ctx c = order(user, 1);
+
+        PaymentResponse res = paymentService.confirm(user, c.orderId, "OK-KEY-" + c.orderId);
+
+        assertThat(res.paymentStatus()).isEqualTo("APPROVED");
+        assertThat(res.orderStatus()).isEqualTo("PAID");
+        assertThat(seatRepository.findById(c.seatId).orElseThrow().getStatus()).isEqualTo(SeatStatus.SOLD);
+    }
+
+    @Test
+    void 결제창_확정_같은_paymentKey는_한번만_처리된다() {
+        long user = 25L;
+        Ctx c = order(user, 1);
+        String key = "OK-KEY-idem-" + c.orderId;
+
+        Long p1 = paymentService.confirm(user, c.orderId, key).paymentId();
+        Long p2 = paymentService.confirm(user, c.orderId, key).paymentId();
+
+        assertThat(p2).isEqualTo(p1);
+        assertThat(paymentRepository.count()).isEqualTo(1);
+    }
+
     // --- helpers ---
 
     private record Ctx(Long orderId, Long holdId, Long seatId) {}

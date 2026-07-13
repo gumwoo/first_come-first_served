@@ -117,6 +117,52 @@ public class PaymentService {
         return PaymentResponse.of(payment.getId(), PaymentStatus.APPROVED.name(), currentStatus(orderId).name());
     }
 
+    /**
+     * 결제창(Toss 등) 인증 후 서버 확정(BE-5). 클라이언트가 받은 paymentKey로 승인 API를 호출한다.
+     * 멱등키는 결제창의 paymentKey(주문당 유일)를 사용 — 동시/재요청 시 UNIQUE로 이중 승인 차단.
+     */
+    public PaymentResponse confirm(Long userId, Long orderId, String paymentKey) {
+        if (paymentKey == null || paymentKey.isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+        }
+        try {
+            return self.getObject().confirmTx(userId, orderId, paymentKey);
+        } catch (DataIntegrityViolationException e) {
+            return paymentRepository.findByIdempotencyKey(paymentKey)
+                    .map(p -> PaymentResponse.of(p.getId(), p.getStatus().name(), currentStatus(orderId).name()))
+                    .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+        }
+    }
+
+    @Transactional
+    public PaymentResponse confirmTx(Long userId, Long orderId, String paymentKey) {
+        Order order = ownedOrder(orderId, userId);
+
+        var dup = paymentRepository.findByIdempotencyKey(paymentKey);
+        if (dup.isPresent()) {
+            return PaymentResponse.of(dup.get().getId(), dup.get().getStatus().name(), order.getStatus().name());
+        }
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
+        }
+        if (order.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new BusinessException(ErrorCode.PAYMENT_TIMEOUT);
+        }
+
+        Payment payment = paymentRepository.save(Payment.builder()
+                .orderId(orderId).method("card").provider("toss")
+                .amount(order.getAmount()).idempotencyKey(paymentKey).build());
+
+        ApproveResult res = gateway.confirm(orderId, paymentKey, order.getAmount());
+        if (!res.success()) {
+            payment.fail();
+            paymentRepository.save(payment);
+            return PaymentResponse.of(payment.getId(), payment.getStatus().name(), order.getStatus().name());
+        }
+        finalizePaid(order, payment, OrderStatus.PENDING, res.pgTid());
+        return PaymentResponse.of(payment.getId(), PaymentStatus.APPROVED.name(), currentStatus(orderId).name());
+    }
+
     /** 무통장 입금 확인(개발/데모 트리거 · 실제는 PG 웹훅 BE-5). VBANK_WAITING→PAID로 확정. */
     @Transactional
     public PaymentResponse confirmVbankDeposit(Long userId, Long orderId) {

@@ -1,6 +1,7 @@
 package com.flowticket.order.controller;
 
 import com.flowticket.global.common.ApiResponse;
+import com.flowticket.order.dto.PaymentConfirmRequest;
 import com.flowticket.order.dto.PaymentRequest;
 import com.flowticket.order.dto.PaymentResponse;
 import com.flowticket.order.service.PaymentService;
@@ -27,5 +28,13 @@ public class PaymentController {
                                             @Valid @RequestBody PaymentRequest request) {
         return ApiResponse.ok(paymentService.pay(
                 userId, id, request.method(), request.provider(), request.idempotencyKey()));
+    }
+
+    /** 결제창(Toss) 인증 확정. 클라이언트가 받은 paymentKey로 서버 승인(BE-5). */
+    @PostMapping("/orders/{id}/payments/confirm")
+    public ApiResponse<PaymentResponse> confirm(@PathVariable Long id,
+                                                @AuthenticationPrincipal Long userId,
+                                                @Valid @RequestBody PaymentConfirmRequest request) {
+        return ApiResponse.ok(paymentService.confirm(userId, id, request.paymentKey()));
     }
 }

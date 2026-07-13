@@ -12,6 +12,12 @@ public interface PaymentGateway {
     /** 무통장 — 가상계좌 발급(입금은 나중에 웹훅/트리거로 확인). 반환: 가상계좌 번호. */
     String issueVbank(Long orderId, int amount);
 
+    /**
+     * 결제창(클라이언트) 인증 후 서버 확정. Toss는 paymentKey로 승인 API를 호출한다.
+     * Mock은 paymentKey를 무시하고 통과(테스트/데모용).
+     */
+    ApproveResult confirm(Long orderId, String paymentKey, int amount);
+
     /** 승인 결과. */
     record ApproveResult(boolean success, String pgTid, String failReason) {
         public static ApproveResult ok(String pgTid) {

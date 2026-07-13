@@ -96,12 +96,12 @@ public class PaymentService {
                 .amount(order.getAmount()).idempotencyKey(idemKey).build());
 
         if ("vbank".equals(method)) {
-            String account = gateway.issueVbank(orderId, order.getAmount());
-            payment.assignVbank(account, order.getExpiresAt()); // 입금기한 = 결제 제한시각
+            PaymentGateway.VbankIssue vb = gateway.issueVbank(orderId, order.getAmount());
+            payment.assignVbank(vb.account(), order.getExpiresAt(), vb.secret()); // 입금기한 = 결제 제한시각
             paymentRepository.save(payment);
             orderRepository.markVbankWaiting(orderId); // PENDING→VBANK_WAITING
             return PaymentResponse.vbank(payment.getId(), OrderStatus.VBANK_WAITING.name(),
-                    account, order.getExpiresAt());
+                    vb.account(), order.getExpiresAt());
         }
         if (!IMMEDIATE.contains(method)) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
@@ -177,6 +177,48 @@ public class PaymentService {
         orderSse.broadcast(orderId, "payment.vbank.deposited", Map.of("orderId", orderId));
         finalizePaid(order, payment, OrderStatus.VBANK_WAITING, "DEV-DEPOSIT");
         return PaymentResponse.of(payment.getId(), PaymentStatus.APPROVED.name(), currentStatus(orderId).name());
+    }
+
+    /**
+     * 가상계좌 입금 웹훅(Toss DEPOSIT_CALLBACK) 처리(BE-5). 위조·재전송을 방어한다.
+     * - 검증: 발급 때 저장한 vbank_secret과 웹훅 secret 대조(불일치 → FORBIDDEN, HMAC 서명은 지급대행 전용).
+     * - 멱등: Toss는 2xx 못 받으면 최대 7회 재전송 → 이미 PAID면 그대로 성공 응답(no-op).
+     * - status가 완료(DONE)일 때만 VBANK_WAITING→PAID 확정.
+     * tossOrderId는 결제창 규약 "FLOWTICKET-ORDER-{id}".
+     */
+    @Transactional
+    public void handleVbankDepositWebhook(String tossOrderId, String status, String secret) {
+        Long orderId = parseOrderId(tossOrderId);
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+
+        Payment payment = paymentRepository
+                .findFirstByOrderIdAndStatusOrderByIdDesc(orderId, PaymentStatus.READY)
+                .orElse(null);
+        // 이미 확정됐거나(READY 없음=PAID) 재전송 → 멱등 no-op
+        if (payment == null || order.getStatus() != OrderStatus.VBANK_WAITING) {
+            return;
+        }
+        // 위조 검증: 저장 secret과 웹훅 secret 대조(발급분에 secret이 있을 때만 신뢰)
+        if (payment.getVbankSecret() == null || !payment.getVbankSecret().equals(secret)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        if (!"DONE".equals(status)) {
+            return; // 입금 완료 상태가 아니면 대기 유지
+        }
+        orderSse.broadcast(orderId, "payment.vbank.deposited", Map.of("orderId", orderId));
+        finalizePaid(order, payment, OrderStatus.VBANK_WAITING, "TOSS-DEPOSIT-" + payment.getId());
+    }
+
+    private Long parseOrderId(String tossOrderId) {
+        if (tossOrderId == null || !tossOrderId.startsWith("FLOWTICKET-ORDER-")) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+        }
+        try {
+            return Long.parseLong(tossOrderId.substring("FLOWTICKET-ORDER-".length()));
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+        }
     }
 
     /** 승인 확정: payment APPROVED(먼저 flush) → 주문 조건부 전이 → 좌석 SOLD·hold CONVERTED → order.paid. */

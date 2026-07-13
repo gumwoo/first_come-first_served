@@ -20,6 +20,7 @@
 | idempotency_key | VARCHAR(80) | N | | UNIQUE | 같은 결제 시도 중복 차단 |
 | pg_tid | VARCHAR(100) | Y | | | PG 거래 ID(웹훅 멱등 대조) |
 | vbank_account | VARCHAR(50) | Y | | | 가상계좌(무통장) |
+| vbank_secret | VARCHAR(64) | Y | | | 입금 웹훅(DEPOSIT_CALLBACK) 검증용 secret (V10) |
 | deposit_deadline | TIMESTAMP | Y | | | 입금 기한(무통장) |
 | approved_at | TIMESTAMP | Y | | | 승인 시각 |
 | created_at | TIMESTAMP | N | now() | | |
@@ -35,4 +36,6 @@
 - 멱등: 같은 `idempotency_key`/`pg_tid` 재요청은 새로 처리하지 않고 기존 결과 반환([[ADR-006]]).
 - 승인 성공 → order 상태 전이는 조건부 UPDATE(`WHERE status='PENDING'`)로 원자화.
 - 승인 거절 → 이 레코드만 FAILED, order는 PENDING 유지(재시도 허용).
-- vbank는 발급 시 READY(+가상계좌·기한), 입금 웹훅 시 APPROVED → order PAID.
+- vbank는 발급 시 READY(+가상계좌·기한·secret), 입금 웹훅 시 APPROVED → order PAID.
+- 입금 웹훅 위조 방지: 발급 때 저장한 `vbank_secret`과 웹훅 body의 secret을 대조(불일치 → 거부).
+  Toss 재전송(최대 7회) 대비 멱등 — 이미 PAID면 무시([[ADR-005]]).

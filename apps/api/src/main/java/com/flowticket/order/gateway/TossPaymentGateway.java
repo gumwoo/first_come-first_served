@@ -41,8 +41,9 @@ public class TossPaymentGateway implements PaymentGateway {
     }
 
     @Override
-    public String issueVbank(Long orderId, int amount) {
-        throw new BusinessException(ErrorCode.VALIDATION_ERROR); // 무통장은 BE-5 범위 밖(웹훅 후속)
+    public VbankIssue issueVbank(Long orderId, int amount) {
+        // 실 Toss 가상계좌는 결제창 발급 흐름이 필요 — 데모는 Mock 경로 사용(웹훅 검증 로직은 동일 규약).
+        throw new BusinessException(ErrorCode.VALIDATION_ERROR);
     }
 
     /** 결제창에서 받은 paymentKey로 Toss 승인 API 호출. orderId는 FE와 동일 규약으로 파생. */

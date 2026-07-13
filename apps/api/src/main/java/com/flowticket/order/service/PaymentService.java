@@ -98,7 +98,8 @@ public class PaymentService {
         if ("vbank".equals(method)) {
             PaymentGateway.VbankIssue vb = gateway.issueVbank(orderId, order.getAmount());
             payment.assignVbank(vb.account(), order.getExpiresAt(), vb.secret()); // 입금기한 = 결제 제한시각
-            paymentRepository.save(payment);
+            // 벌크 UPDATE(clearAutomatically)가 컨텍스트를 비우기 전에 계좌/기한/secret을 확정(TS-007)
+            paymentRepository.saveAndFlush(payment);
             orderRepository.markVbankWaiting(orderId); // PENDING→VBANK_WAITING
             return PaymentResponse.vbank(payment.getId(), OrderStatus.VBANK_WAITING.name(),
                     vb.account(), order.getExpiresAt());

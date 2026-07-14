@@ -52,3 +52,13 @@
   (`PaymentWebhookIntegrationTest`).
 - 한계: 실 Toss 가상계좌 발급은 결제창 흐름이 필요해 데모 배선은 후속. 라이브 웹훅 수신엔
   공개 URL(cloudflared/ngrok)이 필요 — 실행 이슈이며 설계엔 무관.
+
+## 후속 작업 (TODO — 나중에)
+아래는 **설계·검증 완료 후 데모 목적의 후속**이며, 지금 슬라이스 완료 조건이 아니다(웹훅 로직은
+Mock으로 CI 검증됨). 라이브 스크린샷/시연이 필요할 때 진행한다.
+1. **FE 실 Toss 가상계좌 결제창 배선** — 현재 vbank는 Mock 경로만. `requestPayment("가상계좌")` +
+   confirm 응답의 `secret` 저장까지 실 연동해야 라이브 웹훅 e2e가 가능.
+2. **cloudflared 터널로 라이브 콜백 1회 수신** — 공개 URL을 Toss 대시보드 웹훅에 등록 →
+   테스트 환경 입금 시뮬레이션 → `DEPOSIT_CALLBACK` 도착 확인(스크린샷).
+> 이유: 라이브 배송은 CI 재현이 불가하고 코드+외부설정+수동 트리거가 필요 — 얻는 건 시연 1컷.
+> 엔지니어링 가치(secret 검증·멱등·상태 확정)는 이미 `PaymentWebhookIntegrationTest`로 박제됨.

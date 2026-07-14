@@ -110,6 +110,9 @@ export default function PayPage() {
         router.replace(`/orders/${orderId}/failed`);
       }
     } catch (e) {
+      // Toss 결제창은 사용자가 닫으면(취소) 예외를 던진다 — 실패가 아니므로 조용히 결제 화면 유지.
+      const code = (e as { code?: string })?.code;
+      if (code === "USER_CANCEL" || code === "PAY_PROCESS_CANCELED") return;
       setFailMsg("결제 처리 중 오류가 발생했습니다. 다시 시도해 주세요.");
     } finally {
       setSubmitting(false);

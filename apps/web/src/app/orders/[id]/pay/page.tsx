@@ -82,8 +82,9 @@ export default function PayPage() {
     setSubmitting(true);
     setFailMsg(null);
     try {
-      // 카드 + Toss 클라이언트 키가 있으면 실 PG 결제창 인증 경로(BE-5).
-      if (method === "card" && TOSS_CLIENT_KEY) {
+      // 카드·간편결제 + Toss 클라이언트 키가 있으면 실 PG 결제창 인증 경로(BE-5).
+      // Toss "카드" 결제창은 카카오페이·토스페이 등 간편결제도 함께 제공하므로 두 탭 모두 여기로 라우팅한다.
+      if ((method === "card" || method === "easy") && TOSS_CLIENT_KEY) {
         const toss = await loadTossPayments(TOSS_CLIENT_KEY);
         const origin = window.location.origin;
         await toss.requestPayment("카드", {

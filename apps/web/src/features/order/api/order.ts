@@ -89,3 +89,17 @@ export const getMyOrders = (
 /** 본인 예매 상세(소유자 검증). */
 export const getMyOrder = (orderId: number, token: string | null) =>
   api<MyOrderDetail>(`/me/orders/${orderId}`, { token });
+
+export type RefundResult = {
+  refundId: number;
+  orderStatus: string;
+  refundAmount: number;
+  fee: number;
+};
+
+/** 예매 취소·환불. PAID + 환불 가능 시점에서만. idempotencyKey는 클라이언트 생성(더블클릭 멱등). */
+export const requestRefund = (
+  orderId: number,
+  body: { reason?: string; idempotencyKey: string },
+  token: string | null
+) => api<RefundResult>(`/me/orders/${orderId}/refund`, { method: "POST", token, body });

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedPaidOrder, seedOrder } from "../helpers/seed";
+import { seedPaidOrder, seedOrder, seedAdmittedUser } from "../helpers/seed";
 
 /**
  * S06 취소·환불 E2E — Mock 게이트웨이(결정론). 시드 이벤트 공연일이 D+30이라 환불은 전액 허용.
@@ -26,6 +26,22 @@ test("예매 취소 → 환불 완료", async ({ page }) => {
   // 확정 모달 → 취소 확정 → 완료 화면(환불 예정 금액 안내)
   await page.getByRole("button", { name: "취소 확정" }).click();
   await expect(page.getByRole("heading", { name: "예매를 취소했습니다" })).toBeVisible();
+
+  // 목록 반영: 취소 탭엔 "환불완료"로 노출, 예정 탭엔 없음
+  await page.goto("/me/orders");
+  await expect(page.getByText("환불완료").first()).toBeVisible();
+  await page.getByRole("button", { name: "취소" }).click();
+  await expect(page.getByText("환불완료").first()).toBeVisible();
+  await page.getByRole("button", { name: "예정" }).click();
+  await expect(page.getByText("예매 내역이 없습니다")).toBeVisible();
+});
+
+test("예매 없는 사용자는 빈 상태", async ({ page }) => {
+  await seedAdmittedUser(page); // 로그인만(주문 없음)
+
+  await page.goto("/me/orders");
+
+  await expect(page.getByText("예매 내역이 없습니다")).toBeVisible();
 });
 
 test("결제 전 예매는 취소 불가 안내", async ({ page }) => {

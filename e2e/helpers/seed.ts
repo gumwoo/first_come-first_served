@@ -86,8 +86,10 @@ export async function seedAdmittedUser(page: Page): Promise<Admitted> {
   return { eventId, queueToken, accessToken, email };
 }
 
-/** 결제까지 순간이동: seedAdmittedUser → 좌석 1개 선점(API) → 주문 생성(API). 반환 {orderId, eventId}. */
-export async function seedOrder(page: Page): Promise<{ orderId: number; eventId: number }> {
+/** 결제까지 순간이동: seedAdmittedUser → 좌석 1개 선점(API) → 주문 생성(API). 반환 {orderId, eventId, accessToken}. */
+export async function seedOrder(
+  page: Page
+): Promise<{ orderId: number; eventId: number; accessToken: string }> {
   const req = page.request;
   const { eventId, queueToken, accessToken } = await seedAdmittedUser(page);
 
@@ -106,5 +108,15 @@ export async function seedOrder(page: Page): Promise<{ orderId: number; eventId:
   });
   const orderId = (await orderRes.json()).data.orderId as number;
 
+  return { orderId, eventId, accessToken };
+}
+
+/** 결제 완료(PAID)까지 순간이동: seedOrder → Mock 카드 결제(API). 반환 {orderId, eventId}. */
+export async function seedPaidOrder(page: Page): Promise<{ orderId: number; eventId: number }> {
+  const { orderId, eventId, accessToken } = await seedOrder(page);
+  await page.request.post(`/api/orders/${orderId}/payments`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    data: { method: "card", idempotencyKey: `e2e-pay-${orderId}` },
+  });
   return { orderId, eventId };
 }

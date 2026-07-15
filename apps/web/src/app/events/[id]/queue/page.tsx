@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Clock, Users, CalendarClock, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Clock, Users, CalendarClock, AlertTriangle } from "lucide-react";
 import { useQueue } from "@/features/queue/hooks/useQueue";
 import { useEvent } from "@/features/event/hooks/useEvents";
 import { Button } from "@/components/ui/button";
@@ -52,17 +52,8 @@ export default function QueuePage() {
   }
 
   if (phase === "admitted") {
-    // 자동 이동 중 잠깐 보이는 전환 화면. 혹시 이동이 지연되면 수동 버튼으로 폴백.
-    return (
-      <main className="mx-auto max-w-md p-10 text-center">
-        <CheckCircle2 className="mx-auto mb-3 h-12 w-12 text-primary" />
-        <h1 className="text-xl font-bold">입장 완료!</h1>
-        <p className="mt-2 text-sm text-muted-foreground">좌석 선택 화면으로 이동 중…</p>
-        <Button variant="ghost" className="mt-4" onClick={() => router.replace(seatsHref)}>
-          바로 이동하기
-        </Button>
-      </main>
-    );
+    // "입장 완료" 화면을 그리지 않고 중립 로딩만 표시 → 좌석 선택으로 자동 이동 시 깜빡임 없음.
+    return <main className="mx-auto max-w-5xl p-10 text-center text-muted-foreground">좌석 선택 화면으로 이동 중…</main>;
   }
 
   if (phase === "expired") {

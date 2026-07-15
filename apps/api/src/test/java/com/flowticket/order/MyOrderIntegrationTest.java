@@ -107,9 +107,13 @@ class MyOrderIntegrationTest {
     @Test
     void 목록은_본인_주문만_최신순() {
         long me = 50L, other = 51L;
-        order(me);
-        order(me);
-        order(other); // 남의 주문은 안 보여야 함
+        // 전체 탭 = 실제 예매(PAID 등)만 → 결제까지 완료해야 노출
+        Long o1 = order(me);
+        paymentService.pay(me, o1, "card", null, "OK-" + o1);
+        Long o2 = order(me);
+        paymentService.pay(me, o2, "card", null, "OK-" + o2);
+        Long oOther = order(other);
+        paymentService.pay(other, oOther, "card", null, "OK-" + oOther); // 남의 결제 예매(본인 필터로 제외돼야)
 
         PageResponse<MyOrderSummary> res = myOrderService.list(me, null, 0, 20);
 
@@ -150,6 +154,19 @@ class MyOrderIntegrationTest {
     void 없는_주문_상세는_NOT_FOUND() {
         assertThatThrownBy(() -> myOrderService.detail(55L, 999999L))
                 .isInstanceOf(BusinessException.class); // NOT_FOUND
+    }
+
+    @Test
+    void 전체탭은_미결제_미완료_예매를_제외한다() {
+        long user = 56L;
+        Long paid = order(user);
+        paymentService.pay(user, paid, "card", null, "OK-" + paid);
+        order(user); // PENDING(미결제) — 실제 예매 아니므로 전체에서 제외
+
+        PageResponse<MyOrderSummary> res = myOrderService.list(user, null, 0, 20);
+
+        assertThat(res.total()).isEqualTo(1);
+        assertThat(res.items().get(0).orderId()).isEqualTo(paid);
     }
 
     // --- helpers ---

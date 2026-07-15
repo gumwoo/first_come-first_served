@@ -16,10 +16,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     /** 멱등 생성: 이 hold로 이미 활성(PENDING/VBANK_WAITING) 주문이 있으면 그것을 재사용. */
     Optional<Order> findFirstByHoldIdAndStatusIn(Long holdId, List<OrderStatus> statuses);
 
-    /** 마이페이지 — 본인 주문 목록(최신순). 전체 탭. */
-    Page<Order> findByUserIdOrderByIdDesc(Long userId, Pageable pageable);
-
-    /** 마이페이지 — 본인 주문 목록(상태 필터, 최신순). 예정/취소 탭. */
+    /** 마이페이지 — 본인 주문 목록(상태 필터, 최신순). 전체(실제 예매)/예정/취소 탭. */
     Page<Order> findByUserIdAndStatusInOrderByIdDesc(Long userId, List<OrderStatus> statuses, Pageable pageable);
 
     /**

@@ -37,6 +37,18 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             + "where o.id = :id and o.status = com.flowticket.order.domain.OrderStatus.PENDING")
     int markVbankWaiting(@Param("id") Long id);
 
+    /** 취소(S06) — PAID인 주문만 CANCELLED로. 조건부 UPDATE로 원자화(ADR-006). 1이면 이 요청이 취소의 주인. */
+    @Modifying(clearAutomatically = true)
+    @Query("update Order o set o.status = com.flowticket.order.domain.OrderStatus.CANCELLED "
+            + "where o.id = :id and o.status = :from")
+    int markCancelled(@Param("id") Long id, @Param("from") OrderStatus from);
+
+    /** 환불 확정(S06) — CANCELLED인 주문만 REFUNDED로. */
+    @Modifying(clearAutomatically = true)
+    @Query("update Order o set o.status = com.flowticket.order.domain.OrderStatus.REFUNDED "
+            + "where o.id = :id and o.status = :from")
+    int markRefunded(@Param("id") Long id, @Param("from") OrderStatus from);
+
     /** 만료 sweep — 결제 제한시각 지난 미완료 주문(PENDING/VBANK_WAITING)을 EXPIRED로. */
     @Modifying(clearAutomatically = true)
     @Query("update Order o set o.status = com.flowticket.order.domain.OrderStatus.EXPIRED "

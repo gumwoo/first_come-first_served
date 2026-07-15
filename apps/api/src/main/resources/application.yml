@@ -108,6 +108,13 @@ order:
 payment:
   gateway: ${PAYMENT_GATEWAY:mock}
 
+# 취소 수수료 정책(S06). 공연일까지 남은 일수 기준 기간별 수수료율(%). 당일·이후는 환불 불가.
+refund:
+  free-days: ${REFUND_FREE_DAYS:8}     # 이 일수 이상 남으면 0%
+  tier1-days: ${REFUND_TIER1_DAYS:3}   # 이 일수 이상 남으면 tier1 수수료율
+  tier1-rate: ${REFUND_TIER1_RATE:10}  # D-3~D-7 (%)
+  tier2-rate: ${REFUND_TIER2_RATE:30}  # D-1~D-2 (%)
+
 # 휴대폰 인증: 데모는 Mock(고정 코드). 운영은 mock=false + 실제 SMS 연동.
 auth:
   phone:

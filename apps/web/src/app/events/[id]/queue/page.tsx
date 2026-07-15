@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Clock, Users, CalendarClock, CheckCircle2, AlertTriangle } from "lucide-react";
@@ -27,6 +28,11 @@ export default function QueuePage() {
     router.push(`/events/${id}`);
   };
 
+  // 입장 허용되면 좌석 선택으로 자동 이동(replace: 뒤로가기로 대기열 복귀 방지).
+  useEffect(() => {
+    if (phase === "admitted") router.replace(seatsHref);
+  }, [phase, seatsHref, router]);
+
   if (phase === "loading") {
     return <main className="mx-auto max-w-5xl p-10 text-center text-muted-foreground">대기열에 진입하는 중…</main>;
   }
@@ -46,14 +52,15 @@ export default function QueuePage() {
   }
 
   if (phase === "admitted") {
+    // 자동 이동 중 잠깐 보이는 전환 화면. 혹시 이동이 지연되면 수동 버튼으로 폴백.
     return (
       <main className="mx-auto max-w-md p-10 text-center">
         <CheckCircle2 className="mx-auto mb-3 h-12 w-12 text-primary" />
         <h1 className="text-xl font-bold">입장 완료!</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          지금 좌석을 선택할 수 있어요. 입장 제한 시간 내 진행해주세요.
-        </p>
-        <Button className="mt-4" onClick={() => router.push(seatsHref)}>좌석 선택으로</Button>
+        <p className="mt-2 text-sm text-muted-foreground">좌석 선택 화면으로 이동 중…</p>
+        <Button variant="ghost" className="mt-4" onClick={() => router.replace(seatsHref)}>
+          바로 이동하기
+        </Button>
       </main>
     );
   }

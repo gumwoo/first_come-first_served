@@ -31,25 +31,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import com.flowticket.support.SharedContainers;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * 결제 승인(BE-2): Mock 승인 → PENDING→PAID(조건부) + 좌석 SOLD + hold CONVERTED,
  * 거절 시 payment FAILED/order PENDING 유지, 멱등, 이미 PAID 재결제 거부.
  */
 @SpringBootTest
-@Testcontainers
 class PaymentIntegrationTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-    @Container
-    static GenericContainer<?> redisContainer =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
+    static final PostgreSQLContainer<?> postgres = SharedContainers.POSTGRES;
+    static final GenericContainer<?> redisContainer = SharedContainers.REDIS;
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {

@@ -33,24 +33,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import com.flowticket.support.SharedContainers;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * 마이페이지 예매 조회(S06 BE-1): 본인 주문만·상태 탭·페이징, 상세 소유자 검증(403/404).
  */
 @SpringBootTest
-@Testcontainers
 class MyOrderIntegrationTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-    @Container
-    static GenericContainer<?> redisContainer =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
+    static final PostgreSQLContainer<?> postgres = SharedContainers.POSTGRES;
+    static final GenericContainer<?> redisContainer = SharedContainers.REDIS;
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {

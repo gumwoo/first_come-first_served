@@ -34,24 +34,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import com.flowticket.support.SharedContainers;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * 예매 취소·환불(S06 BE-2): PAID+시점 게이트에서만, 좌석 복구, 이중 환불 멱등, 소유자 검증.
  */
 @SpringBootTest
-@Testcontainers
 class RefundIntegrationTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-    @Container
-    static GenericContainer<?> redisContainer =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
+    static final PostgreSQLContainer<?> postgres = SharedContainers.POSTGRES;
+    static final GenericContainer<?> redisContainer = SharedContainers.REDIS;
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {

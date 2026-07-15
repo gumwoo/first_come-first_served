@@ -17,26 +17,20 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import com.flowticket.support.SharedContainers;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * KOPIS upsert → 목록/검색 필터 → 상세 조회를 실제 Postgres 위에서 검증한다.
  * 외부 KOPIS 호출은 KopisUpserter에 항목을 직접 주입해 배제한다(결정적 테스트).
  */
 @SpringBootTest
-@Testcontainers
 class EventIntegrationTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+    static final PostgreSQLContainer<?> postgres = SharedContainers.POSTGRES;
 
-    @Container
-    static GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
+    static final GenericContainer<?> redis = SharedContainers.REDIS;
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {

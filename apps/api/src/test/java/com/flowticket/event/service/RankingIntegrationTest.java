@@ -14,26 +14,20 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import com.flowticket.support.SharedContainers;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * 조회수 랭킹 검증(Testcontainers Redis). 핵심 불변식:
  * 인기(누적)와 실시간(감쇠)은 같은 조회를 다른 집계로 → 결과가 달라질 수 있다.
  */
 @SpringBootTest
-@Testcontainers
 class RankingIntegrationTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+    static final PostgreSQLContainer<?> postgres = SharedContainers.POSTGRES;
 
-    @Container
-    static GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
+    static final GenericContainer<?> redis = SharedContainers.REDIS;
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {

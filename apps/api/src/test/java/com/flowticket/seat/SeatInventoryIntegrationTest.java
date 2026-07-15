@@ -33,25 +33,19 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import com.flowticket.support.SharedContainers;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * 좌석·재고 핵심(Testcontainers). 초과판매 방지(조건부 UPDATE, IMP-003), 시딩 멱등/가격 티어,
  * 입장 게이트, 선점→SOLD_OUT. capacity 높게·워커 비활성으로 결정적.
  */
 @SpringBootTest
-@Testcontainers
 class SeatInventoryIntegrationTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-    @Container
-    static GenericContainer<?> redisContainer =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
+    static final PostgreSQLContainer<?> postgres = SharedContainers.POSTGRES;
+    static final GenericContainer<?> redisContainer = SharedContainers.REDIS;
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {

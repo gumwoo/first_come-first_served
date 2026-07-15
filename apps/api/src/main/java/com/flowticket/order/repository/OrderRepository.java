@@ -4,6 +4,8 @@ import com.flowticket.order.domain.Order;
 import com.flowticket.order.domain.OrderStatus;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -13,6 +15,12 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     /** 멱등 생성: 이 hold로 이미 활성(PENDING/VBANK_WAITING) 주문이 있으면 그것을 재사용. */
     Optional<Order> findFirstByHoldIdAndStatusIn(Long holdId, List<OrderStatus> statuses);
+
+    /** 마이페이지 — 본인 주문 목록(최신순). 전체 탭. */
+    Page<Order> findByUserIdOrderByIdDesc(Long userId, Pageable pageable);
+
+    /** 마이페이지 — 본인 주문 목록(상태 필터, 최신순). 예정/취소 탭. */
+    Page<Order> findByUserIdAndStatusInOrderByIdDesc(Long userId, List<OrderStatus> statuses, Pageable pageable);
 
     /**
      * 결제 성공 전이 — 조건부 UPDATE로 원자화(ADR-006). from(PENDING 또는 VBANK_WAITING)인 주문만 PAID로.

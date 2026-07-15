@@ -15,8 +15,11 @@ import org.testcontainers.utility.DockerImageName;
  */
 public final class SharedContainers {
 
+    // 컨테이너를 공유하면 여러 Spring 컨텍스트의 Hikari 풀이 한 DB를 공유한다.
+    // 컨텍스트 수 × 풀 크기가 기본 max_connections(100)를 넘어 Flyway가 커넥션을 못 얻는 걸 막으려 상향.
     public static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16");
+            new PostgreSQLContainer<>("postgres:16")
+                    .withCommand("postgres", "-c", "max_connections=300");
 
     public static final GenericContainer<?> REDIS =
             new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);

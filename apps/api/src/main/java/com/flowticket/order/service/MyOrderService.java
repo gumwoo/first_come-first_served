@@ -40,7 +40,11 @@ public class MyOrderService {
         this.eventRepository = eventRepository;
     }
 
-    /** tab: null/all=전체, upcoming=예정(PAID), cancelled=취소(CANCELLED·REFUNDED). */
+    // 전체 탭 = "실제 예매로 볼 수 있는 상태"만. 미완료/버려진 시도(PENDING·EXPIRED·FAILED)는 예매 내역 아님.
+    private static final List<OrderStatus> REAL_ORDERS = List.of(
+            OrderStatus.PAID, OrderStatus.VBANK_WAITING, OrderStatus.CANCELLED, OrderStatus.REFUNDED);
+
+    /** tab: null/all=전체(실제 예매), upcoming=예정(PAID), cancelled=취소(CANCELLED·REFUNDED). */
     @Transactional(readOnly = true)
     public PageResponse<MyOrderSummary> list(Long userId, String tab, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
@@ -49,7 +53,7 @@ public class MyOrderService {
                     userId, List.of(OrderStatus.PAID), pageable);
             case "cancelled" -> orderRepository.findByUserIdAndStatusInOrderByIdDesc(
                     userId, List.of(OrderStatus.CANCELLED, OrderStatus.REFUNDED), pageable);
-            default -> orderRepository.findByUserIdOrderByIdDesc(userId, pageable);
+            default -> orderRepository.findByUserIdAndStatusInOrderByIdDesc(userId, REAL_ORDERS, pageable);
         };
 
         List<Order> content = orders.getContent();

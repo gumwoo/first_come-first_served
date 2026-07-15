@@ -1,0 +1,9 @@
+{
+  "topic": "refund-idempotency",
+  "phase": "after",
+  "date": "2026-07-15",
+  "method": "refunds.idempotency_key UNIQUE + 주문 조건부 전이(PAID→CANCELLED→REFUNDED) + 충돌 시 기존 결과 반환. 동일 조건",
+  "config": { "sameOrderConcurrentClicks": 10, "raceWindowMs": 20 },
+  "result": { "refundRows": 1, "duplicateRefunds": 0, "seatRestocks": 1 },
+  "note": "같은 idempotencyKey 10개 동시 요청에도 환불행 1개·REFUNDED 전이 1회·좌석 1회 복구. 패자는 기존 환불 결과를 멱등 반환(예외 0). 근거 테스트: RefundIdempotencyIntegrationTest.동시_더블클릭_같은키는_정확히_한번만_환불된다"
+}

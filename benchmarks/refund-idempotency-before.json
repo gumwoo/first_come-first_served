@@ -1,0 +1,9 @@
+{
+  "topic": "refund-idempotency",
+  "phase": "before",
+  "date": "2026-07-15",
+  "method": "비원자 check-then-act: SELECT status → PAID이면 (지연) → UPDATE REFUNDED + INSERT refund + 좌석 AVAILABLE. 멱등키/조건부 전이 없음",
+  "config": { "sameOrderConcurrentClicks": 10, "raceWindowMs": 20 },
+  "result": { "refundRows": 8, "duplicateRefunds": 7, "seatRestocks": 8 },
+  "note": "여러 스레드가 동시에 PAID를 관측 → 각자 환불행 생성 + 좌석 복구 → 이중 환불/이중 복구. 정확한 건수는 레이스 타이밍에 따라 달라짐(CI 실행값); 테스트는 refundRows>1을 단언(IMP-008과 동일 10스레드/20ms 구조 → 유사값). 근거 테스트: RefundIdempotencyIntegrationTest.비원자_check_then_act는_이중_환불을_만든다"
+}

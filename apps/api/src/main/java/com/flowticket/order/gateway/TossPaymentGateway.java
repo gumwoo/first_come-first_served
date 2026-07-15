@@ -46,6 +46,32 @@ public class TossPaymentGateway implements PaymentGateway {
         throw new BusinessException(ErrorCode.VALIDATION_ERROR);
     }
 
+    /** 원 결제(paymentKey=pgTid)를 취소. Toss 결제취소 API. cancelReason 필수. */
+    @Override
+    public ApproveResult refund(String pgTid, int amount) {
+        if (pgTid == null || pgTid.isBlank()) {
+            return ApproveResult.fail("환불 대상 결제 없음");
+        }
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> res = client.post()
+                    .uri("/v1/payments/{paymentKey}/cancel", pgTid)
+                    .header("Authorization", authHeader)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("cancelReason", "고객 취소"))
+                    .retrieve()
+                    .body(Map.class);
+            String status = res == null ? null : String.valueOf(res.get("status"));
+            if (res != null && ("CANCELED".equals(status) || "PARTIAL_CANCELED".equals(status))) {
+                return ApproveResult.ok(String.valueOf(res.get("paymentKey")));
+            }
+            return ApproveResult.fail("토스 취소 상태: " + status);
+        } catch (Exception e) {
+            log.warn("[toss] refund 실패 pgTid={}: {}", pgTid, e.getMessage());
+            return ApproveResult.fail("토스 취소 실패");
+        }
+    }
+
     /** 결제창에서 받은 paymentKey로 Toss 승인 API 호출. orderId는 FE와 동일 규약으로 파생. */
     @Override
     public ApproveResult confirm(Long orderId, String paymentKey, int amount) {

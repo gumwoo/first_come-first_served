@@ -21,6 +21,12 @@ public interface PaymentGateway {
      */
     ApproveResult confirm(Long orderId, String paymentKey, int amount);
 
+    /**
+     * 환불(S06). 원 결제(pgTid)를 amount만큼 취소한다. Toss는 결제취소 API를 호출.
+     * Mock은 pgTid를 무시하고 성공 반환(테스트/데모용).
+     */
+    ApproveResult refund(String pgTid, int amount);
+
     /** 가상계좌 발급 결과. account=입금 계좌번호, secret=입금 웹훅 검증용. */
     record VbankIssue(String account, String secret) {}
 

@@ -51,6 +51,7 @@ export default function SeatSelectPage() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [goingPay, setGoingPay] = useState(false);
+  const [heldRemain, setHeldRemain] = useState(0);
 
   // 선택 제한 타이머
   useEffect(() => {
@@ -62,6 +63,19 @@ export default function SeatSelectPage() {
     const t = setTimeout(() => setRemain((r) => r - 1), 1000);
     return () => clearTimeout(t);
   }, [remain, held, id, router]);
+
+  // 선점 만료 카운트다운(hold.expiresAt 기준). 0이면 선점 해제 → 만료 화면.
+  useEffect(() => {
+    if (!held) return;
+    const tick = () => {
+      const left = Math.floor((new Date(held.expiresAt).getTime() - Date.now()) / 1000);
+      setHeldRemain(Math.max(0, left));
+      if (left <= 0) router.replace(`/events/${id}/seats/expired`);
+    };
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [held, id, router]);
 
   // 가격 desc(무대 앞→뒤) 정렬된 등급
   const grades = useMemo(
@@ -169,24 +183,72 @@ export default function SeatSelectPage() {
 
   // 선점 완료 → 결제로
   if (held) {
+    const heldSeats = held.seatIds.map((sid) => seatById.get(sid)).filter(Boolean) as seatApi.SeatInfo[];
+    const urgent = heldRemain <= 60;
     return (
-      <main className="mx-auto max-w-md p-10 text-center">
-        <CheckCircle2 className="mx-auto mb-3 h-12 w-12 text-primary" />
-        <h1 className="text-xl font-bold">좌석 선점 완료!</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {held.seatIds.length}석 · 총 {held.total.toLocaleString()}원 · 제한 시간 내 결제를 완료해 주세요.
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">미결제 시 선점이 자동 해제됩니다.</p>
-        {errorMsg && <p className="mt-3 text-xs text-destructive">{errorMsg}</p>}
-        <div className="mt-4 flex flex-col items-center gap-2">
-          <Button className="w-56" disabled={goingPay} onClick={goPay}>
-            {goingPay ? "주문 생성 중…" : "결제하기"}
-          </Button>
-          <div className="flex justify-center gap-2">
-            <Button variant="outline" onClick={cancelHold}>선점 취소</Button>
-            <Link href={`/events/${id}`}><Button variant="ghost">공연 상세로</Button></Link>
-          </div>
-        </div>
+      <main className="mx-auto max-w-md px-4 py-10">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <CheckCircle2 className="mx-auto mb-2 h-11 w-11 text-primary" />
+              <h1 className="text-xl font-bold">좌석 선점 완료!</h1>
+              <p className="mt-1 text-sm text-muted-foreground">제한 시간 내 결제를 완료해 주세요.</p>
+            </div>
+
+            {/* 결제 제한 카운트다운 — 선착순 핵심 */}
+            <div className={`mt-5 flex items-center justify-between rounded-lg border px-4 py-3 ${
+              urgent ? "border-destructive/40 bg-destructive/10" : "border-primary/30 bg-primary/5"}`}>
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4" /> 결제 제한 시간
+              </span>
+              <span className={`text-2xl font-bold tabular-nums ${urgent ? "text-destructive" : "text-primary"}`}>
+                {mmss(heldRemain)}
+              </span>
+            </div>
+
+            {/* 공연 + 좌석 요약 */}
+            <div className="mt-4 flex gap-3">
+              <div className="h-24 w-16 shrink-0 overflow-hidden rounded bg-muted">
+                {event?.posterUrl && <img src={event.posterUrl} alt="" className="h-full w-full object-cover" />}
+              </div>
+              <div className="min-w-0 text-sm">
+                <p className="font-semibold leading-tight">{event?.title ?? "공연"}</p>
+                {event?.venue && (
+                  <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                    <MapPin className="h-3 w-3" /> {event.venue}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-muted-foreground">선택 좌석 {heldSeats.length}석</p>
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-1 rounded-md bg-muted/40 p-3 text-sm">
+              {heldSeats.map((s) => (
+                <div key={s.id} className="flex justify-between text-xs">
+                  <span>{s.grade}석 {s.seatCol}번</span>
+                  <span>{(priceByGrade.get(s.grade) ?? 0).toLocaleString()}원</span>
+                </div>
+              ))}
+              <div className="flex justify-between border-t border-border pt-2 font-semibold">
+                <span>총 결제 금액</span>
+                <span className="text-primary">{held.total.toLocaleString()}원</span>
+              </div>
+            </div>
+
+            <p className="mt-2 text-center text-xs text-muted-foreground">미결제 시 선점이 자동 해제됩니다.</p>
+            {errorMsg && <p className="mt-2 text-center text-xs text-destructive">{errorMsg}</p>}
+
+            <div className="mt-4 space-y-2">
+              <Button className="w-full" disabled={goingPay} onClick={goPay}>
+                {goingPay ? "주문 생성 중…" : `${held.total.toLocaleString()}원 결제하기`}
+              </Button>
+              <div className="flex justify-center gap-2">
+                <Button variant="outline" size="sm" onClick={cancelHold}>선점 취소</Button>
+                <Link href={`/events/${id}`}><Button variant="ghost" size="sm">공연 상세로</Button></Link>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </main>
     );
   }

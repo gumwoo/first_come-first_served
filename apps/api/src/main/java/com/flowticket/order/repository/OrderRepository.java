@@ -22,6 +22,12 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     /** 운영 대시보드(S07) — 상태별 주문 수. */
     long countByStatus(OrderStatus status);
 
+    /** 운영 주문 목록(S07) — 전 사용자, 최신순. status 필터 없을 때. */
+    Page<Order> findAllByOrderByIdDesc(Pageable pageable);
+
+    /** 운영 주문 목록(S07) — 전 사용자, 상태 필터, 최신순. */
+    Page<Order> findByStatusOrderByIdDesc(OrderStatus status, Pageable pageable);
+
     /** 운영 대시보드(S07) — 결제 완료 매출 합계(PAID 주문 금액). */
     @Query("select coalesce(sum(o.amount), 0) from Order o where o.status = com.flowticket.order.domain.OrderStatus.PAID")
     long sumPaidRevenue();

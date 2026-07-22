@@ -19,6 +19,13 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     /** 마이페이지 — 본인 주문 목록(상태 필터, 최신순). 전체(실제 예매)/예정/취소 탭. */
     Page<Order> findByUserIdAndStatusInOrderByIdDesc(Long userId, List<OrderStatus> statuses, Pageable pageable);
 
+    /** 운영 대시보드(S07) — 상태별 주문 수. */
+    long countByStatus(OrderStatus status);
+
+    /** 운영 대시보드(S07) — 결제 완료 매출 합계(PAID 주문 금액). */
+    @Query("select coalesce(sum(o.amount), 0) from Order o where o.status = com.flowticket.order.domain.OrderStatus.PAID")
+    long sumPaidRevenue();
+
     /**
      * 결제 성공 전이 — 조건부 UPDATE로 원자화(ADR-006). from(PENDING 또는 VBANK_WAITING)인 주문만 PAID로.
      * 반환 1이면 이 요청이 전이의 주인, 0이면 이미 다른 경로가 전이(만료/타 결제)함.

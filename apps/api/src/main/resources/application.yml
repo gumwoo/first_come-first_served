@@ -115,6 +115,11 @@ refund:
   tier1-rate: ${REFUND_TIER1_RATE:10}  # D-3~D-7 (%)
   tier2-rate: ${REFUND_TIER2_RATE:30}  # D-1~D-2 (%)
 
+# 관리자 계정 부트스트랩(S07). 둘 다 설정 시 최초 1회 ROLE_ADMIN 생성. 자격증명은 환경변수로만.
+admin:
+  email: ${ADMIN_EMAIL:}
+  password: ${ADMIN_PASSWORD:}
+
 # 휴대폰 인증: 데모는 Mock(고정 코드). 운영은 mock=false + 실제 SMS 연동.
 auth:
   phone:

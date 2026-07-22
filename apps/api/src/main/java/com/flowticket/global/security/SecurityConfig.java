@@ -66,6 +66,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // actuator는 health/info만 공개, metrics·prometheus 등은 인증 필요(정보 노출 방지)
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        // 운영(S07): 모든 /admin/** 은 ROLE_ADMIN 전용. 기존 admin 엔드포인트(KOPIS 동기화·좌석 시딩)도 포함.
+                        .requestMatchers("/admin/**").hasRole("ADMIN")
                         // 대기 상태는 토큰(비밀 UUID)으로 조회 — Bearer 불필요(ADR-002). /queue/** 인증보다 먼저.
                         .requestMatchers(HttpMethod.GET, "/queue/status").permitAll()
                         // 대기열 진입(POST)/이탈(DELETE)은 회원 — /events/** permitAll보다 먼저 매칭해야 함

@@ -90,3 +90,13 @@ k6 run infra/k6/<scenario>.js
   값은 환경변수/`*-local.yml`(gitignore)로만 주입.
 - 외부 API(KOPIS)를 프론트에서 직접 호출 금지. 항상 우리 백엔드 경유.
 - 선착순 재고는 항상 **우리 DB/Redis 기준**으로 차감.
+
+## 6. 동시성·위험 도메인 규칙
+
+- **동시성 제어는 검증된 원자화 패턴만 유지 — Redisson 등 외부 분산 락 라이브러리 추가 금지.**
+  - 대기열: Redis Lua(`DefaultRedisScript`) 원자 승격 — [[ADR-002]]
+  - 좌석·주문: DB 조건부 UPDATE(`UPDATE ... WHERE status = ...`) — [[ADR-003]](재고)·[[ADR-006]](주문 전이)
+  - `@Modifying(clearAutomatically)` 벌크 UPDATE **전에** 로드한 엔티티는 `saveAndFlush`로 확정([[TS-007]]·[[TS-010]]).
+- **위험 도메인(대기열·좌석·결제/환불) 변경 시 "분석 먼저"**: 코드 수정 전, 해당 도메인 규칙
+  (`docs/rules/domain/*`)과 관련 ADR을 읽고 **영향 범위·사이드 이펙트를 파악한 뒤 최소 범위로** 수정한다.
+  (백엔드 통합테스트는 로컬 gradle 없음 → CI(Testcontainers)로 검증 — §4 참고.)

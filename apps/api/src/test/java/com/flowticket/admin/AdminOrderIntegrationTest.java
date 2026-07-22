@@ -52,6 +52,10 @@ class AdminOrderIntegrationTest {
         r.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
         r.add("jwt.secret", () -> "integration-test-secret-0123456789-0123456789-0123456789");
         r.add("spring.kafka.bootstrap-servers", () -> "localhost:59092");
+        // 스케줄러 비활성화 — 테스트 중 sweep/admit이 컨테이너를 건드리지 않게.
+        r.add("queue.admit-interval-ms", () -> "3600000");
+        r.add("seat.sweep-interval-ms", () -> "3600000");
+        r.add("order.sweep-interval-ms", () -> "3600000");
     }
 
     @Autowired TestRestTemplate rest;
@@ -76,10 +80,10 @@ class AdminOrderIntegrationTest {
                 "/admin/orders", HttpMethod.GET, bearer(adminToken), JsonNode.class);
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
-        JsonNode content = res.getBody().get("data").get("content");
-        assertThat(content).isNotEmpty();
-        assertThat(content.get(0).get("userEmail").asText()).isEqualTo("buyer@test.com");
-        assertThat(content.get(0).get("status").asText()).isEqualTo("PENDING");
+        JsonNode items = res.getBody().get("data").get("items");
+        assertThat(items).isNotEmpty();
+        assertThat(items.get(0).get("userEmail").asText()).isEqualTo("buyer@test.com");
+        assertThat(items.get(0).get("status").asText()).isEqualTo("PENDING");
     }
 
     @Test
@@ -92,7 +96,7 @@ class AdminOrderIntegrationTest {
                 "/admin/orders?status=PAID", HttpMethod.GET, bearer(adminToken), JsonNode.class);
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(res.getBody().get("data").get("content")).isEmpty();
+        assertThat(res.getBody().get("data").get("items")).isEmpty();
     }
 
     @Test

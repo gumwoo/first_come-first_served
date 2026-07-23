@@ -25,6 +25,10 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        # 브로커 불가 시 send()가 60s(기본) 블록되지 않도록 바운드.
+        # AFTER_COMMIT 발행이므로 결제는 이미 커밋됨 — 알림 유실은 감수(DB가 진실원).
+        max.block.ms: 3000
     listener:
       # 브로커 미가용 환경(일부 통합테스트)에서 부팅 실패하지 않도록.
       missing-topics-fatal: false

@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ShieldAlert, Server } from "lucide-react";
-import { useAdminDashboard, useAdminOrders, useIsAdmin } from "@/features/admin/hooks/useAdmin";
-import { useAuthStore } from "@/features/auth/store/authStore";
+import { Server, CalendarCog } from "lucide-react";
+import { useAdminDashboard, useAdminOrders } from "@/features/admin/hooks/useAdmin";
+import { AdminGate } from "@/features/admin/components/AdminGate";
 import type { AdminOrderSummary } from "@/features/admin/api/admin";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -35,14 +35,11 @@ const orderNo = (id: number) => `ORD-${String(id).padStart(8, "0")}`;
 const statusOf = (s: string) => STATUS[s] ?? { label: s, variant: "muted" as const };
 
 export default function AdminPage() {
-  const user = useAuthStore((s) => s.user);
-  const isAdmin = useIsAdmin();
-
-  // 로그인 안 함 → 안내. 로그인했으나 관리자 아님 → 접근 거부.
-  if (!user) return <Gate title="로그인이 필요합니다" desc="관리자 계정으로 로그인해 주세요." showLogin />;
-  if (!isAdmin) return <Gate title="접근 권한이 없습니다" desc="이 페이지는 관리자 전용입니다." />;
-
-  return <AdminConsole />;
+  return (
+    <AdminGate>
+      <AdminConsole />
+    </AdminGate>
+  );
 }
 
 function AdminConsole() {
@@ -61,8 +58,15 @@ function AdminConsole() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="text-2xl font-bold">운영 콘솔</h1>
-      <p className="mt-1 text-sm text-muted-foreground">공연·주문 현황을 조회하고 운영 상태를 확인합니다.</p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">운영 콘솔</h1>
+          <p className="mt-1 text-sm text-muted-foreground">공연·주문 현황을 조회하고 운영 상태를 확인합니다.</p>
+        </div>
+        <Link href="/admin/events">
+          <Button variant="outline"><CalendarCog className="mr-1 h-4 w-4" /> 공연 관리</Button>
+        </Link>
+      </div>
 
       {/* 지표 스트립 (카드 나열 대신 한 줄 요약) */}
       <Card className="mt-6">
@@ -161,16 +165,5 @@ function OrderRow({ order }: { order: AdminOrderSummary }) {
       <span className="md:text-right"><Badge variant={s.variant}>{s.label}</Badge></span>
       <span className="text-xs text-muted-foreground md:text-right">{when ?? "-"}</span>
     </div>
-  );
-}
-
-function Gate({ title, desc, showLogin }: { title: string; desc: string; showLogin?: boolean }) {
-  return (
-    <main className="mx-auto flex max-w-md flex-col items-center gap-3 px-4 py-24 text-center">
-      <ShieldAlert className="h-12 w-12 text-muted-foreground" />
-      <h1 className="text-xl font-bold">{title}</h1>
-      <p className="text-sm text-muted-foreground">{desc}</p>
-      {showLogin && <Link href="/login"><Button className="mt-2">로그인</Button></Link>}
-    </main>
   );
 }

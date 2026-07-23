@@ -1,12 +1,13 @@
 import { api } from "@/lib/apiClient";
 import type { Page } from "@/features/order/api/order";
 
-/** 운영 대시보드 지표(S07). kafkaConnected는 Phase 4에서 실연결. */
+/** 운영 대시보드 지표(S07). kafkaConnected=실 연결(4a), dlqPending=DLQ 적체(4c). */
 export type AdminDashboard = {
   totalEvents: number;
   paidOrders: number;
   revenue: number;
   kafkaConnected: boolean;
+  dlqPending: number;
 };
 
 /** 운영 주문 목록 항목(전 사용자). 주문자(userId/email) 포함. */
@@ -89,6 +90,34 @@ export const createAdminEvent = (body: EventInput, token: string | null) =>
 
 export const updateAdminEvent = (id: number, body: EventInput, token: string | null) =>
   api<AdminEventDetail>(`/admin/events/${id}`, { method: "PATCH", token, body });
+
+// --- DLQ(S07 Phase 4c) ---
+export type DlqMessage = {
+  id: number;
+  topic: string;
+  payload: string;
+  errorMessage: string | null;
+  status: string; // DlqStatus
+  createdAt: string;
+  retriedAt: string | null;
+};
+
+export const getDlq = (
+  params: { status?: string; page?: number; size?: number },
+  token: string | null
+) => {
+  const q = new URLSearchParams();
+  if (params.status && params.status !== "all") q.set("status", params.status);
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.size != null) q.set("size", String(params.size));
+  return api<Page<DlqMessage>>(`/admin/dlq?${q.toString()}`, { token });
+};
+
+export const retryDlq = (id: number, token: string | null) =>
+  api<void>(`/admin/dlq/${id}/retry`, { method: "POST", token });
+
+export const discardDlq = (id: number, token: string | null) =>
+  api<void>(`/admin/dlq/${id}/discard`, { method: "POST", token });
 
 /** 전 사용자 주문 목록. status 필터(옵션)·페이징. */
 export const getAdminOrders = (

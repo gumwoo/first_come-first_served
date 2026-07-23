@@ -110,6 +110,27 @@ public class Event {
         this.updatedAt = LocalDateTime.now();
     }
 
+    /**
+     * 운영자 수동 편집(S07). null이 아닌 필드만 덮어써 부분 수정(PATCH)을 지원한다.
+     * KOPIS 동기화 메타(updateFromSync)와 달리 운영자가 임의 값으로 바꿀 수 있다.
+     */
+    public void edit(String title, String venue, String region, String genre, String posterUrl,
+                     LocalDate startDate, LocalDate endDate, String runningTime, String ageLimit,
+                     EventStatus status, Integer basePrice) {
+        if (title != null) this.title = title;
+        if (venue != null) this.venue = venue;
+        if (region != null) this.region = region;
+        if (genre != null) this.genre = genre;
+        if (posterUrl != null) this.posterUrl = posterUrl;
+        if (startDate != null) this.startDate = startDate;
+        if (endDate != null) this.endDate = endDate;
+        if (runningTime != null) this.runningTime = runningTime;
+        if (ageLimit != null) this.ageLimit = ageLimit;
+        if (status != null) this.status = status;
+        if (basePrice != null) this.basePrice = basePrice;
+        this.updatedAt = LocalDateTime.now();
+    }
+
     /** 좌석 시딩 시 표시용 최저가(등급 최저가)를 기록(S04). */
     public void applyBasePrice(Integer basePrice) {
         this.basePrice = basePrice;

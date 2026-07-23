@@ -7,6 +7,9 @@ import com.flowticket.auth.domain.AuthProvider;
 import com.flowticket.auth.domain.User;
 import com.flowticket.auth.domain.UserRole;
 import com.flowticket.auth.repository.UserRepository;
+import com.flowticket.event.domain.Event;
+import com.flowticket.event.domain.EventStatus;
+import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.security.JwtProvider;
 import com.flowticket.order.domain.Order;
 import com.flowticket.order.repository.OrderRepository;
@@ -61,19 +64,22 @@ class AdminOrderIntegrationTest {
     @Autowired TestRestTemplate rest;
     @Autowired UserRepository userRepository;
     @Autowired OrderRepository orderRepository;
+    @Autowired EventRepository eventRepository;
     @Autowired JwtProvider jwtProvider;
 
     @BeforeEach
     void setup() {
         rest.getRestTemplate().setRequestFactory(new JdkClientHttpRequestFactory());
-        orderRepository.deleteAll();
+        orderRepository.deleteAll(); // orders → events FK 순서로 먼저 삭제
+        eventRepository.deleteAll();
         userRepository.deleteAll();
     }
 
     @Test
     void 관리자는_전사용자_주문을_주문자이메일과_함께_조회() {
         User buyer = userRepository.save(user("buyer@test.com", UserRole.ROLE_USER));
-        orderRepository.save(order(buyer.getId()));
+        Event event = eventRepository.save(event("ADMIN-ORD1"));
+        orderRepository.save(order(buyer.getId(), event.getId()));
         String adminToken = jwtProvider.createAccessToken(userRepository.save(user("admin@test.com", UserRole.ROLE_ADMIN)));
 
         ResponseEntity<JsonNode> res = rest.exchange(
@@ -89,7 +95,8 @@ class AdminOrderIntegrationTest {
     @Test
     void 상태필터_불일치면_빈목록() {
         User buyer = userRepository.save(user("buyer@test.com", UserRole.ROLE_USER));
-        orderRepository.save(order(buyer.getId())); // PENDING
+        Event event = eventRepository.save(event("ADMIN-ORD2"));
+        orderRepository.save(order(buyer.getId(), event.getId())); // PENDING
         String adminToken = jwtProvider.createAccessToken(userRepository.save(user("admin@test.com", UserRole.ROLE_ADMIN)));
 
         ResponseEntity<JsonNode> res = rest.exchange(
@@ -114,9 +121,14 @@ class AdminOrderIntegrationTest {
                 .role(role).provider(AuthProvider.local).marketingOptIn(false).build();
     }
 
-    private Order order(Long userId) {
+    private Event event(String kopisId) {
+        return Event.builder()
+                .kopisId(kopisId).title("운영 주문 테스트").genre("연극").status(EventStatus.ON_SALE).build();
+    }
+
+    private Order order(Long userId, Long eventId) {
         return Order.builder()
-                .eventId(1L).userId(userId).holdId(1L).amount(50000)
+                .eventId(eventId).userId(userId).holdId(1L).amount(50000)
                 .expiresAt(LocalDateTime.now().plusMinutes(10)).build();
     }
 

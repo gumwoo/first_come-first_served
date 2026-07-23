@@ -31,6 +31,11 @@ export function Header() {
 
           {user ? (
             <>
+              {user.role === "ROLE_ADMIN" && (
+                <Link href="/admin" className="font-medium text-primary hover:underline">
+                  운영
+                </Link>
+              )}
               <Link href="/me/orders" className="font-medium hover:text-primary">
                 {user.name}님
               </Link>

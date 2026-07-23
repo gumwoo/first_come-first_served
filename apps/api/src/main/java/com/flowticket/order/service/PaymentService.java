@@ -8,6 +8,7 @@ import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.domain.Payment;
 import com.flowticket.order.domain.PaymentStatus;
 import com.flowticket.order.dto.PaymentResponse;
+import com.flowticket.order.event.OrderEvent;
 import com.flowticket.order.gateway.PaymentGateway;
 import com.flowticket.order.gateway.PaymentGateway.ApproveResult;
 import com.flowticket.order.repository.OrderItemRepository;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,12 +44,14 @@ public class PaymentService {
     private final SeatHoldRepository holdRepository;
     private final PaymentGateway gateway;
     private final OrderSseRegistry orderSse;
+    private final ApplicationEventPublisher events; // 커밋 후 Kafka 발행용(AFTER_COMMIT 브리지)
     private final ObjectProvider<PaymentService> self; // 트랜잭션 프록시 self-호출용
 
     public PaymentService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                           PaymentRepository paymentRepository, SeatRepository seatRepository,
                           SeatHoldRepository holdRepository, PaymentGateway gateway,
-                          OrderSseRegistry orderSse, ObjectProvider<PaymentService> self) {
+                          OrderSseRegistry orderSse, ApplicationEventPublisher events,
+                          ObjectProvider<PaymentService> self) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.paymentRepository = paymentRepository;
@@ -55,6 +59,7 @@ public class PaymentService {
         this.holdRepository = holdRepository;
         this.gateway = gateway;
         this.orderSse = orderSse;
+        this.events = events;
         this.self = self;
     }
 
@@ -233,7 +238,9 @@ public class PaymentService {
                     .map(OrderItem::getSeatId).toList();
             seatRepository.sellSeats(seatIds, SeatStatus.SOLD, SeatStatus.HELD);
             holdRepository.convertHold(order.getHoldId());
-            orderSse.broadcast(order.getId(), "order.paid", Map.of("orderId", order.getId()));
+            // 커밋 후(AFTER_COMMIT) Kafka로 발행 → consumer가 SSE 브로드캐스트(Phase 4b).
+            // 트랜잭션 롤백 시 발행 안 됨(유령 order.paid 방지).
+            events.publishEvent(new OrderEvent("order.paid", order.getId()));
         }
     }
 

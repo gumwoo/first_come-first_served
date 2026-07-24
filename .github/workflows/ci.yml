@@ -105,6 +105,9 @@ jobs:
       DB_PORT: "5432"
       DB_PASSWORD: flowticket
       JWT_SECRET: ci-e2e-secret-0123456789-0123456789-0123456789
+      # 관리자 부트스트랩(S07 admin E2E). CI 전용 합성 픽스처 — 실 비밀 아님.
+      ADMIN_EMAIL: admin-e2e@flowticket.local
+      ADMIN_PASSWORD: e2e-admin-secret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

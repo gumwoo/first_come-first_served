@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Server, CalendarCog, RotateCcw, Trash2, AlertTriangle } from "lucide-react";
-import { useAdminDashboard, useAdminOrders, useAdminDlq, useDlqAction } from "@/features/admin/hooks/useAdmin";
+import { Server, CalendarCog, RotateCcw, Trash2, AlertTriangle, BellRing } from "lucide-react";
+import { useAdminDashboard, useAdminOrders, useAdminDlq, useDlqAction, useAlerts, useUpdateAlert } from "@/features/admin/hooks/useAdmin";
 import { AdminGate } from "@/features/admin/components/AdminGate";
 import type { AdminOrderSummary, DlqMessage } from "@/features/admin/api/admin";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // 상태 필터 탭 — id는 백엔드 OrderStatus 값(전체는 all).
@@ -67,6 +68,9 @@ function AdminConsole() {
           <Button variant="outline"><CalendarCog className="mr-1 h-4 w-4" /> 공연 관리</Button>
         </Link>
       </div>
+
+      {/* 알림 (임계치 초과 시 경고 배너 + 임계치 설정) */}
+      <AlertBanner />
 
       {/* 지표 스트립 (카드 나열 대신 한 줄 요약) */}
       <Card className="mt-6">
@@ -145,6 +149,51 @@ function AdminConsole() {
       {/* DLQ (S07 Phase 4c) */}
       <DlqSection />
     </main>
+  );
+}
+
+function AlertBanner() {
+  const alerts = useAlerts();
+  const update = useUpdateAlert();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+
+  if (!alerts.data) return null;
+  const a = alerts.data;
+
+  const startEdit = () => {
+    setValue(String(a.dlqPendingThreshold));
+    setEditing(true);
+  };
+  const save = () => {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= 0) update.mutate(n, { onSuccess: () => setEditing(false) });
+  };
+
+  return (
+    <div className="mt-4 space-y-2">
+      {a.breached && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <BellRing className="h-4 w-4 shrink-0" />
+          <span>DLQ 적체 {a.dlqPending}건이 임계치({a.dlqPendingThreshold})를 넘었습니다. 실패 메시지를 확인하세요.</span>
+        </div>
+      )}
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>DLQ 경고 임계치</span>
+        {editing ? (
+          <>
+            <Input type="number" value={value} onChange={(e) => setValue(e.target.value)} className="h-7 w-20" />
+            <Button size="sm" variant="outline" disabled={update.isPending} onClick={save}>저장</Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>취소</Button>
+          </>
+        ) : (
+          <>
+            <span className="font-medium text-foreground">{a.dlqPendingThreshold}건</span>
+            <Button size="sm" variant="ghost" onClick={startEdit}>변경</Button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

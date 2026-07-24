@@ -75,17 +75,16 @@ class DlqIntegrationTest {
     void 소비실패가_재시도소진후_DLQ에_적재된다() {
         kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, "1", new OrderEvent("order.paid", 111L));
 
-        DlqMessage row = awaitOneDlqRow();
+        DlqMessage row = awaitDlqRowFor(111L);
         assertThat(row.getStatus()).isEqualTo(DlqStatus.PENDING);
         assertThat(row.getTopic()).isEqualTo(KafkaConfig.ORDER_EVENTS_TOPIC);
-        assertThat(row.getPayload()).contains("111");
         assertThat(row.getErrorMessage()).contains("boom");
     }
 
     @Test
     void DLQ_폐기는_상태를_DISCARDED로() {
         kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, "2", new OrderEvent("order.paid", 222L));
-        Long id = awaitOneDlqRow().getId();
+        Long id = awaitDlqRowFor(222L).getId();
 
         adminDlqService.discard(id);
 
@@ -95,15 +94,23 @@ class DlqIntegrationTest {
     @Test
     void DLQ_재시도는_원본토픽_재발행_후_RETRIED로() {
         kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, "3", new OrderEvent("order.paid", 333L));
-        Long id = awaitOneDlqRow().getId();
+        Long id = awaitDlqRowFor(333L).getId();
 
         adminDlqService.retry(id);
 
         assertThat(dlqRepository.findById(id).orElseThrow().getStatus()).isEqualTo(DlqStatus.RETRIED);
     }
 
-    private DlqMessage awaitOneDlqRow() {
-        await().atMost(Duration.ofSeconds(30)).until(() -> dlqRepository.count() >= 1);
-        return dlqRepository.findAll().get(0);
+    /**
+     * 이 테스트가 보낸 orderId를 가진 DLQ 행만 골라 기다린다.
+     * 재시도 재발행분 등 다른 테스트가 남긴 행이 비동기로 섞여도 흔들리지 않게(격리).
+     */
+    private DlqMessage awaitDlqRowFor(long orderId) {
+        String needle = "\"orderId\":" + orderId;
+        await().atMost(Duration.ofSeconds(30))
+                .until(() -> dlqRepository.findAll().stream().anyMatch(m -> m.getPayload().contains(needle)));
+        return dlqRepository.findAll().stream()
+                .filter(m -> m.getPayload().contains(needle))
+                .findFirst().orElseThrow();
     }
 }

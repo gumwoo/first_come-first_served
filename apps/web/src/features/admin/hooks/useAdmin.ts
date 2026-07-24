@@ -56,3 +56,28 @@ export function useSaveAdminEvent() {
     },
   });
 }
+
+/** DLQ 적재 목록(상태 필터 + 페이징). */
+export function useAdminDlq(status: string, page: number, size = 10) {
+  const token = useAuthStore((s) => s.accessToken);
+  const isAdmin = useIsAdmin();
+  return useQuery({
+    queryKey: ["admin", "dlq", { status, page, size }],
+    queryFn: () => adminApi.getDlq({ status, page, size }, token),
+    enabled: !!token && isAdmin,
+  });
+}
+
+/** DLQ 재시도/폐기(성공 시 목록·대시보드 무효화). */
+export function useDlqAction() {
+  const token = useAuthStore((s) => s.accessToken);
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, action }: { id: number; action: "retry" | "discard" }) =>
+      action === "retry" ? adminApi.retryDlq(id, token) : adminApi.discardDlq(id, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "dlq"] });
+      qc.invalidateQueries({ queryKey: ["admin", "dashboard"] });
+    },
+  });
+}

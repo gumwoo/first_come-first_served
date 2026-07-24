@@ -1,11 +1,12 @@
 package com.flowticket.admin.dto;
 
 /**
- * 운영 대시보드 지표(S07 Phase 1 골격). 실제 집계 값.
- * Kafka Consumer Lag·시스템 상태는 Kafka 실구현(Phase 4) 후 채운다 → 현재 kafkaConnected=false.
+ * 운영 대시보드 지표(S07). kafkaConnected는 실 연결 상태(Phase 4a),
+ * dlqPending은 DLQ 미처리 적체 수(Phase 4c).
  */
 public record AdminDashboardResponse(
         long totalEvents,
         long paidOrders,
         long revenue,
-        boolean kafkaConnected) {}
+        boolean kafkaConnected,
+        long dlqPending) {}

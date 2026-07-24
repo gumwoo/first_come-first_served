@@ -22,3 +22,4 @@
 | order_items | S05 | [order_items.md](order_items.md) | 설계(V8) |
 | payments | S05 | [payments.md](payments.md) | 설계(V9) |
 | dlq_messages | S07 | [dlq_messages.md](dlq_messages.md) | 구현(V12__dlq_messages.sql) |
+| alert_settings | S07 | [alert_settings.md](alert_settings.md) | 구현(V13__alert_settings.sql) |

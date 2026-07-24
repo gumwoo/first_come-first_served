@@ -68,7 +68,7 @@ export function useAdminDlq(status: string, page: number, size = 10) {
   });
 }
 
-/** DLQ 재시도/폐기(성공 시 목록·대시보드 무효화). */
+/** DLQ 재시도/폐기(성공 시 목록·대시보드·알림 무효화). */
 export function useDlqAction() {
   const token = useAuthStore((s) => s.accessToken);
   const qc = useQueryClient();
@@ -78,6 +78,28 @@ export function useDlqAction() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "dlq"] });
       qc.invalidateQueries({ queryKey: ["admin", "dashboard"] });
+      qc.invalidateQueries({ queryKey: ["admin", "alerts"] });
     },
+  });
+}
+
+/** 운영 알림 임계치 + 현재 적체/초과 여부. */
+export function useAlerts() {
+  const token = useAuthStore((s) => s.accessToken);
+  const isAdmin = useIsAdmin();
+  return useQuery({
+    queryKey: ["admin", "alerts"],
+    queryFn: () => adminApi.getAlerts(token),
+    enabled: !!token && isAdmin,
+  });
+}
+
+/** 알림 임계치 수정(성공 시 알림 무효화). */
+export function useUpdateAlert() {
+  const token = useAuthStore((s) => s.accessToken);
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dlqPendingThreshold: number) => adminApi.updateAlerts(dlqPendingThreshold, token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "alerts"] }),
   });
 }

@@ -119,6 +119,19 @@ export const retryDlq = (id: number, token: string | null) =>
 export const discardDlq = (id: number, token: string | null) =>
   api<void>(`/admin/dlq/${id}/discard`, { method: "POST", token });
 
+// --- 알림 임계치(S07) ---
+export type AlertSettings = {
+  dlqPendingThreshold: number;
+  dlqPending: number;
+  breached: boolean;
+};
+
+export const getAlerts = (token: string | null) =>
+  api<AlertSettings>("/admin/alerts", { token });
+
+export const updateAlerts = (dlqPendingThreshold: number, token: string | null) =>
+  api<AlertSettings>("/admin/alerts", { method: "PUT", token, body: { dlqPendingThreshold } });
+
 /** 전 사용자 주문 목록. status 필터(옵션)·페이징. */
 export const getAdminOrders = (
   params: { status?: string; page?: number; size?: number },

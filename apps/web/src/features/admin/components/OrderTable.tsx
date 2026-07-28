@@ -24,7 +24,7 @@ export function OrderTable({ items }: { items: AdminOrderSummary[] }) {
               <td className="max-w-[200px] truncate px-4 py-2.5 text-muted-foreground">
                 {o.eventTitle ?? `이벤트 #${o.eventId}`}
               </td>
-              <td className="px-4 py-2.5 text-right font-medium">{won(o.amount)}</td>
+              <td className="px-4 py-2.5 text-right tabular-nums">{won(o.amount)}</td>
               <td className="px-4 py-2.5 text-right"><OrderStatusPill status={o.status} /></td>
               <td className="px-4 py-2.5 text-right text-xs text-muted-foreground">
                 {dateTime(o.paidAt ?? o.createdAt)}

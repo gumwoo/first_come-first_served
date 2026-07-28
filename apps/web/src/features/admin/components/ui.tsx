@@ -4,19 +4,20 @@ export const won = (n: number) => `${n.toLocaleString()}원`;
 export const orderNo = (id: number) => `ORD-${String(id).padStart(8, "0")}`;
 export const dateTime = (s: string | null | undefined) => (s ? s.slice(0, 16).replace("T", " ") : "-");
 
-// 상태 색 위계 톤 (라이트/다크 모두 대응).
+// 상태 표시 = 색 칩이 아니라 작은 점 + 무채색 텍스트(Stripe/Linear 톤). 색은 의미에만.
 type Tone = "success" | "warning" | "danger" | "info" | "muted";
-const TONE: Record<Tone, string> = {
-  success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
-  warning: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
-  danger: "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-400",
-  info: "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400",
-  muted: "bg-muted text-muted-foreground",
+const DOT: Record<Tone, string> = {
+  success: "bg-emerald-500",
+  warning: "bg-amber-500",
+  danger: "bg-rose-500",
+  info: "bg-blue-500",
+  muted: "bg-muted-foreground/60",
 };
 
-export function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
+export function StatusDot({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${TONE[tone]}`}>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-muted-foreground">
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[tone]}`} />
       {children}
     </span>
   );
@@ -34,7 +35,7 @@ const ORDER_STATUS: Record<string, { label: string; tone: Tone }> = {
 
 export function OrderStatusPill({ status }: { status: string }) {
   const s = ORDER_STATUS[status] ?? { label: status, tone: "muted" as Tone };
-  return <Pill tone={s.tone}>{s.label}</Pill>;
+  return <StatusDot tone={s.tone}>{s.label}</StatusDot>;
 }
 
 const DLQ_STATUS: Record<string, { label: string; tone: Tone }> = {
@@ -46,7 +47,7 @@ const DLQ_STATUS: Record<string, { label: string; tone: Tone }> = {
 
 export function DlqStatusPill({ status }: { status: string }) {
   const s = DLQ_STATUS[status] ?? { label: status, tone: "muted" as Tone };
-  return <Pill tone={s.tone}>{s.label}</Pill>;
+  return <StatusDot tone={s.tone}>{s.label}</StatusDot>;
 }
 
 /** 운영 페이지 공통 헤더 — 타이틀·설명 + 우측 액션 슬롯. */
@@ -54,7 +55,7 @@ export function PageHeader({ title, desc, actions }: { title: string; desc?: str
   return (
     <div className="flex items-start justify-between gap-4 border-b border-border pb-4">
       <div>
-        <h1 className="text-xl font-semibold">{title}</h1>
+        <h1 className="text-lg font-medium tracking-tight">{title}</h1>
         {desc && <p className="mt-1 text-sm text-muted-foreground">{desc}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}

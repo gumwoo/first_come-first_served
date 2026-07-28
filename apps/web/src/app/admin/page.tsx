@@ -20,9 +20,9 @@ export default function AdminDashboardPage() {
         title="대시보드"
         desc="공연·주문 현황과 운영 상태를 확인합니다."
         actions={
-          <span className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-            <span className={`h-1.5 w-1.5 rounded-full ${kafka ? "bg-emerald-500" : "bg-muted-foreground"}`} />
-            Kafka {kafka === undefined ? "…" : kafka ? "연결됨" : "미연결"}
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className={`h-1.5 w-1.5 rounded-full ${kafka ? "bg-emerald-500" : "bg-muted-foreground/60"}`} />
+            {kafka === undefined ? "Kafka …" : kafka ? "Kafka 연결" : "Kafka 미연결"}
           </span>
         }
       />
@@ -44,7 +44,7 @@ export default function AdminDashboardPage() {
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
           <StatCell label="총 공연" value={dash.data.totalEvents.toLocaleString()} />
           <StatCell label="결제 완료 주문" value={dash.data.paidOrders.toLocaleString()} />
-          <StatCell label="누적 매출" value={won(dash.data.revenue)} accent />
+          <StatCell label="누적 매출" value={won(dash.data.revenue)} />
           <StatCell label="DLQ 적체" value={dash.data.dlqPending.toLocaleString()} warn={dash.data.dlqPending > 0} />
         </div>
       ) : null}
@@ -71,11 +71,11 @@ export default function AdminDashboardPage() {
   );
 }
 
-function StatCell({ label, value, accent, warn }: { label: string; value: string; accent?: boolean; warn?: boolean }) {
+function StatCell({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
   return (
     <div className="bg-background px-5 py-4">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-xl font-semibold ${warn ? "text-rose-600 dark:text-rose-400" : accent ? "text-primary" : ""}`}>
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className={`mt-1 text-lg font-medium tabular-nums ${warn ? "text-rose-600 dark:text-rose-400" : ""}`}>
         {value}
       </p>
     </div>

@@ -2,88 +2,68 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Receipt, CalendarCog, AlertTriangle, Bell, Ticket, ArrowLeft, type LucideIcon } from "lucide-react";
 import { AdminGate } from "@/features/admin/components/AdminGate";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { useLogout } from "@/features/auth/hooks/useAuth";
 
-type NavItem = { href: string; label: string; icon: LucideIcon; exact?: boolean };
+type NavItem = { href: string; label: string; exact?: boolean };
 const NAV: NavItem[] = [
-  { href: "/admin", label: "대시보드", icon: LayoutDashboard, exact: true },
-  { href: "/admin/orders", label: "주문 조회", icon: Receipt },
-  { href: "/admin/events", label: "공연 관리", icon: CalendarCog },
-  { href: "/admin/dlq", label: "DLQ", icon: AlertTriangle },
-  { href: "/admin/alerts", label: "알림", icon: Bell },
+  { href: "/admin", label: "대시보드", exact: true },
+  { href: "/admin/orders", label: "주문 조회" },
+  { href: "/admin/events", label: "공연 관리" },
+  { href: "/admin/dlq", label: "DLQ" },
+  { href: "/admin/alerts", label: "알림" },
 ];
 
-/** 운영 콘솔 셸(S07). 고객용 헤더/푸터 대신 자체 사이드바. /admin 이하 공통 권한 게이트. */
+/** 운영 콘솔 셸(S07). 무채색·텍스트 우선 사이드바(활성=좌측 바). 공통 권한 게이트. */
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const user = useAuthStore((s) => s.user);
   const logout = useLogout();
 
-  const active = (href: string, exact?: boolean) =>
-    exact ? pathname === href : pathname.startsWith(href);
+  const on = (href: string, exact?: boolean) => (exact ? pathname === href : pathname.startsWith(href));
 
   return (
     <AdminGate>
-      <div className="flex min-h-screen bg-muted/20">
-        <aside className="sticky top-0 flex h-screen w-56 shrink-0 flex-col border-r border-border bg-background">
-          <div className="flex items-center gap-2 px-5 py-4">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Ticket className="h-4 w-4" />
-            </span>
-            <div className="leading-tight">
-              <p className="text-sm font-semibold">FlowTicket</p>
-              <p className="text-[11px] text-muted-foreground">운영 콘솔</p>
-            </div>
+      <div className="flex min-h-screen">
+        <aside className="sticky top-0 flex h-screen w-44 shrink-0 flex-col border-r border-border">
+          <div className="px-4 py-4">
+            <p className="text-sm font-medium tracking-tight">FlowTicket</p>
+            <p className="text-[11px] text-muted-foreground">admin</p>
           </div>
 
-          <nav className="flex flex-1 flex-col gap-0.5 px-3 py-2">
+          <nav className="flex flex-1 flex-col">
             {NAV.map((n) => {
-              const on = active(n.href, n.exact);
-              const Icon = n.icon;
+              const active = on(n.href, n.exact);
               return (
                 <Link
                   key={n.href}
                   href={n.href}
-                  className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
-                    on
-                      ? "bg-primary/10 font-medium text-primary"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className={`border-l-2 px-4 py-1.5 text-[13px] transition-colors ${
+                    active
+                      ? "border-foreground font-medium text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
                   {n.label}
                 </Link>
               );
             })}
           </nav>
 
-          <div className="border-t border-border px-3 py-3">
-            <Link
-              href="/"
-              className="mb-2 flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          <div className="flex items-center justify-between border-t border-border px-4 py-3">
+            <span className="truncate text-xs text-muted-foreground">{user?.name ?? "관리자"}</span>
+            <button
+              onClick={() => logout.mutate()}
+              disabled={logout.isPending}
+              className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
             >
-              <ArrowLeft className="h-3.5 w-3.5" /> 사이트로 돌아가기
-            </Link>
-            <div className="flex items-center gap-2 px-3 py-1">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                {user?.name?.[0] ?? "관"}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium">{user?.name ?? "관리자"}</p>
-                <p className="truncate text-[11px] text-muted-foreground">{user?.email ?? ""}</p>
-              </div>
-              <button
-                onClick={() => logout.mutate()}
-                disabled={logout.isPending}
-                className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-              >
-                로그아웃
-              </button>
-            </div>
+              로그아웃
+            </button>
           </div>
+          <Link href="/" className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground hover:text-foreground">
+            ← 사이트로
+          </Link>
         </aside>
 
         <main className="min-w-0 flex-1">{children}</main>

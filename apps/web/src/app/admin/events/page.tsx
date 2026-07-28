@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Plus, Pencil } from "lucide-react";
+import { Plus, Pencil } from "lucide-react";
 import { useAdminEvents, useSaveAdminEvent } from "@/features/admin/hooks/useAdmin";
-import { AdminGate } from "@/features/admin/components/AdminGate";
+import { PageHeader } from "@/features/admin/components/ui";
 import * as adminApi from "@/features/admin/api/admin";
 import type { AdminEventSummary, EventInput } from "@/features/admin/api/admin";
 import { useAuthStore } from "@/features/auth/store/authStore";
@@ -31,11 +30,7 @@ const won = (n: number | null) => (n == null ? "-" : `${n.toLocaleString()}원`)
 const statusOf = (s: string) => STATUS_LABEL[s] ?? { label: s, variant: "muted" as const };
 
 export default function AdminEventsPage() {
-  return (
-    <AdminGate>
-      <EventsManager />
-    </AdminGate>
-  );
+  return <EventsManager />;
 }
 
 type EditTarget = { id: number | null } | null;
@@ -48,20 +43,14 @@ function EventsManager() {
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.size)) : 1;
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <Link href="/admin" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> 운영 콘솔
-      </Link>
+    <main className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+      <PageHeader
+        title="공연 관리"
+        desc="공연을 등록하고 상태·정보를 수정합니다."
+        actions={<Button onClick={() => setEditing({ id: null })}><Plus className="mr-1 h-4 w-4" /> 공연 등록</Button>}
+      />
 
-      <div className="mt-2 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">공연 관리</h1>
-          <p className="mt-1 text-sm text-muted-foreground">공연을 등록하고 상태·정보를 수정합니다.</p>
-        </div>
-        <Button onClick={() => setEditing({ id: null })}><Plus className="mr-1 h-4 w-4" /> 공연 등록</Button>
-      </div>
-
-      <div className="mt-6 space-y-3">
+      <div className="space-y-3">
         {isLoading && [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
         {isError && (
           <Card><CardContent className="py-10 text-center text-sm text-destructive">목록을 불러오지 못했습니다.</CardContent></Card>

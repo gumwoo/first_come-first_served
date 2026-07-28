@@ -50,6 +50,22 @@ export function DlqStatusPill({ status }: { status: string }) {
   return <StatusDot tone={s.tone}>{s.label}</StatusDot>;
 }
 
+const EVENT_STATUS: Record<string, { label: string; tone: Tone }> = {
+  DRAFT: { label: "초안", tone: "muted" },
+  SCHEDULED: { label: "예정", tone: "info" },
+  ON_SALE: { label: "판매중", tone: "success" },
+  PAUSED: { label: "일시중지", tone: "warning" },
+  SOLD_OUT: { label: "매진", tone: "danger" },
+  CLOSED: { label: "종료", tone: "muted" },
+};
+
+export function EventStatusPill({ status }: { status: string }) {
+  const s = EVENT_STATUS[status] ?? { label: status, tone: "muted" as Tone };
+  return <StatusDot tone={s.tone}>{s.label}</StatusDot>;
+}
+
+export const eventStatusLabel = (status: string) => EVENT_STATUS[status]?.label ?? status;
+
 /** 운영 페이지 공통 헤더 — 타이틀·설명 + 우측 액션 슬롯. */
 export function PageHeader({ title, desc, actions }: { title: string; desc?: string; actions?: ReactNode }) {
   return (

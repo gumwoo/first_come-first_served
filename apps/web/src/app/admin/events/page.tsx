@@ -3,12 +3,10 @@
 import { useEffect, useState } from "react";
 import { Plus, Pencil } from "lucide-react";
 import { useAdminEvents, useSaveAdminEvent } from "@/features/admin/hooks/useAdmin";
-import { PageHeader } from "@/features/admin/components/ui";
+import { PageHeader, EventStatusPill, eventStatusLabel } from "@/features/admin/components/ui";
 import * as adminApi from "@/features/admin/api/admin";
 import type { AdminEventSummary, EventInput } from "@/features/admin/api/admin";
 import { useAuthStore } from "@/features/auth/store/authStore";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,17 +15,7 @@ import { Dialog } from "@/components/ui/dialog";
 
 const STATUSES = ["DRAFT", "SCHEDULED", "ON_SALE", "PAUSED", "SOLD_OUT", "CLOSED"] as const;
 
-const STATUS_LABEL: Record<string, { label: string; variant: BadgeProps["variant"] }> = {
-  DRAFT: { label: "초안", variant: "muted" },
-  SCHEDULED: { label: "예정", variant: "outline" },
-  ON_SALE: { label: "판매중", variant: "default" },
-  PAUSED: { label: "일시중지", variant: "muted" },
-  SOLD_OUT: { label: "매진", variant: "destructive" },
-  CLOSED: { label: "종료", variant: "muted" },
-};
-
 const won = (n: number | null) => (n == null ? "-" : `${n.toLocaleString()}원`);
-const statusOf = (s: string) => STATUS_LABEL[s] ?? { label: s, variant: "muted" as const };
 
 export default function AdminEventsPage() {
   return <EventsManager />;
@@ -50,26 +38,37 @@ function EventsManager() {
         actions={<Button onClick={() => setEditing({ id: null })}><Plus className="mr-1 h-4 w-4" /> 공연 등록</Button>}
       />
 
-      <div className="space-y-3">
-        {isLoading && [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
+      <div className="space-y-4">
+        {isLoading && <Skeleton className="h-64 w-full rounded-lg" />}
         {isError && (
-          <Card><CardContent className="py-10 text-center text-sm text-destructive">목록을 불러오지 못했습니다.</CardContent></Card>
+          <p className="rounded-lg border border-border py-10 text-center text-sm text-destructive">목록을 불러오지 못했습니다.</p>
         )}
         {data && data.items.length === 0 && (
-          <Card><CardContent className="py-14 text-center text-sm text-muted-foreground">등록된 공연이 없습니다.</CardContent></Card>
+          <p className="rounded-lg border border-border py-14 text-center text-sm text-muted-foreground">등록된 공연이 없습니다.</p>
         )}
 
         {data && data.items.length > 0 && (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <div className="hidden grid-cols-[1fr_140px_100px_110px_120px_80px] gap-3 border-b border-border bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground md:grid">
-              <span>공연</span><span>공연기간</span><span>장르</span><span className="text-right">최저가</span><span className="text-right">상태</span><span className="text-right">수정</span>
-            </div>
-            {data.items.map((e) => <EventRow key={e.id} event={e} onEdit={() => setEditing({ id: e.id })} />)}
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
+                  <th className="px-4 py-2.5 text-left font-medium">공연</th>
+                  <th className="px-4 py-2.5 text-left font-medium">공연기간</th>
+                  <th className="px-4 py-2.5 text-left font-medium">장르</th>
+                  <th className="px-4 py-2.5 text-right font-medium">최저가</th>
+                  <th className="px-4 py-2.5 text-right font-medium">상태</th>
+                  <th className="px-4 py-2.5 text-right font-medium">수정</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((e) => <EventRow key={e.id} event={e} onEdit={() => setEditing({ id: e.id })} />)}
+              </tbody>
+            </table>
           </div>
         )}
 
         {data && data.total > data.size && (
-          <div className="flex items-center justify-center gap-3 pt-1">
+          <div className="flex items-center justify-center gap-3">
             <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>이전</Button>
             <span className="text-sm text-muted-foreground">{page + 1} / {totalPages}</span>
             <Button variant="ghost" size="sm" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}>다음</Button>
@@ -83,24 +82,25 @@ function EventsManager() {
 }
 
 function EventRow({ event, onEdit }: { event: AdminEventSummary; onEdit: () => void }) {
-  const s = statusOf(event.status);
-  const period = event.startDate ? `${event.startDate}${event.endDate && event.endDate !== event.startDate ? ` ~ ${event.endDate}` : ""}` : "-";
+  const period = event.startDate
+    ? `${event.startDate}${event.endDate && event.endDate !== event.startDate ? ` ~ ${event.endDate}` : ""}`
+    : "-";
   return (
-    <div className="grid gap-3 border-b border-border px-4 py-3 text-sm last:border-0 md:grid-cols-[1fr_140px_100px_110px_120px_80px] md:items-center">
-      <div className="min-w-0">
+    <tr className="border-b border-border last:border-0 hover:bg-muted/30">
+      <td className="max-w-[240px] px-4 py-2.5">
         <p className="truncate font-medium">{event.title}</p>
         <p className="truncate text-xs text-muted-foreground">
           {event.venue ?? "장소 미정"}{event.fromKopis ? " · KOPIS" : " · 수동등록"}
         </p>
-      </div>
-      <span className="text-xs text-muted-foreground">{period}</span>
-      <span className="text-muted-foreground">{event.genre ?? "-"}</span>
-      <span className="font-medium md:text-right">{won(event.basePrice)}</span>
-      <span className="md:text-right"><Badge variant={s.variant}>{s.label}</Badge></span>
-      <span className="md:text-right">
+      </td>
+      <td className="px-4 py-2.5 text-xs text-muted-foreground">{period}</td>
+      <td className="px-4 py-2.5 text-muted-foreground">{event.genre ?? "-"}</td>
+      <td className="px-4 py-2.5 text-right tabular-nums">{won(event.basePrice)}</td>
+      <td className="px-4 py-2.5 text-right"><EventStatusPill status={event.status} /></td>
+      <td className="px-4 py-2.5 text-right">
         <Button variant="ghost" size="sm" onClick={onEdit}><Pencil className="h-4 w-4" /></Button>
-      </span>
-    </div>
+      </td>
+    </tr>
   );
 }
 
@@ -182,7 +182,7 @@ function EventDialog({ target, onClose }: { target: { id: number | null }; onClo
                 onChange={(e) => set("status")(e.target.value)}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {STATUSES.map((s) => <option key={s} value={s}>{statusOf(s).label} ({s})</option>)}
+                {STATUSES.map((s) => <option key={s} value={s}>{eventStatusLabel(s)} ({s})</option>)}
               </select>
             </Field>
           </div>

@@ -31,6 +31,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
@@ -81,6 +83,7 @@ class SeatInventoryIntegrationTest {
     @Autowired QueueAdmissionService admissionService;
     @Autowired StringRedisTemplate redisTemplate;
     @Autowired JdbcTemplate jdbc;
+    @Autowired PlatformTransactionManager txManager;
 
     private Long eventId;
     private Long aSeatId;
@@ -186,6 +189,35 @@ class SeatInventoryIntegrationTest {
         expiryService.sweepExpired();
 
         assertThat(seatStatus(aSeatId)).isEqualTo("AVAILABLE"); // 재고 복구
+    }
+
+    @Test
+    void 결제와_만료sweep_경합시_SOLD좌석은_복구되지_않는다() throws Exception {
+        // TS-011: sweep의 SELECT(HELD·만료) 직후 결제가 이겨 좌석 SOLD·홀드 CONVERTED로 전이한 뒤,
+        // sweep이 뒤늦게 복구 쿼리를 실행하는 레이스. 조건부 가드가 없으면 SOLD가 AVAILABLE로 덮어써져 재판매됨.
+        String token = admittedToken(41L, eventId);
+        HoldResponse held = seatService.hold(41L, eventId, List.of(aSeatId), token);
+        Long holdId = held.holdId();
+        Thread.sleep(1500); // hold-ttl(1s) 경과 → sweep 대상(여전히 HELD)
+
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+        // 결제tx: 레이스에서 승리 — 좌석 HELD→SOLD, 홀드 HELD→CONVERTED (둘 다 조건부 성공, 커밋)
+        tx.executeWithoutResult(s -> {
+            assertThat(seatRepository.sellSeats(List.of(aSeatId), SeatStatus.SOLD, SeatStatus.HELD)).isEqualTo(1);
+            assertThat(holdRepository.convertHold(holdId)).isEqualTo(1);
+        });
+
+        // sweep tx(별도): 뒤늦게 실행하는 복구 쿼리(SeatHoldExpiryService와 동일) — 조건부 가드로 0행
+        int[] swept = tx.execute(s -> new int[] {
+            seatRepository.releaseSeats(List.of(aSeatId), SeatStatus.AVAILABLE, SeatStatus.HELD),
+            holdRepository.expireHolds(List.of(holdId)),
+        });
+
+        assertThat(swept[0]).isZero();                                // HELD 아님(SOLD) → 복구 0
+        assertThat(swept[1]).isZero();                                // HELD 아님(CONVERTED) → 만료 0
+        assertThat(seatStatus(aSeatId)).isEqualTo("SOLD");            // 결제 좌석 유지 = 초과판매 방지
+        assertThat(holdRepository.findById(holdId).orElseThrow().getStatus())
+                .isEqualTo(SeatHoldStatus.CONVERTED);                 // 홀드 유지
     }
 
     @Test

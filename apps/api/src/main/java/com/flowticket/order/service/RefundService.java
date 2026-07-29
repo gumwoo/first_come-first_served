@@ -124,7 +124,7 @@ public class RefundService {
         // 좌석 SOLD→AVAILABLE 복구
         List<Long> seatIds = orderItemRepository.findByOrderId(orderId).stream()
                 .map(OrderItem::getSeatId).toList();
-        seatRepository.releaseSeats(seatIds, SeatStatus.AVAILABLE);
+        seatRepository.releaseSeats(seatIds, SeatStatus.AVAILABLE, SeatStatus.SOLD); // 환불: SOLD→AVAILABLE
 
         // CANCELLED→REFUNDED 확정
         orderRepository.markRefunded(orderId, OrderStatus.CANCELLED);

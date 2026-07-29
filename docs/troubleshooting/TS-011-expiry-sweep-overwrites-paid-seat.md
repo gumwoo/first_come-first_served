@@ -60,8 +60,10 @@ expireHolds:  ... where h.id in :ids and h.status = HELD      -- 여전히 HELD�
   0행이고 좌석 SOLD·홀드 CONVERTED가 유지되는지 검증(Testcontainers, 결정적).
 - 교훈(3번째 재확인): **한 도메인에서 조건부 가드를 도입하면, 같은 자원을 건드리는 형제 경로 전부에
   같은 가드가 있는지 훑는다.** sell↔release, convert↔expire는 짝이다.
-- 후보 가드(백로그): "`status` 컬럼을 바꾸는 `@Modifying` UPDATE에 `where ... status =` 조건 부재"를
-  하네스에서 정적 경고로 탐지 검토(오탐 위험 있어 설계 후).
+- **정적 가드(구현 완료)**: 하네스 `harness/backend/check.mjs`에 규칙 추가 — `@Query` UPDATE가 status를
+  set하면서 WHERE에 status 조건(`=`/`in`)이 없으면 실패. 의도적 무가드는 `harness:allow-unguarded-status`
+  주석으로만 예외. 메타테스트 fixture `be-unguarded-status-update`로 하네스 자체도 검증. 이 규칙이
+  release/expire·sellSeats 같은 형제 경로 누락을 앞으로 CI에서 자동 차단한다.
 
 ## 6. 반대 방향 — 만료 sweep이 먼저 이기면 결제가 주문만 PAID로 (추가 발견)
 §1~5는 "결제가 먼저 이긴 뒤 sweep이 덮어쓰는" 방향을 닫았다. 그런데 **반대 순서도 위험**했다:

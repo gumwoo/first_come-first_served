@@ -127,7 +127,7 @@ public class SeatService {
         // 실행 시 영속성 컨텍스트를 비워, 뒤에서 엔티티를 mutate하면 detached라 저장되지 않기 때문.
         hold.release();
         holdRepository.saveAndFlush(hold);
-        seatRepository.releaseSeats(seatIds, SeatStatus.AVAILABLE);
+        seatRepository.releaseSeats(seatIds, SeatStatus.AVAILABLE, SeatStatus.HELD); // 수동 해제: HELD→AVAILABLE
         sse.broadcast(hold.getEventId(), "seat.hold.released", Map.of("seatIds", seatIds)); // 재고 복구 반영
     }
 

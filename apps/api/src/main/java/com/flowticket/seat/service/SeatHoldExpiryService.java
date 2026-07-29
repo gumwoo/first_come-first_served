@@ -59,7 +59,8 @@ public class SeatHoldExpiryService {
             freed.add(new Freed(h.getEventId(), seatIds));
         }
         if (!allSeatIds.isEmpty()) {
-            seatRepository.releaseSeats(allSeatIds, SeatStatus.AVAILABLE); // 재고 복구
+            // 만료: HELD 좌석만 복구. 결제가 경합해 SOLD가 된 좌석은 덮어쓰지 않음(TS-011).
+            seatRepository.releaseSeats(allSeatIds, SeatStatus.AVAILABLE, SeatStatus.HELD);
         }
         holdRepository.expireHolds(holdIds); // 벌크 EXPIRED
 

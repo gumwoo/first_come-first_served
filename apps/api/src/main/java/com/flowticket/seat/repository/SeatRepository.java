@@ -33,10 +33,18 @@ public interface SeatRepository extends JpaRepository<Seat, Long> {
                         @Param("held") SeatStatus held,
                         @Param("available") SeatStatus available);
 
-    /** 좌석 상태 복구(해제/만료 시). */
+    /**
+     * 좌석 상태 복구(해제/만료/환불) — <b>조건부</b>. 기대 상태(:from)인 좌석만 복구한다.
+     * 만료·수동해제는 from=HELD, 환불은 from=SOLD. 반환 수 != 요청 수면 이미 다른 경로가 상태를 바꿈.
+     * 가드가 없으면 결제 확정(HELD→SOLD)과 만료 sweep이 경합할 때 SOLD 좌석을 AVAILABLE로
+     * 덮어써 재판매(초과판매)가 날 수 있다 — 이 가드가 그 레이스를 차단한다(TS-011).
+     */
     @Modifying(clearAutomatically = true)
-    @Query("update Seat s set s.status = :available, s.updatedAt = CURRENT_TIMESTAMP where s.id in :ids")
-    int releaseSeats(@Param("ids") List<Long> ids, @Param("available") SeatStatus available);
+    @Query("update Seat s set s.status = :available, s.updatedAt = CURRENT_TIMESTAMP "
+            + "where s.id in :ids and s.status = :from")
+    int releaseSeats(@Param("ids") List<Long> ids,
+                     @Param("available") SeatStatus available,
+                     @Param("from") SeatStatus from);
 
     /** 결제 확정 — HELD 좌석만 SOLD로(조건부). 반환 수 != 요청 수면 일부가 이미 풀림. */
     @Modifying(clearAutomatically = true)

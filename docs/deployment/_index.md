@@ -1,0 +1,41 @@
+# 배포·운영 준비 (S08) — 한 장 지도
+
+- 상태: 계획(미착수). 구현 전 이 문서로 전체를 조망한다.
+- 성격: **인프라 트랙**(기능 슬라이스 아님). 지도의 작업 큐로 S08에 편입 — [docs/screens/_index.md](../screens/_index.md).
+- 후속: S09 부하테스트·모니터링은 이 배포 위에서 실측.
+
+## 문서 3종 (상세)
+| 문서 | 내용 |
+|------|------|
+| [aws-eks-deploy-plan.md](aws-eks-deploy-plan.md) | EKS + Strimzi 멀티브로커 배포 단계(Phase 1~8)·역할분담·DoD |
+| [app-changes-for-k8s-kafka.md](app-changes-for-k8s-kafka.md) | 파티션↑·복제↑·probe·graceful shutdown·**멀티팟 대응(D 섹션)** 코드/설정 변경 |
+| [portfolio-framing-and-decisions.md](portfolio-framing-and-decisions.md) | 납득 원칙·최종 스코프·**MSA 고려·기각**·면접 서사 |
+
+## 멀티팟 준비 체크리스트 (전부 예정 — 배포 시 착수)
+
+> 지금 **단일 인스턴스에선 아래가 안 깨진다.** 여러 Pod로 띄우는 순간 필요해지는 항목들. (③만 예외 — orchestrator 아닌 PG-gated)
+
+| # | 항목 | 왜 필요 | 언제 필수 | 상세 |
+|---|------|---------|-----------|------|
+| ① | **SSE Registry 팬아웃** | 인메모리 SSE는 Pod 간 공유 안 됨 → 소비 Pod ≠ 연결 Pod면 알림 누락 | **멀티 Pod 필수** | app-changes D-1 |
+| ② | **스케줄러 중복 실행(ShedLock)** | @Scheduled가 Pod마다 실행 → 중복(정합성은 조건부 UPDATE로 안전, 낭비만) | 멀티 Pod 권장 | app-changes D-2 |
+| ④ | **정확한 seat.hold.expired 알림** | sweep이 결제로 안 풀린 좌석까지 알림(과알림, best-effort라 무해) | 아무 때나(소소) | TS-011 §한계 |
+| ③ | **PG 승인 후 롤백 보상** | 실 PG 승인 뒤 DB 롤백 시 승인만 남음 | **실 프로덕션 PG일 때만** (K8s 무관) | TS-011 §한계 |
+
+### ① SSE 팬아웃 — 왜 Redis pub/sub인가 (Kafka 아님)
+```
+결제 → Kafka(order-events)          ← 내구성 백본·재시도·DLQ·리플레이
+        → consumer(한 Pod가 소비)
+             → Redis pub/sub publish → 모든 Pod subscribe
+                  → 각 Pod가 로컬 SSE Registry 확인 → 연결 가진 Pod가 브라우저 전송
+```
+- **Kafka는 계속 쓴다**(내구성 이벤트 백본). Redis pub/sub은 그걸 대체하는 게 아니라 **Pod 간 팬아웃 단계 추가**.
+- **왜 Kafka로 팬아웃 안 하나**: consumer group은 이벤트를 그룹 내 **한 Pod에만** 전달 → 모든 Pod가 받게 하려면 Pod마다 다른 group = 임시 group 무한 생성·중복 소비. 과한 구조.
+- **왜 Redis pub/sub인가**: 이미 Redis 사용(대기열·토큰·랭킹) → 새 컴포넌트 0. "구독한 모든 Pod에 fire-and-forget 팬아웃"에 용도 정확. **best-effort(미저장)** 성격이 "SSE는 보조·DB가 진실원(ADR-008)"과 일치. "반드시 한 번 이상 전달" 요구 생기면 그때만 Kafka 알림전용/Redis Streams 고려.
+- 비유: Kafka=공식 문서 전달 시스템 / Redis pub/sub=사무실 방송 / SSE=직원에게 직접 전달.
+
+### ③ 이 항목만 K8s와 무관 (정직)
+①②④는 "여러 Pod로 띄우니까" 생기지만, **③은 orchestrator가 아니라 "실 결제 게이트웨이"에 달렸다.** EKS에 올려도 `payment.gateway=mock`(또는 Toss 테스트키)이면 실제 돈이 없어 DB 롤백만으로 충분 → ③ 불필요. **실 프로덕션 Toss + 진짜 카드**로 서비스할 때만 승인취소(void)·보상이 필요 — 포트폴리오 데모엔 붙이지 않으므로 **문서로만 유지**.
+
+## 새 ADR/IMP/TS는?
+이 항목들은 "예정 작업"이라 지금은 지도 + 이 문서로 추적한다. 구현하다 결함이 나면 **TS**, 스케일 수치가 나오면 **IMP**(S09), 되돌아볼 설계 결정이면 **ADR**로 그때 승격한다.

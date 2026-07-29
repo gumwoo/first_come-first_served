@@ -43,9 +43,10 @@ Static/Unit/Integration이 다 초록인데도 E2E 계층(사람의 수동 클�
 ### ② 정적 가드 + 메타테스트 — [`harness/`](../harness)
 계약을 코드와 대조해 드리프트를 막는다. `npm run harness:check`.
 - 백엔드: 금지 의존성, enum ordinal 금지, @Enumerated STRING, 생성자 주입, 시큐리티 개방 금지,
-  Flyway 버전 유일, **구현 이벤트 발행 검증**(계약 선언 후 미구현 차단) 등.
+  Flyway 버전 유일, **구현 이벤트 발행 검증**(계약 선언 후 미구현 차단),
+  **status 변경 UPDATE의 WHERE status 가드 강제**(check-then-act 레이스 차단, TS-011) 등.
 - 프론트: allowed-stack, enum 미러, 이벤트 구독 일치, 계층 import 경계, 죽은 API 경로 등.
-- **메타테스트(24)**: "하네스도 검증 대상." 위반 fixture를 넣어 하네스가 **실제로 실패를 잡는지**
+- **메타테스트(25)**: "하네스도 검증 대상." 위반 fixture를 넣어 하네스가 **실제로 실패를 잡는지**
   검사한다. 통과해버리면(false negative) 메타테스트가 실패한다.
 
 > 철학: **"계약에 있으나 미구현 = 허용"**(슬라이스 완료 시 채움). 그래서 전체가 아니라 `implemented`·

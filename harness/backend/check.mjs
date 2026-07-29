@@ -179,6 +179,28 @@ for (const file of javaFiles) {
   }
 }
 
+// ---------- 7b. status 변경 UPDATE는 WHERE에 status 가드 필수 (TS-011 재발 방지) ----------
+// @Query UPDATE가 status를 set하면서 WHERE에 status 조건(= / in)이 없으면 check-then-act 레이스 위험
+// (만료 sweep이 이미 SOLD/CONVERTED된 행을 무조건 덮어쓰는 등). 조건부 전이는 프로젝트 원칙(ADR-003/006).
+// 의도적 무가드가 정말 필요하면 해당 @Query 바로 앞에 "harness:allow-unguarded-status" 주석으로 예외 처리.
+const queryRe = /@Query\(\s*((?:"(?:[^"\\]|\\.)*"\s*\+?\s*)+)\)/g;
+for (const file of javaFiles) {
+  const rel = path.relative(REPO_ROOT, file).replace(/\\/g, "/");
+  const src = read(file);
+  for (const m of src.matchAll(queryRe)) {
+    const literals = m[1].match(/"(?:[^"\\]|\\.)*"/g) || [];
+    const q = literals.map((s) => s.slice(1, -1)).join(" ").toLowerCase();
+    if (!/^\s*update\b/.test(q)) continue;
+    const [setPart, ...whereRest] = q.split(/\bwhere\b/);
+    if (!/status\s*=/.test(setPart)) continue; // status를 set하지 않는 UPDATE는 무관
+    const guarded = /status\s*(=|in\b)/.test(whereRest.join(" where "));
+    const allowed = src.slice(Math.max(0, m.index - 200), m.index).includes("harness:allow-unguarded-status");
+    if (!guarded && !allowed) {
+      r.fail(`status 변경 UPDATE에 WHERE status 가드 없음(check-then-act 레이스 위험, TS-011): ${rel}`);
+    }
+  }
+}
+
 // ---------- 8. application.yml/properties 시크릿 하드코딩 ----------
 // 민감 키에 ${...} 플레이스홀더가 아닌 리터럴 값이 오면 실패.
 // 정상: client-secret: ${NAVER_CLIENT_SECRET:}  / 위반: client-secret: AbCd123

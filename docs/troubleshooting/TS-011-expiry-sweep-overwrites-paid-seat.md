@@ -63,6 +63,29 @@ expireHolds:  ... where h.id in :ids and h.status = HELD      -- 여전히 HELD�
 - 후보 가드(백로그): "`status` 컬럼을 바꾸는 `@Modifying` UPDATE에 `where ... status =` 조건 부재"를
   하네스에서 정적 경고로 탐지 검토(오탐 위험 있어 설계 후).
 
+## 6. 반대 방향 — 만료 sweep이 먼저 이기면 결제가 주문만 PAID로 (추가 발견)
+§1~5는 "결제가 먼저 이긴 뒤 sweep이 덮어쓰는" 방향을 닫았다. 그런데 **반대 순서도 위험**했다:
+```
+t0  만료 sweep 승리: 좌석 HELD→AVAILABLE, 홀드 HELD→EXPIRED (order는 아직 PENDING — order-sweep 미실행)
+t1  결제 finalizePaid: markPaid(PENDING→PAID) 성공
+    → sellSeats(HELD→SOLD) 0행, convertHold(HELD→CONVERTED) 0행 — 그러나 반환값 미검사
+    → 커밋 → 주문 PAID인데 좌석 AVAILABLE·홀드 EXPIRED (결제했는데 좌석 재판매 가능, 더 나쁨)
+```
+결제 진입 시 `expiresAt` 검사를 통과해도(승인 중 시간 경과) 발생하며, order-sweep과 seat-hold-sweep이
+별도 스케줄러라 "홀드는 풀렸는데 주문은 아직 PENDING"인 창이 존재한다.
+
+**근본 원인**: `finalizePaid`가 `markPaid`만 검사하고 `sellSeats`/`convertHold`의 **영향 행 수를 버렸다** —
+sweep 쪽엔 넣은 "영향 행 수 검증"(ADR-003)을 결제 확정 쪽에 안 넣은 형제 경로 누락(TS-011의 대칭).
+
+**해결**: 영향 행 수 불일치 시 예외 → 트랜잭션 전체 롤백(markPaid·approve 포함).
+```java
+int sold = seatRepository.sellSeats(seatIds, SOLD, HELD);
+int converted = holdRepository.convertHold(order.getHoldId());
+if (sold != seatIds.size() || converted != 1) throw new BusinessException(INVALID_STATE_TRANSITION);
+```
+좌석이 이미 풀렸으면 sold=0 → 예외 → **주문이 PAID로 확정되지 않음**(PENDING 유지, 재시도/만료로 흡수).
+검증: `만료sweep이_먼저_이기면_결제는_실패하고_주문은_PAID로_남지_않는다`(PaymentIntegrationTest).
+
 ## 한계 / 남은 것
 - 최소 수정(가드 추가)으로 **데이터 정합성**은 닫았다. 다만 sweep이 복구 대상으로 미리 잡은 seatId 중
   결제가 이긴 좌석은 실제로 안 풀렸는데도 `seat.hold.expired` SSE를 브로드캐스트한다(전달상 경미한
@@ -70,3 +93,6 @@ expireHolds:  ... where h.id in :ids and h.status = HELD      -- 여전히 HELD�
   기반)으로 후속 개선 여지 — 이번 PR 범위 밖.
 - 다중 Pod의 스케줄러 중복 실행(ShedLock)·SSE 팬아웃은 별개 항목(배포 문서 참조), 본 버그와 무관하게
   정합성은 이 가드로 이미 안전.
+- **반대 방향(§6)의 PG 보상**: 실 PG(Toss)가 이미 승인한 뒤 DB를 롤백하면 승인만 남아 돈이 잡힐 수 있다.
+  Mock/데모 게이트웨이 범위에선 DB 상태전이 검증으로 충분하나, 실 운영에선 **승인 취소(void)·보상 트랜잭션**을
+  함께 설계해야 한다 — 라이브 결제 배선 시 후속.

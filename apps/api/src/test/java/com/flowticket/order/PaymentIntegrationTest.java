@@ -7,6 +7,7 @@ import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.error.BusinessException;
+import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.dto.PaymentResponse;
 import com.flowticket.order.repository.OrderItemRepository;
 import com.flowticket.order.repository.OrderRepository;
@@ -29,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
@@ -82,6 +84,7 @@ class PaymentIntegrationTest {
     @Autowired SeatHoldRepository holdRepository;
     @Autowired SeatHoldItemRepository holdItemRepository;
     @Autowired EventSeatPriceRepository priceRepository;
+    @Autowired JdbcTemplate jdbc;
 
     private Long eventId;
 
@@ -176,6 +179,24 @@ class PaymentIntegrationTest {
     }
 
     // --- helpers ---
+
+    @Test
+    void 만료sweep이_먼저_이기면_결제는_실패하고_주문은_PAID로_남지_않는다() {
+        // TS-011 반대 방향: 만료 sweep이 먼저 승리(좌석 AVAILABLE·홀드 EXPIRED)한 상황을 재현.
+        // order는 아직 PENDING·expiresAt 미래(결제 진입 검사 통과)라, 결제가 markPaid엔 성공할 수 있다.
+        Ctx c = order(60L, 1);
+        jdbc.update("update seats set status='AVAILABLE' where id=?", c.seatId());
+        jdbc.update("update seat_holds set status='EXPIRED' where id=?", c.holdId());
+
+        // finalizePaid: markPaid는 성공하나 sellSeats/convertHold가 0행 → 영향행수 검증 실패 → 트랜잭션 롤백
+        assertThatThrownBy(() -> paymentService.pay(60L, c.orderId(), "card", null, "OK-" + c.orderId()))
+                .isInstanceOf(BusinessException.class);
+
+        // 롤백으로 주문은 PAID로 확정되지 않음(PENDING 유지) — "PAID인데 좌석 없음" 방지
+        assertThat(orderRepository.findById(c.orderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(seatRepository.findById(c.seatId()).orElseThrow().getStatus()).isEqualTo(SeatStatus.AVAILABLE);
+        assertThat(holdRepository.findById(c.holdId()).orElseThrow().getStatus()).isEqualTo(SeatHoldStatus.EXPIRED);
+    }
 
     private record Ctx(Long orderId, Long holdId, Long seatId) {}
 

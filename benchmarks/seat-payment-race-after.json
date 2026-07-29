@@ -1,0 +1,9 @@
+{
+  "topic": "seat-payment-race",
+  "phase": "after",
+  "date": "2026-07-29",
+  "method": "조건부 releaseSeats(from=HELD)·expireHolds(HELD) 가드 + finalizePaid 영향행수 검증(sold!=size || converted!=1 → 예외 롤백). 동일 조건",
+  "config": { "trials": 10, "directions": 2, "raceWindow": "결정적 인터리빙(구성)" },
+  "result": { "forwardPaidSeatFreed": 0, "reversePaidNoSeat": 0, "inconsistent": 20, "inconsistentAfterFix": 0 },
+  "note": "정방향: 결제가 이겨 SOLD면 releaseSeats(from=HELD) 0행 → 유지. 반대방향: 좌석이 풀렸으면 sellSeats 0행 → 영향행수 검증 실패 → 전체 롤백 → 주문 PAID 안 됨. 양방향 불일치 20→0. 근거 테스트: 동일"
+}

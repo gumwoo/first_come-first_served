@@ -31,6 +31,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
@@ -85,6 +87,7 @@ class PaymentIntegrationTest {
     @Autowired SeatHoldItemRepository holdItemRepository;
     @Autowired EventSeatPriceRepository priceRepository;
     @Autowired JdbcTemplate jdbc;
+    @Autowired PlatformTransactionManager txManager;
 
     private Long eventId;
 
@@ -196,6 +199,65 @@ class PaymentIntegrationTest {
         assertThat(orderRepository.findById(c.orderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(seatRepository.findById(c.seatId()).orElseThrow().getStatus()).isEqualTo(SeatStatus.AVAILABLE);
         assertThat(holdRepository.findById(c.holdId()).orElseThrow().getStatus()).isEqualTo(SeatHoldStatus.EXPIRED);
+    }
+
+    @Test
+    void IMP010_결제_만료_양방향_레이스_before_after() {
+        // IMP-010: 결제 확정 × 만료 sweep의 양방향 경쟁을 trials회 재현해 "불일치 수"를 before/after로 측정.
+        // before = 무가드 sweep(정방향) + 영향행수 미검사 결제(반대방향), after = 조건부 가드 + 영향행수 검증.
+        int trials = 10;
+        int before = 0, after = 0;
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+
+        for (int i = 0; i < trials; i++) {
+            // ── 정방향: 결제 승리 후 만료 sweep ──
+            // before: 무가드 release(구버전)가 SOLD 좌석을 AVAILABLE로 되돌림 → 결제 좌석 유실
+            Long fb = takeHeldSeat();
+            jdbc.update("update seats set status='SOLD' where id=?", fb);         // 결제 승리
+            jdbc.update("update seats set status='AVAILABLE' where id=?", fb);    // 무가드 release
+            if ("AVAILABLE".equals(seatStat(fb))) before++;
+            // after: 조건부 releaseSeats(from=HELD) → SOLD는 0행 → 유지
+            Long fa = takeHeldSeat();
+            jdbc.update("update seats set status='SOLD' where id=?", fa);
+            tx.executeWithoutResult(s ->
+                    seatRepository.releaseSeats(List.of(fa), SeatStatus.AVAILABLE, SeatStatus.HELD));
+            if ("AVAILABLE".equals(seatStat(fa))) after++;
+
+            // ── 반대방향: 만료 sweep 승리 후 결제 ──
+            // before: 좌석이 이미 풀렸는데 markPaid만 성공(영향행수 미검사) → 주문 PAID·좌석 AVAILABLE
+            Ctx rb = order(3000 + i, 1);
+            jdbc.update("update seats set status='AVAILABLE' where id=?", rb.seatId());
+            jdbc.update("update seat_holds set status='EXPIRED' where id=?", rb.holdId());
+            jdbc.update("update orders set status='PAID' where id=? and status='PENDING'", rb.orderId());
+            if ("PAID".equals(orderStat(rb.orderId())) && !"SOLD".equals(seatStat(rb.seatId()))) before++;
+            // after: 실제 결제 → finalizePaid 영향행수 검증 → 예외 → 롤백 → 주문 PAID 아님
+            Ctx ra = order(4000 + i, 1);
+            jdbc.update("update seats set status='AVAILABLE' where id=?", ra.seatId());
+            jdbc.update("update seat_holds set status='EXPIRED' where id=?", ra.holdId());
+            try {
+                paymentService.pay(4000 + i, ra.orderId(), "card", null, "OK-" + ra.orderId());
+            } catch (RuntimeException ignore) { /* 영향행수 불일치 → 롤백 예외 */ }
+            if ("PAID".equals(orderStat(ra.orderId())) && !"SOLD".equals(seatStat(ra.seatId()))) after++;
+        }
+
+        // before: 정방향+반대방향 각 trial 1건씩 = 2*trials 불일치 / after: 0
+        assertThat(before).isEqualTo(2 * trials);
+        assertThat(after).isZero();
+    }
+
+    private Long takeHeldSeat() {
+        Long id = seatRepository.findByEventId(eventId).stream()
+                .filter(s -> s.getStatus() == SeatStatus.AVAILABLE).map(Seat::getId).findFirst().orElseThrow();
+        jdbc.update("update seats set status='HELD' where id=?", id);
+        return id;
+    }
+
+    private String seatStat(Long id) {
+        return jdbc.queryForObject("select status from seats where id=?", String.class, id);
+    }
+
+    private String orderStat(Long id) {
+        return jdbc.queryForObject("select status from orders where id=?", String.class, id);
     }
 
     private record Ctx(Long orderId, Long holdId, Long seatId) {}

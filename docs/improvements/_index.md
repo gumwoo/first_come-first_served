@@ -24,6 +24,7 @@ naive → 측정 → 개선 → 재측정 순서로 수치를 **커밋으로 박
 | [IMP-004](IMP-004-queue-admission.md) | 대기열 정원 초과 — 승격 Lua 원자화 | S03 | over-admit 7→0 | 완료 |
 | [IMP-008](IMP-008-payment-idempotency.md) | 결제 이중 처리 — idempotency_key UNIQUE + 조건부 전이 | S05 | 이중 PAID 7→0 | 완료 |
 | [IMP-009](IMP-009-refund-idempotency.md) | 환불 이중 처리 — refunds.idempotency_key UNIQUE + 조건부 전이 | S06 | 이중 환불 7→0 | 완료 |
+| [IMP-010](IMP-010-seat-payment-race.md) | 좌석 만료↔결제 양방향 레이스 — 조건부 가드 + 영향행수 검증 | S04/S05 | 불일치 20→0 | 완료 |
 
 ## 누적 지표 보드
 프로젝트 전체에서 모은 정량 성과 요약: [METRICS.md](METRICS.md)

@@ -1,0 +1,9 @@
+{
+  "topic": "seat-payment-race",
+  "phase": "before",
+  "date": "2026-07-29",
+  "method": "무가드 만료 sweep(status 조건 없는 release/expire) + 영향행수 미검사 결제 확정. 결제×만료 sweep 경쟁을 trials회(정방향/반대방향 각 1) 재현해 불일치 수 측정",
+  "config": { "trials": 10, "directions": 2, "raceWindow": "결정적 인터리빙(구성)" },
+  "result": { "forwardPaidSeatFreed": 10, "reversePaidNoSeat": 10, "inconsistent": 20 },
+  "note": "정방향: 결제로 SOLD된 좌석을 무가드 sweep이 AVAILABLE로 되돌림(재판매). 반대방향: 만료로 좌석이 풀렸는데 결제가 markPaid만 성공(sellSeats/convertHold 0행 무시) → 주문 PAID·좌석 AVAILABLE. 근거 테스트: PaymentIntegrationTest.IMP010_결제_만료_양방향_레이스_before_after"
+}

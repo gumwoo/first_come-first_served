@@ -57,7 +57,7 @@ Static/Unit/Integration이 다 초록인데도 E2E 계층(사람의 수동 클�
   개선 후 재측정해 `benchmarks/`에 before/after를 박제. 예: 초과판매 19→0(IMP-003), 정원 초과 7→0(IMP-004).
 - **설계 결정 → ADR** ([_index](decisions/_index.md)): 원자성 계층 선택, 가격 단일 소스 등 되돌아볼 근거.
 - **사건 회고 → TS** ([_index](troubleshooting/_index.md)): 실사용/수동 검증에서 발견한 결함을
-  증상→조사→근본원인→해결→재발방지로 기록(TS-001~009). "어떻게 원인을 좁혔는가"가 핵심.
+  증상→조사→근본원인→해결→재발방지로 기록(TS-001~011). "어떻게 원인을 좁혔는가"가 핵심.
 
 ### ④ E2E + CI 자가개선 루프 — [`e2e/`](../e2e), [`ci.yml`](../.github/workflows/ci.yml)
 경계·UI 상태 결함을 실제 브라우저로 잡는다. 규칙: [e2e-rules.md](testing/e2e-rules.md).
@@ -107,7 +107,7 @@ SOLD_OUT 오탐 → CCTV로 원인 특정 → 직렬 격리(그 과정에서 초
 
 ## 7. 명령어 한눈에
 ```bash
-npm run harness:check          # 계약/정적 가드 (meta 24 + backend + frontend)
+npm run harness:check          # 계약/정적 가드 (meta 25 + backend + frontend)
 corepack pnpm@9.12.0 --dir apps/web typecheck | lint | build
 npm run e2e                    # E2E (로컬 dev 스택 필요) — 게이트는 CI가 자동 수행
 npm run e2e:burn               # 번인(--repeat-each=20) — flaky 사전 차단

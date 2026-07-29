@@ -236,8 +236,14 @@ public class PaymentService {
         if (updated == 1) {
             List<Long> seatIds = orderItemRepository.findByOrderId(order.getId()).stream()
                     .map(OrderItem::getSeatId).toList();
-            seatRepository.sellSeats(seatIds, SeatStatus.SOLD, SeatStatus.HELD);
-            holdRepository.convertHold(order.getHoldId());
+            int sold = seatRepository.sellSeats(seatIds, SeatStatus.SOLD, SeatStatus.HELD);
+            int converted = holdRepository.convertHold(order.getHoldId());
+            // 영향 행 수 검증(ADR-003). 만료 sweep이 먼저 이겨 좌석/홀드가 이미 풀렸으면(HELD 아님) 0행 →
+            // 예외로 트랜잭션 전체 롤백(markPaid·approve 포함). "주문 PAID인데 좌석은 AVAILABLE"
+            // = 결제했는데 좌석이 재판매되는 반대 방향 레이스 차단(TS-011).
+            if (sold != seatIds.size() || converted != 1) {
+                throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
+            }
             // 커밋 후(AFTER_COMMIT) Kafka로 발행 → consumer가 SSE 브로드캐스트(Phase 4b).
             // 트랜잭션 롤백 시 발행 안 됨(유령 order.paid 방지).
             events.publishEvent(new OrderEvent("order.paid", order.getId()));

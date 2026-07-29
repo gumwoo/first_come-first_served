@@ -231,11 +231,12 @@ class PaymentIntegrationTest {
             jdbc.update("update orders set status='PAID' where id=? and status='PENDING'", rb.orderId());
             if ("PAID".equals(orderStat(rb.orderId())) && !"SOLD".equals(seatStat(rb.seatId()))) before++;
             // after: 실제 결제 → finalizePaid 영향행수 검증 → 예외 → 롤백 → 주문 PAID 아님
-            Ctx ra = order(4000 + i, 1);
+            long raUser = 4000L + i;
+            Ctx ra = order(raUser, 1);
             jdbc.update("update seats set status='AVAILABLE' where id=?", ra.seatId());
             jdbc.update("update seat_holds set status='EXPIRED' where id=?", ra.holdId());
             try {
-                paymentService.pay(4000 + i, ra.orderId(), "card", null, "OK-" + ra.orderId());
+                paymentService.pay(raUser, ra.orderId(), "card", null, "OK-" + ra.orderId());
             } catch (RuntimeException ignore) { /* 영향행수 불일치 → 롤백 예외 */ }
             if ("PAID".equals(orderStat(ra.orderId())) && !"SOLD".equals(seatStat(ra.seatId()))) after++;
         }

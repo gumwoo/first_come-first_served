@@ -88,13 +88,25 @@ if (sold != seatIds.size() || converted != 1) throw new BusinessException(INVALI
 좌석이 이미 풀렸으면 sold=0 → 예외 → **주문이 PAID로 확정되지 않음**(PENDING 유지, 재시도/만료로 흡수).
 검증: `만료sweep이_먼저_이기면_결제는_실패하고_주문은_PAID로_남지_않는다`(PaymentIntegrationTest).
 
+## 7. 잔여 개선 반영 (④ 정확한 알림 · ③ PG 보상)
+데이터 정합성(§forward 가드 + §6 영향행수 검증)에 더해, 아래 두 개의 "경계 위생" 항목을 후속으로 닫았다.
+
+- **④ 정확한 만료 알림** — 이전엔 sweep이 복구 대상으로 미리 잡은 seatId 전부에 `seat.hold.expired`를
+  브로드캐스트해, 결제가 이겨 실제로 안 풀린 SOLD 좌석에도 유령 알림이 나갔다(정합성엔 무해하나 FE가
+  매진 좌석을 잠깐 풀린 것처럼 표시하는 오탐). `SeatHoldExpiryService.sweepExpired`를 **홀드별로 조건부
+  EXPIRED 전이(`expireHolds` 1행) → 성공한 홀드의 좌석만 해제·알림**하도록 재구조화. CONVERTED(결제 승리)면
+  0행 → 스킵. 검증: `결제가_이긴_홀드는_sweep이_만료알림을_보내지_않는다`(SeatInventoryIntegrationTest,
+  `@SpyBean` 브로드캐스트 never).
+- **③ PG 승인 보상(void)** — 반대 방향(§6)에서 PG 승인은 났는데 좌석이 만료 sweep에 풀려 확정 불가일 때,
+  DB만 롤백하면 실 PG(Toss)엔 미아 승인이 남아 돈이 잡힌다. `finalizePaid`의 영향행수 불일치 경로에서
+  **`gateway.refund(pgTid, amount)`로 승인을 취소(void)한 뒤 예외를 던져** 롤백한다(Mock은 no-op 성공,
+  Toss는 결제취소 API). 검증: `만료로_확정실패시_이미난_PG승인을_보상취소한다`(PaymentIntegrationTest,
+  `@SpyBean` refund 1회).
+
 ## 한계 / 남은 것
-- 최소 수정(가드 추가)으로 **데이터 정합성**은 닫았다. 다만 sweep이 복구 대상으로 미리 잡은 seatId 중
-  결제가 이긴 좌석은 실제로 안 풀렸는데도 `seat.hold.expired` SSE를 브로드캐스트한다(전달상 경미한
-  과알림, best-effort라 무해). 완전 정확히 하려면 "실제로 전이 성공한 홀드의 좌석만 알림"(RETURNING
-  기반)으로 후속 개선 여지 — 이번 PR 범위 밖.
-- 다중 Pod의 스케줄러 중복 실행(ShedLock)·SSE 팬아웃은 별개 항목(배포 문서 참조), 본 버그와 무관하게
-  정합성은 이 가드로 이미 안전.
-- **반대 방향(§6)의 PG 보상**: 실 PG(Toss)가 이미 승인한 뒤 DB를 롤백하면 승인만 남아 돈이 잡힐 수 있다.
-  Mock/데모 게이트웨이 범위에선 DB 상태전이 검증으로 충분하나, 실 운영에선 **승인 취소(void)·보상 트랜잭션**을
-  함께 설계해야 한다 — 라이브 결제 배선 시 후속.
+- ③ 보상은 **finalizePaid 내 best-effort void**다. "PG 승인 성공 직후·refund 호출 전 프로세스 크래시"
+  구간까지 원자적으로 닫으려면 **outbox/saga(승인 결과를 커밋 후 재시도 가능한 이벤트로 기록)**가 필요 —
+  실 결제 트래픽·모니터링과 함께 설계할 후속(S08+). 가상계좌(vbank) 경로의 보상 취소 의미(입금 반환)도
+  실 PG 배선 시 별도 검토.
+- 다중 Pod의 스케줄러 중복 실행(ShedLock)·SSE 팬아웃(Redis pub/sub)은 별개 항목(배포 문서 S08 참조),
+  본 버그와 무관하게 정합성은 이 가드로 이미 안전.

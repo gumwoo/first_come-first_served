@@ -1,24 +1,32 @@
 package com.flowticket.order.sse;
 
+import com.flowticket.global.sse.SsePubSub;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.connection.Message;
+import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * 주문 실시간 SSE(주문별 다중 구독). 결제 완료/실패/입금확인을 그 주문 구독자에 push.
- * 전송 실패는 제거로 격리(단일 서버 가정). SeatSseRegistry와 동일 패턴.
+ * 전송 실패는 제거로 격리. SeatSseRegistry와 동일 패턴 — 멀티 Pod는 Redis pub/sub 팬아웃.
  */
 @Component
-public class OrderSseRegistry {
+public class OrderSseRegistry implements MessageListener {
+
+    public static final String CHANNEL = "sse:order";
 
     private final Map<Long, Set<SseEmitter>> byOrder = new ConcurrentHashMap<>();
     private final long timeoutMs;
+    private final SsePubSub pubSub;
 
-    public OrderSseRegistry(@Value("${seat.sse-timeout-ms:1800000}") long timeoutMs) {
+    public OrderSseRegistry(@Value("${seat.sse-timeout-ms:1800000}") long timeoutMs, SsePubSub pubSub) {
         this.timeoutMs = timeoutMs;
+        this.pubSub = pubSub;
     }
 
     public SseEmitter subscribe(Long orderId) {
@@ -39,7 +47,17 @@ public class OrderSseRegistry {
         return emitter;
     }
 
+    /** 주문 구독자 전체로 push. 멀티 Pod 팬아웃을 위해 Redis로 발행(미배선 시 로컬 폴백). */
     public void broadcast(Long orderId, String event, Object data) {
+        if (pubSub != null) {
+            pubSub.publish(CHANNEL, String.valueOf(orderId), event, data);
+        } else {
+            deliverLocal(orderId, event, data);
+        }
+    }
+
+    /** 이 Pod의 로컬 구독자에게만 전달. */
+    public void deliverLocal(Long orderId, String event, Object data) {
         Set<SseEmitter> set = byOrder.get(orderId);
         if (set == null) {
             return;
@@ -50,6 +68,17 @@ public class OrderSseRegistry {
             } catch (Exception e) {
                 set.remove(emitter);
             }
+        }
+    }
+
+    @Override
+    public void onMessage(Message message, byte[] pattern) {
+        if (pubSub == null) {
+            return;
+        }
+        SsePubSub.Envelope env = pubSub.parse(new String(message.getBody(), StandardCharsets.UTF_8));
+        if (env != null) {
+            deliverLocal(Long.valueOf(env.key()), env.event(), env.data());
         }
     }
 }

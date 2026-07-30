@@ -9,7 +9,6 @@ import com.flowticket.auth.dto.SignupRequest;
 import com.flowticket.auth.dto.TokenResponse;
 import com.flowticket.auth.service.AuthService;
 import com.flowticket.auth.service.PhoneVerificationService;
-import com.flowticket.auth.service.TokenBlacklistService;
 import com.flowticket.auth.service.TokenService;
 import com.flowticket.global.common.ApiResponse;
 import com.flowticket.global.error.BusinessException;
@@ -35,17 +34,15 @@ public class AuthController {
     private final AuthService authService;
     private final PhoneVerificationService phoneVerificationService;
     private final TokenService tokenService;
-    private final TokenBlacklistService blacklistService;
     private final JwtProvider jwtProvider;
     private final RefreshCookieFactory cookieFactory;
 
     public AuthController(AuthService authService, PhoneVerificationService phoneVerificationService,
-                          TokenService tokenService, TokenBlacklistService blacklistService,
-                          JwtProvider jwtProvider, RefreshCookieFactory cookieFactory) {
+                          TokenService tokenService, JwtProvider jwtProvider,
+                          RefreshCookieFactory cookieFactory) {
         this.authService = authService;
         this.phoneVerificationService = phoneVerificationService;
         this.tokenService = tokenService;
-        this.blacklistService = blacklistService;
         this.jwtProvider = jwtProvider;
         this.cookieFactory = cookieFactory;
     }
@@ -96,22 +93,11 @@ public class AuthController {
             @AuthenticationPrincipal Long userId,
             @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
-        // access가 없어도(만료/미보유) refresh 쿠키로 사용자를 식별해 서버 Refresh를 폐기.
-        Long target = userId;
-        if (target == null && refreshToken != null
-                && jwtProvider.isValid(refreshToken, JwtProvider.TYPE_REFRESH)) {
-            target = jwtProvider.getUserId(refreshToken);
-        }
-        if (target != null) {
-            tokenService.revoke(target);
-        }
-        if (authorization != null && authorization.startsWith("Bearer ")) {
-            String access = authorization.substring(7);
-            // 깨진/위조 토큰이면 getRemainingSeconds가 예외→500이 되므로 유효할 때만 블랙리스트
-            if (jwtProvider.isValid(access, JwtProvider.TYPE_ACCESS)) {
-                blacklistService.blacklist(access, jwtProvider.getRemainingSeconds(access));
-            }
-        }
+        // HTTP 파싱만 컨트롤러 몫: "Bearer " 접두어 제거 → 토큰 오케스트레이션은 서비스에 위임.
+        String accessToken = (authorization != null && authorization.startsWith("Bearer "))
+                ? authorization.substring(7)
+                : null;
+        authService.logout(userId, refreshToken, accessToken);
         return org.springframework.http.ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookieFactory.expired().toString())
                 .body(ApiResponse.ok(null));

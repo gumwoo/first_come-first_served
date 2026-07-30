@@ -10,6 +10,7 @@ import com.flowticket.auth.dto.TokenResponse;
 import com.flowticket.auth.repository.UserRepository;
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
+import com.flowticket.global.security.JwtProvider;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,13 +23,18 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final PhoneVerificationService phoneVerificationService;
     private final TokenService tokenService;
+    private final TokenBlacklistService blacklistService;
+    private final JwtProvider jwtProvider;
 
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                       PhoneVerificationService phoneVerificationService, TokenService tokenService) {
+                       PhoneVerificationService phoneVerificationService, TokenService tokenService,
+                       TokenBlacklistService blacklistService, JwtProvider jwtProvider) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.phoneVerificationService = phoneVerificationService;
         this.tokenService = tokenService;
+        this.blacklistService = blacklistService;
+        this.jwtProvider = jwtProvider;
     }
 
     /** 회원가입: 인증선행 → 약관 → 중복 → 해시 → ROLE_USER 강제 → 저장 → 플래그 소비. */
@@ -76,5 +82,28 @@ public class AuthService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
         return MeResponse.from(user);
+    }
+
+    /**
+     * 로그아웃 오케스트레이션. access가 없어도(만료/미보유) refresh로 사용자를 식별해 서버 Refresh를 폐기하고,
+     * 유효한 access는 남은 TTL만큼 블랙리스트에 올린다. 쿠키/헤더 파싱·SET_COOKIE 같은 HTTP 요소는 컨트롤러 몫.
+     *
+     * @param userId       인증 컨텍스트의 사용자(access 유효 시 존재), 없으면 null
+     * @param refreshToken refresh 쿠키 원문(없으면 null)
+     * @param accessToken  "Bearer " 접두어를 제거한 access 원문(없으면 null)
+     */
+    public void logout(Long userId, String refreshToken, String accessToken) {
+        Long target = userId;
+        if (target == null && refreshToken != null
+                && jwtProvider.isValid(refreshToken, JwtProvider.TYPE_REFRESH)) {
+            target = jwtProvider.getUserId(refreshToken);
+        }
+        if (target != null) {
+            tokenService.revoke(target);
+        }
+        // 깨진/위조 토큰이면 getRemainingSeconds가 예외→500이 되므로 유효할 때만 블랙리스트
+        if (accessToken != null && jwtProvider.isValid(accessToken, JwtProvider.TYPE_ACCESS)) {
+            blacklistService.blacklist(accessToken, jwtProvider.getRemainingSeconds(accessToken));
+        }
     }
 }

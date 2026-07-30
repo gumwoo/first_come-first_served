@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,7 @@ public class SeatHoldExpiryService {
     }
 
     @Scheduled(fixedRateString = "${seat.sweep-interval-ms:60000}")
+    @SchedulerLock(name = "seat-hold-sweep", lockAtMostFor = "PT50S", lockAtLeastFor = "PT0S")
     @Transactional
     public void sweepExpired() {
         List<SeatHold> holds = holdRepository.findByStatusAndExpiresAtBefore(

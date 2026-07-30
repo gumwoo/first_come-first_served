@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -63,6 +64,7 @@ public class KopisSyncService {
 
     /** 매일 새벽 4시 자동 동기화. */
     @Scheduled(cron = "0 0 4 * * *")
+    @SchedulerLock(name = "kopis-sync", lockAtMostFor = "PT10M", lockAtLeastFor = "PT1M")
     public void scheduledSync() {
         int n = sync();
         log.info("[kopis] 스케줄 동기화 {}건", n);

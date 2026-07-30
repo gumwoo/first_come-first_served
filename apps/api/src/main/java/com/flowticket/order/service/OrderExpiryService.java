@@ -5,6 +5,7 @@ import com.flowticket.order.repository.OrderRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,7 @@ public class OrderExpiryService {
     }
 
     @Scheduled(fixedRateString = "${order.sweep-interval-ms:60000}")
+    @SchedulerLock(name = "order-expiry-sweep", lockAtMostFor = "PT50S", lockAtLeastFor = "PT0S")
     @Transactional
     public void sweepExpired() {
         int n = orderRepository.expireOverdue(ACTIVE, LocalDateTime.now());

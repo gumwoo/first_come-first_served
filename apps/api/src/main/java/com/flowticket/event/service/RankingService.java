@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.data.redis.connection.zset.Aggregate;
 import org.springframework.data.redis.connection.zset.Weights;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -104,6 +105,7 @@ public class RankingService {
      * 임계 미만 항목을 제거한다. 누적(TOTAL)은 건드리지 않는다.
      */
     @Scheduled(fixedRateString = "${ranking.decay-rate-ms:300000}")
+    @SchedulerLock(name = "ranking-decay", lockAtMostFor = "PT4M", lockAtLeastFor = "PT0S")
     public void decay() {
         try {
             redis.opsForZSet().unionAndStore(

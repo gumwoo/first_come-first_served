@@ -31,6 +31,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
     // kafka
     implementation("org.springframework.kafka:spring-kafka")
+    // shedlock — 멀티 Pod에서 @Scheduled 중복 실행 방지(Redis lock provider)
+    implementation("net.javacrumbs.shedlock:shedlock-spring:5.16.0")
+    implementation("net.javacrumbs.shedlock:shedlock-provider-redis-spring:5.16.0")
     // querydsl (jakarta)
     implementation("com.querydsl:querydsl-jpa:$queryDslVersion:jakarta")
     annotationProcessor("com.querydsl:querydsl-apt:$queryDslVersion:jakarta")

@@ -100,6 +100,9 @@ public class QueueAdmissionService {
     }
 
     /** 승격 워커: 대기 발생 이벤트를 순회하며 회수→승격. */
+    // 승격 워커는 ShedLock을 강제하지 않는다(배포 문서 D-3): 정원 확인+pop+증가가 Redis Lua로
+    // 원자적이라 다중 Pod 동시 실행이 안전하고, 단일 리더로 묶으면 오히려 처리량 손해. 락=효율,
+    // 원자 조건부 연산=정합성(ADR-002/006).
     @Scheduled(fixedRateString = "${queue.admit-interval-ms:1500}")
     public void runOnce() {
         Set<String> events = redis.opsForSet().members(QueueKeys.ACTIVE_EVENTS);

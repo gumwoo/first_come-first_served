@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -32,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 결제 승인(card/easy 즉시, vbank 가상계좌+입금확인). 게이트웨이 승인 → 조건부 주문전이 →
  * 좌석 SOLD·hold CONVERTED. 멱등: 같은 idempotencyKey는 재처리하지 않음(ADR-006).
  */
+@Slf4j
 @Service
 public class PaymentService {
 
@@ -242,6 +244,17 @@ public class PaymentService {
             // 예외로 트랜잭션 전체 롤백(markPaid·approve 포함). "주문 PAID인데 좌석은 AVAILABLE"
             // = 결제했는데 좌석이 재판매되는 반대 방향 레이스 차단(TS-011).
             if (sold != seatIds.size() || converted != 1) {
+                // 보상(TS-011 ③): PG 승인은 이미 났는데 좌석이 만료 sweep에 풀려 확정 불가.
+                // DB는 예외로 롤백되지만 PG 승인은 외부 부수효과라 별도 취소(void)가 필요 —
+                // 안 하면 실 PG에 "승인됐지만 주문은 PENDING/재고 없음"인 미아 승인이 남는다.
+                // Mock은 no-op 성공, Toss는 결제취소 API(refund와 동일 엔드포인트).
+                // 취소 실패해도 원 예외로 롤백은 진행(승인 직후 프로세스 크래시 구간은 outbox/saga 후속).
+                try {
+                    gateway.refund(pgTid, order.getAmount());
+                } catch (RuntimeException ex) {
+                    log.warn("[payment] 보상 취소 실패 orderId={} pgTid={}: {}",
+                            order.getId(), pgTid, ex.getMessage());
+                }
                 throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
             }
             // 커밋 후(AFTER_COMMIT) Kafka로 발행 → consumer가 SSE 브로드캐스트(Phase 4b).

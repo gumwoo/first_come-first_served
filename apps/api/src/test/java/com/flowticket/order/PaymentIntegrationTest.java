@@ -2,6 +2,12 @@ package com.flowticket.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
@@ -30,6 +36,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -88,6 +95,7 @@ class PaymentIntegrationTest {
     @Autowired EventSeatPriceRepository priceRepository;
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager txManager;
+    @SpyBean com.flowticket.order.gateway.PaymentGateway gateway;
 
     private Long eventId;
 
@@ -199,6 +207,24 @@ class PaymentIntegrationTest {
         assertThat(orderRepository.findById(c.orderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(seatRepository.findById(c.seatId()).orElseThrow().getStatus()).isEqualTo(SeatStatus.AVAILABLE);
         assertThat(holdRepository.findById(c.holdId()).orElseThrow().getStatus()).isEqualTo(SeatHoldStatus.EXPIRED);
+    }
+
+    @Test
+    void 만료로_확정실패시_이미난_PG승인을_보상취소한다() {
+        // TS-011 ③: PG 승인은 났는데 좌석이 만료 sweep에 풀려 확정 불가 → 트랜잭션 롤백만으로는
+        // 외부 PG에 미아 승인이 남는다. finalizePaid가 gateway.refund로 승인을 취소(void)해야 함.
+        Ctx c = order(61L, 1);
+        jdbc.update("update seats set status='AVAILABLE' where id=?", c.seatId());
+        jdbc.update("update seat_holds set status='EXPIRED' where id=?", c.holdId());
+
+        assertThatThrownBy(() -> paymentService.pay(61L, c.orderId(), "card", null, "OK-" + c.orderId()))
+                .isInstanceOf(BusinessException.class);
+
+        // 승인(approve) 직후 확정 실패 → 보상 취소(refund)가 정확히 1회 호출됐는지 검증
+        verify(gateway, times(1)).approve(eq(c.orderId()), anyInt(), anyString(), any(), anyString());
+        verify(gateway, times(1)).refund(anyString(), anyInt());
+        // 주문은 여전히 PAID로 확정되지 않음
+        assertThat(orderRepository.findById(c.orderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
     }
 
     @Test

@@ -11,16 +11,17 @@
 | [app-changes-for-k8s-kafka.md](app-changes-for-k8s-kafka.md) | 파티션↑·복제↑·probe·graceful shutdown·**멀티팟 대응(D 섹션)** 코드/설정 변경 |
 | [portfolio-framing-and-decisions.md](portfolio-framing-and-decisions.md) | 납득 원칙·최종 스코프·**MSA 고려·기각**·면접 서사 |
 
-## 멀티팟 준비 체크리스트 (전부 예정 — 배포 시 착수)
+## 멀티팟 준비 체크리스트
 
-> 지금 **단일 인스턴스에선 아래가 안 깨진다.** 여러 Pod로 띄우는 순간 필요해지는 항목들. (③만 예외 — orchestrator 아닌 PG-gated)
+> 지금 **단일 인스턴스에선 안 깨지는** 항목들. ①②는 여러 Pod로 띄우는 순간 필요 → 배포(S08) 시 착수.
+> **③④는 배포와 무관하게 선반영 완료**(코드 존재만으로 정합성/경계 위생 개선, 단일 Pod에서도 동작·테스트됨).
 
-| # | 항목 | 왜 필요 | 언제 필수 | 상세 |
-|---|------|---------|-----------|------|
-| ① | **SSE Registry 팬아웃** | 인메모리 SSE는 Pod 간 공유 안 됨 → 소비 Pod ≠ 연결 Pod면 알림 누락 | **멀티 Pod 필수** | app-changes D-1 |
-| ② | **스케줄러 중복 실행(ShedLock)** | @Scheduled가 Pod마다 실행 → 중복(정합성은 조건부 UPDATE로 안전, 낭비만) | 멀티 Pod 권장 | app-changes D-2 |
-| ④ | **정확한 seat.hold.expired 알림** | sweep이 결제로 안 풀린 좌석까지 알림(과알림, best-effort라 무해) | 아무 때나(소소) | TS-011 §한계 |
-| ③ | **PG 승인 후 롤백 보상** | 실 PG 승인 뒤 DB 롤백 시 승인만 남음 | **실 프로덕션 PG일 때만** (K8s 무관) | TS-011 §한계 |
+| # | 항목 | 왜 필요 | 상태 | 상세 |
+|---|------|---------|------|------|
+| ① | **SSE Registry 팬아웃** | 인메모리 SSE는 Pod 간 공유 안 됨 → 소비 Pod ≠ 연결 Pod면 알림 누락 | 예정(멀티 Pod 필수) | app-changes D-1 |
+| ② | **스케줄러 중복 실행(ShedLock)** | @Scheduled가 Pod마다 실행 → 중복(정합성은 조건부 UPDATE로 안전, 낭비만) | 예정(멀티 Pod 권장) | app-changes D-2 |
+| ④ | **정확한 seat.hold.expired 알림** | sweep이 결제로 안 풀린 SOLD 좌석까지 알림(과알림 오탐) | **완료**(홀드별 조건부 전이) | TS-011 §7 |
+| ③ | **PG 승인 후 롤백 보상** | 실 PG 승인 뒤 DB 롤백 시 승인만 남음(미아 승인) | **완료**(finalizePaid void, edge는 outbox 후속) | TS-011 §7·§한계 |
 
 ### ① SSE 팬아웃 — 왜 Redis pub/sub인가 (Kafka 아님)
 ```
@@ -35,7 +36,7 @@
 - 비유: Kafka=공식 문서 전달 시스템 / Redis pub/sub=사무실 방송 / SSE=직원에게 직접 전달.
 
 ### ③ 이 항목만 K8s와 무관 (정직)
-①②④는 "여러 Pod로 띄우니까" 생기지만, **③은 orchestrator가 아니라 "실 결제 게이트웨이"에 달렸다.** EKS에 올려도 `payment.gateway=mock`(또는 Toss 테스트키)이면 실제 돈이 없어 DB 롤백만으로 충분 → ③ 불필요. **실 프로덕션 Toss + 진짜 카드**로 서비스할 때만 승인취소(void)·보상이 필요 — 포트폴리오 데모엔 붙이지 않으므로 **문서로만 유지**.
+①②는 "여러 Pod로 띄우니까" 생기지만, **③은 orchestrator가 아니라 "실 결제 게이트웨이"에 달렸다.** EKS에 올려도 `payment.gateway=mock`(또는 Toss 테스트키)이면 실제 돈이 없어 DB 롤백만으로도 사실상 무해하다. 다만 **실 PG를 전제로 보상 로직을 미리 배선**해 두면(승인 실패 경로에서 `gateway.refund`로 void), 나중에 `payment.gateway=toss`로 바꾸는 순간 코드 변경 없이 안전해진다 → 그래서 **선반영**(TS-011 §7). 남은 edge(승인 직후 크래시)는 outbox/saga로 S08+에서 닫는다.
 
 ## 새 ADR/IMP/TS는?
 이 항목들은 "예정 작업"이라 지금은 지도 + 이 문서로 추적한다. 구현하다 결함이 나면 **TS**, 스케일 수치가 나오면 **IMP**(S09), 되돌아볼 설계 결정이면 **ADR**로 그때 승격한다.

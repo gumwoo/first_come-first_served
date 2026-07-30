@@ -2,6 +2,11 @@ package com.flowticket.seat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 
 import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
@@ -29,6 +34,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -84,6 +90,7 @@ class SeatInventoryIntegrationTest {
     @Autowired StringRedisTemplate redisTemplate;
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager txManager;
+    @SpyBean com.flowticket.seat.sse.SeatSseRegistry sse;
 
     private Long eventId;
     private Long aSeatId;
@@ -218,6 +225,28 @@ class SeatInventoryIntegrationTest {
         assertThat(seatStatus(aSeatId)).isEqualTo("SOLD");            // 결제 좌석 유지 = 초과판매 방지
         assertThat(holdRepository.findById(holdId).orElseThrow().getStatus())
                 .isEqualTo(SeatHoldStatus.CONVERTED);                 // 홀드 유지
+    }
+
+    @Test
+    void 결제가_이긴_홀드는_sweep이_만료알림을_보내지_않는다() throws Exception {
+        // TS-011 ④: sweepExpired가 홀드를 조건부로 먼저 EXPIRED 전이 → 결제가 이겨 CONVERTED면 0행 → 스킵.
+        // SOLD 좌석에 seat.hold.expired 유령 알림이 나가지 않아야 함(FE가 매진 좌석을 잠깐 풀린 것처럼 오탐 방지).
+        String token = admittedToken(51L, eventId);
+        HoldResponse held = seatService.hold(51L, eventId, List.of(aSeatId), token);
+        Long holdId = held.holdId();
+        Thread.sleep(1500); // 만료 → sweep 대상(여전히 HELD)
+
+        // 결제 승리: 좌석 SOLD·홀드 CONVERTED (커밋). 이후 sweep이 뒤늦게 도는 상황.
+        new TransactionTemplate(txManager).executeWithoutResult(s -> {
+            assertThat(seatRepository.sellSeats(List.of(aSeatId), SeatStatus.SOLD, SeatStatus.HELD)).isEqualTo(1);
+            assertThat(holdRepository.convertHold(holdId)).isEqualTo(1);
+        });
+        reset(sse); // 그 전(선점 등)의 브로드캐스트는 관심 밖 — sweep이 유발하는 것만 검증
+
+        expiryService.sweepExpired();
+
+        assertThat(seatStatus(aSeatId)).isEqualTo("SOLD");                            // 좌석 유지
+        verify(sse, never()).broadcast(eq(eventId), eq("seat.hold.expired"), any()); // 유령 알림 없음
     }
 
     @Test

@@ -10,7 +10,7 @@ AI 협업 품질 관리를 위한 **검증 하네스** 위에서 구현하는 �
 AGENTS.md / CLAUDE.md  # AI 작업 진입점(짧은 지도) + 필수 작업 규칙
 assets/screens/        # 화면 레퍼런스 이미지 (정답 기준)
 contracts/             # 기계가 읽는 기대 계약 (enum/api/event/stack/layer/error)
-harness/               # 계약 검사 스크립트 + 메타 fixture(24) — npm run harness:check
+harness/               # 계약 검사 스크립트 + 메타 fixture(25) — npm run harness:check
 apps/
   api/                 # Spring Boot 3.3 (Java 17)
   web/                 # Next.js 14.2 (TypeScript)
@@ -33,7 +33,7 @@ docs/
 
 ## 검증 하네스 (4겹 방어선)
 1. **계약**(`contracts/`) = 단일 진실원 — 코드/타입/문서를 계약과 diff.
-2. **정적 가드 + 메타테스트**(`harness/`) — 드리프트 차단. "하네스도 검증 대상"(위반 fixture 24).
+2. **정적 가드 + 메타테스트**(`harness/`) — 드리프트 차단. "하네스도 검증 대상"(위반 fixture 25).
 3. **측정·결정·회고 규율** — 정량 개선 IMP / 설계 결정 ADR / 사건 회고 TS.
 4. **E2E + CI 자가개선 루프** — 경계·UI 결함을 실제 브라우저로. 실패 시 머지 차단 + trace 업로드.
 

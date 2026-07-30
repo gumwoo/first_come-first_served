@@ -19,6 +19,8 @@ backend:
     - org.flywaydb:flyway-core
     - org.flywaydb:flyway-database-postgresql
     - io.lettuce:lettuce-core
+    - net.javacrumbs.shedlock:shedlock-spring                   # 멀티 Pod @Scheduled 중복 방지
+    - net.javacrumbs.shedlock:shedlock-provider-redis-spring    # ShedLock Redis lock provider
     - org.projectlombok:lombok
     - com.fasterxml.jackson.dataformat:jackson-dataformat-xml   # KOPIS XML
     - org.mapstruct:mapstruct

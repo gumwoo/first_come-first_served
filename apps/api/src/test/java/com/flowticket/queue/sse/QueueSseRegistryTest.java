@@ -7,10 +7,11 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-/** SSE 레지스트리 스모크: 구독 생성/전송 시 예외 없음, 미등록 토큰 전송은 무시. */
+/** SSE 레지스트리 스모크: 구독 생성/전송 시 예외 없음, 미등록 토큰 전송은 무시.
+ *  pubSub=null → 로컬 전달 폴백(팬아웃 없는 유닛 컨텍스트). 팬아웃은 SseFanoutIntegrationTest가 검증. */
 class QueueSseRegistryTest {
 
-    private final QueueSseRegistry registry = new QueueSseRegistry(1800);
+    private final QueueSseRegistry registry = new QueueSseRegistry(1800, null);
 
     @Test
     void 구독은_emitter를_생성한다() {

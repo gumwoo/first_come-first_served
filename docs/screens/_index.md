@@ -14,7 +14,7 @@ status: `todo | doing | done | blocked`
 | S05 | 주문·결제(결제/완료/실패/입금대기) | S04 | done | 주문 생성·Mock 결제 승인+조건부 전이·가상계좌·결제 만료 sweep + 멱등(IMP-008) + 결제 FE/QR + E2E(해피+예외) + Toss 실 PG 연동(카드 결제창·confirm) + 가상계좌 입금 웹훅(secret 대조·멱등) + TS-009/TS-010 |
 | S06 | 마이페이지·취소/환불 | S05 | done | 마이페이지 목록(탭·페이징)·상세 + 취소/환불(상태 3분리 CANCELLED/REFUNDED)·기간별 수수료 + 멱등(IMP-009) + 마이페이지 리디자인 + 환불 E2E |
 | S07 | 운영(대시보드/내역/이벤트/DLQ/알림) | S05 | done | 관리자 인증(ADR-007)·대시보드·주문 조회·공연 CRUD·Kafka 이벤트 백본+DLQ(ADR-008)·알림 임계치·admin E2E. 계약 100% 충족 |
-| S08 | 배포·운영 준비(컨테이너화·EKS·Strimzi·멀티팟 준비) | S07 | todo | 컨테이너화→ECR/CI→Terraform(EKS)→Strimzi 멀티브로커→멀티팟 준비(①SSE Redis pub/sub 팬아웃·②ShedLock)→관측(Prometheus/Grafana). ③PG 보상·④정확한 알림은 선반영(TS-011). 상세: [docs/deployment/](../deployment/_index.md) |
+| S08 | 배포·운영 준비(컨테이너화·EKS·Strimzi·멀티팟 준비) | S07 | todo | 멀티팟 준비 **코드 선반영 완료**(①SSE Redis pub/sub 팬아웃·②ShedLock·③PG 보상·④정확한 알림). 남은 것: 컨테이너화→ECR/CI→Terraform(EKS)→Strimzi 멀티브로커→관측(Prometheus/Grafana)→**①② cross-Pod 실측**. 상세: [docs/deployment/](../deployment/_index.md) |
 | S09 | 부하테스트·모니터링 | S08 | todo | 배포 위 k6 실측·HPA 수평확장·브로커 페일오버·Consumer Lag. IMP 재측정 |
 
 ## 슬라이스 ↔ 화면 매핑

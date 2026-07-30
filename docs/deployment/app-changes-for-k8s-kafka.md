@@ -51,7 +51,7 @@
 - 확인: datasource·redis·kafka·jwt·admin·toss 전부 env/Secret. 하드코딩 0(하네스가 가드). 부족분 정리.
 - 파일: `application.yml`(이미 `${...}` 형태)
 
-## D. 다중 Pod에서 드러나는 문제 & 대응 (전부 예정 — 배포 후 구현·검증)
+## D. 다중 Pod에서 드러나는 문제 & 대응 (D-1·D-2 코드 선반영 완료, 검증은 다중 Pod 배포 시)
 
 > 동시성 제어는 **이미 다중 인스턴스 안전**(Redis Lua·DB 조건부 UPDATE). 아래는 다중 Pod로 확장할 때 **단일 인스턴스 전제가 깨지는 두 종류**의 문제다 — 종류가 다르다: **SSE=인스턴스-로컬 "상태" / 스케줄러=인스턴스별 "실행".**
 
@@ -60,13 +60,13 @@
 - **대응**: Kafka 소비 Pod가 **Redis Pub/Sub으로 publish → 전 Pod가 subscribe → 각 Pod가 자기 Registry 확인 → 연결을 가진 Pod만 전송.**
 - **Sticky Session**: 팬아웃이 있으면 사용자가 **어느 Pod에 연결됐는지 알 필요가 없어** SSE 전달을 위해 sticky에 의존할 필요가 없다. (단 "모든 의미에서 완전 불필요"는 과일반화 — 전달 관점에서 불필요라는 뜻.)
 - **best-effort 성격**: Redis Pub/Sub은 메시지를 저장하지 않아 순간(구독 끊김·Pod 다운) 유실 가능. **우리 정책(SSE 보조 알림·DB 진실원, ADR-008)과 일치** — 놓친 사용자는 마이페이지/상태 조회로 최종 상태 확인. 만약 "반드시 한 번 이상 전달" 요구가 생기면 pub/sub만으론 부족 → Kafka 알림 전용/Redis Streams/Outbox 고려(현재는 불필요).
-- 파일(예정): `order/sse/*`(발행/구독), `application.yml`(Redis pub/sub 채널)
+- **상태: 코드 선반영 완료.** 세 레지스트리의 `broadcast/send`가 이제 `SsePubSub`로 Redis 채널에 발행하고, 각 레지스트리가 `MessageListener`로 자기 채널을 구독해 `deliverLocal`로 전달(단일 전달 경로, 자기 자신 포함). pub/sub 미배선(유닛)이면 로컬 폴백. 파일: `global/sse/SsePubSub`, `global/config/SseRedisConfig`, `{seat,order,queue}/sse/*`. 교차-인스턴스 팬아웃 검증: `SseFanoutIntegrationTest`. **cross-Pod 실측**만 다중 Pod 배포 시.
 
 ### D-2. 스케줄러 — 인스턴스별 중복 실행 → ShedLock (정합성은 조건부 연산이 계속 보장)
 - **문제**: `@Scheduled` 만료 스윕(주문/좌석)이 **모든 Pod에서 중복 실행**. 정합성은 조건부 UPDATE로 안전(첫 Pod만 영향행 1, 나머지 0)하나 **중복 조회·실행 비용**.
 - **대응**: **ShedLock**으로 한 Pod만 실행(중복 억제).
 - **중요 — ShedLock은 정합성 보장 수단이 아니다**: 락 만료·작업 중 Pod 장애·네트워크 지연·만료 후 타 Pod 재진입 가능. 따라서 **기존 조건부 UPDATE/Lua 멱등을 그대로 유지**해 실제 정합성을 보장한다. → 원칙: **락=효율(중복 억제), 원자 조건부 연산=정합성**(재고 경합과 동일, ADR-002/006).
-- 파일(예정): 스윕 서비스에 ShedLock 애노테이션, 락 저장소(DB/Redis)
+- **상태: 코드 선반영 완료.** `SchedulerLockConfig`(@EnableSchedulerLock + Redis `LockProvider`), 정리성 스윕 4개(`seat-hold-sweep`·`order-expiry-sweep`·`ranking-decay`·`kopis-sync`)에 `@SchedulerLock`. `lockAtLeastFor=0`(직접호출 테스트/틱 간 재획득 허용), 락은 트랜잭션 바깥. 상호배제 검증: `SchedulerLockIntegrationTest`. 파일: `global/config/SchedulerLockConfig`, 각 스윕 서비스.
 
 ### D-3. 큐 승격 워커 — 병렬 안전 → ShedLock 강제하지 않음
 - 대기열 승격은 **Redis Lua 원자**라 다중 Pod 병렬 호출도 정합성 안전(정원 초과 없음). 만료 스윕과 달리 **무조건 단일 실행으로 제한할 필요 없음.**
@@ -74,7 +74,8 @@
 - 파일(예정): 결정 후 반영. 기본은 현행(다중 워커, Lua 원자) 유지.
 
 ### D-4. 상태(정직)
-- 위 D-1~D-3은 **전부 "예정"**(다중 Pod 배포 전이라 아직 미구현). "했다"가 아니라 "이렇게 갈 것". 배포 후 **다중 Pod 부하 + 결제 이벤트 반복 발생 + 브로커 페일오버**로 검증해야 포트폴리오 성과로 사용 가능.
+- **D-1·D-2는 코드 선반영 완료**(단일 Pod에서도 동작·통합테스트 통과 — pub/sub 자기구독 전달, Redis 락 상호배제). 다만 **"cross-Pod에서 실제로 문제를 해결한다"는 실증**은 다중 Pod 부하 + 결제 이벤트 반복 + 브로커 페일오버로 배포 후 확인해야 포트폴리오 성과로 확정된다("작성·단위검증 완료 / 다중 Pod 실측 예정").
+- **D-3(승격 워커)**은 의도적으로 ShedLock 미적용 유지(Lua 원자성으로 다중 워커 안전, 처리량 우선).
 
 ## E. 정직한 경계
 

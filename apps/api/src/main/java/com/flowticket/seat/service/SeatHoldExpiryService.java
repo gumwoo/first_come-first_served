@@ -9,7 +9,6 @@ import com.flowticket.seat.repository.SeatHoldRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.sse.SeatSseRegistry;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -38,8 +37,6 @@ public class SeatHoldExpiryService {
         this.sse = sse;
     }
 
-    private record Freed(Long eventId, List<Long> seatIds) {}
-
     @Scheduled(fixedRateString = "${seat.sweep-interval-ms:60000}")
     @Transactional
     public void sweepExpired() {
@@ -48,25 +45,19 @@ public class SeatHoldExpiryService {
         if (holds.isEmpty()) {
             return;
         }
-        List<Freed> freed = new ArrayList<>();
-        List<Long> allSeatIds = new ArrayList<>();
-        List<Long> holdIds = new ArrayList<>();
+        int expiredCount = 0;
         for (SeatHold h : holds) {
+            // 홀드를 조건부로 먼저 EXPIRED 전이. 결제가 경합에서 이겨 CONVERTED면 0행 → 스킵.
+            // 실제로 만료된 홀드의 좌석만 해제·알림 → SOLD 좌석에 유령 seat.hold.expired 방지(TS-011 ④).
+            if (holdRepository.expireHolds(List.of(h.getId())) != 1) {
+                continue;
+            }
             List<Long> seatIds = holdItemRepository.findByHoldId(h.getId()).stream()
                     .map(SeatHoldItem::getSeatId).toList();
-            allSeatIds.addAll(seatIds);
-            holdIds.add(h.getId());
-            freed.add(new Freed(h.getEventId(), seatIds));
+            seatRepository.releaseSeats(seatIds, SeatStatus.AVAILABLE, SeatStatus.HELD); // HELD 좌석만 복구
+            sse.broadcast(h.getEventId(), "seat.hold.expired", Map.of("seatIds", seatIds));
+            expiredCount++;
         }
-        if (!allSeatIds.isEmpty()) {
-            // 만료: HELD 좌석만 복구. 결제가 경합해 SOLD가 된 좌석은 덮어쓰지 않음(TS-011).
-            seatRepository.releaseSeats(allSeatIds, SeatStatus.AVAILABLE, SeatStatus.HELD);
-        }
-        holdRepository.expireHolds(holdIds); // 벌크 EXPIRED
-
-        for (Freed f : freed) {
-            sse.broadcast(f.eventId(), "seat.hold.expired", Map.of("seatIds", f.seatIds()));
-        }
-        log.info("[seat] 선점 만료 회수 {}건", holds.size());
+        log.info("[seat] 선점 만료 회수 {}/{}건", expiredCount, holds.size());
     }
 }

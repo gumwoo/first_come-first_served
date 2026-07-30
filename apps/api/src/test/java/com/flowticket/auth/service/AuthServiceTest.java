@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.flowticket.auth.domain.AuthProvider;
@@ -15,6 +18,7 @@ import com.flowticket.auth.dto.SignupRequest;
 import com.flowticket.auth.repository.UserRepository;
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
+import com.flowticket.global.security.JwtProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -30,6 +34,8 @@ class AuthServiceTest {
     @Mock PasswordEncoder passwordEncoder;
     @Mock PhoneVerificationService phoneVerificationService;
     @Mock TokenService tokenService;
+    @Mock TokenBlacklistService blacklistService;
+    @Mock JwtProvider jwtProvider;
     @InjectMocks AuthService authService;
 
     private SignupRequest signupReq() {
@@ -101,5 +107,42 @@ class AuthServiceTest {
         when(passwordEncoder.matches(any(), any())).thenReturn(false);
         assertThatThrownBy(() -> authService.login(new LoginRequest("a@b.com", "wrong", false)))
                 .extracting("errorCode").isEqualTo(ErrorCode.INVALID_CREDENTIALS);
+    }
+
+    // --- logout: 컨트롤러에서 분리한 토큰 오케스트레이션(MVC 없이 분기 단위검증) ---
+
+    @Test
+    void 로그아웃_access가_유효하면_revoke와_블랙리스트를_수행한다() {
+        when(jwtProvider.isValid("acc", JwtProvider.TYPE_ACCESS)).thenReturn(true);
+        when(jwtProvider.getRemainingSeconds("acc")).thenReturn(300L);
+
+        authService.logout(7L, null, "acc");
+
+        verify(tokenService).revoke(7L);
+        verify(blacklistService).blacklist("acc", 300L);
+    }
+
+    @Test
+    void 로그아웃_access없이_refresh로_식별되면_refresh소유자를_revoke한다() {
+        // access 만료/미보유 상황 — MVC로는 재현이 번거로운 분리 이득 분기
+        when(jwtProvider.isValid("ref", JwtProvider.TYPE_REFRESH)).thenReturn(true);
+        when(jwtProvider.getUserId("ref")).thenReturn(42L);
+
+        authService.logout(null, "ref", null);
+
+        verify(tokenService).revoke(42L);
+        verifyNoInteractions(blacklistService); // access 없음 → 블랙리스트 안 함
+    }
+
+    @Test
+    void 로그아웃_깨진_access는_블랙리스트하지_않는다() {
+        // getRemainingSeconds가 예외→500이 되지 않도록 유효할 때만 블랙리스트
+        when(jwtProvider.isValid("bad", JwtProvider.TYPE_ACCESS)).thenReturn(false);
+
+        authService.logout(9L, null, "bad");
+
+        verify(tokenService).revoke(9L);
+        verify(jwtProvider, never()).getRemainingSeconds(anyString());
+        verifyNoInteractions(blacklistService);
     }
 }

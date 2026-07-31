@@ -133,6 +133,11 @@ outbox:
 # 결제 게이트웨이 선택(ADR-005). mock=결정론(테스트/E2E/CI 기본), toss=실 PG 테스트 연동(데모).
 payment:
   gateway: ${PAYMENT_GATEWAY:mock}
+  # 정산·보상(ADR-011): PG엔 승인인데 우리 주문은 미확정인 "미아 승인"을 주기적으로 취소.
+  reconcile-interval-ms: ${PAYMENT_RECONCILE_INTERVAL:600000}   # 정산 주기(ms)
+  reconcile-grace-minutes: ${PAYMENT_RECONCILE_GRACE:10}        # 결제 제한시각 이후 유예(진행 중 결제 보호)
+  reconcile-lookback-hours: ${PAYMENT_RECONCILE_LOOKBACK:24}    # 소급 한계(이전 건은 수동 정산)
+  reconcile-batch-size: ${PAYMENT_RECONCILE_BATCH:50}           # 틱당 PG 조회 상한
 
 # 취소 수수료 정책(S06). 공연일까지 남은 일수 기준 기간별 수수료율(%). 당일·이후는 환불 불가.
 refund:

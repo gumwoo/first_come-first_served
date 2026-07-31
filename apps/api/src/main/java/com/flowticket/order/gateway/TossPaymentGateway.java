@@ -95,4 +95,29 @@ public class TossPaymentGateway implements PaymentGateway {
             return ApproveResult.fail("토스 승인 실패");
         }
     }
+
+    /**
+     * 주문번호로 결제 조회(정산). Toss는 우리 orderId 규약으로 조회를 지원한다.
+     * 승인 상태(DONE)만 "미아 승인 후보"로 본다 — 이미 취소(CANCELED)면 정산 대상이 아니다.
+     * 조회 실패(404 포함)는 예외로 올리지 않고 <b>없음</b>으로 처리한다(없는 승인을 만들어내지 않기 위해).
+     */
+    @Override
+    public Inquiry inquire(Long orderId) {
+        String tossOrderId = "FLOWTICKET-ORDER-" + orderId;
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> res = client.get()
+                    .uri("/v1/payments/orders/{orderId}", tossOrderId)
+                    .header("Authorization", authHeader)
+                    .retrieve()
+                    .body(Map.class);
+            if (res != null && "DONE".equals(String.valueOf(res.get("status")))) {
+                return Inquiry.approved(String.valueOf(res.get("paymentKey")));
+            }
+            return Inquiry.none();
+        } catch (Exception e) {
+            log.warn("[toss] 결제 조회 실패 order={}: {}", orderId, e.getMessage());
+            return Inquiry.none();
+        }
+    }
 }

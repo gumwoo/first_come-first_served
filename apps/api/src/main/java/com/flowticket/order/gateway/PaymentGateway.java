@@ -27,8 +27,26 @@ public interface PaymentGateway {
      */
     ApproveResult refund(String pgTid, int amount);
 
+    /**
+     * 주문 기준 승인 조회(정산·S08 2단계). 우리 DB에 흔적이 없어도 PG에 승인이 남아 있는지 확인한다 —
+     * "승인 직후 크래시로 트랜잭션이 롤백된" 미아 승인을 찾는 유일한 경로. 조회 실패는 예외가 아니라
+     * {@link Inquiry#none()}으로 보수적 처리(없는 걸 있다고 하지 않는다).
+     */
+    Inquiry inquire(Long orderId);
+
     /** 가상계좌 발급 결과. account=입금 계좌번호, secret=입금 웹훅 검증용. */
     record VbankIssue(String account, String secret) {}
+
+    /** 승인 조회 결과. approved=PG에 유효한 승인이 남아 있음. */
+    record Inquiry(boolean approved, String pgTid) {
+        public static Inquiry none() {
+            return new Inquiry(false, null);
+        }
+
+        public static Inquiry approved(String pgTid) {
+            return new Inquiry(true, pgTid);
+        }
+    }
 
     /** 승인 결과. */
     record ApproveResult(boolean success, String pgTid, String failReason) {

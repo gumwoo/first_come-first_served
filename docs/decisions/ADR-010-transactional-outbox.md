@@ -68,7 +68,8 @@ DB가 진실원"으로 이 유실을 감수했지만, 이는 이 프로젝트가
 - **1단계 구현 완료**: `V14__outbox_events.sql`, `OutboxEvent`/`OutboxEventRepository`, `OutboxRelay`(발행+purge),
   `finalizePaid`가 같은 tx에 적재, `OrderEventKafkaBridge` **은퇴(삭제)**, `OrderEventConsumer` SETNX 멱등.
   검증: 아웃박스→릴레이→Kafka→SSE 경로 + PUBLISHED 마킹, 중복 흡수, tx 원자성(커밋 시 적재/롤백 시 0행).
-- **2단계 정산은 미착수**: PG 승인 후 크래시로 롤백된 미아 승인(§8)은 아직 열려 있다 — 후속에서 닫는다.
+- **2단계 정산 구현 완료**: PG 승인 후 크래시로 롤백된 미아 승인(§8)은 [[ADR-011]]의 정산 잡이 닫는다
+  (주문 기준 후보 → PG 조회 → 미아 승인 취소). 탐지·보상은 정산 주기만큼 지연된다.
 - **IMP-011로 실증 완료**: 발행 실패 창에서 구 방식은 도달 0/10(영구 유실), 아웃박스는 PENDING 보존 후
   복구 시 10/10 도달 → **유실 10→0**. `benchmarks/outbox-delivery-{before,after}.json`에 박제.
 - **at-least-once의 대가 = 중복**: 재발행·리밸런스로 소비자가 같은 이벤트를 두 번 받을 수 있다 → SETNX 멱등으로

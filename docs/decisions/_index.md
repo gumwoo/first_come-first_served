@@ -15,3 +15,4 @@ IMP(개선 일지: 문제→측정→개선)와 구분 — ADR은 "무엇을·�
 | [ADR-008](ADR-008-kafka-event-backbone-dlq.md) | Kafka 이벤트 백본 + DLQ — SSE 라스트홉, AFTER_COMMIT | Accepted |
 | [ADR-009](ADR-009-gitops-cd-argocd.md) | GitOps CD — ArgoCD 채택(Terraform=인프라/ArgoCD=앱) | Proposed |
 | [ADR-010](ADR-010-transactional-outbox.md) | 트랜잭셔널 아웃박스(DB↔Kafka exactly-once) + 정산 분리 | Accepted |
+| [ADR-011](ADR-011-payment-reconciliation.md) | 결제 정산·보상 — 외부 PG↔내부 주문 불일치(미아 승인 취소) | Accepted |

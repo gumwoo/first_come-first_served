@@ -38,4 +38,13 @@ public class MockPaymentGateway implements PaymentGateway {
     public ApproveResult refund(String pgTid, int amount) {
         return ApproveResult.ok("MOCK-REFUND-" + pgTid);
     }
+
+    /**
+     * Mock은 "승인 없음"을 반환한다 — 정산 잡이 평시(정상 주문 만료 등)에 아무것도 취소하지 않도록.
+     * 미아 승인 시나리오는 테스트가 이 메서드를 스텁해 재현한다(결정론 유지).
+     */
+    @Override
+    public Inquiry inquire(Long orderId) {
+        return Inquiry.none();
+    }
 }

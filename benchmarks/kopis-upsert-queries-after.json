@@ -1,0 +1,9 @@
+{
+  "topic": "kopis-upsert-queries",
+  "phase": "after",
+  "date": "2026-08-01",
+  "method": "수집분 kopisId 전체를 findAllByKopisIdIn으로 한 번에 조회 → Map으로 신규/기존 분기. 동일 측정",
+  "config": { "items": 200, "measure": "존재 확인 SELECT 수(INSERT/UPDATE 제외)" },
+  "result": { "existenceCheckQueries": 1, "perItem": 0 },
+  "note": "존재 확인 200→1. 배치 크기와 무관하게 1회로 고정된다. 덤으로 배치 내 kopisId 중복을 제거해 같은 배치에서 INSERT가 두 번 나가 UNIQUE 위반이 되던 경로도 닫음. 근거 테스트: 동일"
+}

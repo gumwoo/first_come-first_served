@@ -15,6 +15,12 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
 
     Optional<Event> findByKopisId(String kopisId);
 
+    /**
+     * 동기화 배치의 기존 여부를 <b>한 번에</b> 조회(IMP-012). 항목마다 findByKopisId를 부르면
+     * N건에 SELECT N번이 나간다 — 수집분 전체를 한 쿼리로 읽어 메모리에서 신규/기존을 가른다.
+     */
+    List<Event> findAllByKopisIdIn(Collection<String> kopisIds);
+
     /** 운영 이벤트 목록(S07) — 최신순 페이징. */
     Page<Event> findAllByOrderByIdDesc(Pageable pageable);
 

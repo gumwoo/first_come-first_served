@@ -1,0 +1,9 @@
+{
+  "topic": "kopis-upsert-queries",
+  "phase": "before",
+  "date": "2026-08-01",
+  "method": "KOPIS 동기화 배치의 '기존 여부 확인' 쿼리 수를 Hibernate 통계(prepare statement count)로 직접 측정. naive는 항목마다 findByKopisId 호출",
+  "config": { "items": 200, "measure": "존재 확인 SELECT 수(INSERT/UPDATE 제외)" },
+  "result": { "existenceCheckQueries": 200, "perItem": 1 },
+  "note": "항목 N건이면 SELECT N번. 공연 500건이면 500번. 연관관계 지연로딩에서 오는 전형적 JPA N+1과 모양은 다르지만, 건별 존재 확인으로 쿼리가 반복되는 같은 부류의 문제. 근거 테스트: KopisUpsertQueryCountTest.IMP012_기존여부_확인_쿼리수_before_after"
+}

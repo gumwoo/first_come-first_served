@@ -70,6 +70,36 @@ class QueueIntegrationTest {
     }
 
     @Test
+    void 발급은_유저키_대기ZSet_메타를_한꺼번에_남긴다() {
+        // 예약(SET NX)과 대기열 등록이 한 Lua로 원자화돼 "유저키는 있는데 ZSet엔 없는" 부분 상태가
+        // 남지 않는다. 발급 성공 시 아래 4가지가 모두 함께 존재해야 한다.
+        String token = queueService.issue(31L, EVENT).token();
+
+        assertThat(redisTemplate.opsForValue().get("queue:user:" + EVENT + ":31")).isEqualTo(token);
+        assertThat(redisTemplate.opsForZSet().score("queue:wait:" + EVENT, token)).isNotNull();
+        assertThat(redisTemplate.opsForHash().entries("queue:token:" + token))
+                .containsEntry("userId", "31").containsEntry("eventId", String.valueOf(EVENT));
+        assertThat(redisTemplate.opsForSet().isMember("queue:active-events", String.valueOf(EVENT))).isTrue();
+        assertThat(redisTemplate.getExpire("queue:token:" + token)).isPositive(); // TTL도 같은 단위에서 설정
+    }
+
+    @Test
+    void 죽은_토큰이_유저키에_남아있으면_회수하고_재발급한다() {
+        // 입장창까지 지나 대기열에서 빠진(=EXPIRED) 토큰이 유저키에 남으면 재예매가 막혔었다.
+        // 메타는 남아 있어야 "경합 중 신규"가 아닌 죽은 토큰으로 판정된다(isReusable=false).
+        // 회수(옛 메타 정리)와 재등록도 한 원자 단위로 처리된다.
+        String dead = queueService.issue(32L, EVENT).token();
+        redisTemplate.opsForZSet().remove("queue:wait:" + EVENT, dead); // 대기열 이탈 → EXPIRED
+
+        String fresh = queueService.issue(32L, EVENT).token();
+
+        assertThat(fresh).isNotEqualTo(dead);
+        assertThat(redisTemplate.opsForValue().get("queue:user:" + EVENT + ":32")).isEqualTo(fresh);
+        assertThat(redisTemplate.opsForZSet().score("queue:wait:" + EVENT, fresh)).isNotNull();
+        assertThat(redisTemplate.hasKey("queue:token:" + dead)).isFalse(); // 옛 메타는 정리됨
+    }
+
+    @Test
     void 같은_유저_동시발급도_토큰이_하나만_생긴다() throws Exception {
         int threads = 20;
         var tokens = ConcurrentHashMap.<String>newKeySet();

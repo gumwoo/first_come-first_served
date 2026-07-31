@@ -5,7 +5,7 @@ import com.flowticket.global.error.ErrorCode;
 import com.flowticket.queue.domain.QueueStatus;
 import com.flowticket.queue.dto.QueueStatusResponse;
 import com.flowticket.queue.dto.QueueTokenResponse;
-import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -31,6 +31,39 @@ public class QueueService {
     private static final DefaultRedisScript<Long> LEAVE_ADMIT_SCRIPT =
             new DefaultRedisScript<>(LEAVE_ADMIT_LUA, Long.class);
 
+    // 토큰 발급 원자화: 유저키 예약(SET NX)과 대기열 등록(순번·ZSet·메타·TTL·활성이벤트)을 한 번에 실행한다.
+    // 예전엔 예약과 등록이 여러 왕복으로 나뉘어, 중간에 Redis 장애가 나면 "유저키는 있는데 대기 ZSet엔
+    // 없는" 부분 상태가 남을 수 있었다(승격되지 않는 유령 토큰). 예약 실패(이미 토큰 보유)면 0을 반환한다.
+    // KEYS: userKey, seqKey, waitKey, tokenKey, activeEvents / ARGV: token, ttl, userId, eventId
+    private static final String ISSUE_LUA = """
+            if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2]) then
+              local seq = redis.call('INCR', KEYS[2])
+              redis.call('ZADD', KEYS[3], seq, ARGV[1])
+              redis.call('HSET', KEYS[4], 'userId', ARGV[3], 'eventId', ARGV[4])
+              redis.call('EXPIRE', KEYS[4], ARGV[2])
+              redis.call('SADD', KEYS[5], ARGV[4])
+              return 1
+            end
+            return 0
+            """;
+    private static final DefaultRedisScript<Long> ISSUE_SCRIPT =
+            new DefaultRedisScript<>(ISSUE_LUA, Long.class);
+
+    // 죽은 토큰 회수 후 재발급(소유권 이전). 예약을 강제로 덮어쓰는 것만 다르고 등록 절차는 동일하며,
+    // 옛 토큰 메타 정리(KEYS[6])까지 같은 원자 단위에 넣어 중간 상태를 남기지 않는다.
+    private static final String TAKEOVER_LUA = """
+            redis.call('DEL', KEYS[6])
+            redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+            local seq = redis.call('INCR', KEYS[2])
+            redis.call('ZADD', KEYS[3], seq, ARGV[1])
+            redis.call('HSET', KEYS[4], 'userId', ARGV[3], 'eventId', ARGV[4])
+            redis.call('EXPIRE', KEYS[4], ARGV[2])
+            redis.call('SADD', KEYS[5], ARGV[4])
+            return 1
+            """;
+    private static final DefaultRedisScript<Long> TAKEOVER_SCRIPT =
+            new DefaultRedisScript<>(TAKEOVER_LUA, Long.class);
+
     private final StringRedisTemplate redis;
     private final int capacity;
     private final long tokenTtl;
@@ -53,27 +86,33 @@ public class QueueService {
     public QueueTokenResponse issue(Long userId, Long eventId) {
         String userKey = QueueKeys.user(eventId, userId);
         String token = UUID.randomUUID().toString();
-        Boolean reserved = redis.opsForValue()
-                .setIfAbsent(userKey, token, Duration.ofSeconds(tokenTtl)); // SET NX
-        if (!Boolean.TRUE.equals(reserved)) {
-            String existing = redis.opsForValue().get(userKey);
-            if (existing != null && isReusable(existing, eventId)) {
-                return currentOrWaiting(existing, eventId); // 살아있는 토큰(1인1토큰)
-            }
-            // (1) 입장 후 만료된 죽은 토큰이 유저키에 남아 재예매를 막던 것, 또는
-            // (2) 극히 드문 경합(예약 확인~조회 사이 만료) → 소유권을 이 요청이 회수하고 새로 발급.
-            if (existing != null) {
-                redis.delete(QueueKeys.token(existing)); // 죽은 토큰 메타 정리
-            }
-            redis.opsForValue().set(userKey, token, Duration.ofSeconds(tokenTtl));
+
+        // 예약 + 대기열 등록을 한 원자 단위로. 성공하면 부분 상태가 남을 수 없다.
+        Long issued = redis.execute(ISSUE_SCRIPT, issueKeys(userKey, eventId, token),
+                token, String.valueOf(tokenTtl), String.valueOf(userId), String.valueOf(eventId));
+        if (issued != null && issued == 1L) {
+            return tokenResponse(token, eventId);
         }
-        Long seq = redis.opsForValue().increment(QueueKeys.seq(eventId)); // 진입 순번
-        redis.opsForZSet().add(QueueKeys.wait(eventId), token, seq == null ? 0 : seq);
-        redis.opsForHash().putAll(QueueKeys.token(token),
-                Map.of("userId", String.valueOf(userId), "eventId", String.valueOf(eventId)));
-        redis.expire(QueueKeys.token(token), Duration.ofSeconds(tokenTtl));
-        redis.opsForSet().add(QueueKeys.ACTIVE_EVENTS, String.valueOf(eventId));
+
+        // 예약 실패 = 이미 이 유저의 토큰이 있다. 재사용 판단은 읽기 위주라 애플리케이션에 둔다.
+        String existing = redis.opsForValue().get(userKey);
+        if (existing != null && isReusable(existing, eventId)) {
+            return currentOrWaiting(existing, eventId); // 살아있는 토큰(1인1토큰)
+        }
+        // (1) 입장 후 만료된 죽은 토큰이 유저키에 남아 재예매를 막던 것, 또는
+        // (2) 극히 드문 경합(예약 확인~조회 사이 만료) → 소유권을 이 요청이 회수하고 새로 발급.
+        // 옛 메타 정리부터 재등록까지 원자적으로(중간 상태 없음).
+        List<String> keys = new ArrayList<>(issueKeys(userKey, eventId, token));
+        keys.add(QueueKeys.token(existing != null ? existing : token)); // 정리 대상(없으면 무해한 자기 키)
+        redis.execute(TAKEOVER_SCRIPT, keys,
+                token, String.valueOf(tokenTtl), String.valueOf(userId), String.valueOf(eventId));
         return tokenResponse(token, eventId);
+    }
+
+    /** 발급 스크립트 공통 KEYS: 유저키·순번·대기ZSet·토큰메타·활성이벤트. */
+    private List<String> issueKeys(String userKey, Long eventId, String token) {
+        return List.of(userKey, QueueKeys.seq(eventId), QueueKeys.wait(eventId),
+                QueueKeys.token(token), QueueKeys.ACTIVE_EVENTS);
     }
 
     /**

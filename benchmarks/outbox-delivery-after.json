@@ -1,0 +1,9 @@
+{
+  "topic": "outbox-delivery",
+  "phase": "after",
+  "date": "2026-07-31",
+  "method": "동일 장애 창에서 order.paid를 결제와 같은 트랜잭션으로 outbox_events에 적재 → 릴레이가 발행 시도(실패 시 PENDING 유지) → 브로커 복구 후 릴레이 재시도. 소비자 실제 도달 건수를 카운트",
+  "config": { "trials": 10, "outage": "발행 전 구간 100%(결정적 스텁)", "recovery": "장애 해제 후 릴레이 1틱" },
+  "result": { "pendingDuringOutage": 10, "published": 10, "delivered": 10, "lost": 0 },
+  "note": "장애 중에는 발행이 실패해도 이벤트가 DB에 PENDING으로 보존(유실 대신 재시도 대상) → 복구 후 릴레이가 전량 재발행해 도달 10/10. 유실 10→0. 중복은 소비자 SETNX 멱등이 흡수(at-least-once). 근거 테스트: 동일"
+}

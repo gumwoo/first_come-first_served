@@ -1,0 +1,9 @@
+{
+  "topic": "outbox-delivery",
+  "phase": "before",
+  "date": "2026-07-31",
+  "method": "브로커 장애(KafkaTemplate.send 실패) 창에서 order.paid를 구 AFTER_COMMIT 브리지 방식으로 발행 — 실패를 삼키고 아무 기록도 남기지 않음. 브로커 복구 후 소비자(OrderSseRegistry)에 실제 도달한 건수를 카운트",
+  "config": { "trials": 10, "outage": "발행 전 구간 100%(결정적 스텁)", "recovery": "장애 해제 후 재시도 기회 부여" },
+  "result": { "published": 0, "delivered": 0, "lost": 10, "recoverable": 0 },
+  "note": "커밋된 결제에 대한 알림이 브로커 장애 중 전량 유실. 복구해도 재발행할 근거(DB 기록)가 없어 복구 불가 = 영구 유실. 근거 테스트: OutboxDeliveryIntegrationTest.IMP011_브로커_장애중_이벤트_유실_before_after"
+}

@@ -77,6 +77,7 @@ class PaymentIntegrationTest {
         r.add("seat.hold-ttl", () -> "300");
         r.add("seat.sweep-interval-ms", () -> "3600000");
         r.add("order.sweep-interval-ms", () -> "3600000");
+        r.add("outbox.relay-interval-ms", () -> "3600000"); // 아웃박스 릴레이 스케줄 비활성(결정적 테스트)
     }
 
     @Autowired OrderService orderService;
@@ -96,11 +97,13 @@ class PaymentIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager txManager;
     @SpyBean com.flowticket.order.gateway.PaymentGateway gateway;
+    @Autowired com.flowticket.outbox.repository.OutboxEventRepository outboxRepository;
 
     private Long eventId;
 
     @BeforeEach
     void seed() {
+        outboxRepository.deleteAll();
         paymentRepository.deleteAll();
         orderItemRepository.deleteAll();
         orderRepository.deleteAll();
@@ -207,6 +210,35 @@ class PaymentIntegrationTest {
         assertThat(orderRepository.findById(c.orderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(seatRepository.findById(c.seatId()).orElseThrow().getStatus()).isEqualTo(SeatStatus.AVAILABLE);
         assertThat(holdRepository.findById(c.holdId()).orElseThrow().getStatus()).isEqualTo(SeatHoldStatus.EXPIRED);
+    }
+
+    @Test
+    void 결제_확정은_같은_트랜잭션에_아웃박스_이벤트를_적재한다() {
+        // ADR-010: 커밋 후 별도 발행(AFTER_COMMIT)이 아니라 결제와 같은 커밋에 이벤트가 남아야
+        // "커밋됐는데 발행 전 크래시"에도 릴레이가 나중에 재발행할 수 있다(유실 0).
+        Ctx c = order(70L, 1);
+
+        paymentService.pay(70L, c.orderId(), "card", null, "OK-" + c.orderId());
+
+        assertThat(outboxRepository.countByStatus(com.flowticket.outbox.domain.OutboxStatus.PENDING))
+                .isEqualTo(1);
+        com.flowticket.outbox.domain.OutboxEvent row = outboxRepository.findAll().get(0);
+        assertThat(row.getType()).isEqualTo("order.paid");
+        assertThat(row.getAggregateId()).isEqualTo(c.orderId());
+        assertThat(row.getPayload()).contains(String.valueOf(row.getId())); // 행 PK == 멱등 키
+    }
+
+    @Test
+    void 확정이_롤백되면_아웃박스_행도_남지_않는다() {
+        // 유령 이벤트 0: 좌석이 이미 풀려 확정 실패 → 트랜잭션 롤백 → 아웃박스 행도 함께 사라짐.
+        Ctx c = order(71L, 1);
+        jdbc.update("update seats set status='AVAILABLE' where id=?", c.seatId());
+        jdbc.update("update seat_holds set status='EXPIRED' where id=?", c.holdId());
+
+        assertThatThrownBy(() -> paymentService.pay(71L, c.orderId(), "card", null, "OK-" + c.orderId()))
+                .isInstanceOf(BusinessException.class);
+
+        assertThat(outboxRepository.count()).isZero();
     }
 
     @Test

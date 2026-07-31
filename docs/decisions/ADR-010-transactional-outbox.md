@@ -1,6 +1,6 @@
 # ADR-010 · 트랜잭셔널 아웃박스 — DB↔Kafka 정합성(exactly-once 발행), 정산은 분리
 
-- 상태: Proposed (S08 구현 착수 시 Accepted로 승격)
+- 상태: **Accepted** (1단계 아웃박스 구현 완료 / 2단계 정산은 후속)
 - 날짜: 2026-07-31
 - 슬라이스: S08(정합성 보강). 1단계 아웃박스 / 2단계 PG 정산·보상.
 - 관련: [[ADR-008]](Kafka 이벤트 백본·DLQ), [[ADR-006]](주문 상태 전이 원자화), [[TS-011]](§한계 ③ PG 보상), IMP-011(예정)
@@ -65,10 +65,12 @@ DB가 진실원"으로 이 유실을 감수했지만, 이는 이 프로젝트가
 - **발행 즉시 삭제**: 저장은 아끼나 언제·몇 번 만에 나갔는지·재처리 판단·테스트 증거가 사라짐 → 7일 보존 채택.
 
 ## 결과 / 한계 (정직)
-- **아직 Proposed**: 코드/마이그레이션 미작성. 구현 시 `V14__outbox_events.sql` + `OutboxEvent`/`OutboxRepository`/
-  `OutboxRelay`(+purge) 추가, `finalizePaid` 이관, `OrderEventKafkaBridge` 은퇴, 소비자 멱등. Accepted로 승격.
-- **IMP-011로 실증**: 브로커 다운 상태에서 K건 결제 → 현행은 도달 0/K(유실), 아웃박스는 복구 후 K/K(유실 0).
-  `benchmarks/outbox-delivery-{before,after}.json`에 박제.
+- **1단계 구현 완료**: `V14__outbox_events.sql`, `OutboxEvent`/`OutboxEventRepository`, `OutboxRelay`(발행+purge),
+  `finalizePaid`가 같은 tx에 적재, `OrderEventKafkaBridge` **은퇴(삭제)**, `OrderEventConsumer` SETNX 멱등.
+  검증: 아웃박스→릴레이→Kafka→SSE 경로 + PUBLISHED 마킹, 중복 흡수, tx 원자성(커밋 시 적재/롤백 시 0행).
+- **2단계 정산은 미착수**: PG 승인 후 크래시로 롤백된 미아 승인(§8)은 아직 열려 있다 — 후속에서 닫는다.
+- **IMP-011 실증은 후속**: 브로커 다운 상태에서 K건 결제 → 구 방식은 도달 0/K(유실), 아웃박스는 복구 후 K/K.
+  `benchmarks/outbox-delivery-{before,after}.json`에 박제 예정(현재는 기능 검증까지).
 - **at-least-once의 대가 = 중복**: 재발행·리밸런스로 소비자가 같은 이벤트를 두 번 받을 수 있다 → SETNX 멱등으로
   흡수. 단 fail-open(§5) 구간에선 중복 broadcast 가능(SSE라 무해).
 - **폴링 지연**: 릴레이 주기만큼 발행이 늦다(초 단위). 실시간성이 필요하면 주기를 줄이거나 CDC 후속.

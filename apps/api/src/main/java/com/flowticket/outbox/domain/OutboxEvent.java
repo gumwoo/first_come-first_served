@@ -53,8 +53,12 @@ public class OutboxEvent {
     @Column(name = "published_at")
     private LocalDateTime publishedAt;
 
-    public OutboxEvent(String aggregateType, Long aggregateId, String type, String payload) {
-        this.id = UUID.randomUUID();
+    /**
+     * id를 호출자가 정한다 — 같은 UUID를 payload 안(eventId)에도 넣어 <b>행 PK == 소비자 멱등 키</b>를
+     * 맞추기 위함. 릴레이는 payload를 그대로 발행하므로 재발행돼도 소비자가 동일 키로 중복을 흡수한다.
+     */
+    public OutboxEvent(UUID id, String aggregateType, Long aggregateId, String type, String payload) {
+        this.id = id;
         this.aggregateType = aggregateType;
         this.aggregateId = aggregateId;
         this.type = type;

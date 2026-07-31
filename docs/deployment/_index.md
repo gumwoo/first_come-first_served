@@ -39,3 +39,5 @@
 
 ## 새 ADR/IMP/TS는?
 이 항목들은 "예정 작업"이라 지금은 지도 + 이 문서로 추적한다. 구현하다 결함이 나면 **TS**, 스케일 수치가 나오면 **IMP**(S09), 되돌아볼 설계 결정이면 **ADR**로 그때 승격한다.
+
+- **[ADR-009](../decisions/ADR-009-gitops-cd-argocd.md) GitOps CD — ArgoCD (Proposed)**: 배포를 push(Actions apply)가 아니라 **pull 기반 GitOps(ArgoCD)**로. Terraform=인프라 / Actions=빌드·이미지·Git 갱신 / **ArgoCD=앱 동기화·드리프트·롤백**. "Git이 단일 진실원" 철학을 런타임까지 확장. Application은 최소 유지(과설계 방지). Phase 6에서 구현 시 Accepted로 승격.

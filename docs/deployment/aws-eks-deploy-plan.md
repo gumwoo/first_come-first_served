@@ -15,17 +15,23 @@
 | 앱 구조 | **모듈러 모놀리스 유지**(api·web 2 Deployment) | 억지 마이크로서비스 금지. 파드 replica가 같은 컨슈머 그룹 공유로 확장. |
 | 스케일 | **api HPA(HTTP CPU) + Kafka 파티션 병렬 + 브로커 페일오버** | 정직: 컨슈머 작업이 가벼워 "컨슈머 랙 오토스케일"은 억지. 스케일은 API 티어, Kafka는 HA·파티션·관측으로 나눠 실증. |
 | IaC | **Terraform**(EKS·VPC·RDS·ElastiCache·IRSA) + **Helm**(앱·Strimzi·관측) | 신호 + 재현성. |
-| CI/CD | **GitHub Actions → ECR → Helm/kubectl**(OIDC·IRSA) | 장기 키 없이 OIDC 롤. |
+| CI (빌드·테스트·이미지) | **GitHub Actions → ECR**(OIDC) + 배포 매니페스트 이미지 태그 갱신(Git commit) | 장기 키 없이 OIDC 롤. push 배포 대신 "이미지 push + Git 갱신"까지만. |
+| CD (배포·동기화) | **ArgoCD**(GitOps, pull 기반) — Git 매니페스트를 클러스터에 지속 동기화 | 선언적 desired-state·드리프트 감지·self-heal·원클릭 롤백. **Terraform=인프라 / ArgoCD=앱** 분업. 상세 [ADR-009](../decisions/ADR-009-gitops-cd-argocd.md). |
 | 비밀 | **External Secrets → Secrets Manager** | 프로젝트 규칙(비밀 env only) 유지. |
 | 관측 | **kube-prometheus-stack(Prometheus+Grafana)** | Kafka·Consumer Lag·HPA·JVM 대시보드로 **실증**. |
 
 > **오버엔지니어링 방어(면접 프레이밍)**: 이 규모엔 과한 걸 안다 → **분산/K8s/Kafka 운영 역량 시연 목적으로 의도적 선택**이며, 선착순 티켓팅=폭주+정합성 도메인이라 확장·복제가 실제로 의미 있고, **부하·페일오버로 효과를 실증**한다. "구성만"이 아니라 "증거 있는 엔지니어링".
+>
+> **ArgoCD(GitOps)를 왜 더하나**: 이 프로젝트 철학이 "**Git이 단일 진실원**, 계약/가드로 스스로 증명"이라, 배포 축을 GitOps로 확장하는 건 결이 정확히 같다 — 코드 계약은 harness가, **클러스터 실제 상태는 ArgoCD가 Git과 diff**. 단일 앱이어도 GitOps는 정당화되며(MSA와 달리 오버엔지니어링 반박이 쉬움), Application은 **최소(api/web + 관측)로 유지**해 부풀리지 않는다. push 배포 대비 트레이드오프는 [ADR-009](../decisions/ADR-009-gitops-cd-argocd.md)에 기록.
 
 ## 1. 타깃 아키텍처
 
 ```
 GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
-       └─(OIDC / helm·kubectl)→ EKS 클러스터 (ap-northeast-2)
+       └─(이미지 태그로 배포 매니페스트 갱신 → Git commit)→ k8s/ 매니페스트(Git = 단일 진실원)
+                                                                    │  pull·watch
+                                                                    ▼
+   ArgoCD (in-cluster, GitOps) ─(sync·self-heal·drift 감지)→ EKS 클러스터 (ap-northeast-2)
              ├─ Strimzi Operator → Kafka broker×3 (RF 3, 파티션 N) [in-cluster]
              ├─ api Deployment (replicas, HPA=CPU, liveness/readiness, graceful shutdown) ─┐
              ├─ web Deployment (replicas)                                                    ├─ ALB Ingress (HTTPS/ACM) → 도메인
@@ -34,6 +40,7 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
              └─ kube-prometheus-stack (Prometheus + Grafana): Kafka·Consumer Lag·HPA·JVM
    (클러스터 밖 매니지드) RDS PostgreSQL · ElastiCache Redis
    IaC: Terraform(EKS·VPC·RDS·ElastiCache·IRSA)   로그: CloudWatch(또는 Loki)
+   경계: Terraform=인프라 프로비저닝 / ArgoCD=앱·오퍼레이터 매니페스트 동기화 / Actions=빌드·이미지·Git 갱신
 ```
 
 - api는 Flyway로 부팅 시 RDS 마이그레이션(ddl-auto=validate 유지).
@@ -49,10 +56,11 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 - [내] 로컬 `docker-compose.prod.yml`로 프로덕션 이미지 기동 검증
 - 산출물: 프로덕션 이미지 로컬 부팅
 
-### Phase 2 — ECR + CI 이미지 파이프라인
-- [너] GitHub OIDC ↔ AWS 롤(ECR push, 이후 EKS 배포)
+### Phase 2 — ECR + CI 이미지 파이프라인 (GitOps 대비)
+- [너] GitHub OIDC ↔ AWS 롤(**ECR push 전용** — 배포 apply 권한은 안 줌, 그건 ArgoCD가)
 - [내] Actions: 하네스/테스트 뒤 이미지 빌드 → ECR push(태그=git SHA)
-- 산출물: main 머지 시 ECR 자동 적재
+- [내] **배포 매니페스트의 이미지 태그를 새 SHA로 갱신 → Git commit**(GitOps 트리거 — Actions는 여기까지, apply는 안 함)
+- 산출물: main 머지 시 ECR 자동 적재 + `k8s/` 매니페스트 태그 자동 갱신
 
 ### Phase 3 — IaC: 클러스터·데이터·네트워크 (Terraform)
 - [내] VPC(퍼블릭/프라이빗) · **EKS**(노드그룹) · RDS · ElastiCache · ECR · IAM/**IRSA** · CloudWatch
@@ -69,11 +77,14 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 - [내] prod 프로필: datasource/redis/`KAFKA_BOOTSTRAP_SERVERS`(in-cluster) · 시크릿은 External Secrets
 - 산출물: 컨테이너가 매니지드/클러스터 서비스에 실연결
 
-### Phase 6 — Helm 배포 · HPA · Ingress · HTTPS
+### Phase 6 — GitOps 배포(ArgoCD) · HPA · Ingress · HTTPS
 - [내] `k8s/`(또는 `deploy/helm`) 차트: api/web Deployment·Service·**HPA**·liveness/readiness·ConfigMap/ExternalSecret
+- [내] **ArgoCD 설치(Helm)** + `Application`(source=이 레포 `k8s/`, dest=클러스터, **syncPolicy: automated + prune + selfHeal**)
+  - 최소 Application 세트: **api·web**(앱) + (선택) 관측/Strimzi CR을 별도 Application으로 — App-of-Apps 같은 대형 패턴은 지양(스코프 관리)
 - [내] **ALB Ingress Controller** + Ingress(호스트/경로), [너] 도메인·**ACM** DNS 검증
-- [내/너] 배포 → `/actuator/health` → 관리자 로그인 → (선택) 배포 URL admin E2E
-- 산출물: 공개 HTTPS 데모 URL, HPADeployment 동작
+- [내/너] Git 갱신 → **ArgoCD 자동 sync** → `/actuator/health` → 관리자 로그인 → (선택) 배포 URL admin E2E
+- [내] 드리프트 데모: 클러스터에서 수동 변경 → ArgoCD가 **OutOfSync 감지·self-heal 복구**(캡처)
+- 산출물: 공개 HTTPS 데모 URL, HPA 동작, **ArgoCD Synced/Healthy + self-heal 증거**
 
 ### Phase 7 — 관측성 (실증 준비)
 - [내] kube-prometheus-stack(Helm): Prometheus + Grafana. **Kafka·Consumer Lag·HPA·JVM** 대시보드
@@ -92,11 +103,13 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 3. **Kafka 규모**: 브로커 3 / RF 3 / `order-events` 파티션 수(예: 6)?
 4. **관측 스택**: kube-prometheus-stack(권장) vs CloudWatch Container Insights?
 5. **GitHub OIDC / IRSA** 사용(권장).
+6. **GitOps 매니페스트 위치**: 이 모노레포 내 `k8s/`(권장, 단순) vs 별도 config 레포?
+7. **ArgoCD sync 정책**: automated + selfHeal + prune(권장) vs 수동 sync(데모 통제)? ArgoCD UI 노출은 사설(포트포워드/사설 Ingress).
 
 ## 4. 역할 분담 & 안전
 
-- **내가**: Dockerfile·CI·Terraform·Helm·Strimzi CR·prod 설정·앱 코드 변경·문서 전부 repo 코드로.
-- **네가**: AWS 계정/자격증명, OIDC·IRSA·tfstate 부트스트랩, `terraform apply`/`helm install`(과금), 도메인 구입, 비용 승인.
+- **내가**: Dockerfile·CI·Terraform·Helm·Strimzi CR·**ArgoCD Application 매니페스트**·prod 설정·앱 코드 변경·문서 전부 repo 코드로.
+- **네가**: AWS 계정/자격증명, OIDC·IRSA·tfstate 부트스트랩, `terraform apply`/`helm install`(ArgoCD 포함, 과금), 도메인 구입, 비용 승인.
 - 나는 **자격증명 입력·유료 리소스 프로비저닝을 대신 하지 않음.** 명령/코드 제공 + 로그로 디버깅.
 - 백엔드 컴파일/통합 검증은 로컬 gradle 없음 → CI(Testcontainers).
 
@@ -106,13 +119,15 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 - **Strimzi 멀티브로커 = 이 계획에서 제일 어렵고 무거운 부분**(운영자·PVC·리밸런스·리소스).
 - **컨슈머 작업이 가벼워** 컨슈머-랙 오토스케일은 자연스럽지 않음 → 스케일은 **API 티어 HPA**, Kafka는 **HA·파티션·관측**으로 나눠 실증(억지 금지).
 - **HTTPS엔 도메인 필수.**
+- **ArgoCD도 클러스터에서 도는 컴포넌트** → 리소스·관리 포인트가 하나 늘고, 데모용이면 그만큼 과금. 단일 앱이라 **Application을 최소로 유지**하고 App-of-Apps 같은 대형 패턴은 지양(안 그러면 그게 오버엔지니어링). "왜 push 대신 GitOps?"는 [ADR-009](../decisions/ADR-009-gitops-cd-argocd.md)로 방어.
 - **여러 세션짜리 대형 작업.** AWS 실행은 네 계정에서 네가.
 - 비용은 우선순위 아니나, 데모 후 노드그룹/브로커 축소·중단으로 절감.
 
 ## 6. 완료 정의(DoD)
 
 - [ ] 공개 HTTPS URL에서 홈→예매→결제·관리자 콘솔 동작(라이브 K8s)
-- [ ] main 머지 시 이미지→ECR→(Helm)EKS 배포
+- [ ] main 머지 → 이미지 ECR + 매니페스트 Git 갱신 → **ArgoCD 자동 sync**로 EKS 배포(GitOps)
+- [ ] **ArgoCD Application Synced/Healthy** + 수동 드리프트 self-heal 복구 데모
 - [ ] Terraform으로 EKS·데이터·네트워크 재현
 - [ ] Strimzi **브로커 3·RF 3** + `order-events` **파티션 N**
 - [ ] **부하 시 api HPA 수평 확장** 곡선(RPS/p95)

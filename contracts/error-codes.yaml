@@ -35,6 +35,8 @@ codes:
   - { code: INVALID_STATE_TRANSITION, http: 409 }
   # 환불
   - { code: REFUND_NOT_ALLOWED, http: 409 }
+  # 운영(동기화)
+  - { code: SYNC_IN_PROGRESS, http: 409 }
   # 공통
   - { code: NOT_FOUND,        http: 404 }
   - { code: TOO_MANY_REQUESTS, http: 429 }

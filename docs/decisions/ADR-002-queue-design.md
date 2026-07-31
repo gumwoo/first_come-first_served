@@ -48,7 +48,8 @@ admitcount)에 있으므로 원자성도 Redis에서 강제하는 게 맞다.
 
 ## 결과 / 한계
 - 승격 지연 ≤ 워커 주기(1.5s). ETA는 추정치(처리속도 변동).
-- SSE는 단일 서버 가정(emitter 로컬). 다중 서버는 Redis Pub/Sub 필요 → ADR-003/S09에서 다룸.
+- SSE emitter는 인스턴스-로컬이다. 다중 Pod에서는 **Redis Pub/Sub 팬아웃**으로 모든 인스턴스에 전달한다
+  (S08에서 코드 선반영 — `SsePubSub`/`SseRedisConfig`, ADR-010 주변). cross-Pod 실측은 S09 배포 시.
 - 봇 다계정 대기까지는 못 막음(계정당 1토큰만 보장).
 
 ## 뒤집는 조건

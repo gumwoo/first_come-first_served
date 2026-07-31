@@ -27,5 +27,6 @@
 ## 실시간
 - 입장 허용/만료는 SSE(`/sse/queue/{token}`)로 push: 승격 시 `queue.admitted`(redirect 포함),
   만료 시 `queue.expired` 후 스트림 종료. 폴링(`/queue/status`)은 폴백. (횡단: domain-rules.md)
-- 전송 실패(느린/끊긴 클라이언트)는 emitter 제거로 격리. SSE는 단일 서버 가정
+- 전송 실패(느린/끊긴 클라이언트)는 emitter 제거로 격리. emitter는 인스턴스-로컬이며,
+  다중 Pod 전달은 Redis Pub/Sub 팬아웃(S08 선반영)이 담당한다
   (다중=Redis Pub/Sub, 후속). [ADR-002]

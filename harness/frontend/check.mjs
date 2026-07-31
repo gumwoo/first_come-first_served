@@ -47,9 +47,13 @@ const mirrorPath = path.join(REPO_ROOT, WEB, "src/types/contracts.ts");
 if (fs.existsSync(mirrorPath)) {
   const src = read(mirrorPath);
   for (const [name, def] of Object.entries(enums)) {
+    // backend_only: API로 노출 안 되는 서버 내부 상태(예: OutboxStatus) → FE 미러 면제.
+    // 단 FE에 굳이 미러가 있으면 값 일치는 계속 검사한다(있는데 어긋나는 건 드리프트).
     const m = src.match(new RegExp(`export const ${name} = \\[([\\s\\S]*?)\\] as const`));
     if (!m) {
-      r.fail(`FE 타입 누락: ${name} (types/contracts.ts에 미러 필요)`);
+      if (!def.backend_only) {
+        r.fail(`FE 타입 누락: ${name} (types/contracts.ts에 미러 필요)`);
+      }
       continue;
     }
     const vals = [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);

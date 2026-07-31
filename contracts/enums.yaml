@@ -36,6 +36,12 @@ RefundReason:
 DlqStatus:
   values: [PENDING, RETRYING, RETRIED, DISCARDED]
 
+# 아웃박스 발행 상태(S08, ADR-010). PENDING=적재됨/미발행, PUBLISHED=Kafka 발행 성공(7일 후 purge).
+# backend_only: API로 노출되지 않는 서버 내부 상태 → FE 미러 면제(하네스는 BE enum 일치만 검사).
+OutboxStatus:
+  values: [PENDING, PUBLISHED]
+  backend_only: true
+
 UserRole:
   values: [ROLE_USER, ROLE_ADMIN, ROLE_DEV]
 

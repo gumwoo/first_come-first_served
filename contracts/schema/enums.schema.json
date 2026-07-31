@@ -20,6 +20,10 @@
           "type": "array",
           "items": { "type": "string" }
         }
+      },
+      "backend_only": {
+        "type": "boolean",
+        "description": "API로 노출되지 않는 서버 내부 상태 → FE 타입 미러 면제(BE enum 일치는 계속 검사)"
       }
     }
   }

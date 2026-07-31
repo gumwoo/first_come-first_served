@@ -23,3 +23,4 @@
 | payments | S05 | [payments.md](payments.md) | 설계(V9) |
 | dlq_messages | S07 | [dlq_messages.md](dlq_messages.md) | 구현(V12__dlq_messages.sql) |
 | alert_settings | S07 | [alert_settings.md](alert_settings.md) | 구현(V13__alert_settings.sql) |
+| outbox_events | S08 | [outbox_events.md](outbox_events.md) | 구현(V14__outbox_events.sql) |

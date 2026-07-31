@@ -1,12 +1,12 @@
 # ADR-009 · GitOps CD — ArgoCD 채택 (Terraform=인프라 / ArgoCD=앱)
 
-- 상태: Proposed (S08 배포 착수 시 Accepted로 승격)
+- 상태: Proposed (S09 배포 착수 시 Accepted로 승격)
 - 날짜: 2026-07-31
-- 슬라이스: S08(배포·운영 준비)
+- 슬라이스: S09(배포·운영 준비) — 선행 S08(아웃박스) 먼저
 - 관련: [[ADR-008]](Kafka 이벤트 백본), `docs/deployment/aws-eks-deploy-plan.md`, `docs/deployment/app-changes-for-k8s-kafka.md`
 
 ## 맥락
-S08은 EKS(라이브 K8s) + Strimzi 멀티브로커로 "실제로 도는 분산 시스템"을 실증하는 인프라 트랙이다.
+S09는 EKS(라이브 K8s) + Strimzi 멀티브로커로 "실제로 도는 분산 시스템"을 실증하는 인프라 트랙이다.
 배포(CD)를 어떻게 할지 두 선택지가 있다:
 - **push 기반**: GitHub Actions가 OIDC 롤로 클러스터에 `helm/kubectl apply`를 직접 실행.
 - **pull 기반(GitOps)**: 클러스터 안의 ArgoCD가 Git 매니페스트를 감시해 desired-state로 지속 동기화.
@@ -37,7 +37,7 @@ ArgoCD가 Git과 diff**. 제약: 단일 앱(모듈러 모놀리스, api/web 2 De
 - **App-of-Apps/멀티 레포/멀티 환경**: 단일 앱·단일 데모 환경엔 과함 → 기각(스코프 관리).
 
 ## 결과 / 한계 (정직)
-- **아직 Proposed**: 코드/매니페스트 미작성. S08 Phase 6에서 ArgoCD 설치 + `Application` 구성 시 Accepted로
+- **아직 Proposed**: 코드/매니페스트 미작성. S09 Phase 6에서 ArgoCD 설치 + `Application` 구성 시 Accepted로
   승격하고, "Synced/Healthy + 수동 드리프트 self-heal 복구"를 캡처해 증거로 남긴다.
 - **컴포넌트 증가**: ArgoCD 자체가 클러스터 리소스를 먹고 관리 포인트가 하나 는다. 데모용이면 그만큼 과금 →
   Application 최소화로 상쇄.

@@ -2,7 +2,7 @@
 
 - ref: `assets/screens/개발자_시스템 모니터링.png`
 - route: `/dev/monitoring`
-- slice: S08
+- slice: S10
 
 ## 목적
 운영/실시간 시스템 상태(API 응답·Consumer Lag·인프라 헬스) 모니터링.

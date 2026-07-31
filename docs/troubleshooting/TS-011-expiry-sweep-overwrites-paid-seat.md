@@ -106,7 +106,7 @@ if (sold != seatIds.size() || converted != 1) throw new BusinessException(INVALI
 ## 한계 / 남은 것
 - ③ 보상은 **finalizePaid 내 best-effort void**다. "PG 승인 성공 직후·refund 호출 전 프로세스 크래시"
   구간까지 원자적으로 닫으려면 **outbox/saga(승인 결과를 커밋 후 재시도 가능한 이벤트로 기록)**가 필요 —
-  실 결제 트래픽·모니터링과 함께 설계할 후속(S08+). 가상계좌(vbank) 경로의 보상 취소 의미(입금 반환)도
+  실 결제 트래픽·모니터링과 함께 설계할 후속(S08 아웃박스 슬라이스에서 이 클래스까지 닫음). 가상계좌(vbank) 경로의 보상 취소 의미(입금 반환)도
   실 PG 배선 시 별도 검토.
-- 다중 Pod의 스케줄러 중복 실행(ShedLock)·SSE 팬아웃(Redis pub/sub)은 별개 항목(배포 문서 S08 참조),
+- 다중 Pod의 스케줄러 중복 실행(ShedLock)·SSE 팬아웃(Redis pub/sub)은 별개 항목(배포 문서 S09 참조),
   본 버그와 무관하게 정합성은 이 가드로 이미 안전.

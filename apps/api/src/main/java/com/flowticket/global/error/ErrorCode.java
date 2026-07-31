@@ -40,6 +40,8 @@ public enum ErrorCode {
     INVALID_STATE_TRANSITION(HttpStatus.CONFLICT, "허용되지 않은 상태 변경입니다."),
     // 환불
     REFUND_NOT_ALLOWED(HttpStatus.CONFLICT, "환불할 수 없는 상태입니다."),
+    // 운영(동기화) — 분산 락을 이미 다른 인스턴스/스케줄이 잡고 있을 때
+    SYNC_IN_PROGRESS(HttpStatus.CONFLICT, "이미 동기화가 진행 중입니다."),
     // 공통
     NOT_FOUND(HttpStatus.NOT_FOUND, "대상을 찾을 수 없습니다."),
     TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "요청이 너무 많습니다."),

@@ -14,4 +14,4 @@ IMP(개선 일지: 문제→측정→개선)와 구분 — ADR은 "무엇을·�
 | [ADR-007](ADR-007-admin-auth-bootstrap.md) | 관리자 인증 — /admin/** 단일 게이트 + env 부트스트랩 | Accepted |
 | [ADR-008](ADR-008-kafka-event-backbone-dlq.md) | Kafka 이벤트 백본 + DLQ — SSE 라스트홉, AFTER_COMMIT | Accepted |
 | [ADR-009](ADR-009-gitops-cd-argocd.md) | GitOps CD — ArgoCD 채택(Terraform=인프라/ArgoCD=앱) | Proposed |
-| [ADR-010](ADR-010-transactional-outbox.md) | 트랜잭셔널 아웃박스(DB↔Kafka exactly-once) + 정산 분리 | Proposed |
+| [ADR-010](ADR-010-transactional-outbox.md) | 트랜잭셔널 아웃박스(DB↔Kafka exactly-once) + 정산 분리 | Accepted |

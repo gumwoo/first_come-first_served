@@ -1,5 +1,7 @@
 package com.flowticket.order.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
 import com.flowticket.order.domain.Order;
@@ -15,6 +17,8 @@ import com.flowticket.order.repository.OrderItemRepository;
 import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.order.repository.PaymentRepository;
 import com.flowticket.order.sse.OrderSseRegistry;
+import com.flowticket.outbox.domain.OutboxEvent;
+import com.flowticket.outbox.repository.OutboxEventRepository;
 import com.flowticket.seat.domain.SeatStatus;
 import com.flowticket.seat.repository.SeatHoldRepository;
 import com.flowticket.seat.repository.SeatRepository;
@@ -22,9 +26,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +42,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentService {
 
     private static final Set<String> IMMEDIATE = Set.of("card", "easy");
+    /** 아웃박스 aggregate 구분자(현재는 주문 이벤트만 이관 — ADR-008의 점진 이관 계승). */
+    private static final String AGGREGATE_ORDER = "order";
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
@@ -46,14 +52,15 @@ public class PaymentService {
     private final SeatHoldRepository holdRepository;
     private final PaymentGateway gateway;
     private final OrderSseRegistry orderSse;
-    private final ApplicationEventPublisher events; // 커밋 후 Kafka 발행용(AFTER_COMMIT 브리지)
+    private final OutboxEventRepository outboxRepository; // 같은 tx에 이벤트 적재(ADR-010)
+    private final ObjectMapper objectMapper;
     private final ObjectProvider<PaymentService> self; // 트랜잭션 프록시 self-호출용
 
     public PaymentService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                           PaymentRepository paymentRepository, SeatRepository seatRepository,
                           SeatHoldRepository holdRepository, PaymentGateway gateway,
-                          OrderSseRegistry orderSse, ApplicationEventPublisher events,
-                          ObjectProvider<PaymentService> self) {
+                          OrderSseRegistry orderSse, OutboxEventRepository outboxRepository,
+                          ObjectMapper objectMapper, ObjectProvider<PaymentService> self) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.paymentRepository = paymentRepository;
@@ -61,7 +68,8 @@ public class PaymentService {
         this.holdRepository = holdRepository;
         this.gateway = gateway;
         this.orderSse = orderSse;
-        this.events = events;
+        this.outboxRepository = outboxRepository;
+        this.objectMapper = objectMapper;
         this.self = self;
     }
 
@@ -257,10 +265,27 @@ public class PaymentService {
                 }
                 throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
             }
-            // 커밋 후(AFTER_COMMIT) Kafka로 발행 → consumer가 SSE 브로드캐스트(Phase 4b).
-            // 트랜잭션 롤백 시 발행 안 됨(유령 order.paid 방지).
-            events.publishEvent(new OrderEvent("order.paid", order.getId()));
+            // 아웃박스 적재(ADR-010): 이 트랜잭션과 <b>같은 커밋</b>에 이벤트를 남긴다.
+            // 롤백되면 행도 사라져 유령 이벤트 0, 커밋되면 반드시 남아 릴레이가 재시도로 발행 → 유실 0.
+            // (구 AFTER_COMMIT 발행은 커밋 후 크래시/브로커 다운 시 이벤트가 영구 유실됐다.)
+            appendOutbox("order.paid", order.getId());
         }
+    }
+
+    /**
+     * 아웃박스 행 적재. id를 먼저 만들어 payload의 eventId와 <b>같은 UUID</b>를 쓴다 —
+     * 행 PK가 곧 소비자 멱등 키라 릴레이가 재발행해도 소비는 한 번만 일어난다(ADR-010).
+     */
+    private void appendOutbox(String type, Long orderId) {
+        UUID eventId = UUID.randomUUID();
+        String payload;
+        try {
+            payload = objectMapper.writeValueAsString(new OrderEvent(type, orderId, eventId));
+        } catch (JsonProcessingException e) {
+            // 단순 레코드라 현실적으로 발생하지 않음. 발생 시 결제 트랜잭션과 함께 롤백되는 편이 안전.
+            throw new IllegalStateException("아웃박스 payload 직렬화 실패: " + type, e);
+        }
+        outboxRepository.save(new OutboxEvent(eventId, AGGREGATE_ORDER, orderId, type, payload));
     }
 
     private Order ownedOrder(Long orderId, Long userId) {

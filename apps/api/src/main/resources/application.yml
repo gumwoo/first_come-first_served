@@ -25,10 +25,14 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # 아웃박스 릴레이가 발행 성공을 확인하고 마킹하므로(publish-then-mark), 확인의 기준을
+      # 전체 ISR 반영으로 둔다. 프로듀서 재시도로 생기는 중복은 idempotence로 억제(ADR-010).
+      acks: all
       properties:
         # 브로커 불가 시 send()가 60s(기본) 블록되지 않도록 바운드.
-        # AFTER_COMMIT 발행이므로 결제는 이미 커밋됨 — 알림 유실은 감수(DB가 진실원).
+        # 실패해도 아웃박스 행이 PENDING으로 남아 다음 틱에 재시도된다(유실 0).
         max.block.ms: 3000
+        enable.idempotence: true
     listener:
       # 브로커 미가용 환경(일부 통합테스트)에서 부팅 실패하지 않도록.
       missing-topics-fatal: false
@@ -117,6 +121,14 @@ seat:
 # 주문·결제(S05)
 order:
   sweep-interval-ms: ${ORDER_SWEEP_INTERVAL:60000}  # 미완료 주문 만료 회수 주기(ms)
+
+# 트랜잭셔널 아웃박스(ADR-010). 릴레이가 PENDING을 Kafka로 발행하고 성공 후 PUBLISHED로 마킹한다.
+outbox:
+  relay-interval-ms: ${OUTBOX_RELAY_INTERVAL:1000}  # 폴링 주기(발행 지연 상한)
+  batch-size: ${OUTBOX_BATCH_SIZE:100}              # 한 틱 최대 발행 건수
+  send-timeout-ms: ${OUTBOX_SEND_TIMEOUT:3000}      # 발행 확인 대기 상한(브로커 장애 시 틱 바운드)
+  retention-days: ${OUTBOX_RETENTION_DAYS:7}        # PUBLISHED 보존 기간(운영 가시성) — 이후 purge
+  purge-cron: ${OUTBOX_PURGE_CRON:0 0 3 * * *}      # 매일 새벽 3시 정리(PENDING·실패는 제외)
 
 # 결제 게이트웨이 선택(ADR-005). mock=결정론(테스트/E2E/CI 기본), toss=실 PG 테스트 연동(데모).
 payment:

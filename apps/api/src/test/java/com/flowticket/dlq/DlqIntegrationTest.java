@@ -58,6 +58,7 @@ class DlqIntegrationTest {
         r.add("queue.admit-interval-ms", () -> "3600000");
         r.add("seat.sweep-interval-ms", () -> "3600000");
         r.add("order.sweep-interval-ms", () -> "3600000");
+        r.add("outbox.relay-interval-ms", () -> "3600000"); // 아웃박스 릴레이 스케줄 비활성(결정적 테스트)
     }
 
     @MockBean OrderSseRegistry orderSse; // 소비 실패를 강제하기 위한 poison
@@ -73,7 +74,7 @@ class DlqIntegrationTest {
 
     @Test
     void 소비실패가_재시도소진후_DLQ에_적재된다() {
-        kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, "1", new OrderEvent("order.paid", 111L));
+        kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, "1", OrderEvent.of("order.paid", 111L));
 
         DlqMessage row = awaitDlqRowFor(111L);
         assertThat(row.getStatus()).isEqualTo(DlqStatus.PENDING);
@@ -83,7 +84,7 @@ class DlqIntegrationTest {
 
     @Test
     void DLQ_폐기는_상태를_DISCARDED로() {
-        kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, "2", new OrderEvent("order.paid", 222L));
+        kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, "2", OrderEvent.of("order.paid", 222L));
         Long id = awaitDlqRowFor(222L).getId();
 
         adminDlqService.discard(id);
@@ -93,7 +94,7 @@ class DlqIntegrationTest {
 
     @Test
     void DLQ_재시도는_원본토픽_재발행_후_RETRIED로() {
-        kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, "3", new OrderEvent("order.paid", 333L));
+        kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, "3", OrderEvent.of("order.paid", 333L));
         Long id = awaitDlqRowFor(333L).getId();
 
         adminDlqService.retry(id);

@@ -67,6 +67,7 @@ class MyOrderIntegrationTest {
         r.add("seat.hold-ttl", () -> "300");
         r.add("seat.sweep-interval-ms", () -> "3600000");
         r.add("order.sweep-interval-ms", () -> "3600000");
+        r.add("outbox.relay-interval-ms", () -> "3600000"); // 아웃박스 릴레이 스케줄 비활성(결정적 테스트)
     }
 
     @Autowired MyOrderService myOrderService;

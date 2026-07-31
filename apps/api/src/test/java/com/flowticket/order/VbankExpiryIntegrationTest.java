@@ -65,6 +65,7 @@ class VbankExpiryIntegrationTest {
         r.add("seat.hold-ttl", () -> "2");
         r.add("seat.sweep-interval-ms", () -> "3600000");
         r.add("order.sweep-interval-ms", () -> "3600000"); // 워커 자동실행 비활성(수동 호출)
+        r.add("outbox.relay-interval-ms", () -> "3600000"); // 아웃박스 릴레이 스케줄 비활성(결정적 테스트)
     }
 
     @Autowired PaymentService paymentService;

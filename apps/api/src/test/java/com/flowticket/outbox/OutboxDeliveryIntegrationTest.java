@@ -7,7 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.flowticket.global.config.KafkaConfig;
@@ -81,15 +81,23 @@ class OutboxDeliveryIntegrationTest {
     }
 
     @SpyBean OrderSseRegistry orderSse;
-    @SpyBean KafkaTemplate<String, Object> kafkaTemplate;
     @Autowired OutboxEventRepository outboxRepository;
-    @Autowired OutboxRelay relay;
+    @Autowired OutboxRelay relay; // 복구 후 정상 발행에 쓰는 실제 빈
     @Autowired ObjectMapper mapper;
+
+    /**
+     * 브로커 장애 재현용. 스프링 빈을 스파이/모킹하면 KafkaTemplate 후보가 둘이 되어 주입이 모호해지므로
+     * (자동설정 빈은 {@code KafkaTemplate<?,?>}), 컨텍스트는 그대로 두고 <b>실패하는 템플릿을 직접 주입한
+     * 릴레이</b>를 따로 만든다. 발행 경로 코드는 실제 {@link OutboxRelay} 그대로다.
+     */
+    private KafkaTemplate<String, Object> failingKafka;
+    private OutboxRelay relayDuringOutage;
 
     /** 소비자까지 실제로 도달한 orderId(= 유실되지 않은 이벤트). */
     private final Set<Long> delivered = ConcurrentHashMap.newKeySet();
 
     @BeforeEach
+    @SuppressWarnings("unchecked")
     void setUp() {
         outboxRepository.deleteAll();
         delivered.clear();
@@ -97,14 +105,17 @@ class OutboxDeliveryIntegrationTest {
             delivered.add(inv.getArgument(0, Long.class));
             return null;
         }).when(orderSse).broadcast(any(), eq("order.paid"), any());
+
+        failingKafka = mock(KafkaTemplate.class);
+        doThrow(new KafkaException("broker down"))
+                .when(failingKafka).send(anyString(), anyString(), any());
+        // 실제 릴레이와 동일한 설정값(배치 100 / 타임아웃 3s / 보존 7일)
+        relayDuringOutage = new OutboxRelay(outboxRepository, failingKafka, mapper, 100, 3000L, 7);
     }
 
     @Test
     void IMP011_브로커_장애중_이벤트_유실_before_after() {
-        // ── 브로커 장애 시작(발행 실패) ─────────────────────────────
-        doThrow(new KafkaException("broker down"))
-                .when(kafkaTemplate).send(anyString(), anyString(), any());
-
+        // ── 브로커 장애 창(발행이 실패하는 구간) ─────────────────────
         // before(naive): 실패를 삼키고 아무 기록도 남기지 않는다(구 브리지 동작 그대로)
         for (int i = 0; i < TRIALS; i++) {
             naivePublishSwallowing(OrderEvent.of("order.paid", NAIVE_BASE + i));
@@ -114,15 +125,13 @@ class OutboxDeliveryIntegrationTest {
         for (int i = 0; i < TRIALS; i++) {
             appendOutbox(OUTBOX_BASE + i);
         }
-        relay.publishPending();
+        relayDuringOutage.publishPending();
         assertThat(outboxRepository.countByStatus(OutboxStatus.PENDING))
                 .as("장애 중에도 이벤트는 DB에 보존된다(유실 대신 재시도 대상)")
                 .isEqualTo(TRIALS);
 
         // ── 브로커 복구 ────────────────────────────────────────────
-        reset(kafkaTemplate);
-
-        // naive는 재발행할 근거가 없어 아무 일도 일어나지 않는다. outbox만 재시도된다.
+        // naive는 재발행할 근거가 없어 아무 일도 일어나지 않는다. outbox만 릴레이가 재시도한다.
         relay.publishPending();
 
         await().atMost(Duration.ofSeconds(30))
@@ -140,7 +149,7 @@ class OutboxDeliveryIntegrationTest {
     /** 구 OrderEventKafkaBridge 동작: 발행 실패를 로그만 남기고 삼킨다(복구 근거 없음 = 영구 유실). */
     private void naivePublishSwallowing(OrderEvent event) {
         try {
-            kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, String.valueOf(event.orderId()), event);
+            failingKafka.send(KafkaConfig.ORDER_EVENTS_TOPIC, String.valueOf(event.orderId()), event);
         } catch (Exception ignored) {
             // 결제는 이미 커밋됐고 DB가 진실원 — 알림 유실은 감수(구 설계)
         }

@@ -14,8 +14,14 @@ status: `todo | doing | done | blocked`
 | S05 | 주문·결제(결제/완료/실패/입금대기) | S04 | done | 주문 생성·Mock 결제 승인+조건부 전이·가상계좌·결제 만료 sweep + 멱등(IMP-008) + 결제 FE/QR + E2E(해피+예외) + Toss 실 PG 연동(카드 결제창·confirm) + 가상계좌 입금 웹훅(secret 대조·멱등) + TS-009/TS-010 |
 | S06 | 마이페이지·취소/환불 | S05 | done | 마이페이지 목록(탭·페이징)·상세 + 취소/환불(상태 3분리 CANCELLED/REFUNDED)·기간별 수수료 + 멱등(IMP-009) + 마이페이지 리디자인 + 환불 E2E |
 | S07 | 운영(대시보드/내역/이벤트/DLQ/알림) | S05 | done | 관리자 인증(ADR-007)·대시보드·주문 조회·공연 CRUD·Kafka 이벤트 백본+DLQ(ADR-008)·알림 임계치·admin E2E. 계약 100% 충족 |
-| S08 | 배포·운영 준비(컨테이너화·EKS·Strimzi·멀티팟 준비) | S07 | todo | 멀티팟 준비 **코드 선반영 완료**(①SSE Redis pub/sub 팬아웃·②ShedLock·③PG 보상·④정확한 알림). 남은 것: 컨테이너화→ECR/CI(이미지+Git 갱신)→Terraform(EKS)→Strimzi 멀티브로커→**ArgoCD(GitOps 배포, ADR-009)**→관측(Prometheus/Grafana)→**①② cross-Pod 실측**. 상세: [docs/deployment/](../deployment/_index.md) |
-| S09 | 부하테스트·모니터링 | S08 | todo | 배포 위 k6 실측·HPA 수평확장·브로커 페일오버·Consumer Lag. IMP 재측정 |
+| S08 | 정합성 보강 — 트랜잭셔널 아웃박스(exactly-once 발행) | S07 | todo | **우선순위 1**. `order.paid`가 AFTER_COMMIT best-effort라 "커밋 직후·발행 전 크래시" 시 이벤트 유실 가능 — ADR-008·TS-011 §한계가 지목한 구멍. 같은 트랜잭션에 이벤트 적재→릴레이가 Kafka 발행→멱등 소비로 **exactly-once 완성**. 크래시 주입으로 유실 N→0 **IMP 정량화**. 서비스 기업 핵심축(정합성)이라 배포보다 먼저. |
+| S09 | 배포·운영 준비(컨테이너화·EKS·Strimzi·멀티팟·ArgoCD) | S07 | todo | (구 S08) 멀티팟 준비 **코드 선반영 완료**(①SSE Redis pub/sub 팬아웃·②ShedLock·③PG 보상·④정확한 알림). 남은 것: 컨테이너화→ECR/CI(이미지+Git 갱신)→Terraform(EKS)→Strimzi 멀티브로커→**ArgoCD(GitOps 배포, ADR-009)**→관측(Prometheus/Grafana)→**①② cross-Pod 실측**. 상세: [docs/deployment/](../deployment/_index.md) |
+| S10 | 부하테스트·모니터링 | S09 | todo | 배포 위 k6 실측·HPA 수평확장·브로커 페일오버·Consumer Lag. IMP 재측정(아웃박스 유실 0 포함) |
+
+> **우선순위(작업 순서) — 재정렬**: 서비스 기업(대용량·정합성) 지향에 맞춰 **정합성 깊이를 배포보다 앞에** 둔다.
+> **S08 아웃박스(정합성) → S09 배포(K8s·ArgoCD) → S10 부하·모니터링.** 근거: 아웃박스는 이 프로젝트 핵심
+> 논지("정확히 한 번")를 발행 축까지 닫는, 코드가 이미 지목한 구멍(ADR-008·TS-011)이라 ROI가 가장 높다.
+> 배포(K8s+ArgoCD)는 이미 "코드 선반영 완료" 상태로 충분 → **더 쌓지 않고 실증만** 하고 동결.
 
 ## 슬라이스 ↔ 화면 매핑
 ### S01 인증
@@ -41,10 +47,13 @@ status: `todo | doing | done | blocked`
 - [dashboard.md](operator/dashboard.md) · [orders.md](operator/orders.md) · [events.md](operator/events.md)
 - [event-detail.md](operator/event-detail.md) · [dlq.md](operator/dlq.md) · [alerts.md](operator/alerts.md)
 
-### S08 배포·운영 준비
+### S08 아웃박스(정합성 보강)
+- 사용자 화면 없음(백엔드 트랙 — exactly-once 발행). 실측은 IMP + 크래시 주입 통합테스트.
+
+### S09 배포·운영 준비
 - 사용자 화면 없음(인프라 트랙). 상세: [docs/deployment/_index.md](../deployment/_index.md)
 
-### S09 부하/모니터링
+### S10 부하/모니터링
 - [loadtest-scenario.md](developer/loadtest-scenario.md) · [loadtest-running.md](developer/loadtest-running.md)
 - [loadtest-result.md](developer/loadtest-result.md) · [loadtest-report.md](developer/loadtest-report.md)
 - [monitoring.md](developer/monitoring.md)

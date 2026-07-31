@@ -87,7 +87,7 @@ REST 기준. 인증은 `Authorization: Bearer <accessToken>`. 에러는 공통 �
 - `POST /admin/dlq/:id/retry` — 재처리 / `POST /admin/dlq/:id/discard`
 - `GET/PUT /admin/alerts` — 임계치(Lag/응답시간/에러율) + 채널(슬랙/이메일/웹훅)
 
-## 부하·모니터링 (S08)
+## 부하·모니터링 (S10)
 - `POST /dev/loadtest` — 시나리오로 k6 실행 트리거
 - `GET /dev/loadtest/:id` — 실행상태(RUNNING/도달TPS/경과)
 - `GET /dev/loadtest/:id/result` — 결과(PASS/FAIL, p95, 처리량…)

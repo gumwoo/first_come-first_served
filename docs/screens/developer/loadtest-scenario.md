@@ -2,7 +2,7 @@
 
 - ref: `assets/screens/개발자_부하테스트 시나리오 설정.png`
 - route: `/dev/loadtest/new`
-- slice: S08
+- slice: S10
 
 ## 목적
 k6 부하테스트 시나리오 구성(대상 이벤트/동시성/시나리오 타입/임계 기준).

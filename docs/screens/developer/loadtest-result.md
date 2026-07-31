@@ -2,7 +2,7 @@
 
 - ref: `assets/screens/개발자_부하테스트 결과 상세.png`
 - route: `/dev/loadtest/:id/result`
-- slice: S08
+- slice: S10
 
 ## 목적
 완료된 테스트 결과 상세 + PASS/FAIL 판정.

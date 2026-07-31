@@ -2,7 +2,7 @@
 
 - ref: `assets/screens/개발자_부하테스트 실행 상태.png`
 - route: `/dev/loadtest/:id/running`
-- slice: S08
+- slice: S10
 
 ## 목적
 진행 중 부하테스트 실시간 모니터링(RUNNING).

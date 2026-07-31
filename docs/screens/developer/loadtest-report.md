@@ -2,7 +2,7 @@
 
 - ref: `assets/screens/개발자_부하테스트 리포트 비교.png`
 - route: `/dev/loadtest/report`
-- slice: S08
+- slice: S10
 
 ## 목적
 두 개 이상 테스트 실행 결과 비교(개선 전후 등).

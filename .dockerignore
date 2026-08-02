@@ -1,0 +1,33 @@
+# 빌드 컨텍스트에서 제외 — 전송량·캐시 무효화·비밀 유출을 함께 줄인다.
+# (컨텍스트가 저장소 루트이므로 두 이미지가 이 파일 하나를 공유한다.)
+
+# 버전관리·에디터
+.git
+.github
+.gitignore
+.idea
+.vscode
+
+# 빌드 산출물(이미지 안에서 새로 만든다 — 호스트 산출물이 섞이면 재현성이 깨진다)
+**/build/
+**/.gradle/
+**/node_modules/
+**/.next/
+**/out/
+**/dist/
+**/*.tsbuildinfo
+
+# 로컬 실행·테스트 부산물
+**/.env
+**/.env.*
+**/application-local.yml
+**/logs/
+**/tmp/
+e2e/test-results/
+e2e/playwright-report/
+outputs/
+
+# 이미지에 필요 없는 저장소 자산(문서·스크린샷·벤치마크)
+docs/
+assets/
+benchmarks/

@@ -1,6 +1,7 @@
 package com.flowticket.global.config;
 
 import org.apache.kafka.clients.admin.NewTopic;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.TopicBuilder;
@@ -16,19 +17,34 @@ import org.springframework.util.backoff.FixedBackOff;
 @Configuration
 public class KafkaConfig {
 
-    /** 주문 도메인 이벤트(order.paid 등). 단일 파티션(단일 노드 데모). */
+    /** 주문 도메인 이벤트(order.paid 등). */
     public static final String ORDER_EVENTS_TOPIC = "order-events";
     /** 재시도 소진 메시지가 넘어가는 Dead Letter Topic. */
     public static final String ORDER_EVENTS_DLT = ORDER_EVENTS_TOPIC + ".DLT";
 
+    /**
+     * 토픽 파라미터는 환경별로 다르다 — 로컬·CI는 단일 브로커라 1/1이어야 하고(RF가 브로커 수를 넘으면
+     * 생성 실패), 운영(Strimzi 3브로커)은 파티션 N·RF 3으로 병렬성과 HA를 얻는다. 그래서 코드에 박지 않고
+     * 설정으로 뺀다. 파티션은 나중에 늘릴 수 있지만 <b>RF는 생성 후 이 방식으로 못 바꾼다</b> —
+     * 운영에서는 Strimzi {@code KafkaTopic} CR이 권위를 갖고 여기 값과 일치시킨다.
+     */
+    private final int partitions;
+    private final int replicas;
+
+    public KafkaConfig(@Value("${kafka.topic.partitions:1}") int partitions,
+                       @Value("${kafka.topic.replicas:1}") int replicas) {
+        this.partitions = partitions;
+        this.replicas = replicas;
+    }
+
     @Bean
     public NewTopic orderEventsTopic() {
-        return TopicBuilder.name(ORDER_EVENTS_TOPIC).partitions(1).replicas(1).build();
+        return TopicBuilder.name(ORDER_EVENTS_TOPIC).partitions(partitions).replicas(replicas).build();
     }
 
     @Bean
     public NewTopic orderEventsDltTopic() {
-        return TopicBuilder.name(ORDER_EVENTS_DLT).partitions(1).replicas(1).build();
+        return TopicBuilder.name(ORDER_EVENTS_DLT).partitions(partitions).replicas(replicas).build();
     }
 
     /**

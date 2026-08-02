@@ -1,9 +1,14 @@
 spring:
   application:
     name: flowticket-api
+  lifecycle:
+    # 롤링 배포·스케일인 시 진행 중 요청과 Kafka 소비를 마무리할 유예(graceful shutdown과 한 쌍).
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+  # 컨테이너/K8s에서 localhost는 '그 Pod 자신'이라 외부 주소는 전부 환경변수로 받는다.
+  # DB_URL을 주면 통째로 대체, 아니면 호스트/포트만 바꿔 쓸 수 있게 이중으로 열어둔다.
   datasource:
-    url: jdbc:postgresql://localhost:${DB_PORT:5433}/flowticket
-    username: flowticket
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:flowticket}}
+    username: ${DB_USERNAME:flowticket}
     password: ${DB_PASSWORD:flowticket}
   jpa:
     hibernate:
@@ -11,8 +16,8 @@ spring:
     open-in-view: false
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
@@ -69,14 +74,38 @@ spring:
             user-info-uri: https://kapi.kakao.com/v2/user/me
             user-name-attribute: id
 
+# 토픽 생성 파라미터. 로컬·CI는 단일 브로커라 1/1(RF>브로커 수면 생성 실패),
+# 운영 Strimzi(브로커 3)에서는 파티션 6·RF 3으로 올린다. 파티션이 1이면 Pod를 늘려도
+# 같은 컨슈머 그룹에서 실제 소비는 하나뿐이라 병렬 확장이 의미가 없다.
+kafka:
+  topic:
+    partitions: ${KAFKA_TOPIC_PARTITIONS:1}
+    replicas: ${KAFKA_TOPIC_REPLICAS:1}
+
 server:
   port: 8080
+  # 종료 신호를 받으면 새 요청을 막고 진행 중 요청을 마친 뒤 내려간다(K8s 롤링 배포 무중단의 전제).
+  shutdown: graceful
 
 management:
   endpoints:
     web:
       exposure:
         include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      # /actuator/health/liveness · /actuator/health/readiness 노출(K8s probe용).
+      probes:
+        enabled: true
+      group:
+        # readiness = "지금 트래픽을 받아도 되는가". DB·Redis는 없으면 요청을 못 처리하니 포함한다.
+        # Kafka는 일부러 뺀다 — 브로커 장애는 알림 지연일 뿐이고(아웃박스가 유실을 막는다, ADR-008/010),
+        # 이걸 readiness에 넣으면 브로커 하나 죽었다고 API 전체가 트래픽에서 빠지는 과잉 차단이 된다.
+        readiness:
+          include: readinessState, db, redis
+        # liveness = "프로세스를 재시작해야 하는가". 외부 의존성을 넣으면 DB 장애에 Pod가 무한 재시작한다.
+        liveness:
+          include: livenessState
 
 # 외부 연동 / 시크릿은 환경변수로만 주입 (application-local.yml은 gitignore)
 kopis:

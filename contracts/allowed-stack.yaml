@@ -19,6 +19,7 @@ backend:
     - org.flywaydb:flyway-core
     - org.flywaydb:flyway-database-postgresql
     - io.lettuce:lettuce-core
+    - io.micrometer:micrometer-registry-prometheus              # /actuator/prometheus 노출(S09 관측)
     - net.javacrumbs.shedlock:shedlock-spring                   # 멀티 Pod @Scheduled 중복 방지
     - net.javacrumbs.shedlock:shedlock-provider-redis-spring    # ShedLock Redis lock provider
     - org.projectlombok:lombok

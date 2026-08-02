@@ -1,6 +1,7 @@
 # 앱 변경사항 — K8s(EKS) + 멀티브로커 Kafka 대응
 
-- 상태: 계획(미착수). [EKS 배포 계획](aws-eks-deploy-plan.md)의 Phase 5에서 반영.
+- 상태: **C(운영 준비)·D(다중 Pod)는 코드 반영 완료 / A·B는 배포 시점 설정·실증 대기.**
+  [EKS 배포 계획](aws-eks-deploy-plan.md) 참조.
 - 목적: 인프라 yaml만이 아니라 **앱 코드/설정도 바뀌어야 멀티브로커·오토스케일이 "의미"를 가진다**. 안 하면 "구성만 하고 실증 못 함" = 오버엔지니어링.
 
 ## 왜 코드가 바뀌어야 하나 (한 줄)
@@ -12,14 +13,17 @@
 ### A-1. 토픽 파티션 1 → N
 - 현재: `KafkaConfig`의 `order-events`가 `partitions(1)`.
 - 문제: **파티션 1이면 컨슈머 그룹에 컨슈머가 여러 개여도 1개만 소비** → api 파드를 늘려도 나머지는 유휴. 병렬/스케일 서사가 성립 안 함.
-- 변경: `order-events` 파티션 N(예: 6), `order-events.DLT`도 동일 고려. (운영은 Strimzi `KafkaTopic` CR로도 관리 가능 — 소스 `NewTopic`과 값 일치.)
-- 파일: `apps/api/.../global/config/KafkaConfig.java`
+- **상태: 코드 준비 완료(S09-0)** — 값을 코드에서 빼 `KAFKA_TOPIC_PARTITIONS`로 주입한다(C-4). 배포 시
+  운영만 6으로 올리면 되고 로컬·CI는 1 유지. 운영은 Strimzi `KafkaTopic` CR이 권위 — 값 일치 필요.
+- 파일: `KafkaConfig.java`(설정 주입) + `application.yml` + Strimzi `KafkaTopic` CR
 
 ### A-2. 복제 팩터(RF) 1 → 3
 - 현재: `NewTopic ... replicas(1)`.
 - 문제: **복제 없음 → 브로커 죽으면 유실/중단 = Kafka HA 스토리 없음.**
-- 변경: `order-events`·`.DLT` RF 3, 그리고 브로커 설정의 `__consumer_offsets`/`transaction-state` RF도 3(Strimzi Kafka CR에서). `min.insync.replicas`도 함께 고려(예: 2).
-- 파일: `KafkaConfig.java`(RF) + Strimzi `Kafka` CR
+- **상태: 코드 준비 완료(S09-0)** — `KAFKA_TOPIC_REPLICAS`로 주입(C-4). 단 **RF는 토픽 생성 후
+  `NewTopic`으로 바뀌지 않는다** → 운영에서는 Strimzi `KafkaTopic` CR이 실제 권위.
+- 함께: 브로커의 `__consumer_offsets`/`transaction-state` RF도 3, `min.insync.replicas`(예: 2) — Strimzi `Kafka` CR.
+- 파일: `KafkaConfig.java` + `application.yml` + Strimzi `Kafka`/`KafkaTopic` CR
 
 ### A-3. 파티션 키 확인(이미 OK)
 - 현재: 발행 시 key=`orderId` → 같은 주문 이벤트가 같은 파티션(주문별 순서 보장). **변경 불필요**, 문서로만 근거 남김.
@@ -29,7 +33,7 @@
 
 ### B-1. Kafka·Consumer Lag 메트릭 → Prometheus
 - 목적: HPA·파티션 분산·랙을 Grafana로 **증명**(구성만 아님).
-- 변경: `micrometer-registry-prometheus` + spring-kafka 메트릭 노출, `management.endpoints...prometheus` 이미 노출 확인. Consumer Lag은 Kafka client 메트릭 또는 Strimzi/kafka-exporter로.
+- **레지스트리는 반영 완료(C-5)** — 남은 것은 Consumer Lag 수집(Kafka client 메트릭 또는 Strimzi/kafka-exporter)과 대시보드.
 - 파일: `build.gradle.kts`, `application.yml`(management), (관측 스택은 Helm)
 
 ### B-2. 부하/페일오버 시나리오(문서·스크립트)
@@ -38,18 +42,47 @@
 
 ## C. K8s 운영 준비(12-factor)
 
-### C-1. liveness/readiness probe 정합
-- 변경: `/actuator/health`가 DB/Redis 준비를 반영(readiness). 롤링 배포 중 트래픽을 준비 안 된 파드로 안 보냄.
-- 파일: `application.yml`(health group/probes), Helm(probe 경로)
+### C-1. liveness/readiness probe 정합 — **완료(S09-0)**
+- 반영: `management.endpoint.health.probes.enabled=true`로 `/actuator/health/{liveness,readiness}` 노출.
+- **readiness = `readinessState, db, redis`** — 없으면 요청을 처리할 수 없는 의존성만 포함.
+  **Kafka는 의도적으로 제외**: 브로커 장애는 알림 지연일 뿐이고 아웃박스가 유실을 막는다(ADR-008/010).
+  readiness에 넣으면 브로커 하나 죽었다고 API 전체가 트래픽에서 빠지는 과잉 차단이 된다.
+- **liveness = `livenessState`만** — 외부 의존성을 넣으면 DB 장애에 Pod가 무한 재시작한다.
+- 남은 것: Helm/매니페스트의 probe 경로 설정.
 
-### C-2. graceful shutdown
-- 목적: 롤링/스케일인 시 컨슈머가 in-flight 처리·오프셋 커밋 후 종료(이벤트 유실·중복 최소화).
-- 변경: `server.shutdown=graceful`, `spring.lifecycle.timeout-per-shutdown-phase`, 컨테이너 `terminationGracePeriodSeconds`.
-- 파일: `application.yml`, Helm
+### C-2. graceful shutdown — **완료(S09-0)**
+- 반영: `server.shutdown=graceful`, `spring.lifecycle.timeout-per-shutdown-phase=${SHUTDOWN_TIMEOUT:30s}`.
+- 남은 것: 컨테이너 `terminationGracePeriodSeconds`(매니페스트) — 이 값보다 커야 유예가 실효.
 
-### C-3. 설정 전량 env 외부화(대부분 완료)
-- 확인: datasource·redis·kafka·jwt·admin·toss 전부 env/Secret. 하드코딩 0(하네스가 가드). 부족분 정리.
-- 파일: `application.yml`(이미 `${...}` 형태)
+### C-3. 설정 전량 env 외부화 — **완료(S09-0)**
+- 정정: 이전 문서는 "대부분 완료"라고 적었지만 실제로는 **DB 호스트·유저와 Redis 호스트/포트가
+  하드코딩**(`localhost`)이었다. Pod에서 localhost는 그 Pod 자신이라 그대로 올리면 부팅부터 실패한다.
+- 반영: `DB_URL`(통째 대체) 또는 `DB_HOST`/`DB_PORT`/`DB_NAME`, `DB_USERNAME`/`DB_PASSWORD`,
+  `REDIS_HOST`/`REDIS_PORT`, `KAFKA_BOOTSTRAP_SERVERS` 전부 env. 기본값은 로컬 주소라 개발 흐름 불변.
+- **프로필 전략(결정)**: `application-prod.yml`을 따로 두지 **않는다.** 파일이 둘이면 설정이 갈라져
+  드리프트가 생기고, 어느 쪽이 적용됐는지 추적이 어려워진다. **단일 `application.yml` + `${ENV:로컬기본값}`**
+  으로 두고 운영은 ConfigMap/Secret이 env를 덮는다.
+
+### C-4. Kafka 토픽 파라미터 설정화 — **완료(S09-0)**
+- 반영: `kafka.topic.partitions`/`kafka.topic.replicas`를 env로(`KAFKA_TOPIC_PARTITIONS`/`_REPLICAS`).
+  로컬·CI는 단일 브로커라 **1/1이어야 하고**(RF > 브로커 수면 토픽 생성 실패), 운영 Strimzi(브로커 3)에서
+  **6/3**으로 올린다. 코드 수정 없이 환경만 바꾸면 되므로 A-1·A-2가 배포 시점의 설정 작업이 된다.
+- 주의: **파티션은 늘릴 수 있으나 RF는 `NewTopic`으로 사후 변경되지 않는다** — 운영에서는 Strimzi
+  `KafkaTopic` CR이 권위를 갖고 이 값과 일치시킨다.
+
+### C-5. 관측 레지스트리 — **완료(S09-0)**
+- 정정: `management.endpoints.web.exposure.include`에 `prometheus`가 있었지만
+  **`micrometer-registry-prometheus` 의존성이 없어 실제로는 엔드포인트가 뜨지 않았다.**
+- 반영: `runtimeOnly("io.micrometer:micrometer-registry-prometheus")` + `allowed-stack.yaml` 등재.
+
+### C-6. 프론트 API 오리진 — **완료(S09-0)**
+- 정정(배포 블로커): `next.config.mjs`의 rewrites 목적지가 `http://localhost:8080` **하드코딩**이었다.
+  브라우저는 상대경로(`/api/...`)로 호출하고 Next 서버가 프록시하는 구조라, 컨테이너에서는
+  **모든 API 호출이 web Pod 자신을 향해 실패**한다.
+- 반영: `API_ORIGIN` 환경변수로 주입(미설정 시 로컬 기본값). `rewrites()`는 서버 기동 시 평가되므로
+  **같은 이미지를 환경만 바꿔 재사용**할 수 있다.
+- `output: "standalone"`은 **이미지 빌드에서만** 켠다(`NEXT_OUTPUT_STANDALONE=true`) — standalone은
+  심볼릭 링크를 만들어 **Windows 로컬 빌드가 EPERM으로 실패**하기 때문. 로컬 검증 흐름을 깨지 않는다.
 
 ## D. 다중 Pod에서 드러나는 문제 & 대응 (D-1·D-2 코드 선반영 완료, 검증은 다중 Pod 배포 시)
 
@@ -85,9 +118,10 @@
 
 ## F. 반영 순서(요약)
 
-1. A-1·A-2(파티션·RF) — Strimzi 붙이기 전 소스/CR 값 합의
-2. C-1·C-2·C-3(probe·graceful·env) — Helm 배포 전
-3. **D-1·D-2(SSE 팬아웃·ShedLock)** — 다중 Pod 배포와 함께(단일→다중 전환의 핵심), D-3은 비교 후 결정
+0. **C-1~C-6(S09-0 배포 블로커 제거) — 완료.** probe·graceful shutdown·env 외부화·토픽 파라미터 설정화·
+   Prometheus 레지스트리·프론트 API 오리진. AWS 이전에 로컬에서 끝낼 수 있는 것부터 닫았다.
+1. A-1·A-2(파티션·RF) — 이제 **코드가 아니라 환경/CR 값 합의**(Strimzi 붙일 때)
+2. **D-1·D-2(SSE 팬아웃·ShedLock)** — 다중 Pod 배포와 함께(단일→다중 전환의 핵심), D-3은 비교 후 결정
 4. B-1(메트릭) — 관측 스택과 함께
 5. B-2(부하·페일오버) + **다중 Pod 알림/중복실행 재검증** — 마지막 실증(S10)
 

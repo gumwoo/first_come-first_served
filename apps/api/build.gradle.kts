@@ -52,8 +52,9 @@ dependencies {
     // lombok
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
-    // monitoring
+    // monitoring — actuator만으로는 /actuator/prometheus가 뜨지 않는다(레지스트리 필요).
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
     // test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")

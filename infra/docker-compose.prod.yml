@@ -1,0 +1,98 @@
+# 운영 이미지 로컬 검증용(S09-1). IDE에서 소스를 실행하는 게 아니라 <b>실제 빌드된 이미지</b>로
+# 전체 스택을 띄워, EKS로 가기 전에 "컨테이너 안에서 동작하는가"를 먼저 확인한다.
+#
+#   docker compose -f infra/docker-compose.prod.yml up --build
+#
+# 여기서 확인하는 것: 컨테이너에서 외부 주소가 env로 잘 주입되는가(localhost 하드코딩 잔재 없음),
+# readiness가 의존성 준비를 반영하는가, web→api 프록시가 컨테이너 네트워크로 붙는가.
+# 비밀은 .env 또는 셸 환경에서 주입한다(이 파일에 실제 값을 적지 않는다).
+
+name: flowticket-prod
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: flowticket
+      POSTGRES_USER: flowticket
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-flowticket}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowticket -d flowticket"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata-prod:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7.4
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:3.8.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      # 컨테이너 네트워크 안에서는 서비스명으로 접속한다(localhost가 아니라).
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    image: flowticket-api:local
+    environment:
+      # 외부 주소는 전부 env로(컨테이너에서 localhost는 그 컨테이너 자신).
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: flowticket
+      DB_USERNAME: flowticket
+      DB_PASSWORD: ${DB_PASSWORD:-flowticket}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # 단일 브로커라 1/1 유지(운영 Strimzi에서 6/3으로 올린다).
+      KAFKA_TOPIC_PARTITIONS: 1
+      KAFKA_TOPIC_REPLICAS: 1
+      # 비밀은 셸/.env에서 주입. JWT_SECRET은 없으면 기동 실패하므로 검증용 기본값을 둔다.
+      JWT_SECRET: ${JWT_SECRET:-local-prod-verify-secret-0123456789-0123456789}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      KOPIS_SERVICE_KEY: ${KOPIS_SERVICE_KEY:-}
+      PAYMENT_GATEWAY: ${PAYMENT_GATEWAY:-mock}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        # rewrites는 standalone 번들에 구워지므로 <b>빌드 시점</b>에 넣어야 한다(런타임 env로는 안 바뀜).
+        # 브라우저는 /api 상대경로로 부르고 Next 서버가 이 주소로 프록시한다.
+        API_ORIGIN: http://api:8080
+    image: flowticket-web:local
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata-prod:

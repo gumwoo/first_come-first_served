@@ -79,8 +79,12 @@
 - 정정(배포 블로커): `next.config.mjs`의 rewrites 목적지가 `http://localhost:8080` **하드코딩**이었다.
   브라우저는 상대경로(`/api/...`)로 호출하고 Next 서버가 프록시하는 구조라, 컨테이너에서는
   **모든 API 호출이 web Pod 자신을 향해 실패**한다.
-- 반영: `API_ORIGIN` 환경변수로 주입(미설정 시 로컬 기본값). `rewrites()`는 서버 기동 시 평가되므로
-  **같은 이미지를 환경만 바꿔 재사용**할 수 있다.
+- 반영: `API_ORIGIN`으로 주입(미설정 시 로컬 기본값).
+- **정정(S09-1 실측)**: 처음엔 "런타임 주입이라 같은 이미지를 재사용할 수 있다"고 적었으나 **틀렸다.**
+  `output: "standalone"`에서는 rewrites 목적지가 **번들에 구워져** 런타임 env로 바뀌지 않는다 —
+  컨테이너에서 런타임 주입을 시도했더니 빌드 때 값(`localhost:8080`)으로 프록시해 `ECONNREFUSED`가 났다.
+  → **build-arg(`API_ORIGIN`)로 전환.** K8s에서는 브라우저의 `/api/*`를 **Ingress가 API Service로 직접
+  라우팅**하므로 이 값이 요청 경로에 끼지 않는다(빌드 값 고정이 문제되지 않는 이유).
 - `output: "standalone"`은 **이미지 빌드에서만** 켠다(`NEXT_OUTPUT_STANDALONE=true`) — standalone은
   심볼릭 링크를 만들어 **Windows 로컬 빌드가 EPERM으로 실패**하기 때문. 로컬 검증 흐름을 깨지 않는다.
 

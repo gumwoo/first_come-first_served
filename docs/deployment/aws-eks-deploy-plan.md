@@ -1,6 +1,6 @@
 # 배포 계획 — AWS EKS(라이브 K8s) + Strimzi 멀티브로커 Kafka
 
-- 상태: 계획(미착수). 실행 전 이 문서로 합의.
+- 상태: **Phase 1(컨테이너화) 완료 / Phase 2~8 미착수.** AWS 과금은 Phase 3부터.
 - 목적: 백엔드 취업용 **살아있는 데모 URL** + **분산 시스템(K8s·멀티브로커 Kafka·오토스케일) 실증**.
 - 짝 문서: [앱 변경사항 — K8s·멀티브로커 대응](app-changes-for-k8s-kafka.md)
 - 슬라이스: 배포(S09). 부하테스트(S10) 측정 환경도 이 위에서. 선행: **S08 아웃박스(정합성) 먼저**.
@@ -51,10 +51,19 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 
 각 단계 가능한 로컬 검증 후 진행. **[내]=코드/IaC/Helm 작성, [너]=AWS 계정 액션·과금·승인.**
 
-### Phase 1 — 컨테이너화 (AWS 비용 0, 먼저 가능)
-- [내] `apps/api/Dockerfile`(멀티스테이지 JRE, non-root, graceful shutdown, healthcheck), `apps/web/Dockerfile`(standalone), `.dockerignore`
-- [내] 로컬 `docker-compose.prod.yml`로 프로덕션 이미지 기동 검증
-- 산출물: 프로덕션 이미지 로컬 부팅
+### Phase 1 — 컨테이너화 (AWS 비용 0) — **완료(S09-1)**
+- `apps/api/Dockerfile`(gradle 8.10.2 빌드 → JRE 실행, non-root, MaxRAMPercentage, readiness 헬스체크),
+  `apps/web/Dockerfile`(pnpm → standalone, non-root), 루트 `.dockerignore`, `infra/docker-compose.prod.yml`.
+- **로컬 운영 이미지로 실제 검증 완료**: readiness/liveness 200, Flyway 마이그레이션, Redis 공유,
+  Kafka 컨슈머 그룹 조인, web→api 프록시, 회원가입→로그인→/me→refresh, 대기열 토큰 발급.
+- 이 단계에서 **배포 블로커 2건을 실측으로 발견해 수정**했다(아래 "실측으로 잡은 것").
+- 산출물: 프로덕션 이미지 로컬 부팅 ✅
+
+> **실측으로 잡은 것(문서만 봤으면 못 잡았을 것)**
+> 1. `/actuator/health/{liveness,readiness}`가 **401**이었다 — 시큐리티가 `/actuator/health`만 permitAll.
+>    K8s probe는 인증 헤더를 못 붙이므로 그대로 배포하면 **Pod가 영원히 Ready가 되지 않는다.**
+> 2. Next `standalone`은 rewrites 목적지를 **빌드 시점에 굽는다** — 런타임 `API_ORIGIN` 주입이 무시돼
+>    `localhost:8080`으로 프록시하며 `ECONNREFUSED`. → build-arg로 전환.
 
 ### Phase 2 — ECR + CI 이미지 파이프라인 (GitOps 대비)
 - [너] GitHub OIDC ↔ AWS 롤(**ECR push 전용** — 배포 apply 권한은 안 줌, 그건 ArgoCD가)

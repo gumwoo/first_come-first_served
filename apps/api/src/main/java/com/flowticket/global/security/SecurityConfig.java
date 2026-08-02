@@ -64,8 +64,12 @@ public class SecurityConfig {
                                 (req, res, ex) -> writeError(res, HttpServletResponse.SC_FORBIDDEN,
                                         "FORBIDDEN", "권한이 없습니다.")))
                 .authorizeHttpRequests(auth -> auth
-                        // actuator는 health/info만 공개, metrics·prometheus 등은 인증 필요(정보 노출 방지)
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        // actuator는 health/info만 공개, metrics·prometheus 등은 인증 필요(정보 노출 방지).
+                        // health의 하위 그룹(liveness/readiness)도 함께 열어야 한다 — K8s probe는 인증 헤더를
+                        // 붙이지 못해, 막아두면 Pod가 영원히 Ready가 되지 않는다(로컬 운영 이미지에서 401 재현).
+                        // 이 두 경로는 상태 문자열(UP/DOWN)만 돌려주므로 정보 노출 위험이 없다.
+                        .requestMatchers("/actuator/health", "/actuator/health/liveness",
+                                "/actuator/health/readiness", "/actuator/info").permitAll()
                         // 운영(S07): 모든 /admin/** 은 ROLE_ADMIN 전용. 기존 admin 엔드포인트(KOPIS 동기화·좌석 시딩)도 포함.
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         // 대기 상태는 토큰(비밀 UUID)으로 조회 — Bearer 불필요(ADR-002). /queue/** 인증보다 먼저.

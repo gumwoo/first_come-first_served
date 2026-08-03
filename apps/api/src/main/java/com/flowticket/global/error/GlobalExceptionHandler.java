@@ -2,11 +2,13 @@ package com.flowticket.global.error;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /** 모든 예외를 공통 { error } 포맷으로 변환. 컨트롤러는 try/catch 하지 않는다. */
 @Slf4j
@@ -44,6 +46,35 @@ public class GlobalExceptionHandler {
         String message = e.getName() + " 파라미터 형식이 올바르지 않습니다.";
         return ResponseEntity.status(ErrorCode.VALIDATION_ERROR.getStatus())
                 .body(ErrorResponse.of(ErrorCode.VALIDATION_ERROR.name(), message));
+    }
+
+    /**
+     * 존재하지 않는 경로 → 404. 매핑이 없으면 정적 리소스 처리로 넘어가 {@code NoResourceFoundException}이
+     * 나는데, 이걸 안 잡으면 아래 fallback이 <b>500 + 스택트레이스 ERROR 로그</b>로 처리한다.
+     * 오탈자·봇 스캔 같은 정상적인 "없는 주소" 요청이 서버 오류로 보고되고 로그를 채우는 문제가 있었다.
+     * (계약상으로도 NOT_FOUND=404다 — 500은 우리 error-codes.yaml과 어긋난다.)
+     *
+     * <p>인증이 필요한 경로는 시큐리티가 먼저 401을 주므로 여기까지 오지 않는다(경로 존재 여부를
+     * 노출하지 않는 편이 낫다). 이 처리가 실제로 필요한 건 <b>공개 경로</b>(events·queue 등)다.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException e) {
+        log.debug("존재하지 않는 경로: {}", e.getResourcePath()); // 스택트레이스 없이 debug — 정상 트래픽
+        ErrorCode code = ErrorCode.NOT_FOUND;
+        return ResponseEntity.status(code.getStatus())
+                .body(ErrorResponse.of(code.name(), code.getDefaultMessage()));
+    }
+
+    /**
+     * 본문이 JSON으로 읽히지 않음(깨진 인코딩·형식 오류) → 400. 클라이언트 입력 문제이므로 서버 오류가 아니다.
+     * 실제로 운영 이미지 검증 중 잘못된 인코딩으로 보낸 요청이 500으로 응답되는 것을 확인해 분리했다.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException e) {
+        log.debug("요청 본문을 읽을 수 없음: {}", e.getMostSpecificCause().getMessage());
+        ErrorCode code = ErrorCode.VALIDATION_ERROR;
+        return ResponseEntity.status(code.getStatus())
+                .body(ErrorResponse.of(code.name(), "요청 본문 형식이 올바르지 않습니다."));
     }
 
     @ExceptionHandler(Exception.class)

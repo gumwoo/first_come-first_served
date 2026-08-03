@@ -7,6 +7,38 @@ on:
     branches: [main]
 
 jobs:
+  changes:
+    name: 변경 영역 판별
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      e2e: ${{ steps.filter.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@v4
+      # 문서만 고친 PR에 백엔드 9분·E2E 4분을 돌리는 건 낭비다. 무엇이 바뀌었는지 먼저 판별한다.
+      # 계약(contracts)·하네스는 코드가 안 바뀌어도 검증을 깨뜨릴 수 있으므로 넓게 잡는다.
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'apps/api/**'
+              - 'contracts/**'
+              - 'harness/**'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'apps/web/**'
+              - 'contracts/**'
+              - 'harness/**'
+              - '.github/workflows/ci.yml'
+            e2e:
+              - 'apps/api/**'
+              - 'apps/web/**'
+              - 'e2e/**'
+              - 'contracts/**'
+              - '.github/workflows/ci.yml'
+
   harness-meta:
     name: 하네스 메타테스트 (위반 fixture 차단 확인)
     runs-on: ubuntu-latest
@@ -28,7 +60,9 @@ jobs:
   backend:
     name: 백엔드 (하네스 → 테스트)
     runs-on: ubuntu-latest
-    needs: harness-meta
+    needs: [changes, harness-meta]
+    # 변경 영역에 해당할 때만 실행. main push는 항상 전체 검증(회귀 안전망).
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -53,7 +87,9 @@ jobs:
   frontend:
     name: 프론트 (하네스 → lint → build)
     runs-on: ubuntu-latest
-    needs: harness-meta
+    needs: [changes, harness-meta]
+    # 변경 영역에 해당할 때만 실행. main push는 항상 전체 검증(회귀 안전망).
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -83,7 +119,9 @@ jobs:
   e2e:
     name: E2E (Playwright, 풀스택)
     runs-on: ubuntu-latest
-    needs: harness-meta
+    needs: [changes, harness-meta]
+    # 변경 영역에 해당할 때만 실행. main push는 항상 전체 검증(회귀 안전망).
+    if: needs.changes.outputs.e2e == 'true' || github.event_name == 'push'
     services:
       postgres:
         image: postgres:16

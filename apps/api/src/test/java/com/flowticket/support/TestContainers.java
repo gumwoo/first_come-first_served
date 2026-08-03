@@ -45,7 +45,8 @@ public final class TestContainers {
      *
      * <p>테이블별 {@code deleteAll()}로는 부족했다: JPA가 삭제를 지연 플러시하면서 다른 테스트가 남긴
      * 자식 행(seats·orders 등) 때문에 FK 위반이 뒤늦게 터졌다. 의존 순서를 신경 쓰지 않도록
-     * {@code TRUNCATE ... CASCADE}로 한 번에 비운다(스키마 이력 테이블은 제외).
+     * {@code TRUNCATE ... CASCADE}로 한 번에 비운다.
+     * 단 <b>마이그레이션이 시드하는 테이블</b>(alert_settings)은 지우면 기본값이 사라지므로 제외한다.
      */
     public static void reset(javax.sql.DataSource dataSource,
                              org.springframework.data.redis.core.StringRedisTemplate redis) {
@@ -56,7 +57,7 @@ public final class TestContainers {
                   select string_agg(format('truncate table %I restart identity cascade', tablename), '; ')
                     into stmt
                     from pg_tables
-                   where schemaname = 'public' and tablename <> 'flyway_schema_history';
+                   where schemaname = 'public' and tablename not in ('flyway_schema_history', 'alert_settings');
                   if stmt is not null then execute stmt; end if;
                 end $$;
                 """);

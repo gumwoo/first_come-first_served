@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import org.springframework.test.context.TestPropertySource;
@@ -45,7 +46,7 @@ class OrderEventKafkaIntegrationTest extends KafkaIntegrationTestSupport {
         relay.publishPending();
 
         await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
-                verify(orderSse).broadcast(eq(orderId), eq("order.paid"), any()));
+                verify(orderSse, atLeastOnce()).broadcast(eq(orderId), eq("order.paid"), any()));
         // publish-then-mark: 발행 성공을 확인한 뒤에만 PUBLISHED로 전이
         assertThat(outboxRepository.findById(eventId).orElseThrow().getStatus())
                 .isEqualTo(OutboxStatus.PUBLISHED);

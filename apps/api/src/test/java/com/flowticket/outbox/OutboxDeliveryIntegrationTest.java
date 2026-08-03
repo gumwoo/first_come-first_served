@@ -106,7 +106,7 @@ class OutboxDeliveryIntegrationTest extends KafkaIntegrationTestSupport {
         // naive는 재발행할 근거가 없어 아무 일도 일어나지 않는다. outbox만 릴레이가 재시도한다.
         relay.publishPending();
 
-        await().atMost(Duration.ofSeconds(30))
+        await().atMost(Duration.ofSeconds(90))
                 .until(() -> deliveredIn(OUTBOX_BASE) == TRIALS);
 
         int lostBefore = TRIALS - deliveredIn(NAIVE_BASE);

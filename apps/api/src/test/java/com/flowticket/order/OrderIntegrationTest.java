@@ -2,6 +2,7 @@ package com.flowticket.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.springframework.test.context.TestPropertySource;
 
 import com.flowticket.support.IntegrationTestSupport;
 
@@ -33,7 +34,8 @@ import org.springframework.boot.test.context.SpringBootTest;
  * 주문 생성(BE-1): hold→order 승격 + 가격 스냅샷 + 멱등 + 소유자/만료 검증.
  * capacity 높게·워커 비활성으로 결정적, hold-ttl 1s로 만료 케이스 재현.
  */
-@SpringBootTest
+@TestPropertySource(properties = {"seat.hold-ttl=1"})
+
 class OrderIntegrationTest extends IntegrationTestSupport {
 
     @Autowired OrderService orderService;

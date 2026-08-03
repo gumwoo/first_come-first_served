@@ -1,6 +1,7 @@
 package com.flowticket.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.springframework.test.context.TestPropertySource;
 
 import com.flowticket.support.IntegrationTestSupport;
 
@@ -35,7 +36,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 /**
  * 무통장(vbank) 발급/입금확인 + 주문 만료 sweep(BE-3). hold-ttl 2s로 만료 케이스 재현.
  */
-@SpringBootTest
+@TestPropertySource(properties = {"seat.hold-ttl=2"})
+
 class VbankExpiryIntegrationTest extends IntegrationTestSupport {
 
     @Autowired PaymentService paymentService;

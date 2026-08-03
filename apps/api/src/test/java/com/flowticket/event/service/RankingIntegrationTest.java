@@ -36,7 +36,6 @@ class RankingIntegrationTest extends IntegrationTestSupport {
     @BeforeEach
     void seed() {
         eventRepository.deleteAll();
-        redisTemplate.getConnectionFactory().getConnection().serverCommands().flushAll();
         upserter.upsertAll(List.of(
                 kopis("PFA", "공연 A", "공연중"),
                 kopis("PFB", "공연 B", "공연중")));

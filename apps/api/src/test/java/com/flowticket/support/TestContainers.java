@@ -1,17 +1,21 @@
 package com.flowticket.support;
 
+import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * 테스트 스위트 전체가 공유하는 컨테이너(싱글톤).
+ * 비-Kafka 통합테스트가 공유하는 컨테이너(싱글톤).
  *
  * <p>예전에는 통합테스트 클래스마다 {@code @Container}로 자기 Postgres/Redis를 띄웠다.
- * {@code @Container}는 <b>클래스 단위</b> 수명이라 26개 클래스 = 26세트가 뜨고 내려가며,
+ * {@code @Container}는 <b>클래스 단위</b> 수명이라 26개 클래스 = 26세트가 뜨고 내려갔고,
  * CI 백엔드 잡 23분의 대부분이 여기서 나왔다. 여기서는 {@code @Container} 없이 static 초기화로
  * 직접 기동해 <b>JVM 수명</b> 동안 공유한다(정리는 Testcontainers Ryuk이 담당).
+ *
+ * <p><b>공유 대상은 22개(비-Kafka)다.</b> 전체 26개가 한 세트로 합쳐지는 것이 아니라,
+ * 공통 1세트 + Kafka 테스트 4세트(독립)가 최종 상태다 — 아래 Kafka 문단 참고.
  *
  * <p>데이터 격리는 컨테이너 재기동이 아니라 <b>테스트별 초기화</b>로 지킨다 —
  * "컨테이너 수명은 길게, 데이터 상태는 매번 초기화".
@@ -64,7 +68,11 @@ public final class TestContainers {
                   if stmt is not null then execute stmt; end if;
                 end $$;
                 """);
-        redis.getConnectionFactory().getConnection().serverCommands().flushAll();
+        // 팩토리에서 받은 연결은 호출자가 닫는다. Lettuce 기본 설정에서는 네이티브 연결이 공유돼
+        // 실제 누수로 이어지진 않지만, 매 테스트마다 도는 코드라 자원 수명을 명시해 둔다.
+        try (RedisConnection connection = redis.getConnectionFactory().getConnection()) {
+            connection.serverCommands().flushAll();
+        }
     }
 
 }

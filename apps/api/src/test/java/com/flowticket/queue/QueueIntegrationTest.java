@@ -33,11 +33,6 @@ class QueueIntegrationTest extends IntegrationTestSupport {
 
     private static final Long EVENT = 42L;
 
-    @BeforeEach
-    void flush() {
-        redisTemplate.getConnectionFactory().getConnection().serverCommands().flushAll();
-    }
-
     @Test
     void 같은_유저_2회발급은_동일_토큰() {
         String t1 = queueService.issue(7L, EVENT).token();

@@ -33,7 +33,7 @@ public class OrderEventConsumer {
         this.redis = redis;
     }
 
-    @KafkaListener(topics = KafkaConfig.ORDER_EVENTS_TOPIC, groupId = "flowticket")
+    @KafkaListener(topics = KafkaConfig.ORDER_EVENTS_TOPIC, groupId = "${spring.kafka.consumer.group-id:flowticket}")
     public void onOrderEvent(OrderEvent event) {
         String key = event.eventId() == null ? null : DEDUP_KEY_PREFIX + event.eventId();
         if (!reserve(key)) {

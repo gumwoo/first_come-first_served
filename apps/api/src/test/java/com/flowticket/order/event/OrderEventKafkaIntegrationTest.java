@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import org.springframework.test.context.TestPropertySource;
 
 import com.flowticket.support.KafkaIntegrationTestSupport;
 
@@ -26,6 +27,7 @@ import org.springframework.boot.test.mock.mockito.SpyBean;
  * S08 아웃박스(ADR-010): 아웃박스에 적재된 이벤트가 <b>릴레이 → Kafka → consumer → SSE</b>로 전달되고
  * PUBLISHED로 마킹되는 전체 경로를 검증. 릴레이는 스케줄러 대신 직접 호출해 결정적으로 만든다.
  */
+@TestPropertySource(properties = "spring.kafka.consumer.group-id=orderevent-it")
 @SpringBootTest
 class OrderEventKafkaIntegrationTest extends KafkaIntegrationTestSupport {
 

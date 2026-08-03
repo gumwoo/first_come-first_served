@@ -40,6 +40,29 @@ public final class TestContainers {
         registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
     }
 
+    /**
+     * 모든 테스트 앞에서 상태를 비운다 — 컨테이너를 공유하는 대신 <b>데이터는 매번 초기화</b>한다.
+     *
+     * <p>테이블별 {@code deleteAll()}로는 부족했다: JPA가 삭제를 지연 플러시하면서 다른 테스트가 남긴
+     * 자식 행(seats·orders 등) 때문에 FK 위반이 뒤늦게 터졌다. 의존 순서를 신경 쓰지 않도록
+     * {@code TRUNCATE ... CASCADE}로 한 번에 비운다(스키마 이력 테이블은 제외).
+     */
+    public static void reset(javax.sql.DataSource dataSource,
+                             org.springframework.data.redis.core.StringRedisTemplate redis) {
+        new org.springframework.jdbc.core.JdbcTemplate(dataSource).execute("""
+                do $$
+                declare stmt text;
+                begin
+                  select string_agg(format('truncate table %I restart identity cascade', tablename), '; ')
+                    into stmt
+                    from pg_tables
+                   where schemaname = 'public' and tablename <> 'flyway_schema_history';
+                  if stmt is not null then execute stmt; end if;
+                end $$;
+                """);
+        redis.getConnectionFactory().getConnection().serverCommands().flushAll();
+    }
+
     /** Kafka 부트스트랩 주소. 이 메서드를 부르는 순간에만 브로커가 뜬다(아래 홀더 클래스 로딩). */
     public static String kafkaBootstrapServers() {
         return KafkaHolder.INSTANCE.getBootstrapServers();

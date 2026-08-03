@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import org.springframework.test.context.TestPropertySource;
 
 import com.flowticket.support.KafkaIntegrationTestSupport;
 
@@ -43,6 +44,7 @@ import org.springframework.kafka.core.KafkaTemplate;
  *       재시도해 전량 발행.</li>
  * </ul>
  */
+@TestPropertySource(properties = "spring.kafka.consumer.group-id=outbox-it")
 @SpringBootTest
 class OutboxDeliveryIntegrationTest extends KafkaIntegrationTestSupport {
 

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import org.springframework.test.context.TestPropertySource;
 
 import com.flowticket.support.KafkaIntegrationTestSupport;
 
@@ -28,6 +29,7 @@ import org.springframework.kafka.core.KafkaTemplate;
  * S07 Phase 4c: 컨슈머 처리 실패 → 재시도 소진 → DLT → dlq_messages 적재, 그리고 재시도/폐기.
  * OrderSseRegistry를 던지도록 mock해 order-events 소비를 강제 실패시킨다.
  */
+@TestPropertySource(properties = "spring.kafka.consumer.group-id=dlq-it")
 @SpringBootTest
 class DlqIntegrationTest extends KafkaIntegrationTestSupport {
 

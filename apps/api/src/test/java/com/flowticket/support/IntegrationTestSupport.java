@@ -19,6 +19,9 @@ import org.springframework.test.context.TestPropertySource;
  * 스케줄러 주기만 크게 잡아 배경 워커가 테스트에 끼어들지 않게 한다.
  */
 @TestPropertySource(properties = {
+        // 컨텍스트가 여러 개 캐시된 채 살아 있으므로(각자 커넥션 풀 보유) 풀을 작게 잡는다 —
+        // 기본값(10)이면 컨텍스트 몇 개만 떠도 Postgres 최대 커넥션을 넘겨 기동이 실패한다.
+        "spring.datasource.hikari.maximum-pool-size=4",
         "jwt.secret=integration-test-secret-0123456789-0123456789-0123456789",
         "queue.capacity=100",
         "seat.max-per-user=4",
@@ -38,5 +41,20 @@ public abstract class IntegrationTestSupport {
         // 브로커를 쓰지 않는 테스트: 연결 불가 주소를 명시해 로컬에 떠 있는 Kafka에 얹히지 않게 한다.
         // (missing-topics-fatal=false + max.block.ms 바운드라 기동은 정상)
         registry.add("spring.kafka.bootstrap-servers", () -> "localhost:59092");
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private javax.sql.DataSource dataSource;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.data.redis.core.StringRedisTemplate redisForReset;
+
+    /**
+     * 컨테이너를 공유하는 대신 <b>상태는 매 테스트마다 초기화</b>한다(상위 @BeforeEach가 먼저 실행되므로
+     * 하위 클래스의 시드보다 앞선다). 이렇게 해야 클래스 간 데이터가 새지 않는다.
+     */
+    @org.junit.jupiter.api.BeforeEach
+    void resetSharedState() {
+        TestContainers.reset(dataSource, redisForReset);
     }
 }

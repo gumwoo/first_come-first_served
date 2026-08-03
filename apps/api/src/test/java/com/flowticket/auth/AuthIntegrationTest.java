@@ -2,6 +2,8 @@ package com.flowticket.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.flowticket.support.IntegrationTestSupport;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -13,39 +15,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * 가입→로그인→/me→로그아웃→블랙리스트, 중복가입, RTR 재사용 탐지를
  * 실제 Postgres + Redis 위에서 HTTP로 검증한다. (단위 테스트가 못 잡는 통합 동작)
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-class AuthIntegrationTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-
-    @Container
-    static GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", postgres::getJdbcUrl);
-        r.add("spring.datasource.username", postgres::getUsername);
-        r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.data.redis.host", redis::getHost);
-        r.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
-        r.add("jwt.secret", () -> "integration-test-secret-0123456789-0123456789-0123456789");
-        r.add("spring.kafka.bootstrap-servers", () -> "localhost:59092"); // 미사용
-    }
+class AuthIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     TestRestTemplate rest;

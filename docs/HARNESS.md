@@ -58,6 +58,9 @@ Static/Unit/Integration이 다 초록인데도 E2E 계층(사람의 수동 클�
 - **설계 결정 → ADR** ([_index](decisions/_index.md)): 원자성 계층 선택, 가격 단일 소스 등 되돌아볼 근거.
 - **사건 회고 → TS** ([_index](troubleshooting/_index.md)): 실사용/수동 검증에서 발견한 결함을
   증상→조사→근본원인→해결→재발방지로 기록(TS-001~011). "어떻게 원인을 좁혔는가"가 핵심.
+- **파이프라인 자체도 측정 대상**: CI가 느리면 하네스가 안 돌아간다. 잡별 시간을 실측해 병목을
+  특정하고(백엔드 잡 = 전체 시간), 통합테스트 컨테이너·컨텍스트를 공유해 **23.5분 → 9.4분**으로 줄였다
+  (검증 범위는 그대로) → [IMP-013](improvements/IMP-013-ci-shared-testcontainers.md).
 
 ### ④ E2E + CI 자가개선 루프 — [`e2e/`](../e2e), [`ci.yml`](../.github/workflows/ci.yml)
 경계·UI 상태 결함을 실제 브라우저로 잡는다. 규칙: [e2e-rules.md](testing/e2e-rules.md).

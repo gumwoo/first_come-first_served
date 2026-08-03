@@ -3,7 +3,6 @@ package com.flowticket.support;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
@@ -14,8 +13,12 @@ import org.testcontainers.utility.DockerImageName;
  * CI 백엔드 잡 23분의 대부분이 여기서 나왔다. 여기서는 {@code @Container} 없이 static 초기화로
  * 직접 기동해 <b>JVM 수명</b> 동안 공유한다(정리는 Testcontainers Ryuk이 담당).
  *
- * <p>데이터 격리는 컨테이너 재기동이 아니라 <b>테스트별 초기화</b>(@BeforeEach deleteAll/flushAll)로 지킨다 —
+ * <p>데이터 격리는 컨테이너 재기동이 아니라 <b>테스트별 초기화</b>로 지킨다 —
  * "컨테이너 수명은 길게, 데이터 상태는 매번 초기화".
+ *
+ * <p><b>Kafka 테스트는 공유 대상이 아니다.</b> 토픽·컨슈머 그룹·오프셋이 얽혀(다른 클래스가 남긴
+ * 메시지를 새 그룹이 earliest부터 다시 소비) 실패 원인이 불투명해졌다. 4개뿐이라 각자 브로커를
+ * 띄우는 편이 명확하고, 절감의 대부분은 나머지 22개에서 나온다.
  */
 public final class TestContainers {
 
@@ -64,24 +67,4 @@ public final class TestContainers {
         redis.getConnectionFactory().getConnection().serverCommands().flushAll();
     }
 
-    /** Kafka 부트스트랩 주소. 이 메서드를 부르는 순간에만 브로커가 뜬다(아래 홀더 클래스 로딩). */
-    public static String kafkaBootstrapServers() {
-        return KafkaHolder.INSTANCE.getBootstrapServers();
-    }
-
-    /**
-     * Kafka는 기동이 가장 무겁다(브로커 부팅+토픽 준비). 필요한 테스트에서만 켜지도록
-     * 홀더 클래스로 감싸 <b>지연 초기화</b>한다 — Kafka를 안 쓰는 테스트만 도는 실행에서는 아예 안 뜬다.
-     */
-    private static final class KafkaHolder {
-        private static final KafkaContainer INSTANCE =
-                new KafkaContainer(DockerImageName.parse("apache/kafka:3.8.0"));
-
-        static {
-            INSTANCE.start();
-        }
-
-        private KafkaHolder() {
-        }
-    }
 }

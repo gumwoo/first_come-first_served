@@ -35,7 +35,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  * capacity 높게·워커 비활성으로 결정적, hold-ttl 1s로 만료 케이스 재현.
  */
 @TestPropertySource(properties = {"seat.hold-ttl=1"})
-
+@SpringBootTest
 class OrderIntegrationTest extends IntegrationTestSupport {
 
     @Autowired OrderService orderService;

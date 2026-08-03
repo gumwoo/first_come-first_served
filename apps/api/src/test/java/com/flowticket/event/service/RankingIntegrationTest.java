@@ -2,6 +2,9 @@ package com.flowticket.event.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.flowticket.support.IntegrationTestSupport;
+import org.springframework.test.context.TestPropertySource;
+
 import com.flowticket.event.dto.EventSummaryResponse;
 import com.flowticket.event.kopis.KopisEvent;
 import com.flowticket.event.kopis.KopisUpserter;
@@ -12,40 +15,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * 조회수 랭킹 검증(Testcontainers Redis). 핵심 불변식:
  * 인기(누적)와 실시간(감쇠)은 같은 조회를 다른 집계로 → 결과가 달라질 수 있다.
  */
+@TestPropertySource(properties = {"ranking.decay-rate-ms=3600000"})
 @SpringBootTest
-@Testcontainers
-class RankingIntegrationTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-
-    @Container
-    static GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", postgres::getJdbcUrl);
-        r.add("spring.datasource.username", postgres::getUsername);
-        r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.data.redis.host", redis::getHost);
-        r.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
-        r.add("jwt.secret", () -> "integration-test-secret-0123456789-0123456789-0123456789");
-        r.add("spring.kafka.bootstrap-servers", () -> "localhost:59092");
-        r.add("ranking.decay-rate-ms", () -> "3600000"); // 자동 감쇠 비활성(테스트는 수동 호출)
-    }
+class RankingIntegrationTest extends IntegrationTestSupport {
 
     @Autowired RankingService ranking;
     @Autowired EventService eventService;

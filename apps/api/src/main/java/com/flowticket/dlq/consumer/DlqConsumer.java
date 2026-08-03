@@ -28,7 +28,7 @@ public class DlqConsumer {
         this.objectMapper = objectMapper;
     }
 
-    @KafkaListener(topics = KafkaConfig.ORDER_EVENTS_DLT, groupId = "flowticket-dlq")
+    @KafkaListener(topics = KafkaConfig.ORDER_EVENTS_DLT, groupId = "${spring.kafka.consumer.group-id:flowticket}-dlq")
     public void onDeadLetter(
             OrderEvent event,
             @Header(name = KafkaHeaders.DLT_ORIGINAL_TOPIC, required = false) byte[] originalTopic,

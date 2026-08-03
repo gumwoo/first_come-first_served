@@ -1,0 +1,9 @@
+{
+  "topic": "ci-backend-job",
+  "phase": "before",
+  "date": "2026-08-03",
+  "method": "GitHub Actions 잡별 소요시간을 API로 실측(main 최근 3런). 전체 CI 시간은 병렬 잡 중 최댓값이므로 백엔드 잡이 곧 전체 시간",
+  "config": { "springBootTestClasses": 26, "containerSetsPerRun": 26, "sharedContainers": false, "fixedSleepTotalSec": 15.5 },
+  "result": { "backendJobMin": [23.07, 23.92, 23.42], "backendJobAvgMin": 23.47, "e2eMin": 3.9, "frontendMin": 0.9, "metaMin": 0.22, "totalCiMin": 23.5 },
+  "note": "@SpringBootTest 26개가 각자 @Container로 Postgres/Redis(+Kafka)를 띄웠다. @Container는 클래스 단위 수명이라 26세트가 뜨고 내려간다. 테스트 내 고정 sleep 합계는 15.5초뿐이라 대기가 아니라 인프라 기동이 비용의 대부분. 클래스당 약 45초."
+}

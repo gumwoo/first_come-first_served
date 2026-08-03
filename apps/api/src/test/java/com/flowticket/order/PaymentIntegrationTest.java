@@ -9,6 +9,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.flowticket.support.IntegrationTestSupport;
+
 import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
@@ -40,45 +42,13 @@ import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * 결제 승인(BE-2): Mock 승인 → PENDING→PAID(조건부) + 좌석 SOLD + hold CONVERTED,
  * 거절 시 payment FAILED/order PENDING 유지, 멱등, 이미 PAID 재결제 거부.
  */
 @SpringBootTest
-@Testcontainers
-class PaymentIntegrationTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-    @Container
-    static GenericContainer<?> redisContainer =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", postgres::getJdbcUrl);
-        r.add("spring.datasource.username", postgres::getUsername);
-        r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.data.redis.host", redisContainer::getHost);
-        r.add("spring.data.redis.port", () -> redisContainer.getMappedPort(6379));
-        r.add("jwt.secret", () -> "integration-test-secret-0123456789-0123456789-0123456789");
-        r.add("spring.kafka.bootstrap-servers", () -> "localhost:59092");
-        r.add("queue.capacity", () -> "100");
-        r.add("queue.admit-interval-ms", () -> "3600000");
-        r.add("seat.max-per-user", () -> "4");
-        r.add("seat.hold-ttl", () -> "300");
-        r.add("seat.sweep-interval-ms", () -> "3600000");
-        r.add("order.sweep-interval-ms", () -> "3600000");
-        r.add("outbox.relay-interval-ms", () -> "3600000"); // 아웃박스 릴레이 스케줄 비활성(결정적 테스트)
-    }
+class PaymentIntegrationTest extends IntegrationTestSupport {
 
     @Autowired OrderService orderService;
     @Autowired PaymentService paymentService;

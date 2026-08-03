@@ -2,6 +2,8 @@ package com.flowticket.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.flowticket.support.IntegrationTestSupport;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.flowticket.auth.domain.AuthProvider;
 import com.flowticket.auth.domain.User;
@@ -19,38 +21,13 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * 관리자 인증 게이트(S07 Phase 1): /admin/** 은 ROLE_ADMIN 전용.
  * 미인증→401, 일반회원(ROLE_USER)→403, 관리자(ROLE_ADMIN)→200.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-class AdminAuthIntegrationTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-    @Container
-    static GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", postgres::getJdbcUrl);
-        r.add("spring.datasource.username", postgres::getUsername);
-        r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.data.redis.host", redis::getHost);
-        r.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
-        r.add("jwt.secret", () -> "integration-test-secret-0123456789-0123456789-0123456789");
-        r.add("spring.kafka.bootstrap-servers", () -> "localhost:59092");
-    }
+class AdminAuthIntegrationTest extends IntegrationTestSupport {
 
     @Autowired TestRestTemplate rest;
     @Autowired UserRepository userRepository;

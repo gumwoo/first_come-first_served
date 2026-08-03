@@ -6,6 +6,8 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import com.flowticket.support.IntegrationTestSupport;
+
 import com.flowticket.seat.sse.SeatSseRegistry;
 import java.util.List;
 import java.util.Map;
@@ -15,13 +17,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * ① SSE 팬아웃(멀티 Pod). 한 인스턴스(podA)에서 broadcast하면 Redis pub/sub을 통해 다른
@@ -29,25 +24,7 @@ import org.testcontainers.utility.DockerImageName;
  * 같은 Redis에 물려 "연결 Pod ≠ 소비 Pod" 상황을 재현한다.
  */
 @SpringBootTest
-@Testcontainers
-class SseFanoutIntegrationTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-    @Container
-    static GenericContainer<?> redisContainer =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", postgres::getJdbcUrl);
-        r.add("spring.datasource.username", postgres::getUsername);
-        r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.data.redis.host", redisContainer::getHost);
-        r.add("spring.data.redis.port", () -> redisContainer.getMappedPort(6379));
-        r.add("jwt.secret", () -> "integration-test-secret-0123456789-0123456789-0123456789");
-        r.add("spring.kafka.bootstrap-servers", () -> "localhost:59092");
-    }
+class SseFanoutIntegrationTest extends IntegrationTestSupport {
 
     @Autowired SsePubSub pubSub;
     @Autowired RedisConnectionFactory connectionFactory;

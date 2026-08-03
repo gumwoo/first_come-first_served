@@ -27,6 +27,7 @@ naive → 측정 → 개선 → 재측정 순서로 수치를 **커밋으로 박
 | [IMP-010](IMP-010-seat-payment-race.md) | 좌석 만료↔결제 양방향 레이스 — 조건부 가드 + 영향행수 검증 | S04/S05 | 불일치 20→0 | 완료 |
 | [IMP-011](IMP-011-outbox-delivery.md) | 브로커 장애 중 이벤트 유실 — 트랜잭셔널 아웃박스 | S08 | 유실 10→0 | 완료 |
 | [IMP-012](IMP-012-kopis-upsert-batch.md) | KOPIS 건별 존재 확인 — 배치 조회 | S02 | 조회 200→1 | 완료 |
+| [IMP-013](IMP-013-ci-shared-testcontainers.md) | CI 백엔드 잡 — 통합테스트 컨테이너·컨텍스트 공유 | 인프라 | 23.5→9.35분(-60%) | 완료 |
 
 ## 누적 지표 보드
 프로젝트 전체에서 모은 정량 성과 요약: [METRICS.md](METRICS.md)

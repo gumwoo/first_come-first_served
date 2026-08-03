@@ -2,6 +2,9 @@ package com.flowticket.event.kopis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.flowticket.support.IntegrationTestSupport;
+import org.springframework.test.context.TestPropertySource;
+
 import com.flowticket.event.domain.Event;
 import com.flowticket.event.repository.EventRepository;
 import jakarta.persistence.EntityManagerFactory;
@@ -13,13 +16,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * IMP-012 측정: KOPIS 동기화의 <b>기존 여부 확인 쿼리 수</b>를 before/after로 센다.
@@ -28,34 +24,11 @@ import org.testcontainers.utility.DockerImageName;
  *
  * <p>쿼리 수는 Hibernate 통계(prepare statement count)로 직접 측정한다(추정 아님).
  */
+@TestPropertySource(properties = {"spring.jpa.properties.hibernate.generate_statistics=true"})
 @SpringBootTest
-@Testcontainers
-class KopisUpsertQueryCountTest {
+class KopisUpsertQueryCountTest extends IntegrationTestSupport {
 
     private static final int N = 200;
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-    @Container
-    static GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", postgres::getJdbcUrl);
-        r.add("spring.datasource.username", postgres::getUsername);
-        r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.data.redis.host", redis::getHost);
-        r.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
-        r.add("jwt.secret", () -> "integration-test-secret-0123456789-0123456789-0123456789");
-        r.add("spring.kafka.bootstrap-servers", () -> "localhost:59092");
-        r.add("queue.admit-interval-ms", () -> "3600000");
-        r.add("seat.sweep-interval-ms", () -> "3600000");
-        r.add("order.sweep-interval-ms", () -> "3600000");
-        r.add("outbox.relay-interval-ms", () -> "3600000");
-        r.add("payment.reconcile-interval-ms", () -> "3600000");
-        r.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
-    }
 
     @Autowired EventRepository eventRepository;
     @Autowired KopisUpserter upserter;

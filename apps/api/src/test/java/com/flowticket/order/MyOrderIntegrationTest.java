@@ -3,6 +3,8 @@ package com.flowticket.order;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.flowticket.support.IntegrationTestSupport;
+
 import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
@@ -31,44 +33,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * 마이페이지 예매 조회(S06 BE-1): 본인 주문만·상태 탭·페이징, 상세 소유자 검증(403/404).
  */
 @SpringBootTest
-@Testcontainers
-class MyOrderIntegrationTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-    @Container
-    static GenericContainer<?> redisContainer =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", postgres::getJdbcUrl);
-        r.add("spring.datasource.username", postgres::getUsername);
-        r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.data.redis.host", redisContainer::getHost);
-        r.add("spring.data.redis.port", () -> redisContainer.getMappedPort(6379));
-        r.add("jwt.secret", () -> "integration-test-secret-0123456789-0123456789-0123456789");
-        r.add("spring.kafka.bootstrap-servers", () -> "localhost:59092");
-        r.add("queue.capacity", () -> "100");
-        r.add("queue.admit-interval-ms", () -> "3600000");
-        r.add("seat.max-per-user", () -> "4");
-        r.add("seat.hold-ttl", () -> "300");
-        r.add("seat.sweep-interval-ms", () -> "3600000");
-        r.add("order.sweep-interval-ms", () -> "3600000");
-        r.add("outbox.relay-interval-ms", () -> "3600000"); // 아웃박스 릴레이 스케줄 비활성(결정적 테스트)
-    }
+class MyOrderIntegrationTest extends IntegrationTestSupport {
 
     @Autowired MyOrderService myOrderService;
     @Autowired OrderService orderService;

@@ -92,7 +92,13 @@ Pod가 영구 Pending이 된다. `WaitForFirstConsumer`는 **Pod 배치가 정�
 비용 통제는 **이중화를 깎는 방식이 아니라 실행 시간으로** 한다. 데모 4시간 기준 약 $1.5~2 수준
 (근사치 — 실제 청구는 AWS 요금 기준).
 
-안전망: AWS Budgets **$5 / $20 / $50** 3단계 + Cost Anomaly Detection.
+안전망(**설정 완료** — 상세는 terraform-design §7):
+- **Budgets** 월 $50, 실제 $5·$20·$50 + 예상 $50 = 4단계 알림
+- **Cost Anomaly Detection** 임계값 $3, 일일 요약
+
+**자동 종료 작업은 두지 않는다.** 예산 초과로 리소스를 자동 정지하면 EKS가 불완전하게 멈춰
+(노드만 죽고 컨트롤플레인·EBS·NAT는 잔존) 오히려 정리가 어려워진다. 알림만 받고 종료 판단은
+사람이 하며, destroy는 정해진 순서를 따른다.
 
 ### 9. Terraform state를 **2계층으로 분리**한다
 - **bootstrap(영속)**: Route53 Hosted Zone, ACM, ECR, IAM/OIDC — `destroy` 대상이 아님

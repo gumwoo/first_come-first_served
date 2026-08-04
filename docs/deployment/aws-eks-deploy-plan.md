@@ -65,11 +65,15 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 > 2. Next `standalone`은 rewrites 목적지를 **빌드 시점에 굽는다** — 런타임 `API_ORIGIN` 주입이 무시돼
 >    `localhost:8080`으로 프록시하며 `ECONNREFUSED`. → build-arg로 전환.
 
-### Phase 2 — ECR + CI 이미지 파이프라인 (GitOps 대비)
-- [너] GitHub OIDC ↔ AWS 롤(**ECR push 전용** — 배포 apply 권한은 안 줌, 그건 ArgoCD가)
-- [내] Actions: 하네스/테스트 뒤 이미지 빌드 → ECR push(태그=git SHA)
-- [내] **배포 매니페스트의 이미지 태그를 새 SHA로 갱신 → Git commit**(GitOps 트리거 — Actions는 여기까지, apply는 안 함)
-- 산출물: main 머지 시 ECR 자동 적재 + `k8s/` 매니페스트 태그 자동 갱신
+### Phase 2 — ECR + CI 이미지 파이프라인 (GitOps 대비) — **이미지 push까지 완료**
+- [너] ECR 저장소 2개(`flowticket-api`/`flowticket-web`), GitHub OIDC 공급자, IAM 롤
+  `flowticket-gha-ecr`(**ECR push 전용** — EKS apply 권한 없음), GitHub Secret `AWS_ROLE_ARN` ✅
+- [내] `.github/workflows/image.yml` ✅ — **CI 성공 후**(`workflow_run`) 이미지 빌드 → ECR push, **태그 = git SHA**
+  - push 트리거가 아니라 `workflow_run`인 이유: push면 CI와 **병렬**로 돌아 테스트가 깨진 커밋의 이미지도 올라간다.
+  - `workflow_run`에는 paths 필터를 걸 수 없어 잡 안에서 **변경 파일을 직접 판별**(문서만 고친 머지엔 빌드 안 함).
+  - `latest` 같은 이동 태그를 두지 않는다 — 도는 이미지와 커밋이 1:1이어야 롤백이 "이전 SHA로" 끝난다.
+- [내] **매니페스트 태그 갱신 커밋은 Phase 6**(ArgoCD 도입)에서 붙인다 — 지금은 갱신할 `k8s/`가 없다.
+- 산출물: main 머지(테스트 통과) 시 ECR 자동 적재 ✅ / 매니페스트 자동 갱신은 Phase 6
 
 ### Phase 3 — IaC: 클러스터·데이터·네트워크 (Terraform)
 - [내] VPC(퍼블릭/프라이빗) · **EKS**(노드그룹) · RDS · ElastiCache · ECR · IAM/**IRSA** · CloudWatch

@@ -1,0 +1,118 @@
+name: Image
+
+# 이미지는 "테스트를 통과한 커밋"에서만 나가야 한다(ADR-009). 그래서 push가 아니라
+# CI 워크플로가 성공으로 끝났을 때 이어서 돈다 — push 트리거면 CI와 병렬로 돌아
+# 테스트가 깨진 커밋의 이미지도 ECR에 올라간다.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  # 최초 검증·재시도용(파이프라인만 확인하고 싶을 때).
+  workflow_dispatch:
+
+# OIDC로 AWS 역할을 맡으려면 id-token 발급 권한이 필요하다(장기 액세스 키를 쓰지 않는 이유).
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+
+jobs:
+  # 시크릿은 job-level if에서 참조할 수 없어(컨텍스트 미제공), 별도 잡에서 존재 여부를 출력한다.
+  # 포크·시크릿 미설정 환경에서 AWS 단계가 실패하지 않고 조용히 건너뛰게 하는 가드.
+  guard:
+    name: 전제 확인 (시크릿·변경 영역)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+      sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # workflow_run 이벤트의 기본 checkout은 트리거 워크플로의 커밋이 아니다 — head_sha를 명시.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 2
+      - id: check
+        env:
+          ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::notice::AWS_ROLE_ARN 시크릿이 없어 이미지 빌드를 건너뜁니다."
+            echo "ready=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          # workflow_run에는 paths 필터를 걸 수 없어, 이미지에 영향 있는 변경인지 직접 판별한다.
+          # (문서만 고친 머지에 이미지 빌드를 돌리지 않기 위함 — CI의 paths 필터와 같은 취지)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git diff --name-only HEAD^ HEAD | grep -qE '^(apps/(api|web)/|infra/|\.dockerignore|\.github/workflows/image\.yml)'; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::이미지에 영향 있는 변경이 없어 건너뜁니다."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  api:
+    name: API 이미지 → ECR
+    runs-on: ubuntu-latest
+    needs: guard
+    if: needs.guard.outputs.ready == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: build & push (태그 = git SHA)
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ needs.guard.outputs.sha }}
+        run: |
+          # 태그를 git SHA로 고정하면 "지금 도는 이미지가 어떤 코드인지"가 1:1로 연결되고,
+          # 롤백도 이전 SHA 이미지로 되돌리면 된다(latest 같은 이동 태그는 쓰지 않는다).
+          IMAGE="$REGISTRY/flowticket-api:$TAG"
+          docker build -f apps/api/Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "### API 이미지 push 완료" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+
+  web:
+    name: Web 이미지 → ECR
+    runs-on: ubuntu-latest
+    needs: guard
+    if: needs.guard.outputs.ready == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: build & push (태그 = git SHA)
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ needs.guard.outputs.sha }}
+          # Next standalone은 rewrites 목적지를 빌드 시점에 굽는다(S09-1에서 실측).
+          # K8s에서는 브라우저의 /api/* 를 Ingress가 API Service로 직접 라우팅하므로 이 값이
+          # 요청 경로에 끼지 않는다 — 서버사이드 프록시 폴백용 기본값만 넣어둔다.
+          API_ORIGIN: ${{ vars.API_ORIGIN || 'http://flowticket-api:8080' }}
+        run: |
+          IMAGE="$REGISTRY/flowticket-web:$TAG"
+          docker build -f apps/web/Dockerfile --build-arg "API_ORIGIN=$API_ORIGIN" -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "### Web 이미지 push 완료" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"

@@ -1,8 +1,10 @@
 # RDS PostgreSQL — 프라이빗 데이터 서브넷, 외부 노출 없음.
 #
-# 비밀번호는 Terraform이 생성해 Secrets Manager에 넣고, 밖으로는 ARN만 내보낸다.
-# 프로젝트 규칙상 비밀은 코드·설정·채팅에 노출하지 않는다 — state 파일도 평문이므로
-# output으로 값을 흘리지 않는 것이 중요하다.
+# 비밀번호는 **RDS가 직접 관리**한다(manage_master_user_password).
+# 처음에는 Terraform이 random_password로 만들어 Secrets Manager에 넣었는데,
+# 그 방식은 생성한 값이 **state에 평문으로 남는다** — output으로 안 내보내도 마찬가지다.
+# RDS가 관리하면 Terraform은 비밀번호를 보지도 저장하지도 않고 시크릿 ARN만 참조한다.
+# (프로젝트 규칙: 비밀은 코드·설정·state·채팅 어디에도 남기지 않는다.)
 
 resource "aws_db_subnet_group" "this" {
   name       = "${var.name}-db"
@@ -29,33 +31,6 @@ resource "aws_security_group_rule" "db_from_nodes" {
   description              = "PostgreSQL from EKS cluster security group"
 }
 
-resource "random_password" "master" {
-  length = 32
-  # RDS가 허용하지 않는 문자(/ @ " 공백)를 피한다.
-  override_special = "!#$%&*()-_=+[]{}<>:?"
-}
-
-resource "aws_secretsmanager_secret" "master" {
-  name        = "${var.name}/rds/master"
-  description = "FlowTicket RDS master credentials"
-  tags        = var.tags
-
-  # 데모는 apply/destroy를 반복한다. 기본 복구 대기(7~30일)가 걸리면 같은 이름으로
-  # 다시 만들 수 없어 다음 apply가 막힌다.
-  recovery_window_in_days = 0
-}
-
-resource "aws_secretsmanager_secret_version" "master" {
-  secret_id = aws_secretsmanager_secret.master.id
-  secret_string = jsonencode({
-    username = var.username
-    password = random_password.master.result
-    dbname   = var.db_name
-    host     = aws_db_instance.this.address
-    port     = aws_db_instance.this.port
-  })
-}
-
 resource "aws_db_instance" "this" {
   identifier     = var.name
   engine         = "postgres"
@@ -68,7 +43,10 @@ resource "aws_db_instance" "this" {
 
   db_name  = var.db_name
   username = var.username
-  password = random_password.master.result
+
+  # 비밀번호를 Terraform이 만들지 않는다 — RDS가 생성·저장·교체하고
+  # Secrets Manager 시크릿을 알아서 만든다. ARN은 master_user_secret으로 노출된다.
+  manage_master_user_password = true
 
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.db.id]

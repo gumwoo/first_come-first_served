@@ -10,10 +10,6 @@ terraform {
       source  = "hashicorp/tls"
       version = "~> 4.0"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
-    }
   }
 
   # state는 S3에 둔다. apply/destroy를 반복하므로 state 유실이 치명적이다.

@@ -37,7 +37,8 @@ coverage/
 .terraform/
 *.tfstate
 *.tfstate.*
-.terraform.lock.hcl
+# .terraform.lock.hcl 은 커밋한다 — 프로바이더 버전을 고정하지 않으면
+# validate 때와 plan 때 다른 버전이 선택될 수 있다.
 crash.log
 *.tfvars
 !*.tfvars.example

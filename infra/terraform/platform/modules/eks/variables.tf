@@ -3,7 +3,8 @@ variable "cluster_name" {
 }
 
 variable "kubernetes_version" {
-  type = string
+  description = "EKS 지원 버전. 낡으면 생성 실패 또는 연장 지원 요금이 붙는다 — 환경 변수 설명 참고."
+  type        = string
 }
 
 variable "private_app_subnet_ids" {
@@ -18,11 +19,10 @@ variable "private_app_subnet_id_by_az" {
 
 variable "public_access_cidrs" {
   description = <<-EOT
-    K8s API 퍼블릭 엔드포인트에 접근할 수 있는 출발지.
-    데모라 로컬 kubectl이 필요해 퍼블릭을 켜두지만, 가능하면 본인 IP로 좁힌다.
+    K8s API 퍼블릭 엔드포인트 접근을 허용할 출발지. **기본값을 두지 않는다** —
+    호출자가 의식적으로 지정하게 한다(전 세계 공개는 환경 계층에서 validation으로 막는다).
   EOT
   type        = list(string)
-  default     = ["0.0.0.0/0"]
 }
 
 variable "node_instance_type" {

@@ -21,8 +21,8 @@ output "db_endpoint" {
 }
 
 output "db_secret_arn" {
-  description = "자격증명은 이 시크릿에만 있다. 값은 output으로 내보내지 않는다."
-  value       = module.rds.secret_arn
+  description = "RDS가 관리하는 자격증명 시크릿의 ARN. 비밀번호는 Terraform state에 없다."
+  value       = module.rds.master_user_secret_arn
 }
 
 output "redis_endpoint" {

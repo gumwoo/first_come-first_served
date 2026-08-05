@@ -10,14 +10,35 @@
 
 ---
 
+## 0. 확정된 외부 자원 (2026-08-05)
+
+| 항목 | 값 |
+|---|---|
+| 리전 | `ap-northeast-2` |
+| 도메인 | **`flow-ticket.com`** (상태 ACTIVE, 만료 **2027-08-05**) |
+| Route53 Hosted Zone ID | `Z02604463Q0PGHQJR327E` (퍼블릭, **Route53 Registrar가 자동 생성**) |
+| ECR | `flowticket-api` / `flowticket-web` (Phase 2에서 SHA 태그 push 실증 완료) |
+
+**DNS 위임 확인 완료** — 도메인의 이름 서버 4개가 Hosted Zone의 NS 레코드와 일치한다.
+이것이 맞아야 ACM DNS 검증이 통과하고 ALB Alias 레코드가 실제로 해석된다.
+
+**도메인 운영 설정**
+- **이전 잠금: 켬** — 무단 이전 방지(무료).
+- **자동 갱신: 끔(의도)** — 데모 종료 후 방치되어 자동 결제되는 것을 원치 않기 때문이다.
+  대가로 **2027-08-05에 만료되면 도메인이 소멸**한다. 그 전에 갱신할지 여부를 판단해야 하며,
+  문서·이력서에 이 도메인을 URL로 적어 둔 경우 링크가 죽는다는 뜻이다.
+- DNSSEC: 구성하지 않음(이 프로젝트 범위에서 관리 복잡도 대비 이득 없음).
+
+---
+
 ## 1. 디렉터리 구조와 state 분리
 
 ```
 infra/terraform/
 ├─ state-bootstrap/          # S3 버킷 + 잠금 (local state, 1회)
 ├─ bootstrap/                # 영속 — destroy 대상 아님
-│  ├─ route53.tf             #   Hosted Zone
-│  ├─ acm.tf                 #   와일드카드 인증서 + DNS 검증
+│  ├─ route53.tf             #   Hosted Zone은 data 참조만 (아래 주의)
+│  ├─ acm.tf                 #   루트+와일드카드 인증서 + DNS 검증
 │  ├─ ecr.tf                 #   flowticket-api / flowticket-web
 │  ├─ iam.tf                 #   GitHub OIDC provider + Actions 롤
 │  └─ outputs.tf
@@ -58,6 +79,36 @@ bootstrap outputs
 ⚠️ **민감값은 remote state output으로 넘기지 않는다.** DB 비밀번호 등은
 Secrets Manager / SSM Parameter Store에 두고 **ARN만** 전달한다
 (state 파일은 평문이며 프로젝트 규칙상 비밀은 환경변수·시크릿 저장소로만).
+
+### ⚠️ Hosted Zone은 Terraform이 **소유하지 않는다**
+
+Hosted Zone은 도메인 등록 시 **Route53 Registrar가 이미 자동 생성**했다. Terraform이 새로 만들면
+NS가 다른 Zone이 하나 더 생겨 **도메인이 가리키는 Zone과 어긋난다.**
+
+| 방식 | 판정 |
+|---|---|
+| **`data "aws_route53_zone"`로 참조** | ✅ **채택** — Terraform이 소유하지 않아 실수로 destroy될 수 없다 |
+| `terraform import`로 관리 | ❌ bootstrap을 destroy하면 Zone이 삭제되고, 재생성 시 **NS가 바뀌어** 레지스트라 설정을 다시 해야 한다 |
+
+Hosted Zone은 이 스택에서 **가장 되돌리기 번거로운 자원**이다(NS가 바뀌면 도메인 쪽 설정을 손대야
+하고 DNS 전파도 기다려야 한다). Terraform 관리 밖에 두는 편이 안전하다.
+`hosted_zone_id`는 bootstrap이 **data로 읽어 output으로 전달**한다.
+
+### ACM 인증서
+
+```
+리전   ap-northeast-2          ← ALB와 반드시 같은 리전
+SAN    flow-ticket.com         ← 와일드카드는 apex를 커버하지 않는다
+       *.flow-ticket.com
+검증   DNS (Route53 자동 레코드 생성)
+```
+
+- **리전 주의**: ALB는 **같은 리전의 인증서만** 붙일 수 있다. `us-east-1`은 CloudFront용이며
+  여기서 쓰면 ALB에 연결되지 않는다.
+- **SAN 두 개가 모두 필요하다**: `*.flow-ticket.com`은 `flow-ticket.com` 자신을 포함하지 않는다.
+- 와일드카드는 **1레벨만** 커버한다 — `api.flow-ticket.com` ✅ / `a.b.flow-ticket.com` ❌.
+  계획 중인 서브도메인(`api.` · `argocd.` · `grafana.`)은 전부 1레벨이라 문제없다.
+- **DNS 검증 레코드는 Zone에 남겨 둔다.** 인증서 갱신 시 재사용되므로 지우지 않는다.
 
 ---
 
@@ -208,7 +259,7 @@ template:
 ```
 0. 쿼터·Budgets 확인 (§7)
 1. state-bootstrap   S3 버킷 (+ 필요 시 잠금 테이블)
-2. bootstrap         Route53 → 도메인 NS 연결 → ACM 요청 → DNS 검증 대기 → ECR·IAM
+2. bootstrap         Route53 Zone data 참조 → ACM 요청 → DNS 검증 대기 → ECR·IAM
 3. platform          VPC → 엔드포인트 → EKS → 노드그룹 → 애드온 → RDS → ElastiCache
 4. 부트스트랩 Helm    LB Controller → Cluster Autoscaler → ArgoCD
 5. ArgoCD            Strimzi Operator → Kafka CR → 앱(api/web) → 관측
@@ -280,7 +331,7 @@ destroy 누락(NAT·EBS·ALB·EIP 잔존)은 **누적이 임계에 닿기 전에
 **종료 판단은 사람이 한다** — §6의 순서를 지켜야 잔여물이 남지 않기 때문이다.
 
 ### 남은 준비
-- [ ] **도메인 구매 → Route53 Hosted Zone** ← `bootstrap`(ACM 포함)의 선행 조건
+- [x] **도메인 등록 → Route53 Hosted Zone** — `flow-ticket.com` ACTIVE, NS 위임 일치 확인(§0)
 - [ ] `m6i.large`(또는 대체 비버스터블)의 `ap-northeast-2` 가용 여부
 - [x] ECR에 이미지 존재 확인 — Phase 2 완료(SHA 태그 push 실증)
 - [ ] AWS CLI 계정·리전 확인

@@ -37,9 +37,11 @@ resource "aws_ecr_repository" "this" {
 
 # 태그가 SHA라 이미지가 계속 쌓인다. 최근 것만 남겨 저장 비용을 묶어 둔다.
 resource "aws_ecr_lifecycle_policy" "this" {
-  for_each = aws_ecr_repository.this
+  # for_each를 aws_ecr_repository.this로 잡으면 키가 "apply 이후에나 아는 값"이 되어
+  # import·plan이 막힌다. 키는 정적인 local 맵에서 가져오고, 저장소 참조만 남긴다.
+  for_each = local.ecr_repositories
 
-  repository = each.value.name
+  repository = aws_ecr_repository.this[each.key].name
   policy = jsonencode({
     rules = [{
       rulePriority = 1

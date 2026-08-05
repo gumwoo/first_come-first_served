@@ -25,6 +25,8 @@
 
 ### 0. backend 설정
 
+먼저 [`state-bootstrap`](../state-bootstrap/README.md)을 실행한다(**local state 백업 주의**).
+
 ```bash
 cd infra/terraform/state-bootstrap
 terraform init && terraform apply          # state 버킷 + 잠금 테이블
@@ -110,6 +112,5 @@ ARN이 platform으로 넘어가 **ALB 생성이 실패한다.** 대기가 길어
 `prevent_destroy`를 ECR·IAM 롤·OIDC 공급자에 걸어 뒀다. 지우면 Image 파이프라인이 즉시 멈추고
 과거 SHA로의 롤백 경로가 끊긴다. Hosted Zone은 애초에 Terraform이 소유하지 않는다.
 
-**`state-bootstrap`의 local state(`terraform.tfstate`)는 별도로 백업한다.** 유실돼도 AWS 자원은
-남지만, 버킷·버저닝·암호화·퍼블릭차단·라이프사이클·DynamoDB를 **각각 정확한 주소로 import**해야
-복구된다 — "다시 만들면 된다"가 아니라 복구 비용이 큰 쪽이다.
+`state-bootstrap`의 local state 백업은 그 스택의
+[README](../state-bootstrap/README.md)에 있다 — **먼저 실행하는 스택이라 경고도 거기 둔다.**

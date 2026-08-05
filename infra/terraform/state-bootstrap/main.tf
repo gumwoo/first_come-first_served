@@ -53,6 +53,12 @@ resource "aws_s3_bucket_public_access_block" "state" {
 resource "aws_s3_bucket_lifecycle_configuration" "state" {
   bucket = aws_s3_bucket.state.id
 
+  # 두 리소스 모두 버킷만 참조하므로 Terraform 그래프상 **서로 순서 제약이 없다** —
+  # 버저닝보다 먼저 적용될 수 있다. 그러면 비활성 버킷에 "비현행 버전 만료" 규칙이 걸리는
+  # 의미상 어긋난 상태가 되고, 실행 순서가 매번 달라져 재현되지 않는 실패가 될 수 있다.
+  # (AWS가 이를 거부하는지는 확인하지 않았다. 다만 순서를 우연에 맡길 이유가 없다.)
+  depends_on = [aws_s3_bucket_versioning.state]
+
   rule {
     id     = "expire-old-versions"
     status = "Enabled"

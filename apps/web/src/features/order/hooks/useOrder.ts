@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as orderApi from "@/features/order/api/order";
 
 /** 주문 조회 + SSE(order.paid / payment.vbank.deposited / order.failed 시 재조회). */
@@ -8,14 +8,25 @@ export function useOrder(orderId: number, token: string | null) {
   const [order, setOrder] = useState<orderApi.Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const latest = useRef(0);
 
+  // refresh()는 여러 곳에서 겹쳐 호출된다 — 마운트, onopen, 이벤트 3종, 그리고 반환값을
+  // 받은 화면. 먼저 보낸 요청이 먼저 도착한다는 보장이 없으므로(첫 요청은 커넥션을 새로
+  // 맺느라 더 느릴 수 있다), 순번을 붙여 **가장 마지막에 시작한 요청의 응답만** 반영한다.
+  // 이게 없으면 낡은 PENDING 응답이 뒤늦게 도착해 PAID를 덮어쓰고, order.paid는 종료
+  // 이벤트라 다시 오지 않으므로 화면이 영영 고착된다.
   const refresh = useCallback(async () => {
+    const seq = ++latest.current;
     try {
-      setOrder(await orderApi.getOrder(orderId, token));
+      const next = await orderApi.getOrder(orderId, token);
+      if (seq !== latest.current) return;
+      setOrder(next);
+      setError(false); // 일시적 실패 뒤 성공하면 에러 상태를 푼다
     } catch {
+      if (seq !== latest.current) return;
       setError(true);
     } finally {
-      setLoading(false);
+      if (seq === latest.current) setLoading(false);
     }
   }, [orderId, token]);
 

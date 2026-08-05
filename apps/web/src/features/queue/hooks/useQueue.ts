@@ -60,9 +60,15 @@ export function useQueue(eventId: number) {
         // (useOrder·useSeats에는 폴링이 없어 onopen에서 직접 다시 읽는다.)
         es.onerror = () => {};
 
+        // 응답이 2초를 넘으면 폴링끼리 겹친다. 낡은 응답이 뒤늦게 도착하면 apply가
+        // phase를 "waiting"으로 되돌려 admitted를 취소시킨다(다음 폴링이 2초 뒤 고쳐주지만
+        // 그 사이 화면이 튄다). 순번으로 마지막 요청의 응답만 반영한다 — useOrder와 같은 이유.
+        let latest = 0;
         poll = setInterval(async () => {
+          const seq = ++latest;
           try {
-            apply(await queueApi.getQueueStatus(t.token));
+            const s = await queueApi.getQueueStatus(t.token);
+            if (seq === latest) apply(s);
           } catch (err) {
             if (err instanceof ApiError && err.code === "QUEUE_EXPIRED") {
               if (!cancelled) setPhase("expired");

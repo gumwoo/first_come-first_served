@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as seatApi from "@/features/seat/api/seat";
 
 /** 좌석맵 조회 + SSE(seat.hold.expired 시 재고 복구 반영). */
@@ -8,14 +8,23 @@ export function useSeats(eventId: number) {
   const [map, setMap] = useState<seatApi.SeatMap | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const latest = useRef(0);
 
+  // 좌석 이벤트 3종이 연달아 오면 refresh()가 겹친다. 응답 순서는 보장되지 않으므로
+  // 순번으로 가장 마지막 요청의 응답만 반영한다 — 낡은 좌석맵이 최신을 덮으면
+  // 이미 팔린 자리를 다시 선택 가능한 것처럼 보여준다(useOrder와 같은 이유).
   const refresh = useCallback(async () => {
+    const seq = ++latest.current;
     try {
-      setMap(await seatApi.getSeats(eventId));
+      const next = await seatApi.getSeats(eventId);
+      if (seq !== latest.current) return;
+      setMap(next);
+      setError(false);
     } catch {
+      if (seq !== latest.current) return;
       setError(true);
     } finally {
-      setLoading(false);
+      if (seq === latest.current) setLoading(false);
     }
   }, [eventId]);
 

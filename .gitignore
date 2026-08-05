@@ -42,3 +42,6 @@ coverage/
 crash.log
 *.tfvars
 !*.tfvars.example
+
+# backend 설정은 계정 ID를 담으므로 커밋하지 않는다(.example만 커밋).
+backend.hcl

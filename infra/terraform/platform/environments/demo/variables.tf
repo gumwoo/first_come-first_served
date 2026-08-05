@@ -3,6 +3,14 @@ variable "region" {
   default = "ap-northeast-2"
 }
 
+variable "state_bucket" {
+  description = <<-EOT
+    bootstrap의 state가 있는 S3 버킷. 계정 ID가 들어가므로 기본값을 두지 않고
+    terraform.tfvars 로 넘긴다(backend.hcl과 같은 값).
+  EOT
+  type        = string
+}
+
 variable "azs" {
   description = "3 AZ. Kafka 브로커를 서로 다른 장애 도메인에 하나씩 두기 위한 최소 구성이다."
   type        = list(string)

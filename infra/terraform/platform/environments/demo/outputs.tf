@@ -37,3 +37,17 @@ output "nat_public_ips" {
 output "private_app_subnet_ids" {
   value = module.vpc.private_app_subnet_ids
 }
+
+output "domain_name" {
+  description = "bootstrap에서 읽어 온 값. Ingress 호스트 규칙에 쓴다."
+  value       = local.domain_name
+}
+
+output "certificate_arn" {
+  description = "ALB Ingress annotation에 넣을 ACM 인증서(검증 완료 상태)."
+  value       = local.certificate_arn
+}
+
+output "hosted_zone_id" {
+  value = local.hosted_zone_id
+}

@@ -2,6 +2,9 @@
 #
 #   cp terraform.tfvars.example terraform.tfvars
 
+# bootstrap state가 있는 버킷 (backend.hcl과 같은 값).
+state_bucket = "flowticket-tfstate-<ACCOUNT_ID>"
+
 # EKS API에 접근할 관리자 공인 IP. 기본값이 없으므로 반드시 지정해야 한다.
 # 현재 IP 확인:  curl -s https://checkip.amazonaws.com
 cluster_public_access_cidrs = ["YOUR_PUBLIC_IP/32"]

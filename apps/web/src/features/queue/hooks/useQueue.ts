@@ -27,10 +27,25 @@ export function useQueue(eventId: number) {
     let poll: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
 
+    // admitted·expired는 되돌아가지 않는 종료 상태다. 확정되면 진행 중인 폴링 응답을
+    // 전부 무시하고 폴링 자체도 멈춘다 — 그러지 않으면 SSE로 admitted를 받은 직후
+    // 이미 떠 있던 폴링이 WAITING을 들고 도착해 phase를 waiting으로 되돌린다.
+    // (폴링 순번(latest)만으로는 못 막는다. SSE 이벤트는 순번을 올리지 않기 때문이다.)
+    let terminal = false;
+
+    const settle = (next: "admitted" | "expired") => {
+      terminal = true;
+      if (poll) {
+        clearInterval(poll);
+        poll = null;
+      }
+      if (!cancelled) setPhase(next);
+    };
+
     const apply = (s: { status: string; rank: number; total: number; etaSeconds?: number }) => {
-      if (cancelled) return;
-      if (s.status === "ADMITTED") return setPhase("admitted");
-      if (s.status === "EXPIRED") return setPhase("expired");
+      if (cancelled || terminal) return;
+      if (s.status === "ADMITTED") return settle("admitted");
+      if (s.status === "EXPIRED") return settle("expired");
       setPhase("waiting");
       setRank(s.rank);
       setTotal(s.total);
@@ -53,20 +68,29 @@ export function useQueue(eventId: number) {
           } catch {
             /* 데이터 없으면 무시 */
           }
-          setPhase("admitted");
+          settle("admitted");
         });
-        es.addEventListener("queue.expired", () => setPhase("expired"));
-        // onerror는 폴링이 커버하므로 무시(재연결은 브라우저가 시도)
+        es.addEventListener("queue.expired", () => settle("expired"));
+        // 여기만 onopen 재조회가 없다 — 아래 2초 폴링이 재연결 공백을 이미 메우기 때문이다.
+        // (useOrder·useSeats에는 폴링이 없어 onopen에서 직접 다시 읽는다.)
+        es.onerror = () => {};
 
-        poll = setInterval(async () => {
-          try {
-            apply(await queueApi.getQueueStatus(t.token));
-          } catch (err) {
-            if (err instanceof ApiError && err.code === "QUEUE_EXPIRED") {
-              if (!cancelled) setPhase("expired");
+        // 응답이 2초를 넘으면 폴링끼리도 겹친다. 순번으로 마지막 요청의 응답만 반영한다.
+        // 성공·실패 양쪽에 같은 검사를 둔다 — 한쪽만 막으면 낡은 오류 응답이 최신 성공을 덮는다.
+        let latest = 0;
+        if (!terminal) {
+          poll = setInterval(async () => {
+            const seq = ++latest;
+            try {
+              const s = await queueApi.getQueueStatus(t.token);
+              if (terminal || seq !== latest) return;
+              apply(s);
+            } catch (err) {
+              if (terminal || seq !== latest) return;
+              if (err instanceof ApiError && err.code === "QUEUE_EXPIRED") settle("expired");
             }
-          }
-        }, 2000);
+          }, 2000);
+        }
       } catch {
         if (!cancelled) setPhase("error");
       }

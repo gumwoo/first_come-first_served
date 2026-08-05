@@ -21,9 +21,9 @@ variable "ecr_keep_last_images" {
 
 variable "ecr_image_tag_mutability" {
   description = <<-EOT
-    MUTABLE 기본. IMMUTABLE이 "태그 → 코드"를 더 강하게 보장하지만, image.yml을
-    workflow_dispatch로 같은 커밋에 재실행할 때 이미 올라간 SHA를 다시 push하다 실패한다.
-    태그가 git SHA라 덮어쓸 이유가 없으므로 재실행 가능성을 택했다.
+    MUTABLE 기본. workflow_dispatch로 재실행하면 같은 SHA 태그를 다시 push하므로
+    IMMUTABLE이면 실패한다(재실행 시 덮어쓰기가 실제로 일어난다).
+    서로 다른 커밋이 같은 태그를 쓰는 일은 없어(태그 = git SHA) 재사용 위험은 제한적이다.
   EOT
   type        = string
   default     = "MUTABLE"

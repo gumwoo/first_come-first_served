@@ -15,21 +15,35 @@ resource "aws_acm_certificate" "this" {
   }
 }
 
-# DNS 검증 레코드. 루트와 와일드카드는 검증 레코드가 같아서 ACM이 하나로 합쳐 주는데,
-# for_each 키를 도메인이 아니라 레코드 이름으로 잡아 중복 생성을 피한다.
-resource "aws_route53_record" "validation" {
-  for_each = {
+locals {
+  # 루트와 와일드카드는 **검증 레코드 이름·값이 같다.** ACM은 도메인마다 항목을 주므로
+  # 같은 레코드가 두 번 나온다.
+  #
+  # 주의: 레코드 이름을 그냥 for 키로 쓰면 중복이 합쳐지는 게 아니라
+  # "Duplicate object key" 오류가 난다. 끝의 `...`(그룹핑)이 있어야 같은 키의 값들이
+  # 리스트로 묶인다. 값이 동일하므로 [0]만 쓰면 레코드는 하나만 생긴다.
+  #
+  # 도메인 이름을 키로 잡는 방법도 있지만, 그러면 같은 Route53 레코드를 두 리소스가
+  # 각각 관리하게 되어 서로 덮어쓰는 상태가 된다.
+  #
+  # ⚠️ domain_validation_options는 apply 이후에 정해지는 값이라 이 결함은
+  #    `terraform validate`로 잡히지 않는다 — plan/apply에서야 드러난다.
+  acm_validation = {
     for opt in aws_acm_certificate.this.domain_validation_options :
     opt.resource_record_name => {
       type   = opt.resource_record_type
       record = opt.resource_record_value
-    }
+    }...
   }
+}
+
+resource "aws_route53_record" "validation" {
+  for_each = local.acm_validation
 
   zone_id = data.aws_route53_zone.this.zone_id
   name    = each.key
-  type    = each.value.type
-  records = [each.value.record]
+  type    = each.value[0].type
+  records = [each.value[0].record]
   ttl     = 60
 
   # 같은 이름의 레코드가 이미 있으면(재발급 등) 덮어쓴다.

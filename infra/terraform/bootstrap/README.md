@@ -1,7 +1,10 @@
 # bootstrap — 영속 계층 (ACM · ECR · IAM/OIDC)
 
-`platform`과 달리 **destroy하지 않는 계층**이다. 도메인·인증서·이미지·CI 권한이 여기 있고,
-연간 비용은 도메인($15 수준) + Hosted Zone($0.50/월) + ECR 저장 비용 정도다.
+`platform`과 달리 **destroy하지 않는 계층**이다. 도메인·인증서·이미지·CI 권한이 여기 있다.
+
+영속 비용은 **도메인 등록료 + Route53 Hosted Zone(월 $0.50 수준) + ECR·S3 저장 + DynamoDB 요청**
+정도다(ACM·IAM·OIDC 자체는 고정 비용이 없다). 매번 지웠다 다시 만드는 복구 비용보다 유지 비용이
+작아서 남겨 둔다.
 
 설계 근거: [terraform-design.md](../../../docs/deployment/terraform-design.md) §1,
 [ADR-012](../../../docs/decisions/ADR-012-3az-eks-infra-cost-control.md) §9.
@@ -106,3 +109,7 @@ ARN이 platform으로 넘어가 **ALB 생성이 실패한다.** 대기가 길어
 
 `prevent_destroy`를 ECR·IAM 롤·OIDC 공급자에 걸어 뒀다. 지우면 Image 파이프라인이 즉시 멈추고
 과거 SHA로의 롤백 경로가 끊긴다. Hosted Zone은 애초에 Terraform이 소유하지 않는다.
+
+**`state-bootstrap`의 local state(`terraform.tfstate`)는 별도로 백업한다.** 유실돼도 AWS 자원은
+남지만, 버킷·버저닝·암호화·퍼블릭차단·라이프사이클·DynamoDB를 **각각 정확한 주소로 import**해야
+복구된다 — "다시 만들면 된다"가 아니라 복구 비용이 큰 쪽이다.

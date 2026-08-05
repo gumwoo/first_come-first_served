@@ -3,8 +3,9 @@
 - 상태: Proposed (Terraform `apply`로 실제 기동 시 Accepted로 승격)
 - 날짜: 2026-08-04
 - 슬라이스: S09(배포·운영 준비) Phase 3 — 인프라 트랙
-- 관련: [[ADR-009]](GitOps CD), [[ADR-008]](Kafka 백본), 구현 상세 →
-  [`docs/deployment/terraform-design.md`](../deployment/terraform-design.md)
+- 관련: [[ADR-009]](GitOps CD), [[ADR-008]](Kafka 백본),
+  **[[ADR-013]](IaC 소유 경계·비밀·접근 통제 — 이 결정을 코드로 옮기며 나온 결정들)**,
+  구현 상세 → [`docs/deployment/terraform-design.md`](../deployment/terraform-design.md)
 
 ## 맥락
 
@@ -104,6 +105,7 @@ Pod가 영구 Pending이 된다. `WaitForFirstConsumer`는 **Pod 배치가 정�
 - **bootstrap(영속)**: ACM, ECR, IAM/OIDC — `destroy` 대상이 아님.
   **Route53 Hosted Zone은 Terraform이 소유하지 않고 `data`로 참조만 한다** — Registrar가 이미
   생성했고, 재생성하면 NS가 바뀌어 도메인 설정을 다시 해야 하는 가장 되돌리기 어려운 자원이다.
+  (자원마다 `data`/`import`/신규 생성을 가르는 기준은 [[ADR-013]] §1.)
 - **platform(휘발)**: VPC, NAT, EKS, RDS, ElastiCache, ALB — 매번 만들고 지움
 
 `platform destroy`가 도메인·인증서·이미지까지 날리지 않게 하기 위한 분리다.
@@ -151,6 +153,7 @@ Redis 복제는 **비동기**라 최근 쓰기 일부가 유실될 수 있다. "
 | **t3로 부하테스트** | CPU 크레딧이 측정 결과를 오염시켜 개선 수치의 인과를 주장할 수 없음 |
 | **단일 AZ 데이터 계층** | 데모 기준 추가 비용이 **시간당 약 $0.05**(4시간 +$0.2)인데, 앱·Kafka를 3 AZ로 분산해 놓고 DB가 단일 AZ면 AZ 장애 시 결국 전면 중단이다. 절감액이 일관성을 깨는 값어치에 못 미친다 |
 | **상시 운영** | 월 $240 수준. 실증에 기여하지 않는 유휴 시간 비용이라 제거 대상 |
+| **환경 분리(dev/stage/prod)** | 환경마다 EKS·NAT 3개·RDS Multi-AZ가 통째로 복제돼 **비용 3배**. 사용자 1명·트래픽은 k6로 자체 생성·릴리스는 본인 머지라 **stage에서 발견할 대상이 없다**. "검증 안 된 게 나가면 안 된다"는 우려는 CI 게이팅(workflow_run)과 ArgoCD가 이미 담당한다 → 상세·되돌릴 조건: [terraform-design §10](../deployment/terraform-design.md) |
 | **EC2 1대 + Docker Compose** | 가장 싸지만 **다중 Pod에서만 나타나는 문제**(SSE 팬아웃·스케줄러 중복·브로커 페일오버·HPA)를 재현할 수 없음 → 이 트랙의 목적 자체를 잃음 |
 | **Karpenter** | Cluster Autoscaler보다 현대적이지만, AZ별 노드그룹 + EBS 종속 설계와 개념이 겹쳐 관리 포인트가 는다. 우선 CA로 가고 필요 시 재검토 |
 
@@ -175,8 +178,8 @@ HPA 수평 확장, Kafka 브로커 장애 복구, ArgoCD self-heal, 다중 Pod S
 
 ## 결과 / 한계 (정직)
 
-- **아직 Proposed다.** Terraform 코드 미작성. `apply`로 실제 기동하고 실증 시나리오를 촬영한 뒤
-  Accepted로 승격한다.
+- **아직 Proposed다.** Terraform 코드는 작성됐고(`infra/terraform/`, CI에서 `fmt`·`validate` 통과)
+  **`plan`·`apply`는 미실행**이다. 실제 기동하고 실증 시나리오를 촬영한 뒤 Accepted로 승격한다.
 - **AZ 장애는 실증하지 않는다.** NAT 3개·3 AZ는 위 분류의 **B**에 해당한다. AZ 전체 장애 주입은
   실증 범위 밖이며, 이 문서가 근거를 남기는 것으로 대신한다.
 - **Cluster Autoscaler의 노드 기동 지연**(EC2 부팅 + 클러스터 조인, 통상 분 단위)은 HPA 반응

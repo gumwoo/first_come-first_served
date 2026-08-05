@@ -40,19 +40,23 @@ variable "ecr_image_tag_mutability" {
 variable "github_actions_role_name" {
   description = "콘솔에서 만든 역할 이름과 정확히 같아야 한다(import 대상)."
   type        = string
-  default     = "flowticket-github-actions"
+  default     = "flowticket-gha-ecr"
 }
 
 variable "github_oidc_subjects" {
   description = <<-EOT
     이 역할을 맡을 수 있는 GitHub 워크플로의 sub 조건(StringLike).
 
-    ⚠️ 좁힐수록 안전하지만 실제 워크플로의 ref와 어긋나면 Image 파이프라인이 인증 실패한다.
-    image.yml은 workflow_run(main)과 workflow_dispatch로 도는데 둘 다 ref가 main이다.
-    import 후 plan에서 콘솔의 실제 값과 비교해 확정한다.
+    현재 값은 **콘솔에 설정돼 있던 것과 동일**하다. import를 무변경(no-op)으로 만들어
+    "import 자체가 제대로 됐는가"와 "조건을 좁혀도 되는가"를 분리해 검증하기 위해서다.
+    두 변수를 한 번에 바꾸면 파이프라인이 깨졌을 때 원인을 가릴 수 없다.
+
+    ⚠️ `:*`는 이 저장소의 **모든 브랜치·태그·PR**이 역할을 맡을 수 있다는 뜻이라 느슨하다.
+    `ref:refs/heads/main`으로 좁히는 것은 **별도 변경**으로 진행하고, 적용 직후
+    `gh workflow run image.yml`로 파이프라인 생존을 확인한다(TODO).
   EOT
   type        = list(string)
-  default     = ["repo:gumwoo/first_come-first_served:ref:refs/heads/main"]
+  default     = ["repo:gumwoo/first_come-first_served:*"]
 
   validation {
     condition = alltrue([
@@ -63,9 +67,12 @@ variable "github_oidc_subjects" {
 }
 
 variable "github_oidc_thumbprints" {
-  description = "콘솔 생성값과 다르면 import 후 plan에 diff로 뜬다 — 그때 실제 값으로 맞춘다."
+  description = <<-EOT
+    콘솔에 실제로 등록된 값. 바꾸면 OIDC 검증에 영향이 갈 수 있어 현실과 일치시킨다.
+    (AWS는 GitHub OIDC의 인증서를 자체 검증하므로 이 값은 사실상 형식값이다.)
+  EOT
   type        = list(string)
-  default     = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+  default     = ["ab9d0263244dd0326eb67015705a667e79cfe998"]
 }
 
 variable "tags" {

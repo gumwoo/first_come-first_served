@@ -51,8 +51,10 @@ data "aws_iam_policy_document" "github_assume" {
 }
 
 resource "aws_iam_role" "github_actions" {
-  name               = var.github_actions_role_name
-  description        = "GitHub Actions(OIDC) — ECR push 전용"
+  name = var.github_actions_role_name
+  # ⚠️ IAM role description은 허용 문자 범위가 좁다(사실상 ASCII + Latin-1).
+  #    한글과 em dash가 거부되어 apply에서 ValidationError로 막혔다 — ASCII로만 쓴다.
+  description        = "GitHub Actions OIDC - ECR push only"
   assume_role_policy = data.aws_iam_policy_document.github_assume.json
 
   lifecycle {
@@ -69,9 +71,11 @@ data "aws_iam_policy_document" "ecr_push" {
     resources = ["*"]
   }
 
-  # 실제 push/pull은 우리 저장소 2개로만 제한한다.
+  # 실제 push는 우리 저장소 2개로만 제한한다.
+  # GetDownloadUrlForLayer(=pull)는 넣지 않는다 — CI는 push만 하고, 노드의 이미지 pull은
+  # EKS 노드 역할이 담당한다. 콘솔에도 없었고 그 6개로 파이프라인이 동작해 왔다.
   statement {
-    sid = "EcrPushPull"
+    sid = "EcrPush"
     actions = [
       "ecr:BatchCheckLayerAvailability",
       "ecr:InitiateLayerUpload",
@@ -79,7 +83,6 @@ data "aws_iam_policy_document" "ecr_push" {
       "ecr:CompleteLayerUpload",
       "ecr:PutImage",
       "ecr:BatchGetImage",
-      "ecr:GetDownloadUrlForLayer",
     ]
     resources = [for r in aws_ecr_repository.this : r.arn]
   }

@@ -1,0 +1,9 @@
+# state-bootstrap 의 backend_hcl 출력을 그대로 저장해 쓴다.
+#   terraform -chdir=../state-bootstrap output -raw backend_hcl > backend.hcl
+#   terraform init -backend-config=backend.hcl
+#
+# 버킷 이름에 계정 ID가 들어가므로 backend.hcl 은 커밋하지 않는다.
+bucket         = "flowticket-tfstate-<ACCOUNT_ID>"
+region         = "ap-northeast-2"
+encrypt        = true
+dynamodb_table = "flowticket-tfstate-lock"

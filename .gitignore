@@ -32,3 +32,12 @@ Thumbs.db
 # Test / coverage
 coverage/
 *.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+crash.log
+*.tfvars
+!*.tfvars.example

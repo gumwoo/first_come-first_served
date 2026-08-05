@@ -1,0 +1,44 @@
+name: Terraform
+
+# 로컬에 terraform이 없어(백엔드 gradle과 같은 상황) 문법·구성 검증을 CI에서 한다.
+# fmt/validate는 AWS 자격증명이 필요 없다 — plan/apply는 여기서 하지 않는다.
+# 인프라 생성은 사람이 사전 조건(쿼터·비용 안전망·destroy 절차)을 확인한 뒤 수동으로 한다.
+
+on:
+  push:
+    branches: [main]
+    paths: ["infra/terraform/**", ".github/workflows/terraform.yml"]
+  pull_request:
+    paths: ["infra/terraform/**", ".github/workflows/terraform.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: fmt + validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          # validate 출력을 그대로 보려면 래퍼를 꺼야 한다.
+          terraform_wrapper: false
+
+      - name: fmt (전체 트리)
+        # -diff: 어긋난 부분을 로그에 그대로 찍어 로컬에 terraform이 없어도 고칠 수 있게 한다.
+        run: terraform fmt -check -recursive -diff infra/terraform
+
+      - name: validate (환경별)
+        run: |
+          set -e
+          # 환경 디렉터리에서 init하면 모듈까지 함께 검증된다.
+          # backend가 주석 처리된 상태라 -backend=false 없이도 로컬 state로 init된다.
+          for dir in infra/terraform/*/environments/*/; do
+            echo "::group::$dir"
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+            echo "::endgroup::"
+          done

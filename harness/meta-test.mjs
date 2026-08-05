@@ -27,10 +27,12 @@ const cases = [
   { name: "be-flyway-dup-version", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-flyway-dup-version" } },
   { name: "be-event-not-broadcast", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-event-not-broadcast" } },
   { name: "be-unguarded-status-update", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-unguarded-status-update" } },
+  { name: "be-destructive-ddl",  script: "backend/check.mjs", expect: "파괴적 DDL:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-destructive-ddl" } },
   { name: "fe-missing-enum",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-enum" } },
   { name: "fe-bad-dep",          script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-bad-dep" } },
   { name: "fe-layer-breach",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },
   { name: "fe-dead-api",         script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-dead-api" } },
+  { name: "fe-sse-no-resync",    script: "frontend/check.mjs", expect: "SSE 복구 경로 없음:", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-sse-no-resync" } },
   // ② 필수 이벤트 구독 누락 (계약/웹 둘 다 override해 단독 격리)
   { name: "fe-missing-required-event", script: "frontend/check.mjs", env: {
     HARNESS_CONTRACTS_DIR: "harness/fixtures/violations/fe-missing-required-event",
@@ -47,12 +49,20 @@ for (const c of cases) {
     encoding: "utf8",
   });
   // 위반 fixture이므로 exit code가 1이어야 정상
-  if (res.status === 1) {
-    console.log(`✓ meta: ${c.name} → 하네스가 정상적으로 실패 감지`);
-  } else {
+  if (res.status !== 1) {
     failed++;
     console.error(`✗ meta: ${c.name} → 하네스가 위반을 못 잡음 (exit ${res.status}) [FALSE NEGATIVE]`);
+    continue;
   }
+  // exit 1만으로는 "의도한 규칙이 잡았는지"를 알 수 없다 — fixture가 엉뚱한 규칙에 걸려도
+  // 통과한 것처럼 보인다. expect가 있는 케이스는 메시지까지 확인한다.
+  // (기존 케이스에는 아직 없다. 하나씩 붙여 나간다.)
+  if (c.expect && !`${res.stdout ?? ""}${res.stderr ?? ""}`.includes(c.expect)) {
+    failed++;
+    console.error(`✗ meta: ${c.name} → 실패는 했으나 의도한 규칙이 아님 (기대 메시지: "${c.expect}")`);
+    continue;
+  }
+  console.log(`✓ meta: ${c.name} → 하네스가 정상적으로 실패 감지`);
 }
 
 if (failed) {

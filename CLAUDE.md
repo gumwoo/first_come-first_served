@@ -24,7 +24,7 @@ FlowTicket(선착순 예매 시스템) 포트폴리오 프로젝트. 아래는 *
 
 ## 검증
 - 프론트: `corepack pnpm@9.12.0 --dir apps/web typecheck | lint | build`
-- 계약/정적 가드: `npm run harness:check` (meta 25 + backend + frontend)
+- 계약/정적 가드: `npm run harness:check` (meta 27 + backend + frontend)
 - 백엔드 컴파일/통합테스트: **로컬 gradle 없음 → CI(Testcontainers)에서만 검증**.
 
 ## DB 마이그레이션 (무중단 배포 전제)
@@ -34,8 +34,8 @@ FlowTicket(선착순 예매 시스템) 포트폴리오 프로젝트. 아래는 *
 
 - **Expand-Contract로 두 릴리스에 나눈다** — N: 추가(nullable/기본값, 구·신 양쪽 동작) →
   N+1: 모든 Pod 교체 후 제거.
-- 금지가 아니라 **명시적 승인 대상**이다. 불가피하면 PR 본문에 **선행 Expand 릴리스**와
-  **구버전이 깨지지 않는 근거**를 적는다.
+- 금지가 아니라 **명시적 승인 대상**이다. 하네스가 CI에서 막으며, 불가피하면 마이그레이션
+  파일에 `-- harness:allow-destructive-ddl: <사유>`로 근거를 남긴다(사유 없으면 실패).
 - 상세: [`docs/deployment/zero-downtime-deployment.md`](docs/deployment/zero-downtime-deployment.md) §8.
 
 ## 문서 규율

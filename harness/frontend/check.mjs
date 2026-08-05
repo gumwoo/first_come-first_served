@@ -162,4 +162,36 @@ for (const file of apiFnFiles) {
   }
 }
 
+// ---------- 7. SSE 훅은 구독 공백 복구 경로를 가져야 함 ----------
+// SSE 이벤트는 재전송되지 않는다. 구독하지 않은 구간(최초 조회~구독 성립, 끊김~재연결)에
+// 지나간 이벤트는 사라지므로, 구독이 성립할 때 현재 상태를 다시 읽거나(onopen) 주기적으로
+// 폴링해야 한다. 둘 다 없으면 화면이 낡은 채로 고정된다 — 종료 상태 이벤트(order.paid 등)는
+// 다시 오지 않아 영구 고착이다(TS-012).
+//
+// typecheck·lint·build가 전혀 못 잡는 무증상 결함이라 정적으로 막는다.
+// 의도적으로 복구 경로가 필요 없다면(예: 1회성 알림 전용) 파일에 사유와 함께 예외 주석:
+//   // harness:allow-sse-no-resync: 단발 토스트 전용, 상태를 들고 있지 않음
+const ALLOW_SSE_RE = /\/\/\s*harness:allow-sse-no-resync\s*:?\s*(\S.*)?/;
+for (const file of tsFiles) {
+  const src = read(file);
+  if (!/new\s+EventSource\s*\(/.test(src)) continue;
+  const rel = path.relative(REPO_ROOT, file).replace(/\\/g, "/");
+  const allow = src.match(ALLOW_SSE_RE);
+  const hasResync = /\.onopen\s*=|addEventListener\(\s*["']open["']/.test(src);
+  const hasPolling = /setInterval\s*\(/.test(src);
+
+  if (hasResync || hasPolling) {
+    if (allow) r.fail(`불필요한 예외 주석: ${rel} — 복구 경로가 있는데 allow-sse-no-resync가 달려 있음`);
+    continue;
+  }
+  if (!allow) {
+    r.fail(
+      `SSE 복구 경로 없음: ${rel} — onopen 재조회 또는 폴링 중 하나는 필수. ` +
+        `구독 공백에 지나간 이벤트는 다시 오지 않아 화면이 고착된다(TS-012)`
+    );
+  } else if (!allow[1]) {
+    r.fail(`예외 사유 누락: ${rel} — "// harness:allow-sse-no-resync: <사유>" 형식으로 근거를 적을 것`);
+  }
+}
+
 r.done();

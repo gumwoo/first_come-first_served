@@ -21,7 +21,7 @@ IMP(정량 before/after 개선)와 달리, 여기 문서는 "무엇이 왜 깨�
 | [TS-006](TS-006-seat-hold-error-not-surfaced.md) | 좌석 선점 실패가 화면에 안 뜸 — MAX_PER_USER 등 무음 처리 | S04 | UX 결함(FE) | 해결 |
 | [TS-007](TS-007-release-hold-status-lost-context-clear.md) | 선점 해제 시 좌석만 풀리고 홀드는 HELD로 남음 — 벌크 UPDATE 컨텍스트 클리어 | S04 | 정합성 버그(코드) | 해결 |
 | [TS-008](TS-008-hold-cross-event-seat-ownership.md) | 좌석 선점 시 seatIds의 이벤트 소속 미검증 — 교차 이벤트 선점(IDOR) | S04 | 정합성/보안(코드) | 해결 |
-| [TS-009](TS-009-why-e2e-adoption.md) | 단위/통합은 초록인데 버그는 수동으로만 잡힘 — E2E(Playwright) 도입 | 횡단 | 검증 전략/회고 | 진행 |
+| [TS-009](TS-009-why-e2e-adoption.md) | 단위/통합은 초록인데 버그는 수동으로만 잡힘 — E2E(Playwright) 도입 | 횡단 | 검증 전략/회고 | 완료 |
 | [TS-010](TS-010-vbank-secret-lost-context-clear.md) | 가상계좌 발급 정보(secret/계좌/기한)가 DB에 안 남음 — 벌크 UPDATE 컨텍스트 클리어(TS-007 재발) | S05 | 정합성 버그(코드) | 해결 |
 | [TS-011](TS-011-expiry-sweep-overwrites-paid-seat.md) | 만료 sweep이 결제된 SOLD 좌석을 되돌릴 수 있음 — 무가드 복구 UPDATE(형제 경로 재발) | S04/S05 | 정합성 버그(코드) | 해결 |
 | [TS-012](TS-012-sse-reconnect-gap-no-resync.md) | SSE 구독 공백의 이벤트를 영영 놓침 — "폴링이 커버한다"는 주석만 있고 폴링이 없음 | S04/S05 | 상태 최신성(FE) | 해결 |

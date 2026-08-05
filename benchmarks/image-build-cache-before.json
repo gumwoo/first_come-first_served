@@ -1,0 +1,19 @@
+{
+  "topic": "image-build-cache",
+  "phase": "before",
+  "date": "2026-08-05",
+  "method": "GitHub Actions job steps API로 image.yml의 'build & push' 스텝 소요시간만 분리 측정(잡 전체에는 checkout·OIDC 인증·ECR 로그인이 섞여 있어 제외). 성공한 최근 4개 실행.",
+  "config": {
+    "builder": "docker build (plain)",
+    "buildx": false,
+    "layerCache": "none",
+    "note": "GitHub 러너는 매 실행 빈 Docker 캐시로 시작한다"
+  },
+  "result": {
+    "apiBuildPushSec": [104, 95, 98, 99],
+    "apiMedianSec": 98.5,
+    "webBuildPushSec": [61, 62, 64, 63],
+    "webMedianSec": 62.5
+  },
+  "note": "apps/api/Dockerfile은 의존성 정의를 먼저 복사하고 `gradle dependencies`를 별도 레이어로 분리해 두었지만, 실행 간 캐시가 없어 그 레이어가 매번 처음부터 실행됐다."
+}

@@ -1,0 +1,38 @@
+{
+  "topic": "image-build-cache",
+  "phase": "after",
+  "date": "2026-08-05",
+  "method": "동일 측정 방식. docker/build-push-action@v6 + cache-from/to type=gha, mode=max, scope 분리 적용 후.",
+  "config": {
+    "builder": "docker/build-push-action@v6 (buildx)",
+    "buildx": true,
+    "layerCache": "type=gha, mode=max",
+    "scopes": ["image-api", "image-web"]
+  },
+  "result": {
+    "cold": { "apiSec": 187, "webSec": 109, "note": "캐시를 채우는 첫 실행. 캐시 쓰기 오버헤드로 baseline보다 느리다(API +88초, Web +47초)." },
+    "warmFullHit": { "apiSec": 5, "webSec": 5, "note": "같은 SHA를 workflow_dispatch로 재실행. bootJar까지 전부 캐시된 상한값이며 일상적인 케이스가 아니다." },
+    "sourceOnlyChange": { "apiSec": null, "webSec": null, "note": "미측정. apps/api/src 가 실제로 바뀌는 다음 이미지 빌드에서 측정한다." }
+  },
+  "layerBreakdownColdApi": {
+    "gradleBaseImagePullSec": 12.3,
+    "temurinBaseImagePullSec": 5.7,
+    "aptInstallCurlSec": 6.2,
+    "gradleDependenciesSec": 38.8,
+    "gradleBootJarSec": 29.6,
+    "cachedOnSourceOnlyChangeSec": 63.0,
+    "rerunOnSourceOnlyChangeSec": 29.6,
+    "note": "소스만 바뀌면 앞의 4개 레이어(합 63.0초)가 캐시에서 복원되고 bootJar(29.6초)만 다시 돈다. 다만 캐시 복원 자체의 비용이 있어 최종 스텝 시간은 29.6초보다 크다."
+  },
+  "layerBreakdownColdWeb": {
+    "pnpmInstallSec": 6.5,
+    "pnpmBuildSec": 36.6,
+    "note": "Web은 캐시되는 부분(pnpm install 6.5초)이 작고 재실행되는 부분(pnpm build 36.6초)이 커서 API보다 이득이 작다."
+  },
+  "cost": {
+    "ghaCacheSizeMB": 1844,
+    "ghaCacheEntries": 235,
+    "limitGB": 10,
+    "note": "mode=max는 중간 레이어까지 저장해 항목 수가 많다. 콘텐츠 주소 기반이라 변하지 않은 레이어는 재사용되므로 빌드마다 선형 증가하지는 않는다."
+  }
+}

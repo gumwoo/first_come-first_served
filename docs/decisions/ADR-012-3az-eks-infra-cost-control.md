@@ -101,7 +101,9 @@ Pod가 영구 Pending이 된다. `WaitForFirstConsumer`는 **Pod 배치가 정�
 사람이 하며, destroy는 정해진 순서를 따른다.
 
 ### 9. Terraform state를 **2계층으로 분리**한다
-- **bootstrap(영속)**: Route53 Hosted Zone, ACM, ECR, IAM/OIDC — `destroy` 대상이 아님
+- **bootstrap(영속)**: ACM, ECR, IAM/OIDC — `destroy` 대상이 아님.
+  **Route53 Hosted Zone은 Terraform이 소유하지 않고 `data`로 참조만 한다** — Registrar가 이미
+  생성했고, 재생성하면 NS가 바뀌어 도메인 설정을 다시 해야 하는 가장 되돌리기 어려운 자원이다.
 - **platform(휘발)**: VPC, NAT, EKS, RDS, ElastiCache, ALB — 매번 만들고 지움
 
 `platform destroy`가 도메인·인증서·이미지까지 날리지 않게 하기 위한 분리다.

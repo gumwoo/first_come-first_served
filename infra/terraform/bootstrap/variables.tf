@@ -47,16 +47,18 @@ variable "github_oidc_subjects" {
   description = <<-EOT
     이 역할을 맡을 수 있는 GitHub 워크플로의 sub 조건(StringLike).
 
-    현재 값은 **콘솔에 설정돼 있던 것과 동일**하다. import를 무변경(no-op)으로 만들어
-    "import 자체가 제대로 됐는가"와 "조건을 좁혀도 되는가"를 분리해 검증하기 위해서다.
-    두 변수를 한 번에 바꾸면 파이프라인이 깨졌을 때 원인을 가릴 수 없다.
+    **main 브랜치로 한정한다.** 이전에는 `repo:<owner>/<repo>:*` 였는데, 그러면 이 저장소의
+    모든 브랜치·태그·PR이 역할을 맡아 ECR에 push할 수 있다.
 
-    ⚠️ `:*`는 이 저장소의 **모든 브랜치·태그·PR**이 역할을 맡을 수 있다는 뜻이라 느슨하다.
-    `ref:refs/heads/main`으로 좁히는 것은 **별도 변경**으로 진행하고, 적용 직후
-    `gh workflow run image.yml`로 파이프라인 생존을 확인한다(TODO).
+    좁히기 전에 **CloudTrail의 AssumeRoleWithWebIdentity 이벤트로 실제 sub를 확인**했다
+    (14건 전부 `...:ref:refs/heads/main`). image.yml은 workflow_run(main)과 workflow_dispatch로
+    도는데 둘 다 같은 값이었다 — 추측이 아니라 기록으로 확인한 뒤 좁혔다.
+
+    ⚠️ 나중에 다른 브랜치나 태그에서 이미지를 내보내야 하면 여기에 조건을 **추가**해야 한다.
+    빠뜨리면 워크플로가 인증 실패하는데, 증상이 "권한 없음"이라 원인을 찾기 번거롭다.
   EOT
   type        = list(string)
-  default     = ["repo:gumwoo/first_come-first_served:*"]
+  default     = ["repo:gumwoo/first_come-first_served:ref:refs/heads/main"]
 
   validation {
     condition = alltrue([

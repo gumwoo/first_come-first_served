@@ -86,12 +86,16 @@ variable "node_max_size" {
 # 데이터 계층
 # ---------------------------------------------------------------------------
 variable "db_multi_az" {
-  description = "ADR-012의 일관성 논점이 걸린 값 — modules/rds/variables.tf 주석 참고."
+  description = <<-EOT
+    RDS는 진실원이라 단일 AZ면 그 AZ 장애가 곧 전체 중단이다 — NAT를 AZ별로 둔 것과
+    같은 논리의 귀결이다(ADR-012 §10). 페일오버는 강제 실행이 가능해 실증 대상이기도 하다.
+  EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "redis_multi_az" {
-  type    = bool
-  default = false
+  description = "대기열·SSE 팬아웃의 가용성. 정합성은 DB가 지키지만 간판 기능이 멈춘다(ADR-012 §10)."
+  type        = bool
+  default     = true
 }

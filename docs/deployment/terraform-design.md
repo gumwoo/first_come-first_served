@@ -347,9 +347,38 @@ destroy 누락(NAT·EBS·ALB·EIP 잔존)은 **누적이 임계에 닿기 전에
 | **ArgoCD self-heal** | ArgoCD `selfHeal + prune` | 수동 드리프트 주입 → 자동 복구, Synced/Healthy |
 | **초과판매 방지** | 부하 + 조건부 UPDATE(ADR-003) | 판매 수량 = 재고, 중복 0 |
 | **노드 장애 후 브로커 복구** | AZ별 노드그룹 + WaitForFirstConsumer | 노드 종료 → 같은 AZ 대체 노드 → EBS 재연결 |
+| **RDS 페일오버 중 앱 거동** | `db_multi_az = true` | 아래 참조 |
+| **Redis 페일오버 중 앱 거동** | `redis_multi_az = true` | 대기열 순번 보존 여부, SSE 재연결, 유실 범위 |
+
+### RDS·Redis 페일오버 — 관찰 대상은 인프라가 아니라 앱이다
+
+Multi-AZ는 **장애를 주입할 수단이 있어서** ADR-012의 A(실증) 범주에 넣었다.
+
+```bash
+# RDS — 강제 페일오버
+aws rds reboot-db-instance --db-instance-identifier flowticket --force-failover
+
+# ElastiCache — 노드 장애 주입
+aws elasticache test-failover \
+  --replication-group-id flowticket-redis --node-group-id <shard-id>
+```
+
+측정할 것은 "AWS가 페일오버에 성공했는가"가 아니라 **앱이 그 구간을 어떻게 통과하는가**다.
+
+| 관찰 항목 | 확인 내용 |
+|---|---|
+| 커넥션 풀 | HikariCP가 끊긴 커넥션을 버리고 재연결하는가, 아니면 고갈되는가 |
+| 오류 형태 | 페일오버 구간의 응답이 5xx인가 타임아웃 누적인가 — 사용자에게 어떻게 보이는가 |
+| 중단 시간 | 쓰기 불가 구간의 실제 길이(초) |
+| 자동 복구 | 페일오버 후 스스로 정상화되는가, Pod 재시작이 필요한가 |
+| 유실 | Redis 비동기 복제에서 실제로 무엇이 사라졌는가(대기열 순번·토큰) |
+
+여기서 설정 결함(검증 쿼리 미설정, 과도한 타임아웃, 재시도 부재)이 드러나면 그 자체가
+**TS 또는 IMP 문서 한 편**이 된다. 켜 두기만 하고 누르지 않으면 비용만 늘어난 것이다.
 
 **실증 범위 밖(명시)**: AZ 전체 장애, 리전 장애, NAT 장애 주입, 침투 테스트.
 이들은 ADR-012의 분류 **B**(기본 운영 안전장치)에 해당해 **근거 문서로 대신**한다.
+A와 B를 가르는 기준은 중요도가 아니라 **장애를 주입할 수단의 유무**다.
 
 ## 9. 한계
 

@@ -28,13 +28,17 @@ variable "node_type" {
 
 variable "multi_az" {
   description = <<-EOT
-    기본값 false — 데모 환경의 절충이다.
-    켜면 복제본이 다른 AZ에 생기고 자동 페일오버가 활성화된다(비용 약 2배).
-    ⚠️ RDS와 같은 논점: 앱·Kafka는 3 AZ인데 Redis가 단일 AZ면 그 AZ 장애 시
-    대기열·SSE 팬아웃이 멈춘다. 판매 정합성은 DB가 지키므로 데이터 손상은 없다.
+    기본값 true (ADR-012 §10). 켜면 복제본이 다른 AZ에 생기고 자동 페일오버가 켜진다.
+
+    근거는 RDS와 다르다. Redis가 죽어도 초과판매·주문 상태 같은 정합성은 깨지지 않는다
+    (진실원은 DB — ADR-003/006/008). 대신 대기열 순번과 SSE 팬아웃이 사라진다.
+    선착순 대기열이 이 서비스의 간판 기능이라 "정합성은 무사한데 서비스는 멈춘" 상태가 된다.
+
+    ⚠️ Redis 복제는 비동기다. 페일오버 시 가장 최근 쓰기 일부는 유실될 수 있다 —
+    가용성이 올라가는 것이지 무손실이 되는 것이 아니다.
   EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "tags" {

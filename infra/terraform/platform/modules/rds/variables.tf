@@ -44,13 +44,17 @@ variable "username" {
 
 variable "multi_az" {
   description = <<-EOT
-    기본값 false — 데모 환경의 절충이다.
-    ⚠️ 앱과 Kafka는 3 AZ에 분산하는데 DB가 단일 AZ면, AZ 장애 시 결국 전체가 멈춘다.
-    NAT를 AZ별로 둔 것과 같은 일관성 논점이 여기에도 있다(ADR-012 §2 참고).
-    켜면 인스턴스 비용이 약 2배가 되고 생성·삭제 시간도 늘어난다.
+    기본값 true (ADR-012 §10).
+    DB는 이 시스템의 진실원이다 — 정합성 설계 전체(조건부 UPDATE·상태 전이·아웃박스)가
+    "DB가 살아있다"를 전제로 선다. 단일 AZ면 그 AZ 장애가 곧 전체 중단이라,
+    단일 NAT(일부 기능 마비)보다 파급이 크다.
+
+    ⚠️ 켠다고 무손실이 되는 것은 아니다. 페일오버에는 통상 수십 초~2분이 걸리고
+    그동안 쓰기가 막힌다 — "켰으니 안전"이 아니라 "중단 시간이 짧아진다"가 정확하다.
+    비용은 인스턴스가 약 2배이고, 생성·삭제 시간이 늘어 apply/destroy 반복이 느려진다.
   EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "backup_retention_period" {

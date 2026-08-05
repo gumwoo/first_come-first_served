@@ -27,9 +27,18 @@ export function useSeats(eventId: number) {
     es.addEventListener("seat.held", () => refresh());
     es.addEventListener("seat.hold.released", () => refresh());
     es.addEventListener("seat.hold.expired", () => refresh());
-    es.onerror = () => {
-      /* 재조회로 커버 */
+
+    // 재연결 공백 동안의 선점/해제는 다시 오지 않는다. 좌석맵이 낡은 채로 남으면
+    // 이미 팔린 자리를 선택 가능한 것처럼 보여준다(선택 후 409로 튕긴다).
+    // 정합성은 서버의 조건부 UPDATE가 지키므로 초과판매로 이어지지는 않지만,
+    // 화면을 최신으로 되돌리려면 재연결 시 다시 읽어야 한다.
+    let opened = false;
+    es.onopen = () => {
+      if (opened) refresh(); // 최초 연결은 위 refresh()가 이미 처리했다
+      opened = true;
     };
+    es.onerror = () => {};
+
     return () => es.close();
   }, [eventId, refresh]);
 

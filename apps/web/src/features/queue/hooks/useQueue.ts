@@ -56,7 +56,9 @@ export function useQueue(eventId: number) {
           setPhase("admitted");
         });
         es.addEventListener("queue.expired", () => setPhase("expired"));
-        // onerror는 폴링이 커버하므로 무시(재연결은 브라우저가 시도)
+        // 여기만 onopen 재조회가 없다 — 아래 2초 폴링이 재연결 공백을 이미 메우기 때문이다.
+        // (useOrder·useSeats에는 폴링이 없어 onopen에서 직접 다시 읽는다.)
+        es.onerror = () => {};
 
         poll = setInterval(async () => {
           try {

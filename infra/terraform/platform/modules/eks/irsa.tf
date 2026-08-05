@@ -8,8 +8,7 @@ locals {
   # sub 조건에 쓸 issuer 호스트(https:// 제거)
   oidc_issuer_host = replace(aws_eks_cluster.this.identity[0].oidc[0].issuer, "https://", "")
 
-  lbc_policy_path      = "${path.module}/policies/aws-load-balancer-controller.json"
-  lbc_policy_available = fileexists(local.lbc_policy_path)
+  lbc_policy_path = "${path.module}/policies/aws-load-balancer-controller.json"
 }
 
 # 서비스 어카운트를 정확히 지정하는 신뢰 정책을 만든다.
@@ -122,22 +121,9 @@ resource "aws_iam_role" "load_balancer_controller" {
   name               = "${var.cluster_name}-lbc"
   assume_role_policy = data.aws_iam_policy_document.irsa_assume["lbc"].json
   tags               = var.tags
-
-  lifecycle {
-    # 파일이 없으면 plan 단계에서 이유와 함께 멈춘다.
-    # (역할만 만들어지고 권한이 비는 상태로 apply되면, Ingress가 만들어지지 않는
-    #  원인을 런타임에 추적해야 한다 — 그 전에 끊는 편이 낫다.)
-    precondition {
-      condition     = local.lbc_policy_available
-      error_message = "AWS Load Balancer Controller IAM 정책 파일이 없다. modules/eks/policies/README.md의 절차로 내려받아라."
-    }
-  }
 }
 
 resource "aws_iam_role_policy" "load_balancer_controller" {
-  # fmt/validate는 자격증명 없이 돌아야 하므로, 파일 부재 시 평가 자체를 건너뛴다.
-  count = local.lbc_policy_available ? 1 : 0
-
   name   = "aws-load-balancer-controller"
   role   = aws_iam_role.load_balancer_controller.id
   policy = file(local.lbc_policy_path)

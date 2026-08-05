@@ -12,7 +12,7 @@
 - [x] Budgets 4단계 + Cost Anomaly Detection 설정 완료
 - [ ] `state-bootstrap`으로 state용 S3 버킷 생성 → `versions.tf`의 backend 주석 해제
 - [ ] `bootstrap` apply(ACM·ECR·IAM) — **이 스택과 별개이며 아직 미작성**
-- [ ] `modules/eks/policies/aws-load-balancer-controller.json` 내려받기
+- [x] LB Controller IAM 정책 — 저장소에 커밋됨
       ([policies/README.md](modules/eks/policies/README.md))
 
 ## 쓰는 법

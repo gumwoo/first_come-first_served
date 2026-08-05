@@ -17,3 +17,4 @@ IMP(개선 일지: 문제→측정→개선)와 구분 — ADR은 "무엇을·�
 | [ADR-010](ADR-010-transactional-outbox.md) | 트랜잭셔널 아웃박스(DB↔Kafka exactly-once) + 정산 분리 | Accepted |
 | [ADR-011](ADR-011-payment-reconciliation.md) | 결제 정산·보상 — 외부 PG↔내부 주문 불일치(미아 승인 취소) | Accepted |
 | [ADR-012](ADR-012-3az-eks-infra-cost-control.md) | 3AZ EKS 인프라 — 이중화 범위와 비용 통제(apply/destroy) | Proposed |
+| [ADR-013](ADR-013-iac-ownership-secrets-access.md) | IaC 소유 경계와 비밀·접근 통제 — data/import 기준, state에 비밀 금지, 열어 둔 곳 3개 | Proposed |

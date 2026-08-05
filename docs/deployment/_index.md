@@ -5,11 +5,12 @@
 - 우선순위: **S08 아웃박스(정합성)를 먼저** 끝낸 뒤 이 배포로. 배포는 "코드 선반영 완료"라 실증만 하고 동결.
 - 후속: S10 부하테스트·모니터링은 이 배포 위에서 실측.
 
-## 문서 4종 (상세)
+## 문서 5종 (상세)
 | 문서 | 내용 |
 |------|------|
 | [aws-eks-deploy-plan.md](aws-eks-deploy-plan.md) | EKS + Strimzi 멀티브로커 배포 단계(Phase 1~8)·역할분담·DoD |
-| [terraform-design.md](terraform-design.md) | **Phase 3 구현 설계** — state 분리·CIDR·노드그룹·리소스 예산표·apply/destroy 순서 |
+| [terraform-design.md](terraform-design.md) | **Phase 3 구현 설계** — state 분리·CIDR·노드그룹·리소스 예산표·apply/destroy 순서, **환경 분리 기각 근거(§10)** |
+| [zero-downtime-deployment.md](zero-downtime-deployment.md) | **무중단의 정의와 조건** — REST/SSE/DB를 나눠서. ALB readiness gate, Expand-Contract, 검증 시나리오·예측 |
 | [app-changes-for-k8s-kafka.md](app-changes-for-k8s-kafka.md) | 파티션↑·복제↑·probe·graceful shutdown·**멀티팟 대응(D 섹션)** 코드/설정 변경 |
 | [portfolio-framing-and-decisions.md](portfolio-framing-and-decisions.md) | 납득 원칙·최종 스코프·**MSA 고려·기각**·면접 서사 |
 

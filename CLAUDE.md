@@ -27,6 +27,17 @@ FlowTicket(선착순 예매 시스템) 포트폴리오 프로젝트. 아래는 *
 - 계약/정적 가드: `npm run harness:check` (meta 25 + backend + frontend)
 - 백엔드 컴파일/통합테스트: **로컬 gradle 없음 → CI(Testcontainers)에서만 검증**.
 
+## DB 마이그레이션 (무중단 배포 전제)
+롤링 배포 중에는 **구버전 Pod와 신버전 Pod가 같은 DB를 동시에 본다.** 파괴적 DDL
+(`DROP TABLE`·`DROP COLUMN`·`ALTER COLUMN ... TYPE`·`RENAME`·`SET NOT NULL`)은 아직 살아 있는
+구버전 Pod를 즉시 깨뜨린다.
+
+- **Expand-Contract로 두 릴리스에 나눈다** — N: 추가(nullable/기본값, 구·신 양쪽 동작) →
+  N+1: 모든 Pod 교체 후 제거.
+- 금지가 아니라 **명시적 승인 대상**이다. 불가피하면 PR 본문에 **선행 Expand 릴리스**와
+  **구버전이 깨지지 않는 근거**를 적는다.
+- 상세: [`docs/deployment/zero-downtime-deployment.md`](docs/deployment/zero-downtime-deployment.md) §8.
+
 ## 문서 규율
 - 정량 개선 → `docs/improvements/IMP-XXX`, 설계 결정 → `docs/decisions/ADR-XXX`,
   디버깅/사건 회고 → `docs/troubleshooting/TS-XXX`, 슬라이스 큐 → `docs/screens/_index.md`.

@@ -19,10 +19,21 @@
 
 ```bash
 cd infra/terraform/platform/environments/demo
+
+# 1) 관리자 IP 지정 — cluster_public_access_cidrs 에 기본값이 없다(의도).
+cp terraform.tfvars.example terraform.tfvars
+curl -s https://checkip.amazonaws.com      # 여기서 나온 IP를 /32 로 넣는다
+
+# 2) EKS 버전이 아직 지원 중인지 확인 — 이 값은 시간이 지나면 낡는다.
+aws eks describe-cluster-versions --region ap-northeast-2
+
 terraform init
 terraform plan          # 반드시 눈으로 검토
 terraform apply         # 과금 시작
 ```
+
+> `0.0.0.0/0`은 validation으로 거부된다. "프라이빗 서브넷·최소 권한"을 설계 근거로 내세우면서
+> API를 전 세계에 열어두면 문서와 코드가 충돌하기 때문이다.
 
 apply 후:
 
@@ -60,7 +71,7 @@ destroy 후 잔여 점검: **ALB · NAT · Elastic IP · EBS · 스냅샷**.
 | `vpc` | 3 AZ · 서브넷 9개 · NAT ×3 · 라우팅 | App 서브넷이 `/19`인 이유는 **VPC CNI가 Pod에 서브넷 IP를 직접 할당**하기 때문 |
 | `endpoints` | S3 Gateway + ECR Interface | 없어도 동작한다 — NAT 우회용 **개선** 항목 |
 | `eks` | 클러스터 · **AZ별 노드그룹 3개** · 애드온 · IRSA | 노드그룹 분리는 **EBS의 AZ 종속** 때문 |
-| `rds` | PostgreSQL, 프라이빗 | 비밀번호는 Secrets Manager에만, output은 **ARN만** |
+| `rds` | PostgreSQL, 프라이빗 | 비밀번호를 **RDS가 관리**한다 — Terraform state에 남지 않는다 |
 | `elasticache` | Redis, 프라이빗 | 대기열·토큰·SSE 팬아웃용 |
 
 ## 이 스택이 만들지 않는 것

@@ -74,18 +74,28 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - id: ecr
         uses: aws-actions/amazon-ecr-login@v2
+      # GitHub 러너는 매 실행 빈 Docker 캐시로 시작한다. Dockerfile이 의존성 해석을 별도
+      # 레이어로 분리해 뒀어도(apps/api/Dockerfile), 캐시가 없으면 매번 처음부터 받는다.
+      # buildx + GHA 캐시로 그 레이어를 실행 간에 재사용한다.
+      - uses: docker/setup-buildx-action@v3
       - name: build & push (태그 = git SHA)
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          TAG: ${{ needs.guard.outputs.sha }}
-        run: |
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
           # 태그를 git SHA로 고정하면 "지금 도는 이미지가 어떤 코드인지"가 1:1로 연결되고,
           # 롤백도 이전 SHA 이미지로 되돌리면 된다(latest 같은 이동 태그는 쓰지 않는다).
-          IMAGE="$REGISTRY/flowticket-api:$TAG"
-          docker build -f apps/api/Dockerfile -t "$IMAGE" .
-          docker push "$IMAGE"
+          tags: ${{ steps.ecr.outputs.registry }}/flowticket-api:${{ needs.guard.outputs.sha }}
+          # mode=max: 멀티스테이지의 builder 단계까지 캐시한다. 비용이 큰 곳이 거기라
+          # 기본값(mode=min, 최종 레이어만)으로는 효과가 없다.
+          # scope 분리: api/web이 같은 캐시 공간을 두고 서로를 밀어내지 않게 한다.
+          cache-from: type=gha,scope=image-api
+          cache-to: type=gha,mode=max,scope=image-api
+      - name: 요약
+        run: |
           echo "### API 이미지 push 완료" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`${{ steps.ecr.outputs.registry }}/flowticket-api:${{ needs.guard.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
 
   web:
     name: Web 이미지 → ECR
@@ -102,17 +112,23 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - id: ecr
         uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
       - name: build & push (태그 = git SHA)
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          TAG: ${{ needs.guard.outputs.sha }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/flowticket-web:${{ needs.guard.outputs.sha }}
           # Next standalone은 rewrites 목적지를 빌드 시점에 굽는다(S09-1에서 실측).
           # K8s에서는 브라우저의 /api/* 를 Ingress가 API Service로 직접 라우팅하므로 이 값이
           # 요청 경로에 끼지 않는다 — 서버사이드 프록시 폴백용 기본값만 넣어둔다.
-          API_ORIGIN: ${{ vars.API_ORIGIN || 'http://flowticket-api:8080' }}
+          # (주석은 build-args 블록 밖에 둔다 — 안에 넣으면 인자로 전달된다.)
+          build-args: |
+            API_ORIGIN=${{ vars.API_ORIGIN || 'http://flowticket-api:8080' }}
+          cache-from: type=gha,scope=image-web
+          cache-to: type=gha,mode=max,scope=image-web
+      - name: 요약
         run: |
-          IMAGE="$REGISTRY/flowticket-web:$TAG"
-          docker build -f apps/web/Dockerfile --build-arg "API_ORIGIN=$API_ORIGIN" -t "$IMAGE" .
-          docker push "$IMAGE"
           echo "### Web 이미지 push 완료" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`${{ steps.ecr.outputs.registry }}/flowticket-web:${{ needs.guard.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"

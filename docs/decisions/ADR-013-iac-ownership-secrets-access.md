@@ -1,6 +1,6 @@
 # ADR-013 · IaC 소유 경계와 비밀·접근 통제
 
-- 상태: Proposed (`apply`로 실제 반영 시 Accepted로 승격)
+- 상태: Proposed — **bootstrap 계층은 apply 완료**(2026-08-05), platform은 미적용
 - 날짜: 2026-08-05
 - 슬라이스: S09(배포·운영 준비) Phase 3 — 인프라 트랙
 - 관련: [[ADR-012]](3AZ 인프라·비용 통제), [[ADR-009]](GitOps CD),
@@ -126,7 +126,11 @@ KOPIS 동기화, 좌석 자동 시딩, Kafka 토픽 자동 생성으로 **기동
 
 ## 결과 / 한계 (정직)
 
-- **아직 Proposed다.** import·`plan`·`apply` 미실행. 실제 반영 후 Accepted로 승격한다.
+- **bootstrap은 적용됐고 platform은 아직이다.** §1(소유 경계)·§3(prevent_destroy)은 실제로
+  반영됐고, import 5건과 `plan` 검토를 거쳐 `apply`했다. §2(비밀)·§4(열어 둔 곳)의 대부분은
+  platform 계층이라 **아직 검증 전**이다. 전체가 적용된 뒤 Accepted로 승격한다.
+- **적용 후 확인된 것**: IAM 신뢰 정책·인라인 정책을 재작성하고도 Image 워크플로가 정상 동작했다
+  (수동 실행으로 확인). "권한을 코드로 옮겨도 파이프라인이 유지된다"는 §1의 전제가 실측됐다.
 - **import 후 첫 `plan`이 진짜 검증이다.** 콘솔에 실제로 무엇이 설정돼 있었는지는 그때 처음 보인다.
   특히 IAM 신뢰 정책의 `sub` 조건은 **좁히면 Image 파이프라인이 조용히 인증 실패**하므로,
   `apply` 직후 `gh workflow run image.yml`로 확인하는 절차를 README에 넣었다.

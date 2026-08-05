@@ -335,6 +335,50 @@ for (const ev of eventsContract.implemented ?? []) {
   }
 }
 
+// ---------- 14. 파괴적 DDL 금지 (무중단 배포 전제) ----------
+// 롤링 배포 중에는 구버전 Pod와 신버전 Pod가 같은 DB를 동시에 본다. 신버전이 기동하며
+// Flyway가 컬럼을 지우면 아직 살아 있는 구버전 Pod가 즉시 터진다.
+// 이건 컴파일·테스트·CI가 전혀 못 잡는 무증상 결함이라(단일 프로세스에서는 정상 동작)
+// 정적으로 막는다. 상세: docs/deployment/zero-downtime-deployment.md §8
+//
+// 금지가 아니라 "명시적 승인"이다. SET NOT NULL도 데이터 백필 후 별도 릴리스에서는 안전하다.
+// 불가피하면 해당 마이그레이션 파일에 사유와 함께 예외 주석을 남긴다:
+//   -- harness:allow-destructive-ddl: V13에서 Expand 완료, 구버전 참조 없음
+const DESTRUCTIVE_DDL = [
+  [/\bdrop\s+table\b/i, "DROP TABLE"],
+  [/\bdrop\s+column\b/i, "DROP COLUMN"],
+  // "ALTER COLUMN x TYPE ..." / "... SET DATA TYPE ..." (DROP NOT NULL 등은 걸리지 않음)
+  [/\balter\s+column\s+\S+\s+(?:set\s+data\s+)?type\b/i, "ALTER COLUMN ... TYPE"],
+  [/\brename\s+(?:column|table|to)\b/i, "RENAME"],
+  [/\bset\s+not\s+null\b/i, "SET NOT NULL"],
+];
+const ALLOW_DDL_RE = /--\s*harness:allow-destructive-ddl\s*:?\s*(\S.*)?/i;
+
+for (const file of migrationFiles) {
+  const raw = read(file);
+  const base = path.basename(file);
+  const allow = raw.match(ALLOW_DDL_RE);
+
+  // 주석 안의 문구가 오탐을 내지 않도록 SQL 주석을 제거한 뒤 검사한다.
+  const sql = raw.replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ");
+  const hits = DESTRUCTIVE_DDL.filter(([re]) => re.test(sql)).map(([, label]) => label);
+
+  if (!hits.length) {
+    // 쓰지도 않으면서 예외만 달아 둔 주석은 다음 사람을 오해시킨다.
+    if (allow) r.fail(`불필요한 예외 주석: ${base} — 파괴적 DDL이 없는데 allow-destructive-ddl이 달려 있음`);
+    continue;
+  }
+  if (!allow) {
+    r.fail(
+      `파괴적 DDL: ${base} — ${hits.join(", ")}. 롤링 배포 중 구버전 Pod가 깨진다. ` +
+        `Expand-Contract로 나누거나, 불가피하면 "-- harness:allow-destructive-ddl: <사유>" 주석으로 승인`
+    );
+  } else if (!allow[1]) {
+    // 예외를 열어 주되 근거는 반드시 남게 한다.
+    r.fail(`예외 사유 누락: ${base} — "-- harness:allow-destructive-ddl: <사유>" 형식으로 근거를 적을 것`);
+  }
+}
+
 function normalize(p) {
   return p.replace(/\{[^}]+\}/g, "{id}").replace(/\/+$/, "") || "/";
 }

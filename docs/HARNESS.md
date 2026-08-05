@@ -44,10 +44,21 @@ Static/Unit/Integration이 다 초록인데도 E2E 계층(사람의 수동 클�
 계약을 코드와 대조해 드리프트를 막는다. `npm run harness:check`.
 - 백엔드: 금지 의존성, enum ordinal 금지, @Enumerated STRING, 생성자 주입, 시큐리티 개방 금지,
   Flyway 버전 유일, **구현 이벤트 발행 검증**(계약 선언 후 미구현 차단),
-  **status 변경 UPDATE의 WHERE status 가드 강제**(check-then-act 레이스 차단, TS-011) 등.
-- 프론트: allowed-stack, enum 미러, 이벤트 구독 일치, 계층 import 경계, 죽은 API 경로 등.
-- **메타테스트(25)**: "하네스도 검증 대상." 위반 fixture를 넣어 하네스가 **실제로 실패를 잡는지**
+  **status 변경 UPDATE의 WHERE status 가드 강제**(check-then-act 레이스 차단, TS-011),
+  **파괴적 DDL 차단**(롤링 중 구버전 Pod 파손 방지) 등.
+- 프론트: allowed-stack, enum 미러, 이벤트 구독 일치, 계층 import 경계, 죽은 API 경로,
+  **SSE 훅의 구독 공백 복구 경로 강제**(TS-012) 등.
+- **메타테스트(27)**: "하네스도 검증 대상." 위반 fixture를 넣어 하네스가 **실제로 실패를 잡는지**
   검사한다. 통과해버리면(false negative) 메타테스트가 실패한다.
+
+> **규칙 선정 기준**: 아무 실수나 규칙으로 만들지 않는다. ① 반복될 클래스이고 ② **무증상**이며
+> (컴파일·테스트·CI가 이미 잡으면 불필요) ③ 오탐이 낮고 ④ fixture 비용을 감수할 값어치가
+> 있을 때만 추가한다. 하네스는 **발견 도구가 아니라 재발 방지 도구**다 — 새로운 종류의 실수는
+> 여전히 리뷰가 찾는다.
+>
+> **예외는 주석으로 승인한다.** 금지가 아니라 근거를 남기게 하는 쪽이다
+> (`harness:allow-unguarded-status` · `harness:allow-destructive-ddl` · `harness:allow-sse-no-resync`).
+> 사유 없는 예외 주석과, 위반이 없는데 달려 있는 예외 주석은 **둘 다 실패**시킨다.
 
 > 철학: **"계약에 있으나 미구현 = 허용"**(슬라이스 완료 시 채움). 그래서 전체가 아니라 `implemented`·
 > done-criteria로 "이미 완성된 것"만 강제한다.
@@ -110,7 +121,7 @@ SOLD_OUT 오탐 → CCTV로 원인 특정 → 직렬 격리(그 과정에서 초
 
 ## 7. 명령어 한눈에
 ```bash
-npm run harness:check          # 계약/정적 가드 (meta 25 + backend + frontend)
+npm run harness:check          # 계약/정적 가드 (meta 27 + backend + frontend)
 corepack pnpm@9.12.0 --dir apps/web typecheck | lint | build
 npm run e2e                    # E2E (로컬 dev 스택 필요) — 게이트는 CI가 자동 수행
 npm run e2e:burn               # 번인(--repeat-each=20) — flaky 사전 차단

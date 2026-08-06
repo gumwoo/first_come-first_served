@@ -55,3 +55,20 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "cluster_log_types" {
+  description = <<-EOT
+    CloudWatch로 내보낼 컨트롤플레인 로그 종류.
+
+    빈 배열이면 로그가 남지 않는다 — 롤링 배포·스케줄링이 왜 그렇게 동작했는지 사후에
+    증명할 수 없다. 요금이 부담되면 ["api", "audit"]으로 줄인다.
+  EOT
+  type        = list(string)
+  default     = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+}
+
+variable "cluster_log_retention_days" {
+  description = "컨트롤플레인 로그 보존 일수. 데모는 짧게 — 클러스터를 지워도 로그 요금은 남는다."
+  type        = number
+  default     = 7
+}

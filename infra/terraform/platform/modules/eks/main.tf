@@ -34,10 +34,50 @@ resource "aws_iam_role_policy_attachment" "cluster" {
 # ---------------------------------------------------------------------------
 # 클러스터
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 봉투 암호화(Kubernetes API 데이터) — 고객 관리형 KMS 키를 **일부러 쓰지 않는다**
+#
+# EKS는 Kubernetes 1.28 이상에서 **모든 API 데이터를 AWS 소유 KMS 키로 기본 봉투 암호화**한다.
+# 별도 설정도, 권한도, 추가 비용도 없다. 즉 "암호화가 꺼져 있다"는 전제는 성립하지 않는다.
+#   https://docs.aws.amazon.com/eks/latest/userguide/envelope-encryption.html
+#
+# 고객 관리형 키(CMK)를 얹으면 얻는 것은 암호화 자체가 아니라 **키 정책·감사·폐기 통제권**이다.
+# 이 프로젝트에는 그걸 요구하는 근거(규정 준수, 키 관리자와 클러스터 관리자 분리 등)가 없다.
+#
+# 반면 비용은 분명하다:
+#   - 키가 비활성화되면 클러스터가 즉시 degraded, **삭제되면 복구 불가**(AWS 문서 명시).
+#     이 스택은 데모마다 만들고 지우므로 그 사고 확률이 오히려 높다.
+#   - 월 $1 + 요청 요금, 키 정책 설계, destroy 순서 의존.
+#
+# 필요해지면 나중에 붙일 수 있다 — 기존 클러스터에도 AssociateEncryptionConfig로 연결된다.
+# 다만 **한번 연결하면 해제하거나 다른 키로 바꿀 수 없다**는 점이 진짜 비가역성이다.
+#   https://docs.aws.amazon.com/eks/latest/userguide/enable-kms.html
+#
+# 참고: CMK를 쓸 때 kms:DescribeKey·kms:CreateGrant가 필요한 주체는 **CreateCluster를 호출하는
+# principal**(= Terraform 실행 주체)이지 클러스터 IAM 역할이 아니다. 초안은 이 권한을 클러스터
+# 역할에 붙였는데, 위치가 틀린 설계였다.
+# ---------------------------------------------------------------------------
+
+# 로그 그룹을 먼저 만들어 **보존 기간을 못 박는다.** EKS가 알아서 만들게 두면 보존이
+# "만료 없음"이라, 클러스터를 지운 뒤에도 로그 저장 요금이 계속 남는다(데모 전제와 어긋난다).
+resource "aws_cloudwatch_log_group" "cluster" {
+  count = length(var.cluster_log_types) > 0 ? 1 : 0
+
+  name              = "/aws/eks/${var.cluster_name}/cluster"
+  retention_in_days = var.cluster_log_retention_days
+  tags              = var.tags
+}
+
 resource "aws_eks_cluster" "this" {
   name     = var.cluster_name
   role_arn = aws_iam_role.cluster.arn
   version  = var.kubernetes_version
+
+  # ② 컨트롤플레인 로그 — 롤링 무중단 실증의 **증거**다.
+  # api/audit이 없으면 "무중단이었다"를 애플리케이션 로그로만 주장하게 된다. scheduler·
+  # controllerManager는 파드 재배치가 왜 그렇게 일어났는지를 설명한다.
+  # CloudWatch Logs 수집·보존 요금이 붙지만 데모 기간(수 시간)에는 미미하다.
+  enabled_cluster_log_types = var.cluster_log_types
 
   vpc_config {
     # 컨트롤플레인 ENI는 프라이빗 App 서브넷에 둔다.
@@ -58,7 +98,10 @@ resource "aws_eks_cluster" "this" {
 
   tags = var.tags
 
-  depends_on = [aws_iam_role_policy_attachment.cluster]
+  depends_on = [
+    aws_iam_role_policy_attachment.cluster,
+    aws_cloudwatch_log_group.cluster, # 보존 기간이 정해진 로그 그룹을 EKS가 재사용하게
+  ]
 }
 
 # ---------------------------------------------------------------------------

@@ -88,6 +88,47 @@
 - `output: "standalone"`은 **이미지 빌드에서만** 켠다(`NEXT_OUTPUT_STANDALONE=true`) — standalone은
   심볼릭 링크를 만들어 **Windows 로컬 빌드가 EPERM으로 실패**하기 때문. 로컬 검증 흐름을 깨지 않는다.
 
+### C-7. Redis TLS — **미완료 · apply 후 배포 블로커** 🔴
+
+`platform` 스택이 ElastiCache를 `transit_encryption_enabled = true`로 만든다. **TLS를 켠 캐시는
+클라이언트도 TLS로 붙어야 하고, 아니면 연결이 전부 실패한다.** 앱 설정이 따라가지 않으면
+Pod가 뜨자마자 readiness에서 걸려 영원히 Ready가 안 된다(C-1의 readiness에 `redis`가 있다).
+
+**왜 켰나**: 프라이빗 서브넷 + SG는 "네트워크에 못 들어온다"는 방어이고 TLS는 "들어와도 못
+읽는다"는 방어다. 계층이 다르므로 하나로 갈음하지 않는다. 특히 **대기열 토큰이 Redis를 지나므로**
+평문 구간이 있으면 토큰이 그대로 노출된다. (`auth_token`은 시크릿 관리가 따라와 범위 밖 — 접근
+주체 제한은 SG가 담당한다.)
+
+**체크리스트 — 하나라도 빠지면 배포가 안 뜬다**
+
+| # | 대상 | 할 일 | 상태 |
+|---|---|---|---|
+| 1 | 앱 설정 | `spring.data.redis.ssl.enabled`를 **env로** 노출 | ⬜ |
+| 2 | k8s 매니페스트 | `SPRING_DATA_REDIS_SSL_ENABLED=true` 주입 | ⬜ |
+| 3 | 로컬·CI | **false 유지** — Testcontainers Redis는 평문이다 | ⬜ |
+| 4 | readiness probe | TLS 불일치 시 Ready가 안 되는 것이 **정상**임을 인지 | ⬜ |
+| 5 | 운영 CLI | `redis-cli --tls -h <endpoint>` | ⬜ |
+| 6 | 부하 테스트(S10) | 도구가 TLS를 말하는지 확인 | ⬜ |
+
+**1·3이 핵심이다.** 기본값을 `true`로 박으면 로컬 개발과 CI가 전부 깨진다:
+
+```yaml
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}   # 운영(k8s)에서만 true
+```
+
+> Spring Boot 3.3.5 + Lettuce 기준. **이 설정 하나로 앱의 모든 Redis 경로가 함께 바뀐다** —
+> 대기열 Lua, SSE Pub/Sub(D-1), ShedLock(D-2)이 같은 커넥션 팩토리를 쓰기 때문이다.
+> 반대로 말하면 **빠뜨리면 전부 동시에 죽는다.**
+
+**아직 코드는 손대지 않았다.** `platform` apply와 `k8s/` 매니페스트 사이에 반드시 닫아야 하는 항목이다.
+
+
 ## D. 다중 Pod에서 드러나는 문제 & 대응 (D-1·D-2 코드 선반영 완료, 검증은 다중 Pod 배포 시)
 
 > 동시성 제어는 **이미 다중 인스턴스 안전**(Redis Lua·DB 조건부 UPDATE). 아래는 다중 Pod로 확장할 때 **단일 인스턴스 전제가 깨지는 두 종류**의 문제다 — 종류가 다르다: **SSE=인스턴스-로컬 "상태" / 스케줄러=인스턴스별 "실행".**
@@ -124,8 +165,10 @@
 
 0. **C-1~C-6(S09-0 배포 블로커 제거) — 완료.** probe·graceful shutdown·env 외부화·토픽 파라미터 설정화·
    Prometheus 레지스트리·프론트 API 오리진. AWS 이전에 로컬에서 끝낼 수 있는 것부터 닫았다.
-1. A-1·A-2(파티션·RF) — 이제 **코드가 아니라 환경/CR 값 합의**(Strimzi 붙일 때)
-2. **D-1·D-2(SSE 팬아웃·ShedLock)** — 다중 Pod 배포와 함께(단일→다중 전환의 핵심), D-3은 비교 후 결정
+1. **C-7(Redis TLS) — `platform` apply와 `k8s/` 매니페스트 사이의 블로커.** 순서상 가장 먼저다:
+   인프라는 TLS로 만들어지는데 앱이 평문이면 Pod가 아예 Ready가 되지 않아 그 뒤 항목을 검증할 수 없다.
+2. A-1·A-2(파티션·RF) — 이제 **코드가 아니라 환경/CR 값 합의**(Strimzi 붙일 때)
+3. **D-1·D-2(SSE 팬아웃·ShedLock)** — 다중 Pod 배포와 함께(단일→다중 전환의 핵심), D-3은 비교 후 결정
 4. B-1(메트릭) — 관측 스택과 함께
 5. B-2(부하·페일오버) + **다중 Pod 알림/중복실행 재검증** — 마지막 실증(S10)
 

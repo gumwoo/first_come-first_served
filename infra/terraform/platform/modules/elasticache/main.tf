@@ -44,9 +44,16 @@ resource "aws_elasticache_replication_group" "this" {
   subnet_group_name  = aws_elasticache_subnet_group.this.name
   security_group_ids = [aws_security_group.redis.id]
 
-  # 전송 중 암호화를 켜면 클라이언트가 TLS로 접속해야 한다. 앱 설정(spring.data.redis.ssl)을
-  # 함께 바꿔야 하므로 기본은 끔 — 프라이빗 서브넷 + SG로 접근을 제한하는 것으로 갈음한다.
-  transit_encryption_enabled = false
+  # ⚠️ 켜면 클라이언트가 TLS로 접속해야 한다 — 앱 설정(spring.data.redis.ssl.enabled=true)을
+  # 반드시 함께 바꿔야 하고, 안 바꾸면 연결이 전부 실패한다(k8s 매니페스트 작업의 전제).
+  #
+  # 그럼에도 켜는 이유: 프라이빗 서브넷 + SG 제한은 "네트워크에 못 들어온다"는 방어이고,
+  # 전송 중 암호화는 "들어와도 못 읽는다"는 방어다. 이 프로젝트는 대기열 토큰을 Redis로
+  # 다루므로 평문 구간이 있으면 토큰이 그대로 노출된다. 계층이 다른 방어를 하나로 갈음하지 않는다.
+  #
+  # auth_token(Redis AUTH)은 별도다. 전송 중 암호화를 켜야 쓸 수 있고, 시크릿 관리가 따라오므로
+  # 이번 범위에서는 제외한다 — 접근 제어는 SG가 담당한다.
+  transit_encryption_enabled = var.transit_encryption
   at_rest_encryption_enabled = true
 
   # 데모는 매번 새로 만든다. 스냅샷을 남기면 저장 비용이 붙고 destroy도 느려진다.

@@ -60,6 +60,9 @@ module "eks" {
   node_desired_size  = var.node_desired_size
   node_max_size      = var.node_max_size
 
+  cluster_log_types          = var.cluster_log_types
+  cluster_log_retention_days = var.cluster_log_retention_days
+
   tags = local.tags
 }
 
@@ -86,7 +89,8 @@ module "redis" {
 
   allowed_security_group_id = module.eks.cluster_security_group_id
 
-  multi_az = var.redis_multi_az
+  multi_az           = var.redis_multi_az
+  transit_encryption = var.redis_transit_encryption
 
   tags = local.tags
 }

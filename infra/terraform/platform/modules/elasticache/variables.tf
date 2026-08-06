@@ -45,3 +45,12 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "transit_encryption" {
+  description = <<-EOT
+    전송 중 암호화(TLS). 켜면 클라이언트가 반드시 TLS로 접속해야 한다
+    (Spring: spring.data.redis.ssl.enabled=true). 앱 설정과 짝이 맞지 않으면 전 연결이 실패한다.
+  EOT
+  type        = bool
+  default     = true
+}

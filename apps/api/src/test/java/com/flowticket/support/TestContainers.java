@@ -106,8 +106,7 @@ public final class TestContainers {
                             st.execute(TRUNCATE_ALL);
                         } catch (java.sql.SQLException e) {
                             throw new IllegalStateException(
-                                    "테스트 초기화 TRUNCATE 실패 — 앞선 테스트가 트랜잭션을 흘렸을 수 있다.
-"
+                                    "테스트 초기화 TRUNCATE 실패 — 앞선 테스트가 트랜잭션을 흘렸을 수 있다.\n"
                                             + blockers(st), e);
                         } finally {
                             st.execute("set lock_timeout = default");
@@ -118,8 +117,7 @@ public final class TestContainers {
     }
 
     private static String blockers(java.sql.Statement st) {
-        StringBuilder sb = new StringBuilder("[pg_stat_activity]
-");
+        StringBuilder sb = new StringBuilder("[pg_stat_activity]\n");
         try (java.sql.ResultSet rs = st.executeQuery(BLOCKERS)) {
             while (rs.next()) {
                 sb.append(String.format("  pid=%s state=%s wait=%s/%s xact_age=%s q=%s%n",

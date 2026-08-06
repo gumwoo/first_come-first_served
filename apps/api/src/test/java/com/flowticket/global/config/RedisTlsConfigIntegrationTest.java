@@ -40,9 +40,12 @@ class RedisTlsConfigIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 환경변수로_TLS를_켤_수_있다() {
-        // 운영(k8s)에서 SPRING_DATA_REDIS_SSL_ENABLED=true로 주입하는 경로.
-        // 여기서 @SpringBootTest에 프로퍼티를 덧붙이면 컨텍스트 캐시 키가 갈려 컨텍스트가
-        // 하나 더 뜬다(IMP-013 §7-2에서 겪은 자원 압박). 그래서 격리된 러너로 확인한다.
+        // 운영(k8s)에서 REDIS_SSL_ENABLED=true로 주입하는 경로.
+        //
+        // 러너도 컨텍스트를 만들기는 한다. 차이는 **남느냐**다 — 여기서 @SpringBootTest에
+        // 프로퍼티를 덧붙이면 캐시 키가 갈려 무거운 전체 컨텍스트가 캐시에 하나 더 쌓인 채
+        // 살아남는다(IMP-013 §7-2의 자원 압박). 러너는 Redis 자동 구성만 담은 작은 컨텍스트를
+        // 잠깐 띄웠다 닫으므로 캐시에 아무것도 남기지 않는다.
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(RedisAutoConfiguration.class))
                 .withPropertyValues("spring.data.redis.ssl.enabled=true")

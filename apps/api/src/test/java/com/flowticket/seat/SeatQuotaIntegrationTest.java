@@ -8,6 +8,7 @@ import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.error.BusinessException;
+import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.order.service.OrderService;
 import com.flowticket.order.service.PaymentService;
@@ -15,25 +16,32 @@ import com.flowticket.order.service.RefundService;
 import com.flowticket.queue.service.QueueAdmissionService;
 import com.flowticket.queue.service.QueueService;
 import com.flowticket.seat.domain.Seat;
+import com.flowticket.seat.domain.SeatHoldStatus;
 import com.flowticket.seat.domain.SeatStatus;
 import com.flowticket.seat.dto.HoldResponse;
 import com.flowticket.seat.repository.SeatHoldItemRepository;
 import com.flowticket.seat.repository.SeatHoldRepository;
+import com.flowticket.seat.repository.SeatQuotaRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.service.SeatHoldExpiryService;
 import com.flowticket.seat.service.SeatSeeder;
 import com.flowticket.seat.service.SeatService;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 1인 구매 한도(seat.max-per-user)의 정합성.
@@ -73,6 +81,8 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
     @Autowired OrderRepository orderRepository;
     @Autowired QueueService queueService;
     @Autowired QueueAdmissionService admissionService;
+    @Autowired SeatQuotaRepository quotaRepository;
+    @Autowired PlatformTransactionManager txManager;
 
     private Long eventId;
 
@@ -92,6 +102,11 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
     void 한도직전에_동시요청이_오면_하나만_성공한다() throws Exception {
         // 3매 보유 상태에서 서로 다른 1매를 동시에 요청하면, 한 쪽만 성공해야 한다.
         // 한도 검사가 읽기→검사→행위로 나뉘어 있으면 둘 다 3+1=4를 통과해 5매가 된다.
+        //
+        // ⚠️ 성격: **결함 탐지용이지 회귀 가드가 아니다.** 시작 래치는 두 스레드를 같이
+        // 출발시킬 뿐이라, T1이 커밋까지 끝낸 뒤 T2가 읽으면 결함이 있어도 통과한다.
+        // 실제로 이 테스트는 수정 전 CI에서 결함을 잡았지만, 앞으로도 잡는다는 보장은 없다.
+        // 회귀는 아래 `직렬화_락이_같은_사용자의_동시_선점을_대기시킨다`가 결정적으로 지킨다.
         long user = 501L;
         String token = admittedToken(user);
         List<Long> ids = availableSeatIds(5);
@@ -112,6 +127,8 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
     void 결제전환과_추가선점이_겹쳐도_한도를_넘지_않는다() throws Exception {
         // 결제는 좌석 수를 늘리지 않고 표현 위치만 옮긴다(HELD → PAID).
         // 한도 조회가 두 문장으로 나뉘면 그 사이에 전환이 커밋돼 0매로 보일 수 있다(읽기 스큐).
+        //
+        // ⚠️ 이 테스트는 결함 탐지용이지 회귀 가드가 아니다 — 아래 §타이밍 참고.
         long user = 502L;
         String token = admittedToken(user);
         List<Long> ids = availableSeatIds(5);
@@ -127,7 +144,72 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
             return i == 0 ? 0 : 1; // 추가 선점이 성공한 경우만 센다
         });
 
+        // 추가 선점은 실패해야 한다.
         assertThat(success.get()).isZero();
+
+        // ⚠️ "추가 선점 0건"만으로는 부족하다. 결제 스레드가 조용히 실패해도 기존 4매가 HELD로
+        // 남아 좌석 수는 그대로 4가 되어 **거짓 통과**한다. 결제가 실제로 확정됐는지 확인한다.
+        assertThat(orderRepository.findById(orderId).orElseThrow().getStatus())
+                .as("결제가 실제로 확정돼야 이 테스트가 의미를 갖는다")
+                .isEqualTo(OrderStatus.PAID);
+        assertThat(holdRepository.findById(held.holdId()).orElseThrow().getStatus())
+                .isEqualTo(SeatHoldStatus.CONVERTED);
+        assertThat(statusOf(ids.subList(0, 4))).containsOnly(SeatStatus.SOLD);
+        assertThat(statusOf(List.of(ids.get(4)))).containsOnly(SeatStatus.AVAILABLE);
+
+        assertThat(activeSeatCount(user)).isEqualTo(4);
+    }
+
+    @Test
+    void 직렬화_락이_같은_사용자의_동시_선점을_대기시킨다() throws Exception {
+        // 레이스 테스트는 타이밍에 의존해 회귀를 보장하지 못한다. 대신 **락 자체의 동작**을
+        // 결정적으로 검증한다: 다른 트랜잭션이 같은 (사용자, 공연) 키를 쥐고 있는 동안
+        // hold()가 진행되지 못하고, 그 트랜잭션이 끝나야 비로소 한도를 평가한다.
+        long user = 510L;
+        String token = admittedToken(user);
+        List<Long> ids = availableSeatIds(4);
+        seatService.hold(user, eventId, ids.subList(0, 3), token); // 3매 보유
+
+        CountDownLatch lockHeld = new CountDownLatch(1);
+        CountDownLatch releaseLock = new CountDownLatch(1);
+        AtomicBoolean holdFinished = new AtomicBoolean(false);
+
+        // A: 트랜잭션을 연 채 같은 키의 advisory lock을 쥐고 대기
+        Thread locker = new Thread(() -> new TransactionTemplate(txManager).executeWithoutResult(st -> {
+            quotaRepository.acquireQuotaLock(Math.toIntExact(user), Math.toIntExact(eventId));
+            lockHeld.countDown();
+            try {
+                releaseLock.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }));
+        locker.start();
+        assertThat(lockHeld.await(10, TimeUnit.SECONDS)).isTrue();
+
+        // B: 같은 사용자의 추가 선점 — A가 락을 놓을 때까지 진행되면 안 된다
+        CountDownLatch holderStarted = new CountDownLatch(1);
+        Thread holder = new Thread(() -> {
+            holderStarted.countDown();
+            try {
+                seatService.hold(user, eventId, List.of(ids.get(3)), token);
+            } finally {
+                holdFinished.set(true);
+            }
+        });
+        holder.start();
+        // 스레드가 아직 출발조차 안 한 상태를 "대기 중"으로 오인하지 않도록 확인한다.
+        assertThat(holderStarted.await(10, TimeUnit.SECONDS)).isTrue();
+
+        holder.join(1000);
+        assertThat(holdFinished).as("락을 쥔 트랜잭션이 살아 있는 동안에는 진행되면 안 된다").isFalse();
+
+        releaseLock.countDown();
+        locker.join(10_000);
+        holder.join(10_000);
+        assertThat(holdFinished).isTrue();
+
+        // 락을 기다린 뒤 한도를 평가했으므로 3+1=4로 성공한다.
         assertThat(activeSeatCount(user)).isEqualTo(4);
     }
 
@@ -277,6 +359,10 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
                         .anyMatch(i -> i.getSeatId().equals(seatId)));
     }
 
+    private List<SeatStatus> statusOf(List<Long> seatIds) {
+        return seatRepository.findAllById(seatIds).stream().map(Seat::getStatus).toList();
+    }
+
     private List<Long> availableSeatIds(int n) {
         return seatRepository.findByEventId(eventId).stream()
                 .filter(s -> s.getStatus() == SeatStatus.AVAILABLE)
@@ -289,8 +375,17 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
         return token;
     }
 
+    /**
+     * 동시 실행 헬퍼.
+     *
+     * <p><b>예상 밖 예외를 삼키지 않는다.</b> 한도 초과({@link BusinessException})만 "정상적인
+     * 실패"로 보고, 그 외 오류(NPE·SQL 오류·연결 실패 등)는 모아서 테스트를 실패시킨다.
+     * 모든 예외를 무시하면 쿼리가 깨져 양쪽 다 오류로 끝나도 "성공 0건"이 되어
+     * <b>거짓 통과</b>가 난다.
+     */
     private AtomicInteger concurrent(int threads, IndexedOp op) throws Exception {
         AtomicInteger success = new AtomicInteger();
+        List<Throwable> unexpected = Collections.synchronizedList(new ArrayList<>());
         ExecutorService pool = Executors.newFixedThreadPool(threads);
         CountDownLatch start = new CountDownLatch(1);
         for (int i = 0; i < threads; i++) {
@@ -301,14 +396,17 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
                     if (op.run(idx) == 1) {
                         success.incrementAndGet();
                     }
-                } catch (Exception ignored) {
-                    // 한도 초과·락 대기 등으로 실패한 쪽은 세지 않는다
+                } catch (BusinessException expected) {
+                    // 한도 초과 등 — 이 테스트가 기대하는 실패
+                } catch (Throwable t) {
+                    unexpected.add(t);
                 }
             });
         }
         start.countDown();
         pool.shutdown();
         assertThat(pool.awaitTermination(20, TimeUnit.SECONDS)).isTrue();
+        assertThat(unexpected).as("예상 밖 예외가 발생하면 거짓 통과가 된다").isEmpty();
         return success;
     }
 

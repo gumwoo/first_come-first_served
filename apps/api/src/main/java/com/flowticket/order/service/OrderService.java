@@ -68,6 +68,10 @@ public class OrderService {
      * <p>캐치가 트랜잭션 <b>밖</b>에 있어야 한다. 안에서 잡으면 이미 rollback-only로 표시돼
      * 이어지는 조회·커밋이 실패한다.
      *
+     * <p><b>활성 주문이 안 잡히면 우리가 아는 제약이 아니다</b> — NOT NULL·FK 같은 진짜 버그다.
+     * 그때는 원 예외를 그대로 올린다. 가입({@code AuthService.duplicateOf})과 같은 규칙이다:
+     * 제약 위반을 도메인 예외로 바꾸는 건 <b>정체를 확인한 것만</b>이고, 나머지는 손대지 않는다.
+     *
      * <p>⚠️ {@code NOT_SUPPORTED}가 <b>반드시</b> 필요하다. 이 클래스에는 클래스 레벨
      * {@code @Transactional(readOnly = true)}가 붙어 있어, 메서드에 아무것도 없으면
      * <b>읽기 전용 트랜잭션이 이미 열린 상태</b>로 들어온다. 그러면 {@code createTx}의
@@ -82,7 +86,10 @@ public class OrderService {
         } catch (DataIntegrityViolationException e) {
             return orderRepository.findFirstByHoldIdAndStatusIn(holdId, ACTIVE)
                     .map(this::toResponse)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+                    // 원 예외를 삼키고 BusinessException(INTERNAL_ERROR)로 바꾸면 스택이 사라진다:
+                    // BusinessException은 전역 핸들러의 전용 분기가 먼저 잡아가 log.error를 타지 않아,
+                    // 응답은 500인데 로그에는 아무 단서도 남지 않는다. 그대로 올려 원인을 남긴다.
+                    .orElseThrow(() -> e);
         }
     }
 

@@ -22,7 +22,7 @@
 |---|---|---|
 | 대기열 1인1토큰 | Lua 원자화 | ✅ 애초에 이 패턴이 아님 |
 | 결제·환불 멱등 | UNIQUE + `DataIntegrityViolationException` 캐치 | ✅ 정석 |
-| 가입 | UNIQUE만, 캐치 없음 | 🟠 정합성 OK, **500이 나감** → [TS-015](TS-015-truncate-scheduler-deadlock.md) 이전에 PR #169로 처리 |
+| 가입 | UNIQUE만, 캐치 없음 | 🟠 정합성 OK, **500이 나감** → [PR #169](https://github.com/gumwoo/first_come-first_served/pull/169)에서 409로 |
 | **주문 생성** | **아무것도 없음** | 🔴 이 문서 |
 
 ```java

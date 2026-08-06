@@ -50,7 +50,7 @@ aws eks update-kubeconfig --region ap-northeast-2 --name flowticket
 **앱이 평문으로 붙으면 Redis 연결이 전부 실패하고, readiness에 `redis`가 들어 있어
 Pod가 영원히 Ready가 되지 않는다.**
 
-`k8s/` 매니페스트에 `SPRING_DATA_REDIS_SSL_ENABLED=true`를 넣어야 한다.
+`k8s/` 매니페스트에 `REDIS_SSL_ENABLED=true`를 넣어야 한다(앱 yml이 읽는 이름과 한 쌍).
 체크리스트: [`docs/deployment/app-changes-for-k8s-kafka.md`](../../../docs/deployment/app-changes-for-k8s-kafka.md) **C-7**.
 
 ### 만들어지는 것 중 요금이 남을 수 있는 것

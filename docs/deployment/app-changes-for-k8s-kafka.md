@@ -104,12 +104,22 @@ Pod가 뜨자마자 readiness에서 걸려 영원히 Ready가 안 된다(C-1의 
 | # | 대상 | 할 일 | 상태 |
 |---|---|---|---|
 | 1 | 앱 설정 | `spring.data.redis.ssl.enabled`를 **env로** 노출 | ✅ `REDIS_SSL_ENABLED` |
-| 2 | k8s 매니페스트 | `SPRING_DATA_REDIS_SSL_ENABLED=true` 주입 | ⬜ `k8s/` 미작성 |
+| 2 | k8s 매니페스트 | `REDIS_SSL_ENABLED=true` 주입 | ⬜ `k8s/` 미작성 |
 | 3 | 로컬·CI | **false 유지** — Testcontainers Redis는 평문이다 | ✅ 기본값 + 테스트로 고정 |
 | 4 | readiness probe | TLS 불일치 시 Ready가 안 되는 것이 **정상**임을 인지 | ✅ 문서·주석 |
 | 5 | 운영 CLI | `redis-cli --tls -h <endpoint>` | ⬜ apply 후 |
 | 6 | 부하 테스트(S10) | 도구가 TLS를 말하는지 확인 | ⬜ S10 |
 
+> **이름은 `REDIS_SSL_ENABLED`로 통일한다.** `SPRING_DATA_REDIS_SSL_ENABLED`도 동작하지만
+> (Spring relaxed binding), 그건 **프로퍼티를 직접 덮어써서 yml의 `${REDIS_SSL_ENABLED:false}`
+> placeholder를 죽은 코드로 만든다.** 두 이름이 섞이면 "`REDIS_SSL_ENABLED`를 넣었는데 왜 안 먹지"로
+> 헤매게 된다. yml이 읽는 이름과 매니페스트가 주입하는 이름을 **한 쌍으로** 유지한다.
+>
+> ```yaml
+> - name: REDIS_SSL_ENABLED
+>   value: "true"
+> ```
+>
 > **2번이 남아 있는 한 apply해도 Pod는 뜨지 않는다.** 앱은 스위치를 갖췄을 뿐,
 > 켜는 것은 매니페스트의 몫이다. `infra/docker-compose.prod.yml`은 평문 Redis 컨테이너를
 > 쓰므로 기본값(false) 그대로 두면 된다 — **손대지 않았다.**
@@ -133,8 +143,10 @@ spring:
 **회귀 가드**: `RedisTlsConfigIntegrationTest`가 **두 방향을 모두** 잡는다 —
 (1) 기본값이 평문인지(켜지면 로컬·CI가 전부 깨진다), (2) 프로퍼티로 실제로 켜지는지
 (고장 나면 운영에서 Pod가 Ready가 안 된다). 하나만 두면 나머지 방향의 회귀를 놓친다.
-켜는 쪽 검증은 `ApplicationContextRunner`로 격리했다 — `@SpringBootTest`에 프로퍼티를 덧붙이면
-컨텍스트 캐시 키가 갈려 컨텍스트가 하나 더 뜬다(IMP-013 §7-2).
+켜는 쪽 검증은 `ApplicationContextRunner`로 격리했다. 러너도 컨텍스트를 만들기는 하지만,
+**Redis 자동 구성만 담은 작은 컨텍스트를 테스트 안에서 잠깐 띄웠다 닫는다.** 반면
+`@SpringBootTest`에 프로퍼티를 덧붙이면 캐시 키가 갈려 **무거운 전체 컨텍스트가 캐시에 하나 더
+쌓인 채 남는다**(IMP-013 §7-2의 자원 압박). 비용이 남느냐 아니냐의 차이다.
 
 
 ## D. 다중 Pod에서 드러나는 문제 & 대응 (D-1·D-2 코드 선반영 완료, 검증은 다중 Pod 배포 시)

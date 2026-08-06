@@ -47,6 +47,28 @@ public final class TestContainers {
         registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
     }
 
+    private static final String TRUNCATE_ALL = """
+            do $$
+            declare stmt text;
+            begin
+              select string_agg(format('truncate table %I restart identity cascade', tablename), '; ')
+                into stmt
+                from pg_tables
+               where schemaname = 'public' and tablename not in ('flyway_schema_history', 'alert_settings');
+              if stmt is not null then execute stmt; end if;
+            end $$;
+            """;
+
+    /** 이 DB에 붙어 있는 다른 세션들 — TRUNCATE가 막혔을 때 "누가 잡고 있나"를 남긴다. */
+    private static final String BLOCKERS = """
+            select pid, state, wait_event_type, wait_event,
+                   coalesce(to_char(now() - xact_start, 'MI:SS'), '-') as xact_age,
+                   left(replace(coalesce(query, ''), chr(10), ' '), 160) as q
+              from pg_stat_activity
+             where datname = current_database() and pid <> pg_backend_pid()
+             order by xact_start nulls last
+            """;
+
     /**
      * 모든 테스트 앞에서 상태를 비운다 — 컨테이너를 공유하는 대신 <b>데이터는 매번 초기화</b>한다.
      *
@@ -57,17 +79,7 @@ public final class TestContainers {
      */
     public static void reset(javax.sql.DataSource dataSource,
                              org.springframework.data.redis.core.StringRedisTemplate redis) {
-        new org.springframework.jdbc.core.JdbcTemplate(dataSource).execute("""
-                do $$
-                declare stmt text;
-                begin
-                  select string_agg(format('truncate table %I restart identity cascade', tablename), '; ')
-                    into stmt
-                    from pg_tables
-                   where schemaname = 'public' and tablename not in ('flyway_schema_history', 'alert_settings');
-                  if stmt is not null then execute stmt; end if;
-                end $$;
-                """);
+        truncateAll(dataSource);
         // 팩토리에서 받은 연결은 호출자가 닫는다. Lettuce 기본 설정에서는 네이티브 연결이 공유돼
         // 실제 누수로 이어지진 않지만, 매 테스트마다 도는 코드라 자원 수명을 명시해 둔다.
         try (RedisConnection connection = redis.getConnectionFactory().getConnection()) {
@@ -75,4 +87,46 @@ public final class TestContainers {
         }
     }
 
+    /**
+     * TRUNCATE는 ACCESS EXCLUSIVE를 요구한다. 앞선 테스트가 <b>트랜잭션을 흘리면</b>(스레드가
+     * 끝나지 않았거나 커넥션이 반납되지 않음) 이 초기화가 그 락을 기다린다. 기본값(lock_timeout=0)은
+     * <b>무기한 대기</b>라 다음 클래스가 조용히 멈추고, 진짜 원인과 무관한 테스트가 실패한 것처럼 보인다.
+     *
+     * <p>그래서 시간을 끊고, 끊길 때 <b>그 순간의 세션 목록을 예외 메시지에 박제한다</b>.
+     * 이 실패는 재현이 통제되지 않아(CI에서 간헐적으로만 발생) 사후에 물어볼 곳이 없다 —
+     * 다음 발생 때 로그만으로 범인을 지목할 수 있어야 한다.
+     */
+    private static void truncateAll(javax.sql.DataSource dataSource) {
+        new org.springframework.jdbc.core.JdbcTemplate(dataSource).execute(
+                (org.springframework.jdbc.core.ConnectionCallback<Void>) conn -> {
+                    try (java.sql.Statement st = conn.createStatement()) {
+                        // SET은 세션 단위다. 이 커넥션은 풀로 돌아가므로 finally에서 반드시 되돌린다.
+                        st.execute("set lock_timeout = '20s'");
+                        try {
+                            st.execute(TRUNCATE_ALL);
+                        } catch (java.sql.SQLException e) {
+                            throw new IllegalStateException(
+                                    "테스트 초기화 TRUNCATE 실패 — 앞선 테스트가 트랜잭션을 흘렸을 수 있다.\n"
+                                            + blockers(st), e);
+                        } finally {
+                            st.execute("set lock_timeout = default");
+                        }
+                    }
+                    return null;
+                });
+    }
+
+    private static String blockers(java.sql.Statement st) {
+        StringBuilder sb = new StringBuilder("[pg_stat_activity]\n");
+        try (java.sql.ResultSet rs = st.executeQuery(BLOCKERS)) {
+            while (rs.next()) {
+                sb.append(String.format("  pid=%s state=%s wait=%s/%s xact_age=%s q=%s%n",
+                        rs.getString("pid"), rs.getString("state"), rs.getString("wait_event_type"),
+                        rs.getString("wait_event"), rs.getString("xact_age"), rs.getString("q")));
+            }
+        } catch (java.sql.SQLException e) {
+            sb.append("  (조회 실패: ").append(e.getMessage()).append(")");
+        }
+        return sb.toString();
+    }
 }

@@ -1,6 +1,7 @@
 package com.flowticket.queue.sse;
 
 import com.flowticket.global.sse.SsePubSub;
+import com.flowticket.global.sse.AfterCommit;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,13 +50,20 @@ public class QueueSseRegistry implements MessageListener {
         return emitter;
     }
 
-    /** 해당 토큰 연결로 이벤트 push. 멀티 Pod 팬아웃을 위해 Redis로 발행(미배선 시 로컬 폴백). */
+    /**
+     * 해당 토큰 연결로 이벤트 push. 멀티 Pod 팬아웃을 위해 Redis로 발행(미배선 시 로컬 폴백).
+     *
+     * <p>트랜잭션이 열려 있으면 <b>커밋 후</b>로 미룬다 — 롤백된 상태를 알리지 않기 위해서다.
+     * 호출부마다 챙기면 언젠가 빠지므로 팬아웃 입구인 여기서 한 번에 보장한다({@link AfterCommit}).
+     */
     public void send(String token, String event, Object data) {
-        if (pubSub != null) {
-            pubSub.publish(CHANNEL, token, event, data);
-        } else {
-            deliverLocal(token, event, data);
-        }
+        AfterCommit.run(() -> {
+            if (pubSub != null) {
+                pubSub.publish(CHANNEL, token, event, data);
+            } else {
+                deliverLocal(token, event, data);
+            }
+        });
     }
 
     /** 이 Pod의 로컬 연결로만 전달(연결 없으면 무시 — 폴링 폴백이 커버). */
@@ -73,11 +81,13 @@ public class QueueSseRegistry implements MessageListener {
 
     /** 완료 신호 후 정리(만료 등 종료 이벤트 뒤). 멀티 Pod에선 연결 보유 Pod에서 실행되도록 팬아웃. */
     public void complete(String token) {
-        if (pubSub != null) {
-            pubSub.publish(CHANNEL, token, COMPLETE_EVENT, Map.of());
-        } else {
-            completeLocal(token);
-        }
+        AfterCommit.run(() -> {   // send와 같은 이유로 커밋 후(트랜잭션 없으면 즉시)
+            if (pubSub != null) {
+                pubSub.publish(CHANNEL, token, COMPLETE_EVENT, Map.of());
+            } else {
+                completeLocal(token);
+            }
+        });
     }
 
     private void completeLocal(String token) {

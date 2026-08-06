@@ -5,7 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.flowticket.support.IntegrationTestSupport;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -89,6 +94,55 @@ class AuthIntegrationTest extends IntegrationTestSupport {
                         "name", "n", "phone", phone2, "termsAccepted", true)), JsonNode.class);
         assertThat(dup.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(dup.getBody().get("error").get("code").asText()).isEqualTo("DUPLICATE_EMAIL");
+    }
+
+    @Test
+    @org.junit.jupiter.api.Timeout(60)
+    void 같은_이메일로_동시에_가입해도_500이_나가지_않는다() throws Exception {
+        // 사전 검사(existsByEmail)는 순차 요청만 막는다. 동시에 오면 둘 다 "없음"을 보고
+        // 각자 INSERT하고 늦은 쪽이 uq_users_email에 걸린다 — 그때 500이 나가면 안 된다.
+        // 휴대폰은 서로 달라야 uq_users_phone이 아니라 이메일 제약을 겨눈다.
+        String email = "racedup@test.com";
+        int threads = 4;
+        List<String> phones = new ArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            String phone = "0102000" + (1000 + i);
+            verifyPhone(phone);
+            phones.add(phone);
+        }
+
+        CountDownLatch start = new CountDownLatch(1);
+        List<Integer> statuses = Collections.synchronizedList(new ArrayList<>());
+        List<Throwable> unexpected = Collections.synchronizedList(new ArrayList<>());
+        List<Thread> ts = new ArrayList<>();
+        for (String phone : phones) {
+            Thread t = new Thread(() -> {
+                try {
+                    start.await(10, TimeUnit.SECONDS);
+                    statuses.add(rest.postForEntity("/auth/signup",
+                            body(Map.of("email", email, "password", "Password1!", "name", "n",
+                                    "phone", phone, "termsAccepted", true)),
+                            String.class).getStatusCode().value());
+                } catch (Throwable e) {
+                    unexpected.add(e);
+                }
+            });
+            t.start();
+            ts.add(t);
+        }
+        start.countDown();
+        for (Thread t : ts) {
+            t.join(30_000);
+        }
+
+        assertThat(unexpected).isEmpty();
+        assertThat(statuses).hasSize(threads);
+        // 경합이 실제로 일어났는지는 타이밍에 달렸다. 그래서 "409가 나왔다"가 아니라
+        // **어떤 경우에도 성립해야 하는 것**을 단언한다: 정확히 하나만 가입되고, 500은 없다.
+        assertThat(statuses).as("중복 가입은 서버 오류가 아니다 — 500이 있으면 안 된다")
+                .doesNotContain(500);
+        assertThat(statuses).filteredOn(c -> c == 200).hasSize(1);
+        assertThat(statuses).filteredOn(c -> c == 409).hasSize(threads - 1);
     }
 
     @Test

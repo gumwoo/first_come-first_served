@@ -25,6 +25,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,7 +38,44 @@ class AuthServiceTest {
     @Mock TokenService tokenService;
     @Mock TokenBlacklistService blacklistService;
     @Mock JwtProvider jwtProvider;
+    @Mock ObjectProvider<AuthService> self;
     @InjectMocks AuthService authService;
+
+    /**
+     * signup()은 트랜잭션 경계를 나누려고 프록시 self-호출로 signupTx()를 부른다.
+     * 단위 테스트에는 프록시가 없으니 자기 자신을 돌려준다(경계 자체는 통합 테스트의 몫).
+     */
+    @org.junit.jupiter.api.BeforeEach
+    void wireSelf() {
+        org.mockito.Mockito.lenient().when(self.getObject()).thenReturn(authService);
+    }
+
+    @Test
+    void 저장이_UNIQUE에_걸리면_500이_아니라_중복_이메일로_변환된다() {
+        // 사전 검사는 통과했는데(동시 가입) 커밋에서 uq_users_email에 걸린 상황.
+        when(userRepository.existsByEmail(anyString())).thenReturn(false, true);
+        when(userRepository.existsByPhone(anyString())).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("HASH");
+        when(userRepository.saveAndFlush(any(User.class)))
+                .thenThrow(new DataIntegrityViolationException("uq_users_email"));
+
+        assertThatThrownBy(() -> authService.signup(signupReq()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.DUPLICATE_EMAIL);
+    }
+
+    @Test
+    void 우리가_아는_제약이_아니면_원_예외를_그대로_올린다() {
+        // NOT NULL·FK 위반까지 409로 뭉뚱그리면 진짜 버그가 정상 응답으로 숨는다.
+        when(userRepository.existsByEmail(anyString())).thenReturn(false);
+        when(userRepository.existsByPhone(anyString())).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("HASH");
+        when(userRepository.saveAndFlush(any(User.class)))
+                .thenThrow(new DataIntegrityViolationException("null value in column \"name\""));
+
+        assertThatThrownBy(() -> authService.signup(signupReq()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
 
     private SignupRequest signupReq() {
         return new SignupRequest("a@b.com", "password1", "홍길동", "01012345678", true, false);
@@ -51,7 +90,7 @@ class AuthServiceTest {
         authService.signup(signupReq());
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
-        org.mockito.Mockito.verify(userRepository).save(captor.capture());
+        org.mockito.Mockito.verify(userRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getRole()).isEqualTo(UserRole.ROLE_USER);
         assertThat(captor.getValue().getProvider()).isEqualTo(AuthProvider.local);
         assertThat(captor.getValue().getPasswordHash()).isEqualTo("HASH");

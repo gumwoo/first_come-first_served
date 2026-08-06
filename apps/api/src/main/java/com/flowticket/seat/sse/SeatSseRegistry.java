@@ -1,6 +1,7 @@
 package com.flowticket.seat.sse;
 
 import com.flowticket.global.sse.SsePubSub;
+import com.flowticket.global.sse.AfterCommit;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
@@ -53,13 +54,20 @@ public class SeatSseRegistry implements MessageListener {
         return emitter;
     }
 
-    /** 이벤트 구독자 전체로 push. 멀티 Pod 팬아웃을 위해 Redis로 발행(미배선 시 로컬 폴백). */
+    /**
+     * 이벤트 구독자 전체로 push. 멀티 Pod 팬아웃을 위해 Redis로 발행(미배선 시 로컬 폴백).
+     *
+     * <p>트랜잭션이 열려 있으면 <b>커밋 후</b>로 미룬다 — 롤백된 상태를 알리지 않기 위해서다.
+     * 호출부마다 챙기면 언젠가 빠지므로 팬아웃 입구인 여기서 한 번에 보장한다({@link AfterCommit}).
+     */
     public void broadcast(Long eventId, String event, Object data) {
-        if (pubSub != null) {
-            pubSub.publish(CHANNEL, String.valueOf(eventId), event, data);
-        } else {
-            deliverLocal(eventId, event, data);
-        }
+        AfterCommit.run(() -> {
+            if (pubSub != null) {
+                pubSub.publish(CHANNEL, String.valueOf(eventId), event, data);
+            } else {
+                deliverLocal(eventId, event, data);
+            }
+        });
     }
 
     /** 이 Pod의 로컬 구독자에게만 전달(연결 없으면 무시 — 폴링/재조회가 커버). */

@@ -190,8 +190,11 @@ public class PaymentService {
                 .findFirstByOrderIdAndStatusOrderByIdDesc(orderId, PaymentStatus.READY)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 
-        orderSse.broadcast(orderId, "payment.vbank.deposited", Map.of("orderId", orderId));
         finalizePaid(order, payment, OrderStatus.VBANK_WAITING, "DEV-DEPOSIT");
+        // 발송은 finalizePaid **뒤**로 둔다. 레지스트리가 커밋 후로 미뤄 주지만(AfterCommit),
+        // 확정 전에 알림을 적어 두면 읽는 사람이 순서를 오해한다 —
+        // finalizePaid는 만료 sweep에 지면 롤백되는 경로가 있다(TS-011).
+        orderSse.broadcast(orderId, "payment.vbank.deposited", Map.of("orderId", orderId));
         return PaymentResponse.of(payment.getId(), PaymentStatus.APPROVED.name(), currentStatus(orderId).name());
     }
 
@@ -222,8 +225,11 @@ public class PaymentService {
         if (!"DONE".equals(status)) {
             return; // 입금 완료 상태가 아니면 대기 유지
         }
-        orderSse.broadcast(orderId, "payment.vbank.deposited", Map.of("orderId", orderId));
         finalizePaid(order, payment, OrderStatus.VBANK_WAITING, "TOSS-DEPOSIT-" + payment.getId());
+        // 발송은 finalizePaid **뒤**로 둔다. 레지스트리가 커밋 후로 미뤄 주지만(AfterCommit),
+        // 확정 전에 알림을 적어 두면 읽는 사람이 순서를 오해한다 —
+        // finalizePaid는 만료 sweep에 지면 롤백되는 경로가 있다(TS-011).
+        orderSse.broadcast(orderId, "payment.vbank.deposited", Map.of("orderId", orderId));
     }
 
     private Long parseOrderId(String tossOrderId) {

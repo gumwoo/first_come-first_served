@@ -8,6 +8,7 @@ import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.error.BusinessException;
+import com.flowticket.global.error.ErrorCode;
 import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.order.service.OrderService;
@@ -35,6 +36,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -173,19 +175,31 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
         CountDownLatch lockHeld = new CountDownLatch(1);
         CountDownLatch releaseLock = new CountDownLatch(1);
         AtomicBoolean holdFinished = new AtomicBoolean(false);
+        // 별도 스레드의 예외는 그대로 두면 밖으로 나오지 않는다. 단언은 실패하더라도
+        // "왜"가 보이지 않아 진단이 어려우므로 붙잡아 두었다가 함께 확인한다.
+        AtomicReference<Throwable> lockerFailure = new AtomicReference<>();
+        AtomicReference<Throwable> holderFailure = new AtomicReference<>();
 
         // A: 트랜잭션을 연 채 같은 키의 advisory lock을 쥐고 대기
-        Thread locker = new Thread(() -> new TransactionTemplate(txManager).executeWithoutResult(st -> {
-            quotaRepository.acquireQuotaLock(Math.toIntExact(user), Math.toIntExact(eventId));
-            lockHeld.countDown();
+        Thread locker = new Thread(() -> {
             try {
-                releaseLock.await(10, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+                new TransactionTemplate(txManager).executeWithoutResult(st -> {
+                    quotaRepository.acquireQuotaLock(Math.toIntExact(user), Math.toIntExact(eventId));
+                    lockHeld.countDown();
+                    try {
+                        releaseLock.await(10, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            } catch (Throwable t) {
+                lockerFailure.set(t);
+                lockHeld.countDown(); // 실패해도 대기 쪽이 타임아웃까지 멈춰 있지 않게 한다
             }
-        }));
+        });
         locker.start();
         assertThat(lockHeld.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(lockerFailure.get()).as("락을 쥐는 트랜잭션이 실패하면 이 테스트는 무의미하다").isNull();
 
         // B: 같은 사용자의 추가 선점 — A가 락을 놓을 때까지 진행되면 안 된다
         CountDownLatch holderStarted = new CountDownLatch(1);
@@ -193,6 +207,8 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
             holderStarted.countDown();
             try {
                 seatService.hold(user, eventId, List.of(ids.get(3)), token);
+            } catch (Throwable t) {
+                holderFailure.set(t);
             } finally {
                 holdFinished.set(true);
             }
@@ -208,6 +224,8 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
         locker.join(10_000);
         holder.join(10_000);
         assertThat(holdFinished).isTrue();
+        assertThat(lockerFailure.get()).isNull();
+        assertThat(holderFailure.get()).as("락 해제 후에는 정상적으로 선점돼야 한다").isNull();
 
         // 락을 기다린 뒤 한도를 평가했으므로 3+1=4로 성공한다.
         assertThat(activeSeatCount(user)).isEqualTo(4);
@@ -378,10 +396,14 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
     /**
      * 동시 실행 헬퍼.
      *
-     * <p><b>예상 밖 예외를 삼키지 않는다.</b> 한도 초과({@link BusinessException})만 "정상적인
-     * 실패"로 보고, 그 외 오류(NPE·SQL 오류·연결 실패 등)는 모아서 테스트를 실패시킨다.
+     * <p><b>예상 밖 예외를 삼키지 않는다.</b> 기대하는 실패는 오직
+     * {@link ErrorCode#MAX_PER_USER_EXCEEDED} 하나이고, 그 외는 전부 모아서 테스트를 실패시킨다.
      * 모든 예외를 무시하면 쿼리가 깨져 양쪽 다 오류로 끝나도 "성공 0건"이 되어
      * <b>거짓 통과</b>가 난다.
+     *
+     * <p>{@code BusinessException} 전체를 삼키는 것도 넓다 — {@code SOLD_OUT}이나
+     * {@code QUEUE_NOT_ADMITTED}로 실패해도 통과해 버린다. "실패했다"가 아니라
+     * <b>"이 이유로 실패했다"</b>를 단언해야 나중에 실패 사유가 바뀌었을 때 드러난다.
      */
     private AtomicInteger concurrent(int threads, IndexedOp op) throws Exception {
         AtomicInteger success = new AtomicInteger();
@@ -396,8 +418,10 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
                     if (op.run(idx) == 1) {
                         success.incrementAndGet();
                     }
-                } catch (BusinessException expected) {
-                    // 한도 초과 등 — 이 테스트가 기대하는 실패
+                } catch (BusinessException e) {
+                    if (e.getErrorCode() != ErrorCode.MAX_PER_USER_EXCEEDED) {
+                        unexpected.add(e); // 다른 사유의 실패는 이 테스트가 기대한 것이 아니다
+                    }
                 } catch (Throwable t) {
                     unexpected.add(t);
                 }

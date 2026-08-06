@@ -123,9 +123,9 @@ class OrderIntegrationTest extends IntegrationTestSupport {
                 try {
                     start.await();
                     created.add(orderService.create(user, holdId).orderId());
-                } catch (BusinessException expected) {
-                    // 이 경로에서 나올 수 있는 도메인 예외는 실패로 보지 않는다
                 } catch (Throwable t) {
+                    // 이 테스트에서는 어떤 실패도 기대하지 않는다. 제약에 걸린 요청은
+                    // 예외가 아니라 "이미 만들어진 주문"을 멱등하게 받아야 한다.
                     unexpected.add(t);
                 }
             });
@@ -134,9 +134,10 @@ class OrderIntegrationTest extends IntegrationTestSupport {
         pool.shutdown();
         assertThat(pool.awaitTermination(20, TimeUnit.SECONDS)).isTrue();
 
-        assertThat(unexpected).as("예상 밖 예외가 나면 거짓 통과가 된다").isEmpty();
-        // 모든 호출이 같은 주문을 봐야 하고, DB에도 이 hold의 활성 주문은 하나뿐이어야 한다.
-        assertThat(created).isNotEmpty();
+        assertThat(unexpected).as("어떤 요청도 실패하면 안 된다 — 멱등 반환이어야 한다").isEmpty();
+        // "일부만 성공하고 나머지는 예외"여도 아래 두 단언 중 뒤엣것만으로는 통과한다.
+        // 멱등을 검증하려면 **모든 호출이 응답을 받았고, 그 값이 하나**여야 한다.
+        assertThat(created).as("모든 요청이 주문을 돌려받아야 한다").hasSize(threads);
         assertThat(Set.copyOf(created)).as("서로 다른 주문이 만들어지면 안 된다").hasSize(1);
         assertThat(orderRepository.findAll().stream()
                 .filter(o -> o.getHoldId().equals(holdId))

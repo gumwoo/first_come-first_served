@@ -88,13 +88,22 @@ public final class TestContainers {
     }
 
     /**
-     * TRUNCATE는 ACCESS EXCLUSIVE를 요구한다. 앞선 테스트가 <b>트랜잭션을 흘리면</b>(스레드가
-     * 끝나지 않았거나 커넥션이 반납되지 않음) 이 초기화가 그 락을 기다린다. 기본값(lock_timeout=0)은
-     * <b>무기한 대기</b>라 다음 클래스가 조용히 멈추고, 진짜 원인과 무관한 테스트가 실패한 것처럼 보인다.
+     * TRUNCATE는 모든 테이블에 ACCESS EXCLUSIVE를 요구한다. 다른 세션이 락을 쥐고 있으면
+     * 기본값(lock_timeout=0)에서는 <b>무기한 대기</b>라 다음 클래스가 조용히 멈추고, 진짜 원인과
+     * 무관한 테스트가 실패한 것처럼 보인다. 그래서 시간을 끊고 그 순간의 세션 목록을 박제한다.
      *
-     * <p>그래서 시간을 끊고, 끊길 때 <b>그 순간의 세션 목록을 예외 메시지에 박제한다</b>.
-     * 이 실패는 재현이 통제되지 않아(CI에서 간헐적으로만 발생) 사후에 물어볼 곳이 없다 —
-     * 다음 발생 때 로그만으로 범인을 지목할 수 있어야 한다.
+     * <p><b>2026-08-06 실측으로 확인된 실제 원인</b>: 대기 타임아웃이 아니라 <b>데드락</b>이었다.
+     * <pre>
+     *   Process 120 waits for AccessExclusiveLock ... blocked by 119   ← 이 TRUNCATE
+     *   Process 119 waits for RowExclusiveLock ... blocked by 120      ← 백그라운드 DML
+     * </pre>
+     * 119가 "waits"라는 것이 핵심이다 — <b>누수된 트랜잭션이라면 idle in transaction으로 가만히
+     * 있지, 락을 기다리지 않는다.</b> 즉 상대는 그 순간 살아 움직이던 스케줄러 스윕이었다.
+     * 컨텍스트가 뜰 때 {@code @Scheduled}가 initialDelay 없이 즉시 한 번 실행되기 때문이다.
+     *
+     * <p>다만 이건 <b>그 실패에 대한 확인</b>이지 "트랜잭션 누수는 없다"의 증명은 아니다.
+     * 두 원인은 배타적이지 않고, 아래 스냅샷은 <b>실패한 뒤</b>에 찍히므로 대기 중 락을 쥐고
+     * 있던 세션이 그 사이 정리됐을 수 있다 — 이 진단의 한계다.
      */
     private static void truncateAll(javax.sql.DataSource dataSource) {
         new org.springframework.jdbc.core.JdbcTemplate(dataSource).execute(
@@ -106,7 +115,8 @@ public final class TestContainers {
                             st.execute(TRUNCATE_ALL);
                         } catch (java.sql.SQLException e) {
                             throw new IllegalStateException(
-                                    "테스트 초기화 TRUNCATE 실패 — 앞선 테스트가 트랜잭션을 흘렸을 수 있다.\n"
+                                    "테스트 초기화 TRUNCATE 실패 — 백그라운드 스케줄러 DML과의 데드락이 가장 유력하다.\n"
+                                            + "(누수된 트랜잭션이 원인이라면 아래 목록에 idle in transaction으로 나타난다)\n"
                                             + blockers(st), e);
                         } finally {
                             st.execute("set lock_timeout = default");

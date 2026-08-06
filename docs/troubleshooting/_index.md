@@ -25,3 +25,4 @@ IMP(정량 before/after 개선)와 달리, 여기 문서는 "무엇이 왜 깨�
 | [TS-010](TS-010-vbank-secret-lost-context-clear.md) | 가상계좌 발급 정보(secret/계좌/기한)가 DB에 안 남음 — 벌크 UPDATE 컨텍스트 클리어(TS-007 재발) | S05 | 정합성 버그(코드) | 해결 |
 | [TS-011](TS-011-expiry-sweep-overwrites-paid-seat.md) | 만료 sweep이 결제된 SOLD 좌석을 되돌릴 수 있음 — 무가드 복구 UPDATE(형제 경로 재발) | S04/S05 | 정합성 버그(코드) | 해결 |
 | [TS-012](TS-012-sse-reconnect-gap-no-resync.md) | SSE 구독 공백의 이벤트를 영영 놓침 — "폴링이 커버한다"는 주석만 있고 폴링이 없음 | S04/S05 | 상태 최신성(FE) | 해결 |
+| [TS-013](TS-013-per-user-quota-aggregate-invariant.md) | 1인 구매 한도가 뚫림 — 조건부 UPDATE로는 못 지키는 집계 불변식 | S04 | 정합성 버그(코드) | 해결 |

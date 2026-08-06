@@ -16,6 +16,7 @@ import com.flowticket.seat.dto.SeatMapResponse.SeatInfo;
 import com.flowticket.seat.repository.EventSeatPriceRepository;
 import com.flowticket.seat.repository.SeatHoldItemRepository;
 import com.flowticket.seat.repository.SeatHoldRepository;
+import com.flowticket.seat.repository.SeatQuotaRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.sse.SeatSseRegistry;
 import java.time.LocalDateTime;
@@ -36,6 +37,7 @@ public class SeatService {
     private final EventSeatPriceRepository priceRepository;
     private final SeatHoldRepository holdRepository;
     private final SeatHoldItemRepository holdItemRepository;
+    private final SeatQuotaRepository quotaRepository;
     private final QueueService queueService;
     private final SeatSseRegistry sse;
     private final long holdTtl;
@@ -43,6 +45,7 @@ public class SeatService {
 
     public SeatService(SeatRepository seatRepository, EventSeatPriceRepository priceRepository,
                        SeatHoldRepository holdRepository, SeatHoldItemRepository holdItemRepository,
+                       SeatQuotaRepository quotaRepository,
                        QueueService queueService, SeatSseRegistry sse,
                        @Value("${seat.hold-ttl:300}") long holdTtl,
                        @Value("${seat.max-per-user:4}") int maxPerUser) {
@@ -50,6 +53,7 @@ public class SeatService {
         this.priceRepository = priceRepository;
         this.holdRepository = holdRepository;
         this.holdItemRepository = holdItemRepository;
+        this.quotaRepository = quotaRepository;
         this.queueService = queueService;
         this.sse = sse;
         this.holdTtl = holdTtl;
@@ -88,9 +92,12 @@ public class SeatService {
         if (seatRepository.countByIdInAndEventId(seatIds, eventId) != seatIds.size()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
-        // 1인 구매 한도
-        List<Long> activeHolds = holdRepository.findIdsByUser(userId, eventId, SeatHoldStatus.HELD);
-        long current = activeHolds.isEmpty() ? 0 : holdItemRepository.countByHoldIdIn(activeHolds);
+        // 1인 구매 한도 — 좌석 초과판매와 달리 **집계 규칙**이라 조건부 UPDATE로 원자화할
+        // 대상 행이 없다. 읽기→검사→행위 사이에 다른 요청이 끼어들면 둘 다 통과하므로
+        // (사용자, 공연) 단위로 직렬화한 뒤 단일 SQL로 센다. 근거는 SeatQuotaRepository 참조.
+        // 좌석 총량을 늘리는 진입점이 이 메서드 하나라 여기만 잠그면 충분하다.
+        quotaRepository.acquireQuotaLock(quotaLockKey(userId), quotaLockKey(eventId));
+        long current = quotaRepository.countActiveSeats(userId, eventId);
         if (current + seatIds.size() > maxPerUser) {
             throw new BusinessException(ErrorCode.MAX_PER_USER_EXCEEDED);
         }
@@ -108,6 +115,16 @@ public class SeatService {
         int total = totalPrice(eventId, seatIds);
         sse.broadcast(eventId, "seat.held", Map.of("seatIds", seatIds)); // 실시간 좌석맵 반영
         return new HoldResponse(hold.getId(), seatIds, total, hold.getExpiresAt());
+    }
+
+    /**
+     * advisory lock 키로 쓸 int 변환. pg_advisory_xact_lock의 2인자형이 int4라
+     * bigint 하나에 해시로 밀어 넣는 방식보다 안전하다(해시는 무관한 쌍끼리 서로 막을 수 있다).
+     * 범위를 넘으면 조용히 잘리는 대신 ArithmeticException으로 즉시 실패한다 —
+     * 키가 겹쳐 생기는 불필요한 대기는 정합성 문제가 아니라서 더 찾기 어렵다.
+     */
+    private static int quotaLockKey(Long id) {
+        return Math.toIntExact(id);
     }
 
     /** 선점 해제(소유자). */

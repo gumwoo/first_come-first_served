@@ -66,6 +66,16 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+
+    // 기본 콘솔 출력은 예외의 **클래스명과 줄번호**만 찍는다. 메시지는 build/test-results XML에만
+    // 남아, CI 로그만 보는 상황에서는 사라진 것과 같다. 실제로 TRUNCATE 실패 진단(pg_stat_activity
+    // 덤프)을 심어 놓고도 CI에서 그 내용을 읽지 못했다 — 간헐적 실패라 재현해서 다시 볼 수도 없다.
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStackTraces = true
+        showCauses = true
+    }
 }
 
 // 하네스 검사: 컨트롤러/enum/계층/스택을 contracts/와 diff (스크립트 위임)

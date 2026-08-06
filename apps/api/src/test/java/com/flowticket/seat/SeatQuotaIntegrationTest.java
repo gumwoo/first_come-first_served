@@ -200,10 +200,6 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
                 lockHeld.countDown(); // 실패해도 대기 쪽이 타임아웃까지 멈춰 있지 않게 한다
             }
         });
-        locker.start();
-        assertThat(lockHeld.await(10, TimeUnit.SECONDS)).isTrue();
-        assertThat(lockerFailure.get()).as("락을 쥐는 트랜잭션이 실패하면 이 테스트는 무의미하다").isNull();
-
         // B: 같은 사용자의 추가 선점 — A가 락을 놓을 때까지 진행되면 안 된다
         CountDownLatch holderStarted = new CountDownLatch(1);
         Thread holder = new Thread(() -> {
@@ -216,16 +212,30 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
                 holdFinished.set(true);
             }
         });
-        holder.start();
-        // 스레드가 아직 출발조차 안 한 상태를 "대기 중"으로 오인하지 않도록 확인한다.
-        assertThat(holderStarted.await(10, TimeUnit.SECONDS)).isTrue();
 
-        holder.join(1000);
-        assertThat(holdFinished).as("락을 쥔 트랜잭션이 살아 있는 동안에는 진행되면 안 된다").isFalse();
+        locker.start();
+        try {
+            assertThat(lockHeld.await(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(lockerFailure.get())
+                    .as("락을 쥐는 트랜잭션이 실패하면 이 테스트는 무의미하다").isNull();
 
-        releaseLock.countDown();
-        locker.join(10_000);
-        holder.join(10_000);
+            holder.start();
+            // 스레드가 아직 출발조차 안 한 상태를 "대기 중"으로 오인하지 않도록 확인한다.
+            assertThat(holderStarted.await(10, TimeUnit.SECONDS)).isTrue();
+
+            holder.join(1000);
+            assertThat(holdFinished)
+                    .as("락을 쥔 트랜잭션이 살아 있는 동안에는 진행되면 안 된다").isFalse();
+        } finally {
+            // ⚠️ 단언이 실패해도 반드시 정리한다. 여기서 빠져나가면 락을 쥔 트랜잭션이
+            // 최대 10초 더 살아남아, 다음 테스트 클래스의 @BeforeEach TRUNCATE와 충돌한다
+            // (TRUNCATE는 ACCESS EXCLUSIVE를 요구한다). 테스트 하나의 실패가 다른 클래스의
+            // 실패로 번지면 원인 추적이 크게 어려워진다.
+            releaseLock.countDown();
+            locker.join(10_000);
+            holder.join(10_000);
+        }
+
         assertThat(holdFinished).isTrue();
         assertThat(lockerFailure.get()).isNull();
         assertThat(holderFailure.get()).as("락 해제 후에는 정상적으로 선점돼야 한다").isNull();

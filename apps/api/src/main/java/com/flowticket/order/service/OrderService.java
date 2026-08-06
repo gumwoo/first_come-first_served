@@ -23,7 +23,10 @@ import java.time.LocalDateTime;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 주문 생성/조회. 좌석 선점(hold)을 검증해 주문(PENDING) + 가격 스냅샷으로 승격. */
@@ -39,21 +42,53 @@ public class OrderService {
     private final SeatHoldItemRepository holdItemRepository;
     private final SeatRepository seatRepository;
     private final EventSeatPriceRepository priceRepository;
+    private final ObjectProvider<OrderService> self; // 트랜잭션 프록시 self-호출용
 
     public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                         SeatHoldRepository holdRepository, SeatHoldItemRepository holdItemRepository,
-                        SeatRepository seatRepository, EventSeatPriceRepository priceRepository) {
+                        SeatRepository seatRepository, EventSeatPriceRepository priceRepository,
+                        ObjectProvider<OrderService> self) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.holdRepository = holdRepository;
         this.holdItemRepository = holdItemRepository;
         this.seatRepository = seatRepository;
         this.priceRepository = priceRepository;
+        this.self = self;
     }
 
-    /** 주문 생성: hold 검증(HELD·소유자·미만료) → 가격 스냅샷 → order(PENDING). 같은 hold는 멱등. */
-    @Transactional
+    /**
+     * 주문 생성: hold 검증(HELD·소유자·미만료) → 가격 스냅샷 → order(PENDING).
+     * <b>같은 hold로는 활성 주문이 하나만 존재한다.</b>
+     *
+     * <p>앱의 "찾고 → 없으면 생성"은 <b>순차 더블 POST</b>만 막는다. 동시에 오면 둘 다 "없음"을
+     * 보고 각자 INSERT하므로, 최종 방어선은 부분 UNIQUE 인덱스({@code uq_orders_active_hold})다.
+     * 제약에 걸린 쪽은 <b>이미 다른 요청이 만든 주문</b>을 멱등하게 반환한다(결제·환불과 같은 형태).
+     *
+     * <p>캐치가 트랜잭션 <b>밖</b>에 있어야 한다. 안에서 잡으면 이미 rollback-only로 표시돼
+     * 이어지는 조회·커밋이 실패한다.
+     *
+     * <p>⚠️ {@code NOT_SUPPORTED}가 <b>반드시</b> 필요하다. 이 클래스에는 클래스 레벨
+     * {@code @Transactional(readOnly = true)}가 붙어 있어, 메서드에 아무것도 없으면
+     * <b>읽기 전용 트랜잭션이 이미 열린 상태</b>로 들어온다. 그러면 {@code createTx}의
+     * {@code REQUIRED}가 새 트랜잭션을 만드는 대신 <b>그 읽기 전용 트랜잭션에 참여</b>해
+     * (1) INSERT가 read-only 오류로 실패하고 (2) 경계가 분리되지 않아 캐치도 무의미해진다.
+     * 초안이 그렇게 작성됐고 CI에서 44개 테스트가 깨져 드러났다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public OrderResponse create(Long userId, Long holdId) {
+        try {
+            return self.getObject().createTx(userId, holdId);
+        } catch (DataIntegrityViolationException e) {
+            return orderRepository.findFirstByHoldIdAndStatusIn(holdId, ACTIVE)
+                    .map(this::toResponse)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+        }
+    }
+
+    /** 실제 생성 트랜잭션. 제약 위반은 {@link #create}가 밖에서 잡는다. */
+    @Transactional
+    public OrderResponse createTx(Long userId, Long holdId) {
         if (holdId == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }

@@ -12,6 +12,7 @@ import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.order.dto.OrderResponse;
 import com.flowticket.order.repository.OrderItemRepository;
+import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.order.service.OrderService;
 import com.flowticket.queue.service.QueueAdmissionService;
@@ -24,7 +25,14 @@ import com.flowticket.seat.repository.SeatHoldRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.service.SeatSeeder;
 import com.flowticket.seat.service.SeatService;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -93,6 +101,49 @@ class OrderIntegrationTest extends IntegrationTestSupport {
         Long o2 = orderService.create(user, holdId).orderId();
 
         assertThat(o2).isEqualTo(o1); // 멱등(더블 POST 방어)
+    }
+
+    @Test
+    void 같은_hold로_동시에_생성해도_주문은_하나만_남는다() throws Exception {
+        // 순차 멱등은 "찾고 → 없으면 만든다"로 충분하지만, 동시에 오면 둘 다 "없음"을 보고
+        // 각자 INSERT한다. 같은 좌석에 활성 주문이 둘 생기면 둘 다 결제 시도가 가능해지고,
+        // 두 번째는 좌석 조건부 UPDATE(HELD→SOLD)에서 0행으로 롤백되지만 그 전에 PG 승인이
+        // 나갔다면 미아 승인이 남는다(ADR-011 정산 대상). 앱 검사만으로는 못 막고
+        // DB 제약이 최종 방어선이어야 한다.
+        long user = 14L;
+        Long holdId = holdSeats(user, 1);
+
+        List<Long> created = Collections.synchronizedList(new ArrayList<>());
+        List<Throwable> unexpected = Collections.synchronizedList(new ArrayList<>());
+        int threads = 4;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        for (int i = 0; i < threads; i++) {
+            pool.submit(() -> {
+                try {
+                    start.await();
+                    created.add(orderService.create(user, holdId).orderId());
+                } catch (Throwable t) {
+                    // 이 테스트에서는 어떤 실패도 기대하지 않는다. 제약에 걸린 요청은
+                    // 예외가 아니라 "이미 만들어진 주문"을 멱등하게 받아야 한다.
+                    unexpected.add(t);
+                }
+            });
+        }
+        start.countDown();
+        pool.shutdown();
+        assertThat(pool.awaitTermination(20, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(unexpected).as("어떤 요청도 실패하면 안 된다 — 멱등 반환이어야 한다").isEmpty();
+        // "일부만 성공하고 나머지는 예외"여도 아래 두 단언 중 뒤엣것만으로는 통과한다.
+        // 멱등을 검증하려면 **모든 호출이 응답을 받았고, 그 값이 하나**여야 한다.
+        assertThat(created).as("모든 요청이 주문을 돌려받아야 한다").hasSize(threads);
+        assertThat(Set.copyOf(created)).as("서로 다른 주문이 만들어지면 안 된다").hasSize(1);
+        assertThat(orderRepository.findAll().stream()
+                .filter(o -> o.getHoldId().equals(holdId))
+                .filter(o -> o.getStatus() == OrderStatus.PENDING
+                        || o.getStatus() == OrderStatus.VBANK_WAITING)
+                .count()).isEqualTo(1);
     }
 
     @Test

@@ -3,7 +3,6 @@ package com.flowticket.event.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.flowticket.support.IntegrationTestSupport;
-import org.springframework.test.context.TestPropertySource;
 
 import com.flowticket.event.dto.EventSummaryResponse;
 import com.flowticket.event.kopis.KopisEvent;
@@ -20,7 +19,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  * 조회수 랭킹 검증(Testcontainers Redis). 핵심 불변식:
  * 인기(누적)와 실시간(감쇠)은 같은 조회를 다른 집계로 → 결과가 달라질 수 있다.
  */
-@TestPropertySource(properties = {"ranking.decay-rate-ms=3600000"})
 @SpringBootTest
 class RankingIntegrationTest extends IntegrationTestSupport {
 

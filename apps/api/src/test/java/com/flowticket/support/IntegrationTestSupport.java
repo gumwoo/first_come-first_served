@@ -27,11 +27,13 @@ import org.springframework.test.context.TestPropertySource;
         "seat.max-per-user=4",
         "seat.hold-ttl=300",
         // 배경 워커 비활성 — 필요한 테스트는 서비스 메서드를 직접 호출해 결정적으로 검증한다.
-        "queue.admit-interval-ms=3600000",
-        "seat.sweep-interval-ms=3600000",
-        "order.sweep-interval-ms=3600000",
-        "outbox.relay-interval-ms=3600000",
-        "payment.reconcile-interval-ms=3600000",
+        //
+        // ⚠️ 예전에는 주기를 3600000ms로 늘려 "비활성"이라고 적어 뒀지만 **실제로는 비활성이 아니었다.**
+        // @Scheduled(fixedRateString = ...)에는 initialDelay가 없어 **컨텍스트가 뜨는 순간 첫 실행이
+        // 즉시 발사**된다 — 주기를 늘려 미뤄지는 것은 두 번째 실행뿐이다. 컨텍스트가 여러 개라
+        // 새 컨텍스트가 뜰 때마다 스윕이 발사됐고, 그 UPDATE(RowExclusive)가 다른 테스트의
+        // TRUNCATE(ACCESS EXCLUSIVE)와 데드락을 만들어 CI가 6번 깨졌다.
+        "flowticket.scheduling.enabled=false",
 })
 public abstract class IntegrationTestSupport {
 

@@ -32,6 +32,9 @@ class KafkaHealthIntegrationTest {
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
+        // 배경 스케줄러 비활성 — @Scheduled는 initialDelay가 없어 컨텍스트 기동 즉시 한 번 발사되고,
+        // 그 UPDATE가 테스트 초기화 TRUNCATE와 데드락을 만든다. 주기를 늘리는 것으로는 못 막는다.
+        r.add("flowticket.scheduling.enabled", () -> "false");
         r.add("spring.datasource.url", postgres::getJdbcUrl);
         r.add("spring.datasource.username", postgres::getUsername);
         r.add("spring.datasource.password", postgres::getPassword);
@@ -39,10 +42,6 @@ class KafkaHealthIntegrationTest {
         r.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
         r.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
         r.add("jwt.secret", () -> "integration-test-secret-0123456789-0123456789-0123456789");
-        r.add("queue.admit-interval-ms", () -> "3600000");
-        r.add("seat.sweep-interval-ms", () -> "3600000");
-        r.add("order.sweep-interval-ms", () -> "3600000");
-        r.add("outbox.relay-interval-ms", () -> "3600000"); // 아웃박스 릴레이 스케줄 비활성(결정적 테스트)
     }
 
     @Autowired KafkaHealthService kafkaHealth;

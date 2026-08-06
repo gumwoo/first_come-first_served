@@ -41,7 +41,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -60,10 +59,14 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>주문의 중간 상태(PENDING·VBANK_WAITING)는 <b>세지 않는다</b> — 좌석을 점유 중이라면
  * 이미 HELD 홀드로 잡히고, 홀드가 풀린 뒤 남은 주문은 좌석을 확보하고 있지 않기 때문이다.
  *
- * <p>hold-ttl을 길게 두는 이유: 주문·결제를 거치는 시나리오가 홀드 만료에 걸리지 않아야 한다.
- * 만료가 필요한 테스트는 sweep을 직접 호출한다(스케줄러는 통합테스트에서 비활성).
+ * <p><b>{@code @TestPropertySource}를 붙이지 않는다.</b> 이 테스트에 필요한 hold-ttl(300)은
+ * {@link IntegrationTestSupport}의 기본값과 같다. 같은 값이라도 다시 선언하면 병합된 프로퍼티
+ * 배열이 달라져 <b>Spring 컨텍스트가 하나 더 뜨고</b>, 캐시된 컨텍스트마다 커넥션 풀·Redis 연결을
+ * 따로 들고 있어 자원 압박이 커진다(IMP-013 §7-2). 초안이 중복 선언해 CI가 간헐적으로
+ * 깨졌다 — Postgres 락 실패와 Redis 연결 리셋이 함께 났다.
+ *
+ * <p>만료가 필요한 테스트는 sweep을 직접 호출한다(스케줄러는 통합테스트에서 비활성).
  */
-@TestPropertySource(properties = {"seat.hold-ttl=300"})
 @SpringBootTest
 class SeatQuotaIntegrationTest extends IntegrationTestSupport {
 

@@ -119,9 +119,21 @@ if (fs.existsSync(imageWorkflow)) {
   for (const m of read(imageWorkflow).matchAll(re)) {
     const host = m[1];
     const port = m[2];
-    if (!svcPorts.has(host) || !port) continue;
+
+    // 로컬·compose용 값은 클러스터 Service가 아니다.
+    if (host === "localhost" || host === "api") continue;
+
+    // 포트를 안 붙였다고 통과시키면 안 된다 — 오타난 Service 이름은 포트가 없어도 못 붙는다.
+    // 초안의 규칙이 딱 이 구멍을 갖고 있었다(포트가 틀린 경우만 잡았다).
+    if (!svcPorts.has(host)) {
+      r.fail(
+        `image.yml의 API_ORIGIN이 존재하지 않는 Service를 가리킨다: http://${host} — ` +
+          `${K8S}/에 그런 이름의 Service가 없다(알고 있는 것: ${[...svcPorts.keys()].join(", ") || "없음"})`
+      );
+      continue;
+    }
     const expected = svcPorts.get(host);
-    if (port !== expected) {
+    if (port && port !== expected) {
       r.fail(
         `image.yml의 API_ORIGIN 포트가 Service와 불일치: http://${host}:${port} — ` +
           `Service ${host}는 ${expected}만 연다(targetPort는 클라이언트가 붙는 포트가 아니다)`

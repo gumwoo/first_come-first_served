@@ -1,0 +1,12 @@
+# 노드 드레인(오토스케일 축소·노드 교체·AZ 작업) 중에도 최소 용량을 지킨다.
+# 롤링 배포의 maxUnavailable과는 다른 축이다 — 그건 "배포 중", 이건 "노드 작업 중".
+# PDB가 없으면 CA가 노드를 비울 때 replica가 한꺼번에 빠질 수 있다.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { app: flowticket-api }

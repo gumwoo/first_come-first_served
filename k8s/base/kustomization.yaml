@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: flowticket
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - api-deployment.yaml
+  - api-hpa.yaml
+  - api-pdb.yaml
+  - web-deployment.yaml
+  - ingress.yaml
+
+# 이미지 태그는 **여기 한 곳**만 바뀐다. CI가 ECR push 후 이 값을 커밋하고
+# ArgoCD가 그 커밋을 동기화한다(ADR-009: CI는 apply하지 않는다).
+images:
+  - name: flowticket-api
+    newName: REPLACE_ECR_REGISTRY/flowticket-api
+    newTag: REPLACE_TAG
+  - name: flowticket-web
+    newName: REPLACE_ECR_REGISTRY/flowticket-web
+    newTag: REPLACE_TAG

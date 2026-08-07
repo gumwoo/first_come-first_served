@@ -1,0 +1,23 @@
+# HPA는 **API 티어만** 건다. Kafka 컨슈머 랙으로 오토스케일하는 것은 이 프로젝트에서 억지다 —
+# 컨슈머 작업이 가벼워 랙이 CPU를 따라가지 않는다(aws-eks-deploy-plan.md §0).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: flowticket-api }
+  minReplicas: 3
+  maxReplicas: 9
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }
+  behavior:
+    scaleUp:
+      # 선착순 트래픽은 계단식으로 들어온다 — 천천히 늘리면 스파이크를 못 받는다.
+      stabilizationWindowSeconds: 0
+    scaleDown:
+      # 반대로 축소는 느리게. 빨리 줄이면 다음 파도에 다시 확장하느라 진동한다(flapping).
+      stabilizationWindowSeconds: 300

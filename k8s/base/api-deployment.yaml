@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: flowticket-api }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # 무중단의 핵심 두 줄. maxUnavailable=0이라 **새 Pod가 Ready가 된 뒤에만** 옛 Pod가 빠진다.
+      # 1로 두면 롤링 도중 용량이 먼저 줄어 부하 중 배포에서 에러가 난다.
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels: { app: flowticket-api }
+    spec:
+      # 앱의 SHUTDOWN_TIMEOUT(30s) + preStop(5s)보다 커야 한다. 작으면 진행 중 요청을
+      # 마치기 전에 SIGKILL이 온다 — graceful shutdown 설정이 무의미해지는 지점.
+      terminationGracePeriodSeconds: 45
+
+      # 같은 노드/AZ에 replica가 몰리면 노드 하나가 죽을 때 용량이 통째로 빠진다.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app: flowticket-api }
+
+      containers:
+        - name: api
+          image: flowticket-api:REPLACE_TAG # kustomization.yaml의 images:가 덮어쓴다
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef: { name: flowticket-api-config }
+            - secretRef: { name: flowticket-api-secrets } # 클러스터 밖에서 생성(k8s/README.md)
+
+          # probe 경로는 application.yml의 health group과 한 쌍이다.
+          #   readiness = readinessState, db, redis   (없으면 요청을 처리할 수 없는 의존성만)
+          #   liveness  = livenessState               (외부 의존성 넣으면 DB 장애에 무한 재시작)
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8080 }
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8080 }
+            periodSeconds: 10
+            failureThreshold: 3
+          # 기동이 느린 JVM을 liveness가 죽이지 않게 startupProbe로 분리한다.
+          # liveness의 initialDelay를 늘리는 방식은 기동 후에도 계속 느슨해진다.
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8080 }
+            periodSeconds: 5
+            failureThreshold: 30 # 최대 150초
+
+          lifecycle:
+            preStop:
+              exec:
+                # SIGTERM 직전에 잠깐 멈춘다. Pod 종료와 ALB 타깃 등록 해제는 **비동기**라,
+                # 바로 내려가면 아직 우리를 향해 오는 요청이 502가 된다. 이 유예가 그 창을 덮는다.
+                command: ["sh", "-c", "sleep 5"]
+
+          resources:
+            # requests = 스케줄러가 보는 예약분(HPA의 CPU 기준선이기도 하다).
+            # limits.cpu는 두지 않는다 — CPU는 압축 가능한 자원이라 limit을 걸면 스로틀링으로
+            # p99가 튀고, 부하 실증에서 측정하려는 것이 바로 그 지연이다.
+            requests: { cpu: "300m", memory: "768Mi" }
+            limits: { memory: "1Gi" }
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false # JVM 임시 파일 필요
+            capabilities: { drop: ["ALL"] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  selector: { app: flowticket-api }
+  ports:
+    - port: 80
+      targetPort: 8080

@@ -6,8 +6,22 @@
 
 ```
 k8s/base/
-  namespace · configmap · api(Deployment·Service·HPA·PDB) · web(Deployment·Service) · ingress
+  namespace · configmap · api(Deployment·Service·HPA·PDB) · web(Deployment·Service) · ingress×2
 ```
+
+## Ingress가 둘인 이유 (ALB는 하나)
+
+`healthcheck-path`는 **Ingress 단위**로만 적용된다. api와 web을 한 Ingress에 두면 두 타깃그룹이
+같은 경로를 검사하게 되고, Next.js인 web에 `/actuator/health/readiness`를 던져 **web 타깃 전체가
+unhealthy**가 된다(컨트롤러가 per-backend 분리를 지원하지 않는다 — kubernetes-sigs/#1056).
+
+그렇다고 Ingress를 그냥 둘로 나누면 **ALB도 둘**이 된다(요금·DNS). 같은
+`alb.ingress.kubernetes.io/group.name`을 주면 컨트롤러가 **하나의 ALB로 합친다.**
+`group.order`는 규칙 평가 순서이고, `/api`가 catch-all(`/`)보다 먼저 평가돼야 한다.
+
+**`/actuator`는 공개 규칙에서 뺐다.** ALB 헬스체크는 타깃그룹이 Pod IP로 직접 검사하므로 Ingress
+규칙이 필요 없고, 두면 `metrics`·`prometheus`까지 인터넷에 열린다
+(`exposure: health, info, metrics, prometheus`). Prometheus는 클러스터 안에서 Pod를 스크레이프한다.
 
 ## 아직 적용할 수 없다 — 남은 자리(REPLACE_*)
 
@@ -42,7 +56,7 @@ k8s/base/
 |---|---|---|
 | `maxUnavailable: 0` ↔ readiness | — | 1이면 새 Pod가 뜨기 전에 용량이 줄어 부하 중 에러 |
 | `SHUTDOWN_TIMEOUT(30s)` ↔ `terminationGracePeriodSeconds(45)` | 앱 < Pod | 뒤집히면 진행 중 요청 중 SIGKILL |
-| `preStop sleep 5` ↔ ALB `deregistration_delay 10` | — | 없으면 등록 해제 전에 내려가 502 |
+| `preStop sleep 5` ↔ ALB `deregistration_delay 10` | — | 없으면 등록 해제가 시작되기도 전에 내려가 502 (충분한지는 실측 대상) |
 | probe 경로 ↔ `application.yml`의 health group | — | readiness에 Kafka가 끼면 브로커 하나에 API 전체가 빠짐 |
 | `REDIS_SSL_ENABLED=true` ↔ ElastiCache TLS | 둘 다 켜짐 | 하나만 켜지면 **Pod가 영원히 Ready 안 됨** |
 

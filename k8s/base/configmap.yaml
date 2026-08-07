@@ -1,0 +1,34 @@
+# 비밀이 아닌 설정만 둔다. 시크릿(JWT_SECRET·DB_PASSWORD·OAuth 키 등)은 여기 절대 넣지 않는다
+# — Secret 참조로만 주입한다(secret.md 참고).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flowticket-api-config
+  namespace: flowticket
+data:
+  # ── 데이터 연결 ────────────────────────────────────────────────
+  # 호스트는 terraform output(db_endpoint·redis_endpoint)에서 채운다.
+  DB_HOST: "REPLACE_DB_HOST"
+  DB_PORT: "5432"
+  DB_NAME: "flowticket"
+  REDIS_HOST: "REPLACE_REDIS_HOST"
+  REDIS_PORT: "6379"
+
+  # ⚠️ ElastiCache를 transit_encryption_enabled = true로 만들었다(PR #174).
+  # 이 값이 없거나 false면 Redis 연결이 전부 실패하고, readiness에 redis가 있어
+  # Pod가 영원히 Ready가 되지 않는다. C-7 체크리스트 2번이 바로 이 줄이다.
+  REDIS_SSL_ENABLED: "true"
+
+  # ── Kafka(Strimzi, in-cluster) ────────────────────────────────
+  KAFKA_BOOTSTRAP_SERVERS: "flowticket-kafka-bootstrap.kafka.svc:9092"
+  KAFKA_TOPIC_PARTITIONS: "6"
+  KAFKA_TOPIC_REPLICAS: "3"
+
+  # ── 종료 유예 ─────────────────────────────────────────────────
+  # 애플리케이션이 진행 중 요청을 마칠 시간. terminationGracePeriodSeconds보다 작아야
+  # 한다 — 크면 앱이 끝나기 전에 SIGKILL이 온다(무중단 배포가 깨지는 흔한 지점).
+  SHUTDOWN_TIMEOUT: "30s"
+
+  # ── 운영 값 ───────────────────────────────────────────────────
+  COOKIE_SECURE: "true"
+  PAYMENT_GATEWAY: "toss"

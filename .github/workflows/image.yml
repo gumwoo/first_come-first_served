@@ -120,12 +120,19 @@ jobs:
           file: apps/web/Dockerfile
           push: true
           tags: ${{ steps.ecr.outputs.registry }}/flowticket-web:${{ needs.guard.outputs.sha }}
-          # Next standalone은 rewrites 목적지를 빌드 시점에 굽는다(S09-1에서 실측).
-          # K8s에서는 브라우저의 /api/* 를 Ingress가 API Service로 직접 라우팅하므로 이 값이
-          # 요청 경로에 끼지 않는다 — 서버사이드 프록시 폴백용 기본값만 넣어둔다.
+          # API_ORIGIN은 **빌드 시점에 굳는다**(S09-1 실측 — apps/web/Dockerfile 참고).
+          # Next standalone이 rewrites 목적지를 번들로 구워 런타임 env로는 바뀌지 않으므로
+          # 여기서 정한다.
+          #
+          # 이 값은 폴백이 아니라 **실제 요청 경로에 낀다**: ALB는 web만 보고, 브라우저의
+          # /api/* 는 Next rewrite가 이 주소로 프록시한다(Ingress가 API로 직결하면 ALB가
+          # 접두어를 떼지 않아 Spring이 404를 낸다).
+          #
+          # 값은 k8s Service DNS다. **포트를 붙이지 않는다** — Service는 80을 열고 targetPort
+          # 8080으로 넘긴다. :8080을 붙이면 Service가 안 여는 포트라 연결이 거부된다.
           # (주석은 build-args 블록 밖에 둔다 — 안에 넣으면 인자로 전달된다.)
           build-args: |
-            API_ORIGIN=${{ vars.API_ORIGIN || 'http://flowticket-api:8080' }}
+            API_ORIGIN=${{ vars.API_ORIGIN || 'http://flowticket-api' }}
           cache-from: type=gha,scope=image-web
           cache-to: type=gha,mode=max,scope=image-web
       - name: 요약

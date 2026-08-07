@@ -1,0 +1,14 @@
+# 위반 fixture: 빌드 시점에 굳는 값을 런타임 env로 주입한다.
+# Next rewrites는 standalone 번들로 구워져 이 값이 아무 효과가 없다("설정한 척하는" 죽은 값).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowticket-web
+spec:
+  template:
+    spec:
+      containers:
+        - name: web
+          env:
+            - name: API_ORIGIN
+              value: "http://flowticket-api"

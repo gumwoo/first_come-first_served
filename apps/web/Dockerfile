@@ -19,7 +19,9 @@ COPY apps/web/ ./
 # 런타임 환경변수로는 바뀌지 않는다(실제로 런타임 주입을 시도했더니 빌드 때 값인 localhost:8080으로
 # 프록시해 ECONNREFUSED가 났다). 그래서 build-arg로 받는다.
 #  - 로컬 compose: http://api:8080 (컨테이너 네트워크 서비스명)
-#  - K8s: 브라우저의 /api/* 는 Ingress가 API Service로 직접 라우팅하므로 이 값이 경로에 끼지 않는다.
+#  - K8s: http://flowticket-api (Service DNS). ALB는 web만 보고 /api·/oauth2는 **이 rewrite가**
+#    프록시한다 — Ingress가 API로 직결하면 ALB가 접두어를 안 떼어 Spring이 404를 낸다.
+#    포트를 붙이지 않는다: Service는 80을 열고 targetPort 8080으로 넘긴다.
 ARG API_ORIGIN=http://localhost:8080
 ENV API_ORIGIN=$API_ORIGIN
 

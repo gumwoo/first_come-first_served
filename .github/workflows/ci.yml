@@ -26,6 +26,7 @@ jobs:
               - 'apps/api/**'
               - 'contracts/**'
               - 'harness/**'
+              - 'k8s/**'
               - '.github/workflows/ci.yml'
             frontend:
               - 'apps/web/**'
@@ -86,6 +87,9 @@ jobs:
         run: npm ci || npm install
       - name: backend harness check
         run: node harness/backend/check.mjs
+      # 매니페스트가 앱 코드와 어긋나는지 — apply 전에는 무증상이라 여기서만 잡을 수 있다.
+      - name: k8s harness check
+        run: node harness/k8s/check.mjs
       - name: gradle build (test 포함)
         working-directory: apps/api
         run: gradle build --no-daemon

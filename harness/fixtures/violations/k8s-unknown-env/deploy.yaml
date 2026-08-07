@@ -1,0 +1,14 @@
+# 위반 fixture: 앱이 읽지 않는 환경변수를 주입한다.
+# 실제로 매니페스트 초안이 이 이름을 넣었고, 앱은 API_ORIGIN을 읽는다 → 프록시가 localhost로 간다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowticket-web
+spec:
+  template:
+    spec:
+      containers:
+        - name: web
+          env:
+            - name: NEXT_PUBLIC_API_BASE_URL
+              value: "https://example.com/api"

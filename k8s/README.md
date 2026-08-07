@@ -27,8 +27,23 @@ k8s/base/
 이 구조의 이점: API가 인터넷에 노출되지 않는다 / 접두어 문제가 없다 / OAuth 프록시가 기존 설계
 그대로다 / 브라우저 same-origin이라 CORS가 없다 / 타깃그룹과 Ingress가 각각 하나다.
 
-`API_ORIGIN`은 `NEXT_PUBLIC_*`이 아니다 — **브라우저가 아니라 Next 서버**가 쓰는 주소라
-클러스터 내부 DNS면 충분하고, 그래야 API가 밖으로 나가지 않는다.
+### ⚠️ `API_ORIGIN`은 매니페스트에 없다 — 빌드 시점에 굳는다
+
+`next.config.mjs`의 `rewrites()`는 **standalone 번들로 구워져 런타임 env로 바뀌지 않는다.**
+이 프로젝트가 실제로 겪었다 — `apps/web/Dockerfile`: *"런타임 주입을 시도했더니 빌드 때 값인
+localhost:8080으로 프록시해 ECONNREFUSED가 났다"*. 그래서 **이미지 build-arg**로 정한다.
+
+```yaml
+# .github/workflows/image.yml
+build-args: |
+  API_ORIGIN=${{ vars.API_ORIGIN || 'http://flowticket-api' }}
+```
+
+**포트를 붙이지 않는다.** Service는 `port: 80`을 열고 `targetPort: 8080`으로 넘긴다 —
+`:8080`을 적으면 Service가 열지 않은 포트라 연결이 거부된다.
+
+Deployment에 `API_ORIGIN`을 넣으면 **설정한 것처럼 보이지만 아무 효과가 없는 죽은 값**이 된다.
+하네스 규칙 ④가 이걸 막고, ⑤가 위 포트 불일치를 막는다.
 
 ## ⚠️ apply 후 1순위 확인 — SSE가 Next 프록시를 통과하는가
 
@@ -89,7 +104,7 @@ curl -N -H 'Accept: text/event-stream' https://flow-ticket.com/api/sse/events/1/
 | `SHUTDOWN_TIMEOUT(30s)` ↔ `terminationGracePeriodSeconds(45)` | 앱 < Pod | 뒤집히면 진행 중 요청 중 SIGKILL |
 | `preStop sleep 5` ↔ ALB `deregistration_delay 10` | — | 없으면 등록 해제가 시작되기도 전에 내려가 502 (충분한지는 실측 대상) |
 | probe 경로 ↔ `application.yml`의 health group | — | readiness에 Kafka가 끼면 브로커 하나에 API 전체가 빠짐 |
-| `API_ORIGIN` ↔ `next.config.mjs` rewrites | Service DNS | 이름이 다르면(`NEXT_PUBLIC_*` 등) 프록시가 localhost로 가 전부 실패 |
+| `API_ORIGIN`(**build-arg**) ↔ `next.config.mjs` rewrites | `http://flowticket-api` | 이름·포트가 틀리면 프록시가 엉뚱한 곳으로 간다 |
 | `REDIS_SSL_ENABLED=true` ↔ ElastiCache TLS | 둘 다 켜짐 | 하나만 켜지면 **Pod가 영원히 Ready 안 됨** |
 
 마지막 줄이 [C-7](../docs/deployment/app-changes-for-k8s-kafka.md) 체크리스트 2번이다.

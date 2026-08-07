@@ -80,4 +80,54 @@ for (const file of manifests) {
   }
 }
 
+// ---------- ④ 빌드 시점에 굳는 값을 런타임 env로 주입하지 않는가 ----------
+// Next의 rewrites()는 standalone 번들로 구워져 **런타임 env로 바뀌지 않는다.** 이 프로젝트가
+// 실제로 겪었다 — apps/web/Dockerfile 주석: "런타임 주입을 시도했더니 빌드 때 값인
+// localhost:8080으로 프록시해 ECONNREFUSED가 났다". 그래서 build-arg로 옮겼다.
+// 매니페스트에 다시 넣으면 "설정한 것처럼 보이지만 아무 효과가 없는" 죽은 값이 된다.
+const BUILD_TIME_ONLY = ["API_ORIGIN"];
+for (const file of manifests) {
+  const raw = read(file);
+  const rel = path.relative(REPO_ROOT, file);
+  for (const name of BUILD_TIME_ONLY) {
+    const re = new RegExp("^\\s*-?\\s*name:\\s*" + name + "\\s*$", "m");
+    if (re.test(raw)) {
+      r.fail(
+        `빌드 시점 값을 런타임 env로 주입: ${rel} → ${name}. ` +
+          `Next rewrites는 standalone 번들로 구워져 런타임에 바뀌지 않는다 — ` +
+          `.github/workflows/image.yml의 build-args에서 정한다`
+      );
+    }
+  }
+}
+
+// ---------- ⑤ 이미지 build-arg의 API 주소가 Service가 여는 포트와 맞는가 ----------
+// Service는 port(클라이언트가 붙는 포트)와 targetPort(Pod로 넘기는 포트)가 다르다.
+// targetPort를 URL에 적으면 Service가 열지 않은 포트라 연결이 거부된다 — 초안이 :8080이었다.
+const svcPorts = new Map();
+for (const file of manifests) {
+  for (const block of read(file).split(/^---$/m)) {
+    if (!/\bkind:\s*Service\b/.test(block)) continue;
+    const nm = block.match(/^\s*name:\s*(\S+)/m);
+    const pt = block.match(/^\s*-?\s*port:\s*([0-9]+)/m);
+    if (nm && pt) svcPorts.set(nm[1], pt[1]);
+  }
+}
+const imageWorkflow = path.join(REPO_ROOT, ".github/workflows/image.yml");
+if (fs.existsSync(imageWorkflow)) {
+  const re = /API_ORIGIN=[^\n]*?http:\/\/([a-z0-9-]+)(?::([0-9]+))?/g;
+  for (const m of read(imageWorkflow).matchAll(re)) {
+    const host = m[1];
+    const port = m[2];
+    if (!svcPorts.has(host) || !port) continue;
+    const expected = svcPorts.get(host);
+    if (port !== expected) {
+      r.fail(
+        `image.yml의 API_ORIGIN 포트가 Service와 불일치: http://${host}:${port} — ` +
+          `Service ${host}는 ${expected}만 연다(targetPort는 클라이언트가 붙는 포트가 아니다)`
+      );
+    }
+  }
+}
+
 r.done();

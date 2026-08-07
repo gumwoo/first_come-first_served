@@ -123,9 +123,14 @@ jobs:
           # Next standalone은 rewrites 목적지를 빌드 시점에 굽는다(S09-1에서 실측).
           # K8s에서는 브라우저의 /api/* 를 Ingress가 API Service로 직접 라우팅하므로 이 값이
           # 요청 경로에 끼지 않는다 — 서버사이드 프록시 폴백용 기본값만 넣어둔다.
+          # API_ORIGIN은 **빌드 시점에 굳는다**(apps/web/Dockerfile 참고) — Next의 rewrites가
+          # standalone 번들로 구워져 런타임 env로는 바뀌지 않는다. 그래서 여기서 정한다.
+          #
+          # 값은 k8s Service DNS다. **포트를 붙이지 않는다** — Service는 80을 열고 targetPort
+          # 8080으로 넘긴다. :8080을 붙이면 Service가 안 여는 포트라 연결이 거부된다.
           # (주석은 build-args 블록 밖에 둔다 — 안에 넣으면 인자로 전달된다.)
           build-args: |
-            API_ORIGIN=${{ vars.API_ORIGIN || 'http://flowticket-api:8080' }}
+            API_ORIGIN=${{ vars.API_ORIGIN || 'http://flowticket-api' }}
           cache-from: type=gha,scope=image-web
           cache-to: type=gha,mode=max,scope=image-web
       - name: 요약

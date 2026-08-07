@@ -29,6 +29,9 @@ const cases = [
   { name: "be-unguarded-status-update", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-unguarded-status-update" } },
   { name: "be-destructive-ddl",  script: "backend/check.mjs", expect: "파괴적 DDL:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-destructive-ddl" } },
   { name: "be-dangling-doc-ref", script: "backend/check.mjs", expect: "끊어진 문서 참조:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-dangling-doc-ref" } },
+  // k8s: 매니페스트가 애플리케이션 코드와 어긋나는 두 경로(둘 다 apply 전에는 무증상)
+  { name: "k8s-unknown-env", script: "k8s/check.mjs", expect: "앱이 읽지 않는 환경변수:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-unknown-env" } },
+  { name: "k8s-ingress-api-direct", script: "k8s/check.mjs", expect: "Ingress가 API Service로 직결:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-ingress-api-direct" } },
   { name: "fe-missing-enum",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-enum" } },
   { name: "fe-bad-dep",          script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-bad-dep" } },
   { name: "fe-layer-breach",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },

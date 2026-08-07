@@ -30,6 +30,30 @@ k8s/base/
 `API_ORIGIN`은 `NEXT_PUBLIC_*`이 아니다 — **브라우저가 아니라 Next 서버**가 쓰는 주소라
 클러스터 내부 DNS면 충분하고, 그래야 API가 밖으로 나가지 않는다.
 
+## ⚠️ apply 후 1순위 확인 — SSE가 Next 프록시를 통과하는가
+
+SSE도 같은 경로를 탄다. **코드로 확인한 체인**:
+
+```
+useSeats.ts          new EventSource("/api/sse/events/{id}/seats")
+next.config.mjs      /api/:path* → ${API_ORIGIN}/:path*
+SeatSseController    @GetMapping("/sse/events/{id}/seats", produces = TEXT_EVENT_STREAM_VALUE)
+```
+
+**rewrite 자체는 CI E2E가 이미 태우고 있다** — `pnpm start`로 프로덕션 Next를 띄우고
+`API_ORIGIN`을 주지 않아 기본값(`localhost:8080`)으로 프록시하며, 그 상태로 E2E가 통과한다.
+
+**그러나 SSE가 버퍼링 없이 흐르는지는 검증되지 않았다.** E2E에 실시간 갱신을 단언하는 테스트가
+없어서, 프록시가 스트림을 버퍼링해도 테스트는 통과한다. [TS-012](../docs/troubleshooting/TS-012-sse-reconnect-gap-no-resync.md)에서
+폴링이 SSE 실패를 가려 준 것과 같은 구조다 — **추측이 아니라 테스트 부재로 확인된 사실이다.**
+
+확인 방법(apply 후):
+```bash
+curl -N -H 'Accept: text/event-stream' https://flow-ticket.com/api/sse/events/1/seats
+# 이벤트가 즉시 한 줄씩 나오면 정상. 한참 뒤 몰려 나오면 버퍼링이다.
+```
+버퍼링이면 ALB idle timeout·Next 프록시 설정을 봐야 한다. 좌석맵·주문 상태 알림이 전부 이 경로다.
+
 ## 아직 적용할 수 없다 — 남은 자리(REPLACE_*)
 
 **의도적으로 placeholder를 남겼다.** `platform` 스택을 apply해야 나오는 값들이고,

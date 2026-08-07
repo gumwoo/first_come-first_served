@@ -1,0 +1,16 @@
+# 위반 fixture: ALB가 /api를 API Service로 직결한다.
+# ALB Prefix 라우팅은 접두어를 제거하지 않아 Spring이 /api/auth/login을 받고 404가 된다.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flowticket
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: flowticket-api
+                port: { number: 80 }

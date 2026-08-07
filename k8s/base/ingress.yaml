@@ -1,30 +1,35 @@
-# ALB는 **하나**, Ingress는 **둘**이다.
+# ALB는 **web만** 바라본다. API는 인터넷에 직접 노출하지 않는다.
 #
-# 왜 나누는가: alb.ingress.kubernetes.io/healthcheck-path는 **Ingress 단위**로만 적용된다.
-# 한 Ingress에 api와 web을 같이 두면 두 타깃그룹이 같은 헬스체크 경로를 쓰게 되고,
-# Next.js인 web에 /actuator/health/readiness를 던져 **web 타깃 전체가 unhealthy**가 된다.
-# (per-backend 분리는 컨트롤러가 지원하지 않는다 — kubernetes-sigs/#1056)
+# 앱이 처음부터 이 구조를 전제로 짜여 있다 — next.config.mjs가 브라우저 요청을 프록시한다.
 #
-# 왜 그냥 Ingress 두 개가 아닌가: 그러면 **ALB도 두 개**가 생겨 요금과 DNS가 둘로 늘어난다.
-# 같은 group.name을 주면 컨트롤러가 두 Ingress를 **하나의 ALB로 합친다.**
-# group.order는 규칙 평가 순서다 — /api가 catch-all(/)보다 **먼저** 평가돼야 한다.
+#   브라우저  GET /api/auth/login
+#      └→ ALB → web Pod
+#           └→ Next rewrite: /api/:path* → ${API_ORIGIN}/:path*   ← /api를 떼어낸다
+#                └→ flowticket-api:80 → Spring @PostMapping("/auth/login")
 #
-# ALB 수준 설정(scheme·listen-ports·certificate-arn)은 그룹 구성원끼리 일치해야 하므로
-# 양쪽에 같은 값을 둔다.
+# ⚠️ ALB에서 /api를 API Service로 직접 보내면 안 된다. ALB의 Prefix 라우팅은 접두어를
+# 제거하지 않으므로 Spring이 "/api/auth/login"을 받고, 그런 매핑이 없어 전부 404가 된다.
+# (Spring 쪽에는 /api 접두어가 없다 — @PostMapping("/auth/login") 형태다.)
+#
+# 이 구조의 이점: API 미노출 / 접두어 문제 없음 / OAuth 프록시 기존 설계 그대로 /
+# 브라우저 same-origin이라 CORS 없음 / 타깃그룹 하나 / Ingress 하나.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: flowticket-api
+  name: flowticket
   namespace: flowticket
   annotations:
-    alb.ingress.kubernetes.io/group.name: flowticket
-    alb.ingress.kubernetes.io/group.order: "10"
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
+    # target-type: ip는 Pod IP를 직접 타깃으로 등록한다. instance 모드보다 홉이 하나 적고,
+    # 등록/해제가 Pod 단위라 롤링 배포와 궁합이 낫다.
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     alb.ingress.kubernetes.io/certificate-arn: REPLACE_ACM_CERT_ARN
-    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health/readiness
+    # 타깃그룹이 web 하나뿐이라 헬스체크 경로도 하나다.
+    # Next.js standalone에는 전용 헬스 엔드포인트가 없어 루트 응답으로 갈음한다 —
+    # "프로세스가 HTTP를 받는가"까지만 보는 것이고 그 이상은 확인하지 않는다.
+    alb.ingress.kubernetes.io/healthcheck-path: /
     # 등록 해제 시 기존 연결을 드레이닝할 시간. preStop과 함께 "빠지는 중"의 요청을 덮는다.
     alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=10
 spec:
@@ -33,36 +38,8 @@ spec:
     - host: flow-ticket.com
       http:
         paths:
-          # /actuator는 **공개하지 않는다.** ALB 헬스체크는 타깃그룹이 Pod IP로 직접 검사하므로
-          # Ingress 규칙이 필요 없고, 규칙을 두면 metrics·prometheus까지 인터넷에 열린다
-          # (application.yml exposure: health, info, metrics, prometheus).
-          - path: /api
-            pathType: Prefix
-            backend: { service: { name: flowticket-api, port: { number: 80 } } }
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: flowticket-web
-  namespace: flowticket
-  annotations:
-    alb.ingress.kubernetes.io/group.name: flowticket
-    alb.ingress.kubernetes.io/group.order: "20" # catch-all이라 api 뒤에
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
-    alb.ingress.kubernetes.io/ssl-redirect: "443"
-    alb.ingress.kubernetes.io/certificate-arn: REPLACE_ACM_CERT_ARN
-    # Next.js standalone에는 전용 헬스 엔드포인트가 없다. 루트 응답으로 갈음한다 —
-    # "프로세스가 HTTP를 받는가"까지만 보는 것이고 그 이상은 확인하지 않는다.
-    alb.ingress.kubernetes.io/healthcheck-path: /
-    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=10
-spec:
-  ingressClassName: alb
-  rules:
-    - host: flow-ticket.com
-      http:
-        paths:
+          # /actuator는 공개하지 않는다. ALB 헬스체크는 타깃그룹이 Pod IP로 직접 검사하므로
+          # 규칙이 필요 없고, 두면 metrics·prometheus까지 인터넷에 열린다.
           - path: /
             pathType: Prefix
             backend: { service: { name: flowticket-web, port: { number: 80 } } }

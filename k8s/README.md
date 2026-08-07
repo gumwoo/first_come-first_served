@@ -6,22 +6,29 @@
 
 ```
 k8s/base/
-  namespace · configmap · api(Deployment·Service·HPA·PDB) · web(Deployment·Service) · ingress×2
+  namespace · configmap · api(Deployment·Service·HPA·PDB) · web(Deployment·Service) · ingress
 ```
 
-## Ingress가 둘인 이유 (ALB는 하나)
+## 라우팅 — ALB는 web만 본다
 
-`healthcheck-path`는 **Ingress 단위**로만 적용된다. api와 web을 한 Ingress에 두면 두 타깃그룹이
-같은 경로를 검사하게 되고, Next.js인 web에 `/actuator/health/readiness`를 던져 **web 타깃 전체가
-unhealthy**가 된다(컨트롤러가 per-backend 분리를 지원하지 않는다 — kubernetes-sigs/#1056).
+```
+브라우저  GET /api/auth/login
+   └→ ALB → web Pod
+        └→ Next rewrite: /api/:path* → ${API_ORIGIN}/:path*   ← /api를 떼어낸다
+             └→ flowticket-api:80 → Spring @PostMapping("/auth/login")
+```
 
-그렇다고 Ingress를 그냥 둘로 나누면 **ALB도 둘**이 된다(요금·DNS). 같은
-`alb.ingress.kubernetes.io/group.name`을 주면 컨트롤러가 **하나의 ALB로 합친다.**
-`group.order`는 규칙 평가 순서이고, `/api`가 catch-all(`/`)보다 먼저 평가돼야 한다.
+**앱이 처음부터 이 구조를 전제로 짜여 있다**(`next.config.mjs`). Spring 쪽에는 `/api` 접두어가
+없다 — `@PostMapping("/auth/login")` 형태다.
 
-**`/actuator`는 공개 규칙에서 뺐다.** ALB 헬스체크는 타깃그룹이 Pod IP로 직접 검사하므로 Ingress
-규칙이 필요 없고, 두면 `metrics`·`prometheus`까지 인터넷에 열린다
-(`exposure: health, info, metrics, prometheus`). Prometheus는 클러스터 안에서 Pod를 스크레이프한다.
+> ⚠️ **ALB에서 `/api`를 API Service로 직접 보내면 안 된다.** ALB의 Prefix 라우팅은 접두어를
+> 제거하지 않아 Spring이 `/api/auth/login`을 받고 **전부 404**가 된다. 초안이 그렇게 작성됐다.
+
+이 구조의 이점: API가 인터넷에 노출되지 않는다 / 접두어 문제가 없다 / OAuth 프록시가 기존 설계
+그대로다 / 브라우저 same-origin이라 CORS가 없다 / 타깃그룹과 Ingress가 각각 하나다.
+
+`API_ORIGIN`은 `NEXT_PUBLIC_*`이 아니다 — **브라우저가 아니라 Next 서버**가 쓰는 주소라
+클러스터 내부 DNS면 충분하고, 그래야 API가 밖으로 나가지 않는다.
 
 ## 아직 적용할 수 없다 — 남은 자리(REPLACE_*)
 
@@ -58,6 +65,7 @@ unhealthy**가 된다(컨트롤러가 per-backend 분리를 지원하지 않는�
 | `SHUTDOWN_TIMEOUT(30s)` ↔ `terminationGracePeriodSeconds(45)` | 앱 < Pod | 뒤집히면 진행 중 요청 중 SIGKILL |
 | `preStop sleep 5` ↔ ALB `deregistration_delay 10` | — | 없으면 등록 해제가 시작되기도 전에 내려가 502 (충분한지는 실측 대상) |
 | probe 경로 ↔ `application.yml`의 health group | — | readiness에 Kafka가 끼면 브로커 하나에 API 전체가 빠짐 |
+| `API_ORIGIN` ↔ `next.config.mjs` rewrites | Service DNS | 이름이 다르면(`NEXT_PUBLIC_*` 등) 프록시가 localhost로 가 전부 실패 |
 | `REDIS_SSL_ENABLED=true` ↔ ElastiCache TLS | 둘 다 켜짐 | 하나만 켜지면 **Pod가 영원히 Ready 안 됨** |
 
 마지막 줄이 [C-7](../docs/deployment/app-changes-for-k8s-kafka.md) 체크리스트 2번이다.

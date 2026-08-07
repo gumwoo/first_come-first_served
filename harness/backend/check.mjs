@@ -379,6 +379,63 @@ for (const file of migrationFiles) {
   }
 }
 
+// ---------- 15. 존재하지 않는 문서 번호 참조(끊어진 근거) ----------
+// 코드 주석에 "TS-014", "ADR-012", "IMP-013" 같은 번호를 적어 두는 것은 이 저장소의 습관이다.
+// 근거를 코드 옆에 두면 나중에 "왜 이렇게 했나"를 되짚을 수 있기 때문이다.
+//
+// 문제는 **번호를 먼저 적고 문서를 나중에 쓰는 순서**다. 실제로 V15 마이그레이션이 두 곳에서
+// TS-014를 참조했는데 그 문서가 없었다 — 읽는 사람은 근거를 찾아가려다 빈손으로 돌아온다.
+// 근거를 가리키는 척하는 주석은 근거가 없는 것보다 나쁘다(찾는 시간까지 쓰게 만든다).
+//
+// 컴파일·테스트는 주석을 보지 않으므로 정적으로만 잡을 수 있다.
+const DOC_DIRS = {
+  TS: "docs/troubleshooting",
+  ADR: "docs/decisions",
+  IMP: "docs/improvements",
+};
+
+// 각 디렉터리에 실제로 존재하는 번호를 모은다(파일명 앞머리 기준: TS-014-....md).
+// 정규식을 쓰지 않는다 — 템플릿 리터럴 안의 \d 는 이스케이프가 아니라 그냥 d 로 죽는다.
+// 초안이 그렇게 작성돼 목록이 조용히 비었고, 규칙이 아무것도 잡지 못했다.
+const existingDocs = {};
+for (const [prefix, dir] of Object.entries(DOC_DIRS)) {
+  const abs = path.join(REPO_ROOT, dir);
+  const nums = new Set();
+  if (fs.existsSync(abs)) {
+    for (const name of fs.readdirSync(abs)) {
+      if (!name.toUpperCase().startsWith(prefix + "-")) continue;
+      const digits = name.slice(prefix.length + 1).split("-")[0];
+      if (/^[0-9]+$/.test(digits)) nums.add(String(Number(digits)));
+    }
+  }
+  // 목록이 비면 이 규칙은 모든 참조를 끊어진 것으로 보거나(오탐 폭발) 아무것도 못 잡는다.
+  // 조용히 무력화되는 쪽이 더 위험하므로 그 상태 자체를 실패로 만든다.
+  if (nums.size === 0) {
+    r.fail(`문서 번호를 하나도 못 읽었다: ${dir} — 규칙 15가 무력화된 상태`);
+  }
+  existingDocs[prefix] = nums;
+}
+
+const DOC_REF_RE = /\b(TS|ADR|IMP)-([0-9]{1,4})\b/g;
+const danglingSeen = new Set();
+
+for (const file of [...javaFiles, ...migrationFiles]) {
+  const raw = read(file);
+  const rel = path.relative(REPO_ROOT, file);
+  for (const m of raw.matchAll(DOC_REF_RE)) {
+    const prefix = m[1].toUpperCase();
+    const num = String(Number(m[2]));
+    if (existingDocs[prefix].has(num)) continue;
+    const key = `${rel}|${prefix}-${m[2]}`;
+    if (danglingSeen.has(key)) continue;
+    danglingSeen.add(key);
+    r.fail(
+      `끊어진 문서 참조: ${rel} → ${prefix}-${m[2]} (${DOC_DIRS[prefix]}/에 해당 문서 없음). ` +
+        `문서를 먼저 쓰거나, 아직 없다면 번호를 적지 말 것`
+    );
+  }
+}
+
 function normalize(p) {
   return p.replace(/\{[^}]+\}/g, "{id}").replace(/\/+$/, "") || "/";
 }

@@ -28,6 +28,7 @@ const cases = [
   { name: "be-event-not-broadcast", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-event-not-broadcast" } },
   { name: "be-unguarded-status-update", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-unguarded-status-update" } },
   { name: "be-destructive-ddl",  script: "backend/check.mjs", expect: "파괴적 DDL:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-destructive-ddl" } },
+  { name: "be-dangling-doc-ref", script: "backend/check.mjs", expect: "끊어진 문서 참조:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-dangling-doc-ref" } },
   { name: "fe-missing-enum",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-enum" } },
   { name: "fe-bad-dep",          script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-bad-dep" } },
   { name: "fe-layer-breach",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },

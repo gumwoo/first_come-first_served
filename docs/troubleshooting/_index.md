@@ -26,3 +26,5 @@ IMP(정량 before/after 개선)와 달리, 여기 문서는 "무엇이 왜 깨�
 | [TS-011](TS-011-expiry-sweep-overwrites-paid-seat.md) | 만료 sweep이 결제된 SOLD 좌석을 되돌릴 수 있음 — 무가드 복구 UPDATE(형제 경로 재발) | S04/S05 | 정합성 버그(코드) | 해결 |
 | [TS-012](TS-012-sse-reconnect-gap-no-resync.md) | SSE 구독 공백의 이벤트를 영영 놓침 — "폴링이 커버한다"는 주석만 있고 폴링이 없음 | S04/S05 | 상태 최신성(FE) | 해결 |
 | [TS-013](TS-013-per-user-quota-aggregate-invariant.md) | 1인 구매 한도가 뚫림 — 조건부 UPDATE로는 못 지키는 집계 불변식 | S04 | 정합성 버그(코드) | 해결 |
+| [TS-014](TS-014-order-create-idempotency-race.md) | 같은 hold로 동시 주문 시 둘 다 생성 — 앱의 "찾고→없으면 생성"이 뚫림 | S05 | 정합성 버그(코드) | 해결 |
+| [TS-015](TS-015-truncate-scheduler-deadlock.md) | CI 6회 실패 — "꺼 뒀다고 믿은" 스케줄러가 TRUNCATE와 데드락 | 횡단 | 테스트 인프라/진단 회고 | 기전 차단 |

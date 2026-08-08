@@ -18,6 +18,11 @@ const nextConfig = {
       { source: "/api/:path*", destination: `${apiOrigin}/:path*` },
       // 소셜 로그인 시작 — BE OAuth2 엔드포인트로 프록시(브라우저 전체 이동)
       { source: "/oauth2/:path*", destination: `${apiOrigin}/oauth2/:path*` },
+      // 소셜 로그인 **콜백** — 제공자가 사용자를 여기로 돌려보낸다.
+      // 시작 경로만 프록시하고 이걸 빠뜨리면 콜백을 Next가 받아 404를 낸다(TS-017).
+      // 로컬에서는 Next(3000)와 Spring(8080)이 같은 머신이라 드러나지 않고, 배포해야 보인다.
+      // /login 페이지와 겹치지 않는다 — 더 구체적인 경로가 우선한다.
+      { source: "/login/oauth2/:path*", destination: `${apiOrigin}/login/oauth2/:path*` },
     ];
   },
 };

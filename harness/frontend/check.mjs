@@ -194,4 +194,35 @@ for (const file of tsFiles) {
   }
 }
 
+// ---------- 8. 브라우저가 직접 치는 백엔드 경로를 프론트가 프록시하는가 ----------
+// 브라우저는 항상 같은 오리진으로 요청하고 Next가 백엔드로 프록시한다(next.config.mjs).
+// 그런데 **브라우저가 XHR이 아니라 전체 이동으로 도달하는 경로**가 있다 — OAuth가 그렇다.
+//
+// 실제로 시작 경로(/oauth2/*)만 프록시하고 콜백(/login/oauth2/code/*)을 빠뜨려 배포에서
+// 404가 났다(TS-017). 로컬에서는 Next(3000)와 Spring(8080)이 같은 머신이라 드러나지 않는다 —
+// **배포해야만 보이는 유형**이라 정적으로 잡을 가치가 크다.
+const nextConfigPath = path.join(REPO_ROOT, WEB, "next.config.mjs");
+const apiYmlPath = path.join(REPO_ROOT, process.env.HARNESS_API_DIR || "apps/api",
+  "src/main/resources/application.yml");
+
+if (fs.existsSync(nextConfigPath) && fs.existsSync(apiYmlPath)) {
+  const nextConfig = read(nextConfigPath);
+  const apiYml = read(apiYmlPath);
+
+  // OAuth2 클라이언트 등록이 있으면 시작·콜백 **양쪽** 경로가 프록시돼야 한다.
+  const hasOauth = /oauth2:\s*[\s\S]*?client:/.test(apiYml) || /registration:/.test(apiYml);
+  if (hasOauth) {
+    for (const [label, needle] of [
+      ["시작", "/oauth2/"],
+      ["콜백", "/login/oauth2/"],
+    ]) {
+      if (nextConfig.includes(`source: "${needle}`)) continue;
+      r.fail(
+        `OAuth ${label} 경로 프록시 누락: ${WEB}/next.config.mjs에 "${needle}:path*" rewrite가 없다. ` +
+          `브라우저가 전체 이동으로 도달하는 경로라 Next가 받아 404가 된다(TS-017)`
+      );
+    }
+  }
+}
+
 r.done();

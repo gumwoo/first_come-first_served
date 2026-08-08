@@ -1,0 +1,66 @@
+# Strimzi Kafka — 멀티브로커(ADR-008). KRaft 모드라 ZooKeeper가 없다.
+#
+# 앱의 KAFKA_BOOTSTRAP_SERVERS가 `flowticket-kafka-bootstrap.kafka.svc:9092`를 가리키므로
+# **클러스터 이름은 flowticket, 네임스페이스는 kafka여야 한다.** 이름이 어긋나면 DNS가 안 풀리고
+# api Pod가 기동 자체에 실패한다(TS-016 — readiness 제외와는 다른 문제였다).
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: dual-role
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: flowticket
+spec:
+  # 데모 규모라 controller/broker를 겸한다. 운영에서는 분리하는 편이 낫지만
+  # 노드가 3대뿐이라 역할을 나누면 브로커가 부족해진다.
+  roles:
+    - controller
+    - broker
+  replicas: 3
+  storage:
+    type: persistent-claim
+    size: 10Gi
+    # ⚠️ 이름을 **반드시 명시한다.** 이 클러스터에는 기본 StorageClass가 없어서
+    # (`kubectl get storageclass` → gp2, DEFAULT=none) 생략하면 PVC가 Pending에 머물고
+    # 브로커가 뜨지 않는다. gp2는 저장소가 만드는 것이 아니라 EKS가 기본 제공하는 것이므로,
+    # 클러스터를 새로 만들 때마다 실제 이름을 확인해야 한다(gp3인 환경도 흔하다).
+    # 2026-08-08 실측: gp2 존재, PVC 3개 Bound.
+    class: gp2
+    deleteClaim: true # 데모는 매번 새로 만든다. false면 destroy 후 EBS가 남아 요금이 붙는다.
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: flowticket
+  namespace: kafka
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
+spec:
+  kafka:
+    version: 4.3.0
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      # 브로커 3대이므로 RF 3 / min.insync 2. 아웃박스 릴레이는 acks=all로 발행한다(ADR-010).
+      #
+      # 내결함성은 정확히 **1대**다:
+      #   3대 정상 → ISR 3 → 쓰기 가능
+      #   1대 장애 → ISR 2 → min.insync=2 충족 → 쓰기 가능
+      #   2대 장애 → ISR 1 → min.insync 미충족 → **acks=all 발행 실패**
+      # 2대가 죽어도 데이터 복제본은 남아 읽기는 되지만 새 쓰기가 막힌다.
+      # (그래도 아웃박스가 있어 유실은 아니다 — PENDING으로 쌓였다가 복구 시 재시도된다.)
+      default.replication.factor: 3
+      min.insync.replicas: 2
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      # 앱이 토픽을 자동 생성한다(KAFKA_TOPIC_PARTITIONS/REPLICAS로 파티션·RF 지정).
+      auto.create.topics.enable: "true"
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}

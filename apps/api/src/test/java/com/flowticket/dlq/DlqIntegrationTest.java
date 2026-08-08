@@ -15,6 +15,11 @@ import com.flowticket.global.config.KafkaConfig;
 import com.flowticket.order.event.OrderEvent;
 import com.flowticket.order.sse.OrderSseRegistry;
 import java.time.Duration;
+import java.util.Map;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -79,6 +84,29 @@ class DlqIntegrationTest {
         assertThat(row.getStatus()).isEqualTo(DlqStatus.PENDING);
         assertThat(row.getTopic()).isEqualTo(KafkaConfig.ORDER_EVENTS_TOPIC);
         assertThat(row.getErrorMessage()).contains("boom");
+    }
+
+    @Test
+    void 역직렬화가_실패하는_독성_메시지도_DLQ로_간다() throws Exception {
+        // 이 테스트가 없어서 배포에서 뚫렸다(TS-020). JsonDeserializer를 직접 쓰면 역직렬화가
+        // **poll() 단계**에서 터져 리스너에 도달하지 못하고, DefaultErrorHandler(+DLT)가 개입할
+        // 수 없다. 결과는 같은 메시지 무한 재시도 — 파드는 Running이고 readiness도 UP인데
+        // 처리가 멈춘 채 CPU만 태운다(실측: 파드 711m, 노드 100%, HPA가 부하로 오해해 스케일업).
+        //
+        // 위 두 테스트는 **역직렬화에 성공한 뒤** 리스너에서 던지는 경우라 이 경로를 못 잡는다.
+        // 그래서 타입 헤더 없는 평문을 직접 넣는다 — 재시도해도 절대 성공하지 않는 유형이다.
+        try (KafkaProducer<String, String> raw = new KafkaProducer<>(Map.of(
+                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers(),
+                ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName(),
+                ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName()))) {
+            raw.send(new ProducerRecord<>(KafkaConfig.ORDER_EVENTS_TOPIC, "poison", "not-json-at-all")).get();
+        }
+
+        // 무한 재시도에 빠지면 DLQ 행이 영영 생기지 않아 여기서 타임아웃된다.
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(dlqRepository.findAll())
+                        .as("독성 메시지는 재시도로 해결되지 않으므로 DLT로 넘어가야 한다")
+                        .anySatisfy(m -> assertThat(m.getTopic()).isEqualTo(KafkaConfig.ORDER_EVENTS_TOPIC)));
     }
 
     @Test

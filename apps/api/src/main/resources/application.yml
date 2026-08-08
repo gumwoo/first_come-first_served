@@ -34,8 +34,17 @@ spring:
       group-id: flowticket
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      # ⚠️ JsonDeserializer를 **직접** 쓰면 안 된다. 역직렬화는 poll() 단계에서 일어나
+      # 리스너에 도달하기 전에 터지므로, DefaultErrorHandler(+DLT)가 개입할 수 없다.
+      # 결과는 같은 메시지 무한 재시도다 — 파드는 Running이고 readiness도 UP인데(Kafka 제외)
+      # 처리가 멈춘 채 CPU만 태운다. 실제로 노드 CPU 100%까지 갔고 HPA가 부하로 오해해
+      # 스케일업까지 했다(TS-020).
+      #
+      # ErrorHandlingDeserializer가 실패를 잡아 null + 예외 헤더로 바꿔 리스너 단계까지
+      # 넘겨주고, 그때부터 DefaultErrorHandler가 DLT로 보낼 수 있다.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
         spring.json.trusted.packages: "com.flowticket.*"
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer

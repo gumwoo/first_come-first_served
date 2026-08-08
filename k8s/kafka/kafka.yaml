@@ -1,0 +1,55 @@
+# Strimzi Kafka — 멀티브로커(ADR-008). KRaft 모드라 ZooKeeper가 없다.
+#
+# 앱의 KAFKA_BOOTSTRAP_SERVERS가 `flowticket-kafka-bootstrap.kafka.svc:9092`를 가리키므로
+# **클러스터 이름은 flowticket, 네임스페이스는 kafka여야 한다.** 이름이 어긋나면 DNS가 안 풀리고
+# api Pod가 기동 자체에 실패한다(TS-016 — readiness 제외와는 다른 문제였다).
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: dual-role
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: flowticket
+spec:
+  # 데모 규모라 controller/broker를 겸한다. 운영에서는 분리하는 편이 낫지만
+  # 노드가 3대뿐이라 역할을 나누면 브로커가 부족해진다.
+  roles:
+    - controller
+    - broker
+  replicas: 3
+  storage:
+    type: persistent-claim
+    size: 10Gi
+    class: gp2
+    deleteClaim: true # 데모는 매번 새로 만든다. false면 destroy 후 EBS가 남아 요금이 붙는다.
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: flowticket
+  namespace: kafka
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
+spec:
+  kafka:
+    version: 4.3.0
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      # 브로커 3대이므로 RF 3 / min.insync 2. 아웃박스 릴레이가 acks=all로 발행하므로
+      # (ADR-010) 브로커 1대가 죽어도 발행이 계속된다 — 2대까지는 견딘다.
+      default.replication.factor: 3
+      min.insync.replicas: 2
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      # 앱이 토픽을 자동 생성한다(KAFKA_TOPIC_PARTITIONS/REPLICAS로 파티션·RF 지정).
+      auto.create.topics.enable: "true"
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}

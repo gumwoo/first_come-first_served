@@ -187,6 +187,9 @@ spring:
    Prometheus 레지스트리·프론트 API 오리진. AWS 이전에 로컬에서 끝낼 수 있는 것부터 닫았다.
 1. **C-7(Redis TLS) — `platform` apply와 `k8s/` 매니페스트 사이의 블로커.** 순서상 가장 먼저다:
    인프라는 TLS로 만들어지는데 앱이 평문이면 Pod가 아예 Ready가 되지 않아 그 뒤 항목을 검증할 수 없다.
+   **⚠️ Kafka(Strimzi)도 앱보다 먼저 떠야 한다.** readiness에서 Kafka를 뺐다는 사실이 기동 의존을
+   없애주지 않는다 — 브로커 주소가 DNS로 안 풀리면 `KafkaListenerEndpointRegistry`가 기동에
+   실패해 컨텍스트째로 죽는다([[TS-016]]).
 2. A-1·A-2(파티션·RF) — 이제 **코드가 아니라 환경/CR 값 합의**(Strimzi 붙일 때)
 3. **D-1·D-2(SSE 팬아웃·ShedLock)** — 다중 Pod 배포와 함께(단일→다중 전환의 핵심), D-3은 비교 후 결정
 4. B-1(메트릭) — 관측 스택과 함께

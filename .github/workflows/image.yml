@@ -113,6 +113,22 @@ jobs:
       - id: ecr
         uses: aws-actions/amazon-ecr-login@v2
       - uses: docker/setup-buildx-action@v3
+
+      # 빌드 전에 값을 확인한다. ARG가 선언돼 있어도 **값이 비면 빌드는 그냥 성공**하고,
+      # 결제창이 뜨지 않는 이미지가 조용히 ECR로 나간다 — 에러가 아니라 다른 흐름으로 빠지기
+      # 때문에 배포 후에도 눈치채기 어렵다. 하네스 규칙 ⑥은 ARG의 **존재**만 보므로
+      # 이 구멍은 여기서만 막을 수 있다.
+      - name: 빌드 인자 확인 (빈 값이면 조용히 기능이 빠진다)
+        env:
+          TOSS_CLIENT_KEY: ${{ vars.NEXT_PUBLIC_TOSS_CLIENT_KEY }}
+        run: |
+          if [ -z "$TOSS_CLIENT_KEY" ]; then
+            echo "::error::NEXT_PUBLIC_TOSS_CLIENT_KEY repository variable이 비어 있습니다."
+            echo "::error::이대로 빌드하면 토스 결제창이 뜨지 않고 결제창 없는 경로로 빠집니다(ADR-005)."
+            echo "::error::설정: Settings → Secrets and variables → Actions → Variables"
+            exit 1
+          fi
+
       - name: build & push (태그 = git SHA)
         uses: docker/build-push-action@v6
         with:
@@ -128,11 +144,18 @@ jobs:
           # /api/* 는 Next rewrite가 이 주소로 프록시한다(Ingress가 API로 직결하면 ALB가
           # 접두어를 떼지 않아 Spring이 404를 낸다).
           #
+          # NEXT_PUBLIC_TOSS_CLIENT_KEY도 같은 이유로 빌드 시점 값이다(브라우저 번들에 구워짐).
+          # **공개 키라 시크릿이 아니다** — repository variable로 둔다.
+          # ⚠️ 이 변수가 비어 있으면 빌드는 성공하지만 **토스 결제창이 뜨지 않고** 결제창 없는
+          # 경로로 빠진다. 에러가 아니라 다른 흐름이라 배포 후에도 눈치채기 어렵다.
+          #   설정: 저장소 Settings → Secrets and variables → Actions → Variables
+          #
           # 값은 k8s Service DNS다. **포트를 붙이지 않는다** — Service는 80을 열고 targetPort
           # 8080으로 넘긴다. :8080을 붙이면 Service가 안 여는 포트라 연결이 거부된다.
           # (주석은 build-args 블록 밖에 둔다 — 안에 넣으면 인자로 전달된다.)
           build-args: |
             API_ORIGIN=${{ vars.API_ORIGIN || 'http://flowticket-api' }}
+            NEXT_PUBLIC_TOSS_CLIENT_KEY=${{ vars.NEXT_PUBLIC_TOSS_CLIENT_KEY }}
           cache-from: type=gha,scope=image-web
           cache-to: type=gha,mode=max,scope=image-web
       - name: 요약

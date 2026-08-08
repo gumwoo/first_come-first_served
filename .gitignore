@@ -45,3 +45,7 @@ crash.log
 
 # backend 설정은 계정 ID를 담으므로 커밋하지 않는다(.example만 커밋).
 backend.hcl
+
+# k8s 오버레이의 실제 값(계정 ID·엔드포인트 포함) — 공개 저장소에 커밋하지 않는다.
+# 구조는 k8s/overlays/demo-local.example/ 에 있다.
+k8s/overlays/demo-local/

@@ -11,12 +11,9 @@ resources:
   - web-deployment.yaml
   - ingress.yaml
 
-# 이미지 태그는 **여기 한 곳**만 바뀐다. CI가 ECR push 후 이 값을 커밋하고
-# ArgoCD가 그 커밋을 동기화한다(ADR-009: CI는 apply하지 않는다).
-images:
-  - name: flowticket-api
-    newName: REPLACE_ECR_REGISTRY/flowticket-api
-    newTag: REPLACE_TAG
-  - name: flowticket-web
-    newName: REPLACE_ECR_REGISTRY/flowticket-web
-    newTag: REPLACE_TAG
+# 이미지 레지스트리·태그는 **오버레이가 정한다**(k8s/overlays/).
+# base에 images 변환을 두면 이름이 먼저 바뀌어 오버레이의 images가 매칭할 대상을 잃는다
+# — 실제로 그렇게 작성했다가 오버레이 값이 무시되는 것을 렌더링에서 확인했다.
+#
+# 그래서 base는 Deployment의 `flowticket-api:REPLACE_TAG` 를 그대로 둔다.
+# 이 상태로는 pull이 불가능하며(의도), 오버레이 없이 apply할 수 없다.

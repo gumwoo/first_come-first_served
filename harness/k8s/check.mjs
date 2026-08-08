@@ -65,11 +65,19 @@ for (const file of manifests) {
   // 앱은 Next가 /api·/oauth2를 프록시하는 구조다(next.config.mjs rewrites). ALB의 Prefix
   // 라우팅은 접두어를 제거하지 않으므로, ALB가 /api를 API로 직접 보내면 Spring이
   // "/api/auth/login"을 받고 그런 매핑이 없어 전부 404가 된다.
-  if (/\bkind:\s*Ingress\b/.test(raw) && /name:\s*flowticket-api\b/.test(raw)) {
-    r.fail(
-      `Ingress가 API Service로 직결: ${rel}. ALB는 web만 보고, /api·/oauth2는 Next rewrite가 ` +
-        `프록시해야 한다(ALB Prefix 라우팅은 접두어를 제거하지 않는다 → Spring에서 404)`
-    );
+  //
+  // ⚠️ 파일 전체에서 "kind: Ingress"와 "name: flowticket-api"를 따로 찾으면 오탐이 난다 —
+  // 오버레이 kustomization은 patch target(kind: Ingress)과 images(name: flowticket-api)를
+  // 한 파일에 갖는다. 실제로 그렇게 걸렸다. **backend 블록 안에서** 함께 나올 때만 위반이다.
+  const backendRe = /backend:\s*(?:\r?\n\s+|\{\s*)service:\s*(?:\r?\n\s+|\{\s*)name:\s*(\S+?)[\s,}]/g;
+  if (/\bkind:\s*Ingress\b/.test(raw)) {
+    for (const m of raw.matchAll(backendRe)) {
+      if (m[1].replace(/["']/g, "") !== "flowticket-api") continue;
+      r.fail(
+        `Ingress가 API Service로 직결: ${rel}. ALB는 web만 보고, /api·/oauth2는 Next rewrite가 ` +
+          `프록시해야 한다(ALB Prefix 라우팅은 접두어를 제거하지 않는다 → Spring에서 404)`
+      );
+    }
   }
 
   // ③ 공개 Ingress에 /actuator 경로를 열지 않는다
@@ -139,6 +147,29 @@ if (fs.existsSync(imageWorkflow)) {
           `Service ${host}는 ${expected}만 연다(targetPort는 클라이언트가 붙는 포트가 아니다)`
       );
     }
+  }
+}
+
+// ---------- ⑥ 브라우저 번들에 구워지는 값(NEXT_PUBLIC_*)이 빌드 인자로 준비돼 있는가 ----------
+// 규칙 ④의 반대편이다. ④는 "빌드 시점 값을 런타임 env로 넣는 것"을 막고, ⑥은
+// **빌드 시점 값이 아예 빠진 것**을 막는다. 실제로 NEXT_PUBLIC_TOSS_CLIENT_KEY가 그랬다 —
+// 코드는 읽는데 Dockerfile에 ARG가 없어 이미지에 값이 안 들어갔다.
+//
+// 이 유형이 위험한 이유: **에러가 아니라 다른 흐름으로 빠진다.** 결제창이 안 뜨고 조용히
+// 다른 경로를 타므로 배포 후에도 눈치채기 어렵다.
+const webDockerfile = path.join(REPO_ROOT, WEB, "Dockerfile");
+if (fs.existsSync(webDockerfile)) {
+  const dockerfile = read(webDockerfile);
+  const used = new Set();
+  for (const f of walk(WEB + "/src", [".ts", ".tsx"])) {
+    for (const m of read(f).matchAll(/process\.env\.(NEXT_PUBLIC_[A-Z0-9_]+)/g)) used.add(m[1]);
+  }
+  for (const name of used) {
+    if (new RegExp("^\\s*ARG\\s+" + name + "\\b", "m").test(dockerfile)) continue;
+    r.fail(
+      `브라우저 빌드 값에 ARG 누락: ${name} — 코드가 읽는데 ${WEB}/Dockerfile에 ARG가 없다. ` +
+        `NEXT_PUBLIC_*는 번들에 구워져 런타임 주입이 불가능하다(빈 값이면 에러 없이 다른 흐름으로 빠진다)`
+    );
   }
 }
 

@@ -1,12 +1,13 @@
 package com.flowticket.global.config;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.Serializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.kafka.DefaultKafkaProducerFactoryCustomizer;
 import org.springframework.context.annotation.Bean;
@@ -15,6 +16,7 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
@@ -84,11 +86,15 @@ public class KafkaConfig {
      * <p>{@code assignable=true}라 {@code OrderEvent}가 {@code Object.class} 매핑에 걸린다.
      */
     @Bean
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public DefaultKafkaProducerFactoryCustomizer dltCapableValueSerializer() {
         Map<Class<?>, Serializer<?>> delegates = new LinkedHashMap<>();
         delegates.put(byte[].class, new ByteArraySerializer());
         delegates.put(Object.class, new JsonSerializer<>());
-        return factory -> factory.setValueSerializer(new DelegatingByTypeSerializer(delegates, true));
+        DelegatingByTypeSerializer serializer = new DelegatingByTypeSerializer(delegates, true);
+        // 커스터마이저가 넘겨주는 팩토리는 DefaultKafkaProducerFactory<?, ?>라 와일드카드 캡처
+        // 때문에 그대로는 setValueSerializer를 부를 수 없다. raw 타입으로 좁혀 호출한다.
+        return factory -> ((DefaultKafkaProducerFactory) factory).setValueSerializer(serializer);
     }
 
     /**
@@ -101,9 +107,12 @@ public class KafkaConfig {
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, byte[]> dltListenerContainerFactory(
             ConsumerFactory<Object, Object> consumerFactory) {
-        ConsumerFactory<String, byte[]> byteFactory =
-                ((DefaultKafkaConsumerFactory<Object, Object>) consumerFactory).copyWithConfigurationOverride(
-                        Map.of(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class));
+        // 자동 구성된 컨슈머 설정(부트스트랩·auto-offset-reset 등)은 그대로 물려받고,
+        // 역직렬화기만 바꾼다. ErrorHandlingDeserializer의 delegate 설정은 여기선 의미가 없어 뺀다.
+        Map<String, Object> props = new HashMap<>(consumerFactory.getConfigurationProperties());
+        props.remove("spring.deserializer.value.delegate.class");
+        ConsumerFactory<String, byte[]> byteFactory = new DefaultKafkaConsumerFactory<>(
+                props, new StringDeserializer(), new ByteArrayDeserializer());
 
         ConcurrentKafkaListenerContainerFactory<String, byte[]> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();

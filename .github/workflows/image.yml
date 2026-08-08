@@ -113,6 +113,22 @@ jobs:
       - id: ecr
         uses: aws-actions/amazon-ecr-login@v2
       - uses: docker/setup-buildx-action@v3
+
+      # 빌드 전에 값을 확인한다. ARG가 선언돼 있어도 **값이 비면 빌드는 그냥 성공**하고,
+      # 결제창이 뜨지 않는 이미지가 조용히 ECR로 나간다 — 에러가 아니라 다른 흐름으로 빠지기
+      # 때문에 배포 후에도 눈치채기 어렵다. 하네스 규칙 ⑥은 ARG의 **존재**만 보므로
+      # 이 구멍은 여기서만 막을 수 있다.
+      - name: 빌드 인자 확인 (빈 값이면 조용히 기능이 빠진다)
+        env:
+          TOSS_CLIENT_KEY: ${{ vars.NEXT_PUBLIC_TOSS_CLIENT_KEY }}
+        run: |
+          if [ -z "$TOSS_CLIENT_KEY" ]; then
+            echo "::error::NEXT_PUBLIC_TOSS_CLIENT_KEY repository variable이 비어 있습니다."
+            echo "::error::이대로 빌드하면 토스 결제창이 뜨지 않고 결제창 없는 경로로 빠집니다(ADR-005)."
+            echo "::error::설정: Settings → Secrets and variables → Actions → Variables"
+            exit 1
+          fi
+
       - name: build & push (태그 = git SHA)
         uses: docker/build-push-action@v6
         with:

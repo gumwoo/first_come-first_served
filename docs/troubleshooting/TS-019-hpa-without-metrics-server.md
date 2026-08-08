@@ -4,7 +4,7 @@
 - 날짜: 2026-08-08
 - 유형: 배포 환경 결함(누락) — **조용히 동작하지 않음**
 - 관련: `k8s/base/api-hpa.yaml`, `docs/deployment/aws-eks-deploy-plan.md` Phase 6
-- 상태: 미해결 — 설치 예정
+- 상태: **해결** — metrics-server 설치 후 스케일업까지 확인(§4)
 
 ## 1. 증상
 
@@ -43,17 +43,33 @@ HPA는 `metrics.k8s.io` API로 파드 CPU를 읽는데, 그 API를 제공하는 
 [[TS-017]](OAuth 콜백)·[[TS-018]](ALB timeout)과 같은 유형 —
 **에러가 아니라 조용히 다른 상태**여서 늦게 발견된다.
 
-## 4. 해결(예정)
+## 4. 해결 — 설치하고 **발동까지** 확인했다 (2026-08-08)
 
 ```bash
-helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
 helm install metrics-server metrics-server/metrics-server -n kube-system
 ```
 
-설치 후 확인할 것:
-- `kubectl top pods` 가 값을 반환하는가
-- `kubectl get hpa` 의 `TARGETS`가 `<unknown>`에서 실제 퍼센트로 바뀌는가
-- 부하를 주면 **replicas가 실제로 증가**하는가 (여기까지 봐야 "HPA가 동작한다"이다)
+`TARGETS`가 바뀌는 것까지는 "읽는다"일 뿐이라, **부하를 줘서 실제로 늘어나는지**까지 봤다.
+
+```
+설치 전   cpu: <unknown>/60%      FailedGetResourceMetric 461회
+설치 후   cpu: 11%/60%            kubectl top도 값 반환(api 14~48m)
+
+부하 20워커(좌석 조회) 투입 →
+  Normal  SuccessfulRescale  New size: 4
+  reason: cpu resource utilization (percentage of request) above target
+
+파드 3 → 4 (새 파드 생성 확인), TARGETS cpu 24%/60%
+```
+
+`behavior`도 설계대로 동작했다 — 확장 `stabilizationWindow: 0`이라 **25초 만에 반응**했고,
+축소 300초라 부하를 끊은 뒤에도 4개를 유지했다(진동 방지).
+
+### 확인하지 않은 것
+- **최대치(9)까지 밀어보지 않았다.** 부하가 4개분이었다.
+- **새 파드가 뜬 뒤 응답이 개선됐는지는 측정하지 않았다.** "늘었다"까지이고
+  "그래서 빨라졌다"는 S10 부하테스트의 몫이다.
+- 파드별 CPU 편차가 컸다(8m~107m). ALB 라운드로빈인데 왜 쏠렸는지는 보지 않았다.
 
 ## 5. 재발 방지 — 아직 안 함
 
@@ -67,7 +83,7 @@ helm install metrics-server metrics-server/metrics-server -n kube-system
 ## 6. 교훈
 
 **"선언했다"와 "동작한다"는 다르다.** HPA·PDB·probe처럼 **선언만으로는 검증되지 않는 것들**은
-실제로 발동시켜 봐야 확인된다. 이 프로젝트에서 아직 발동을 확인하지 않은 것:
-- HPA 스케일업 (이 문서)
-- PDB (노드 드레인을 해본 적 없음)
-- 브로커 페일오버 (브로커를 죽여본 적 없음)
+실제로 발동시켜 봐야 확인된다. 이 프로젝트에서 발동 확인 현황:
+- ~~HPA 스케일업~~ → **§4에서 확인**(3→4)
+- **PDB** — 노드 드레인을 해본 적 없음
+- **브로커 페일오버** — 브로커를 죽여본 적 없음

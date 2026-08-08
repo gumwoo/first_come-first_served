@@ -45,9 +45,9 @@ build-args: |
 Deployment에 `API_ORIGIN`을 넣으면 **설정한 것처럼 보이지만 아무 효과가 없는 죽은 값**이 된다.
 하네스 규칙 ④가 이걸 막고, ⑤가 위 포트 불일치를 막는다.
 
-## ⚠️ apply 후 1순위 확인 — SSE가 Next 프록시를 통과하는가
+## SSE가 Next 프록시를 통과하는가 — **확인됨(2026-08-08)**
 
-SSE도 같은 경로를 탄다. **코드로 확인한 체인**:
+SSE도 같은 경로를 탄다.
 
 ```
 useSeats.ts          new EventSource("/api/sse/events/{id}/seats")
@@ -55,19 +55,21 @@ next.config.mjs      /api/:path* → ${API_ORIGIN}/:path*
 SeatSseController    @GetMapping("/sse/events/{id}/seats", produces = TEXT_EVENT_STREAM_VALUE)
 ```
 
-**rewrite 자체는 CI E2E가 이미 태우고 있다** — `pnpm start`로 프로덕션 Next를 띄우고
-`API_ORIGIN`을 주지 않아 기본값(`localhost:8080`)으로 프록시하며, 그 상태로 E2E가 통과한다.
+**실측 결과 버퍼링 없음.** 스트림을 열어 둔 채 좌석을 선점했더니 즉시 도착했다.
 
-**그러나 SSE가 버퍼링 없이 흐르는지는 검증되지 않았다.** E2E에 실시간 갱신을 단언하는 테스트가
-없어서, 프록시가 스트림을 버퍼링해도 테스트는 통과한다. [TS-012](../docs/troubleshooting/TS-012-sse-reconnect-gap-no-resync.md)에서
-폴링이 SSE 실패를 가려 준 것과 같은 구조다 — **추측이 아니라 테스트 부재로 확인된 사실이다.**
-
-확인 방법(apply 후):
-```bash
-curl -N -H 'Accept: text/event-stream' https://flow-ticket.com/api/sse/events/1/seats
-# 이벤트가 즉시 한 줄씩 나오면 정상. 한참 뒤 몰려 나오면 버퍼링이다.
 ```
-버퍼링이면 ALB idle timeout·Next 프록시 설정을 봐야 한다. 좌석맵·주문 상태 알림이 전부 이 경로다.
+23:31:55.659  좌석 167701 선점 요청 (holdId:1)
+23:31:56.183  event:seat.held              ← 0.52초
+23:31:56.225  data:{"seatIds":[167701]}
+```
+
+버퍼링이었다면 스트림이 닫힐 때까지(25초) 몰려 나왔을 것이다.
+
+이 한 번의 요청이 여러 경로를 동시에 증명했다 — 대기열 토큰 발급 → 스케줄러 승격(ADMITTED)
+→ 좌석 조건부 UPDATE 선점 → **커밋 후** SSE 발송(PR #175) → Redis TLS 위 pub/sub 팬아웃 → 구독자 전달.
+
+> 대조군(클러스터 내부에서 API 직접 구독)은 컨테이너에 도구가 없어 실패했다.
+> **프록시 통과 여부라는 원래 질문에는 답이 나왔지만, "프록시가 지연을 얼마나 더하는지"는 모른다.**
 
 ## 아직 적용할 수 없다 — 남은 자리(REPLACE_*)
 

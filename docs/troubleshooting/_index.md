@@ -31,4 +31,4 @@ IMP(정량 before/after 개선)와 달리, 여기 문서는 "무엇이 왜 깨�
 | [TS-016](TS-016-kafka-required-at-startup.md) | readiness에서 Kafka를 뺐는데도 Pod가 못 뜸 — 기동 의존과 트래픽 의존은 다르다 | S09 | 배포/기동(설정) | 해결(구조적 문제는 남음) |
 | [TS-017](TS-017-oauth-callback-not-proxied.md) | 소셜 로그인 콜백 404 — 시작 경로만 프록시하고 콜백을 빠뜨림(로컬 미재현) | S01/S09 | 배포 환경(설정) | 해결 |
 | [TS-018](TS-018-alb-idle-timeout-sync-endpoint.md) | 동기화가 500인데 데이터는 다 들어옴 — ALB idle timeout에 끊긴 장시간 요청 | S02/S09 | 배포 환경(API 설계) | 원인 규명(수정 보류) |
-| [TS-019](TS-019-hpa-without-metrics-server.md) | HPA를 선언했는데 스케일 판단 불가 — metrics-server 없음 | S09 | 배포 환경(누락) | 미해결 |
+| [TS-019](TS-019-hpa-without-metrics-server.md) | HPA를 선언했는데 스케일 판단 불가 — metrics-server 없음 | S09 | 배포 환경(누락) | 해결(스케일업 확인) |

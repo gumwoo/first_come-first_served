@@ -75,6 +75,12 @@ kubectl rollout restart deployment/flowticket-api
 → 토픽 자동 생성 확인: order-events, order-events.DLT, __consumer_offsets
 ```
 
+**StorageClass 이름도 계약이다.** 이 클러스터에는 **기본 StorageClass가 없다**
+(`gp2`는 있지만 `is-default-class` 표시가 없다). `class: gp2`를 명시했기 때문에 붙었고,
+생략했다면 PVC가 `Pending`에 머물러 브로커가 뜨지 않았을 것이다 — 증상은 이 문서의 것과
+비슷하지만 원인은 전혀 다르다. gp2는 저장소가 만드는 것이 아니라 EKS가 기본 제공하는 것이라
+클러스터를 새로 만들 때마다 실제 이름을 확인해야 한다(gp3인 환경도 흔하다).
+
 KRaft 모드(ZooKeeper 없음)라 `KafkaNodePool` + `Kafka` CR 조합을 쓴다. 노드가 3대뿐이라
 controller/broker를 겸하게 했다. `deleteClaim: true` — 데모는 매번 새로 만들므로 PVC를 남기면
 destroy 후 EBS 요금이 붙는다.

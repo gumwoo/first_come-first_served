@@ -32,3 +32,8 @@ data:
   # ── 운영 값 ───────────────────────────────────────────────────
   COOKIE_SECURE: "true"
   PAYMENT_GATEWAY: "toss"
+
+  # 소셜 로그인 성공/실패 후 브라우저가 돌아갈 곳. 기본값이 http://localhost:3000이라
+  # 주입하지 않으면 **인증에 성공하고도 localhost로 보내진다**(배포에서만 드러난다).
+  OAUTH_SUCCESS_REDIRECT: "https://flow-ticket.com"
+  OAUTH_FAILURE_REDIRECT: "https://flow-ticket.com/login?error=oauth"

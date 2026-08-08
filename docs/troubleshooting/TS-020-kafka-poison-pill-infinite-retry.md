@@ -89,8 +89,39 @@ properties:
   spring.json.trusted.packages: "com.flowticket.*"
 ```
 
-`ErrorHandlingDeserializer`가 실패를 잡아 **null + 예외 헤더**로 바꿔 리스너 단계까지 전달한다.
-그때부터는 `DefaultErrorHandler`의 관할이라 재시도 후 DLT로 넘어간다.
+`ErrorHandlingDeserializer`가 실패를 잡아 **null + `DeserializationException` 헤더**를 가진
+레코드를 만든다. 그러면 **컨테이너가 리스너를 호출하지 않고** 바로 에러 핸들러를 부르므로,
+`DefaultErrorHandler`의 관할이 되어 DLT로 넘어간다.
+
+```
+ErrorHandlingDeserializer → null + 예외 헤더 레코드
+  → 컨테이너가 리스너를 호출하지 않음
+  → DefaultErrorHandler 호출 → 재시도 소진 → DLT
+```
+
+### ⚠️ 이것만으로는 절반이다 — DLT 발행·소비도 바꿔야 한다
+
+`DeadLetterPublishingRecoverer`는 역직렬화 실패일 때 **원본 `byte[]`를 그대로** 싣는다.
+그런데 프로듀서가 `JsonSerializer` 하나뿐이면 그 바이트가 **base64 JSON 문자열**로 나가고,
+DLT 소비 쪽에서 다시 역직렬화에 실패한다 — **독성 메시지가 DLT로 이사할 뿐**이고
+DLT에는 다시 보낼 곳이 없어 거기서 무한 재시도가 된다.
+
+그래서 두 가지를 함께 바꿨다.
+
+```java
+// ① 프로듀서: 타입에 따라 직렬화기를 나눈다
+new DelegatingByTypeSerializer(Map.of(
+        byte[].class, new ByteArraySerializer(),   // 역직렬화 실패분(원본 바이트)
+        Object.class, new JsonSerializer<>()),     // 정상 이벤트
+        true);
+
+// ② DLT 소비: 타입으로 받지 않고 불투명한 바이트로 기록만 한다
+@KafkaListener(topics = ORDER_EVENTS_DLT, containerFactory = "dltListenerContainerFactory")
+public void onDeadLetter(byte[] body, ...)
+```
+
+DLT는 **정상 이벤트의 JSON과 원본 바이트가 섞여 들어오는 곳**이다. 한 타입으로 받으려 하는
+순간 같은 문제가 반복된다. 판단(재시도/폐기)은 사람이 admin API로 한다(ADR-008).
 
 **즉시 조치**로는 오염된 토픽을 삭제해 무한 재시도를 끊었다(앱이 자동 재생성).
 CPU 711m → 17m, 노드 100% → 8%, 에러 0건으로 회복됐다.

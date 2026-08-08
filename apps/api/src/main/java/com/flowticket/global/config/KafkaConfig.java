@@ -1,13 +1,25 @@
 package com.flowticket.global.config;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.Serializer;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.kafka.DefaultKafkaProducerFactoryCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.config.TopicBuilder;
+import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.serializer.DelegatingByTypeSerializer;
+import org.springframework.kafka.support.serializer.JsonSerializer;
 import org.springframework.util.backoff.FixedBackOff;
 
 /**
@@ -55,5 +67,48 @@ public class KafkaConfig {
     public DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<String, Object> template) {
         DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(template);
         return new DefaultErrorHandler(recoverer, new FixedBackOff(300L, 2L)); // 300ms 간격 2회 재시도
+    }
+
+    /**
+     * DLT로 나가는 값은 <b>두 종류</b>다 — 이걸 한 직렬화기로 처리할 수 없다(TS-020).
+     *
+     * <pre>
+     *   리스너에서 실패    → 역직렬화는 성공했으므로 값이 OrderEvent → JsonSerializer
+     *   역직렬화에서 실패  → 값이 없다. Recoverer가 <b>원본 byte[]</b>를 그대로 싣는다 → ByteArraySerializer
+     * </pre>
+     *
+     * <p>JsonSerializer 하나로 두면 {@code byte[]}가 base64 JSON 문자열로 직렬화돼
+     * DLT 소비 쪽에서 다시 역직렬화에 실패한다. <b>독성 메시지가 DLT로 이사할 뿐</b>이고,
+     * DLT에는 다시 보낼 곳이 없어 거기서 무한 재시도가 된다.
+     *
+     * <p>{@code assignable=true}라 {@code OrderEvent}가 {@code Object.class} 매핑에 걸린다.
+     */
+    @Bean
+    public DefaultKafkaProducerFactoryCustomizer dltCapableValueSerializer() {
+        Map<Class<?>, Serializer<?>> delegates = new LinkedHashMap<>();
+        delegates.put(byte[].class, new ByteArraySerializer());
+        delegates.put(Object.class, new JsonSerializer<>());
+        return factory -> factory.setValueSerializer(new DelegatingByTypeSerializer(delegates, true));
+    }
+
+    /**
+     * DLT 전용 리스너 컨테이너 — 값을 <b>해석하지 않고 바이트로</b> 받는다.
+     *
+     * <p>DLT에는 정상 이벤트의 JSON도, 역직렬화에 실패한 원본 바이트도 들어온다. 후자를 타입으로
+     * 받으려 하면 DLT 소비가 또 실패하고, 그 실패는 갈 곳이 없다. 그래서 DLT는 <b>불투명한
+     * 바이트</b>로 취급하고 기록만 한다 — 판단은 사람이 admin API로 한다(ADR-008).
+     */
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, byte[]> dltListenerContainerFactory(
+            ConsumerFactory<Object, Object> consumerFactory) {
+        ConsumerFactory<String, byte[]> byteFactory =
+                ((DefaultKafkaConsumerFactory<Object, Object>) consumerFactory).copyWithConfigurationOverride(
+                        Map.of(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class));
+
+        ConcurrentKafkaListenerContainerFactory<String, byte[]> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(byteFactory);
+        // DLT 소비 실패를 다시 DLT로 보내지 않는다(무한 순환). 기본 로깅 핸들러에 맡긴다.
+        return factory;
     }
 }

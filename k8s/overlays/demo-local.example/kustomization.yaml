@@ -1,0 +1,41 @@
+# 실제 값을 채워 k8s/overlays/demo-local/ 로 복사해 쓴다(그 디렉터리는 .gitignore 대상).
+#
+# 값 출처:
+#   terraform -chdir=infra/terraform/platform/environments/demo output -raw db_endpoint
+#   terraform ... output -raw redis_endpoint
+#   terraform ... output -raw certificate_arn
+#   aws sts get-caller-identity --query Account --output text   → ECR 레지스트리 앞부분
+#   이미지 태그 = ECR에 실제로 올라간 커밋 SHA(전체 40자)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: flowticket
+
+resources:
+  - ../../base
+
+# ── 이미지: base의 placeholder를 실제 레지스트리·태그로 ──────────────
+images:
+  - name: flowticket-api
+    newName: <ACCOUNT_ID>.dkr.ecr.ap-northeast-2.amazonaws.com/flowticket-api
+    newTag: <COMMIT_SHA>
+  - name: flowticket-web
+    newName: <ACCOUNT_ID>.dkr.ecr.ap-northeast-2.amazonaws.com/flowticket-web
+    newTag: <COMMIT_SHA>
+
+# ── ConfigMap: 데이터 엔드포인트 ──────────────────────────────────
+# DB_HOST에는 **포트를 붙이지 않는다** — 모듈이 aws_db_instance.address(호스트만)를 반환하고
+# DB_PORT는 따로 있다. host:5432를 넣으면 주소가 host:5432:5432가 된다.
+patches:
+  - target: { kind: ConfigMap, name: flowticket-api-config }
+    patch: |
+      - op: replace
+        path: /data/DB_HOST
+        value: <DB_ENDPOINT>
+      - op: replace
+        path: /data/REDIS_HOST
+        value: <REDIS_ENDPOINT>
+  - target: { kind: Ingress, name: flowticket }
+    patch: |
+      - op: replace
+        path: /metadata/annotations/alb.ingress.kubernetes.io~1certificate-arn
+        value: <ACM_CERT_ARN>

@@ -25,6 +25,19 @@ COPY apps/web/ ./
 ARG API_ORIGIN=http://localhost:8080
 ENV API_ORIGIN=$API_ORIGIN
 
+# 토스 결제창(ADR-005의 Toss 테스트 어댑터)을 띄우는 **공개** 클라이언트 키.
+# NEXT_PUBLIC_* 는 브라우저 번들에 문자열로 구워지므로 런타임 주입이 원리적으로 불가능하다 —
+# k8s Secret에 넣어도 아무 효과가 없다. 그래서 여기서 받는다.
+#
+# 비어 있으면 조용히 기능이 바뀐다: pay/page.tsx가 `TOSS_CLIENT_KEY`가 있을 때만 결제창
+# 인증 경로를 타고, 없으면 결제창 없이 confirm으로 빠진다 — 에러가 아니라 **다른 흐름**이라
+# 배포 후에도 눈치채기 어렵다. 하네스 규칙 ⑥이 ARG 누락을 막는다.
+#
+# 공개 키라 시크릿이 아니다(브라우저에 그대로 노출되는 것이 정상). GitHub Actions
+# repository variable로 주입한다.
+ARG NEXT_PUBLIC_TOSS_CLIENT_KEY=
+ENV NEXT_PUBLIC_TOSS_CLIENT_KEY=$NEXT_PUBLIC_TOSS_CLIENT_KEY
+
 # standalone은 로컬(Windows) 빌드를 심볼릭 링크 권한 문제로 깨뜨리므로 이미지 빌드에서만 켠다.
 ENV NEXT_OUTPUT_STANDALONE=true
 ENV NEXT_TELEMETRY_DISABLED=1

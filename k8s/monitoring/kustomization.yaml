@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 관측(Phase 7). **base와 분리한 이유**: ServiceMonitor는 kube-prometheus-stack이
+# 설치한 CRD(monitoring.coreos.com/v1)에 의존한다. base에 넣으면 관측 스택을 깔기 전에
+# 앱을 배포할 때 "no matches for kind ServiceMonitor"로 전체 apply가 실패한다.
+#
+# 적용 순서:
+#   1) helm upgrade --install kube-prometheus-stack ... -f k8s/monitoring/kube-prometheus-stack.values.yaml
+#   2) kubectl apply -k k8s/monitoring
+resources:
+  - servicemonitor-api.yaml

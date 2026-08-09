@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  # Service의 라벨을 고른다(Pod 라벨이 아니다). ServiceMonitor는 Service를 통해
+  # Endpoints를 찾아 **Pod IP로 직접** 스크레이프한다 — Service의 로드밸런싱을 타지
+  # 않으므로 3개 Pod가 각각 별도 타깃이 된다(그래야 Pod별 JVM/스레드를 구분한다).
+  selector:
+    matchLabels: { app: flowticket-api }
+  namespaceSelector:
+    matchNames: ["flowticket"]
+  endpoints:
+    # Service 포트 **이름**으로 지정한다(번호가 아니다) — k8s/base/api-deployment.yaml의 `name: http`.
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      # 스크레이프는 인증 없이 나간다. SecurityConfig가 이 한 경로만 permitAll이고,
+      # ALB Ingress는 /actuator를 노출하지 않으므로(하네스 k8s 규칙 ③) 클러스터 내부 전용이다.

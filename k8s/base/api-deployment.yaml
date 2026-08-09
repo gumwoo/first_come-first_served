@@ -84,8 +84,14 @@ kind: Service
 metadata:
   name: flowticket-api
   namespace: flowticket
+  # ServiceMonitor의 selector가 보는 건 **Service의 metadata.labels**다(아래 spec.selector가 아니다.
+  # 그건 Pod를 고르는 것). 없으면 매칭이 0건인데 에러가 아니라 그냥 타깃이 안 생긴다.
+  labels: { app: flowticket-api }
 spec:
   selector: { app: flowticket-api }
   ports:
-    - port: 80
+    # ServiceMonitor는 포트를 **이름으로** 지정한다(spec.endpoints[].port = Service 포트 이름).
+    # 이름이 없으면 매칭할 방법이 없어 타깃이 조용히 0개가 된다.
+    - name: http
+      port: 80
       targetPort: 8080

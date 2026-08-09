@@ -230,6 +230,36 @@ data:
               "legendFormat": "희망", "refId": "B"
             }
           ]
+        },
+        {
+          "type": "row", "title": "외부 연동 (KOPIS)",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 }
+        },
+        {
+          "type": "timeseries", "title": "KOPIS 호출률 (결과별)",
+          "description": "실패해도 예외가 밖으로 나가지 않고 축약 응답으로 degrade하므로, 이 지표가 없으면 실패가 보이지 않는다. 실제로 상세 조회가 100% 400(Request Blocked)인데 사용자도 우리도 몰랐다. status=400은 차단, status=io는 응답 자체를 못 받은 경우(타임아웃 포함)다.",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+          "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "sum by(operation, outcome, status) (rate(kopis_api_requests_seconds_count{job=\"flowticket-api\"}[5m]))",
+              "legendFormat": "{{operation}} {{outcome}}/{{status}}", "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "timeseries", "title": "KOPIS 평균 지연 (operation별)",
+          "description": "이 선이 올라가면 우리 /events/{id} p95도 같이 올라간다 — 외부 호출이 사용자 요청 경로에 있기 때문이다. 두 그래프를 나란히 보면 원인이 우리 안인지 밖인지 바로 갈린다.",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+          "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "sum by(operation) (rate(kopis_api_requests_seconds_sum{job=\"flowticket-api\"}[5m])) / sum by(operation) (rate(kopis_api_requests_seconds_count{job=\"flowticket-api\"}[5m]))",
+              "legendFormat": "{{operation}}", "refId": "A"
+            }
+          ]
         }
       ]
     }

@@ -3,12 +3,17 @@ package com.flowticket.event.kopis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -23,7 +28,7 @@ class KopisClientTest {
     private static final String BASE_URL = "http://kopis.test";
 
     /** 빌더 + 바인딩된 Mock 서버로 KopisClient를 구성한다. */
-    private record Fixture(KopisClient client, MockRestServiceServer server) {}
+    private record Fixture(KopisClient client, MockRestServiceServer server, MeterRegistry meters) {}
 
     private Fixture fixture() {
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
@@ -31,7 +36,8 @@ class KopisClientTest {
         // detail·sync 두 경로 모두 같은 mock 서버로 검증한다(파싱 로직은 공통).
         // 운영에서는 KopisClientConfig가 타임아웃이 다른 RestClient 둘을 주입한다.
         RestClient client = builder.build();
-        return new Fixture(new KopisClient(client, client, "test-key"), server);
+        MeterRegistry meters = new SimpleMeterRegistry();
+        return new Fixture(new KopisClient(client, client, "test-key", meters), server, meters);
     }
 
     @Test
@@ -137,5 +143,40 @@ class KopisClientTest {
             sb.append("<db><mt20id>PF").append(i).append("</mt20id><prfnm>공연").append(i).append("</prfnm></db>");
         }
         return sb.append("</dbs>").toString();
+    }
+
+    @Test
+    void 외부호출_실패도_지표에_남는다() {
+        // KOPIS가 400을 주면 폴백이 정상 200 축약 응답을 내보내 **로그 말고는 흔적이 없었다**.
+        // 지표가 있어야 "우리 p95 상승"과 "외부 실패율 상승"을 나란히 놓고 원인을 좁힐 수 있다.
+        Fixture f = fixture();
+        f.server().expect(requestTo(containsString("pblprfr")))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST));
+
+        Optional<KopisEventDetail> result = f.client().fetchDetail("PF294961");
+
+        assertThat(result).isEmpty(); // 사용자에게는 그대로 degrade
+        Timer timer = f.meters().find("kopis.api.requests")
+                .tag("operation", "detail").tag("outcome", "error").tag("status", "400").timer();
+        assertThat(timer).as("400 실패가 status=400 태그로 계측돼야 한다").isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
+    }
+
+    @Test
+    void 외부호출_성공도_지표에_남는다() {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <dbs><db><mt20id>PF260001</mt20id><prfnm>공연</prfnm></db></dbs>
+                """;
+        Fixture f = fixture();
+        f.server().expect(requestTo(containsString("pblprfr")))
+                .andRespond(withSuccess(xml.getBytes(StandardCharsets.UTF_8), MediaType.APPLICATION_XML));
+
+        f.client().fetchDetail("PF260001");
+
+        Timer timer = f.meters().find("kopis.api.requests")
+                .tag("operation", "detail").tag("outcome", "success").tag("status", "200").timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
     }
 }

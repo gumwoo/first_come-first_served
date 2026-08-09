@@ -3,6 +3,7 @@ package com.flowticket.event.kopis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -63,7 +64,8 @@ class KopisTimeoutTest {
         return new KopisClient(
                 config.kopisDetailClient(org.springframework.web.client.RestClient.builder(), baseUrl),
                 config.kopisSyncClient(org.springframework.web.client.RestClient.builder(), baseUrl),
-                "test-key");
+                "test-key",
+                new SimpleMeterRegistry());
     }
 
     @Test

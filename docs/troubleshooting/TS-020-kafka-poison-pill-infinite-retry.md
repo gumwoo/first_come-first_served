@@ -4,7 +4,7 @@
 - 날짜: 2026-08-09
 - 유형: 정합성/가용성 결함(설정) — **조용히 처리가 멈춤**
 - 관련: [[ADR-008]](Kafka 백본·DLQ), [[TS-019]](HPA), `global/config/KafkaConfig.java`
-- 상태: 해결(설정 + 회귀 테스트)
+- 상태: **해결** — CI 회귀 테스트 + **실클러스터 검증**(§6-2)
 
 ## 1. 어떻게 발견했나 — 내가 만든 사고였다
 
@@ -143,6 +143,57 @@ doThrow(new RuntimeException("boom")).when(orderSse).broadcast(...);            
 raw.send(new ProducerRecord<>(ORDER_EVENTS_TOPIC, "poison", "not-json-at-all")).get();
 // 무한 재시도에 빠지면 DLQ 행이 영영 생기지 않아 타임아웃된다
 ```
+
+## 6-2. 실환경 검증 (2026-08-09)
+
+CI(단일 브로커 Testcontainers)는 통과했지만, **실클러스터(브로커 3대·RF 3)에서는 확인하지
+않은 상태**였다. 어제의 사고를 **의도적인 실험으로 다시 만들어** 확인했다.
+
+```bash
+echo 'poison-1786254749' | kafka-console-producer.sh --bootstrap-server localhost:9092 --topic order-events
+```
+
+| 관측 | 어제(수정 전) | 오늘(수정 후) |
+|---|---|---|
+| DLT 내용 | (도달 못 함) | **`poison-1786254749`** — 원본 평문 그대로 |
+| `No type information` 반복 | 초당 수십 회, 멈추지 않음 | **0건** (4개 파드 전부) |
+| API 파드 CPU | **711m**, 노드 100% | 16~186m (평시) |
+| HPA | 부하로 오해해 스케일업 | 반응 없음 |
+
+**세 가지가 동시에 확인됐다.**
+
+1. **`ErrorHandlingDeserializer`가 동작한다** — 무한 재시도가 사라졌다.
+2. **직렬화기 구성이 맞다** — DLT에 값이 **평문 그대로** 들어갔다.
+   `JsonSerializer` 하나였다면 base64 JSON 문자열(`"cG9pc29uLi4u"`)로 보였을 것이다.
+   리뷰가 지적했던 지점이 실환경에서 검증된 셈이다.
+3. **DLT 소비도 깨지지 않는다** — `byte[]`로 받으므로 DLT 쪽에서도 재시도 루프가 없다.
+
+> 어제는 이 메시지 **하나**가 노드 CPU를 100%까지 태우고 HPA를 오작동시켰다.
+> 지금은 조용히 DLT로 넘어가고 끝난다.
+
+### DB 행까지 직접 확인했다
+
+DLT 소비 이후 `dlq_messages`에 실제로 적재됐는지도 봤다(RDS는 프라이빗 서브넷이라
+클러스터 안에 socat 터널 파드를 띄우고 `kubectl port-forward`로 접속).
+
+```sql
+SELECT id, topic, left(payload,40) AS payload, left(error_message,60) AS err, status, created_at
+FROM dlq_messages ORDER BY id DESC LIMIT 5;
+```
+```
+1 | order-events | poison-1786254749 | failed to deserialize | PENDING | 2026-08-09 05:52:33
+```
+
+**세 필드가 각각 다른 것을 증명한다.**
+
+| 필드 | 값 | 의미 |
+|---|---|---|
+| `payload` | `poison-1786254749` | **평문 그대로** — `byte[]` 직렬화가 맞다는 직접 증거. `JsonSerializer` 하나였다면 base64 문자열이었을 것이다 |
+| `error_message` | `failed to deserialize` | **역직렬화 경로**로 들어왔다. 리스너 실패(`boom`)와 구분된다 |
+| `status` | `PENDING` | 정상 DLQ 상태 — 재시도/폐기 판단 대기 |
+
+이로써 `poison → ErrorHandlingDeserializer → DefaultErrorHandler → DLT(byte[]) → DlqConsumer
+→ dlq_messages` **전 구간이 실환경에서 확인됐다.**
 
 ## 7. 교훈
 

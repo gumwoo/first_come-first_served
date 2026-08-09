@@ -3,6 +3,9 @@ package com.flowticket.event.kopis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -57,13 +60,17 @@ class KopisTimeoutTest {
         accepter.shutdownNow();
     }
 
+    private MeterRegistry meters;
+
     private KopisClient clientPointingAtSilentServer() {
         String baseUrl = "http://localhost:" + silentServer.getLocalPort();
         KopisClientConfig config = new KopisClientConfig();
+        meters = new SimpleMeterRegistry();
         return new KopisClient(
                 config.kopisDetailClient(org.springframework.web.client.RestClient.builder(), baseUrl),
                 config.kopisSyncClient(org.springframework.web.client.RestClient.builder(), baseUrl),
-                "test-key");
+                "test-key",
+                meters);
     }
 
     @Test
@@ -78,6 +85,16 @@ class KopisTimeoutTest {
 
         // 던지지 않고 빈 값으로 degrade해야 한다(상세는 없어도 응답할 수 있다).
         assertThat(result).isEmpty();
+
+        // 타임아웃이 cause=timeout으로 분류되는지 **실측으로** 확인한다.
+        // request factory가 어떤 예외를 싣는지는 문서로 단정하지 않고 여기서 판정한다 —
+        // 분류가 틀리면 이 단언이 깨지면서 알려준다(io나 unknown으로 새면 원인 구분이 무의미해진다).
+        Timer timer = meters.find("kopis.api.requests")
+                .tag("operation", "detail").tag("outcome", "error").tag("cause", "timeout").timer();
+        assertThat(timer)
+                .as("읽기 타임아웃은 cause=timeout으로 계측돼야 한다(io/parse와 구분)")
+                .isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
     }
 
     @Test

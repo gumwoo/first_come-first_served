@@ -125,6 +125,30 @@ management:
         # liveness = "프로세스를 재시작해야 하는가". 외부 의존성을 넣으면 DB 장애에 Pod가 무한 재시작한다.
         liveness:
           include: livenessState
+  metrics:
+    distribution:
+      # 응답시간 백분위(p50/p95/p99)를 서비스 전체 기준으로 보기 위한 설정.
+      #
+      # ⚠️ 클라이언트 백분위(`percentiles: [0.95]`)를 쓰면 안 된다. 백분위는 평균과 달리
+      # **여러 인스턴스 값을 합칠 수 없다.** 파드 3개의 p95가 20ms/25ms/400ms일 때 서비스
+      # 전체 p95는 그 셋으로 계산할 방법이 없다. 이 서비스는 HPA로 3→9개까지 오르내리므로
+      # 집계 불가는 치명적이다. 히스토그램은 버킷 카운터라 `sum by(le)` 후
+      # `histogram_quantile`로 파드 수와 무관하게 전체 백분위가 나온다.
+      percentiles-histogram:
+        http.server.requests: true
+      # 버킷 범위를 좁혀 카디널리티를 억제한다(기본 범위는 훨씬 넓어 대부분이 빈 버킷이다).
+      #
+      # 하한을 1ms로 둔 이유: 평균이 6~14ms라고 개별 요청이 전부 그 위인 건 아니다.
+      # 하한을 올리면 그 아래 요청이 첫 버킷에 뭉쳐 **p50 해상도를 잃는다**(집계에서 빠지는
+      # 것은 아니다 — 잃는 것은 해상도다).
+      minimum-expected-value:
+        http.server.requests: 1ms
+      # 상한을 넘는 요청은 +Inf 한 칸에 뭉쳐 그 구간의 백분위를 복구할 수 없다.
+      # 부하 테스트로 실제 분포를 본 뒤 재조정할 값이다 — "설정하고 끝"이 아니다.
+      # 초과 발생 여부는 이렇게 감시한다:
+      #   sum(rate(..._bucket{le="+Inf"}[5m])) - sum(rate(..._bucket{le="2.0"}[5m]))
+      maximum-expected-value:
+        http.server.requests: 2s
 
 # 외부 연동 / 시크릿은 환경변수로만 주입 (application-local.yml은 gitignore)
 kopis:

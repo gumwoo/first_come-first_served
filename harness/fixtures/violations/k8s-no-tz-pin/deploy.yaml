@@ -1,0 +1,21 @@
+# 위반: API 컨테이너에 TZ 고정이 없다.
+# 엔티티는 LocalDateTime.now()(시스템 존)로 시각을 만들고 응답도 같은 존으로 오프셋을 붙이므로,
+# 컨테이너 존이 흔들리면 이미 저장된 행의 절대 시각이 통째로 이동한다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: flowticket-api }
+  template:
+    metadata:
+      labels: { app: flowticket-api }
+    spec:
+      containers:
+        - name: api
+          image: flowticket-api:REPLACE_TAG
+          ports:
+            - containerPort: 8080

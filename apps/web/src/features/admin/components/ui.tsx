@@ -2,7 +2,20 @@ import type { ReactNode } from "react";
 
 export const won = (n: number) => `${n.toLocaleString()}원`;
 export const orderNo = (id: number) => `ORD-${String(id).padStart(8, "0")}`;
-export const dateTime = (s: string | null | undefined) => (s ? s.slice(0, 16).replace("T", " ") : "-");
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * 서버 시각을 **보는 사람의 로컬 존**으로 변환해 표시한다.
+ *
+ * 문자열을 잘라 쓰면(과거 구현: `s.slice(0, 16)`) 서버가 보낸 존의 벽시계를 그대로 보여준다.
+ * 서버 컨테이너는 UTC라 KST 사용자에게 9시간 과거로 보인다. Date로 파싱해야 오프셋이 반영된다.
+ */
+export const dateTime = (s: string | null | undefined) => {
+  if (!s) return "-";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "-";
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 // 상태 표시 = 색 칩이 아니라 작은 점 + 무채색 텍스트(Stripe/Linear 톤). 색은 의미에만.
 type Tone = "success" | "warning" | "danger" | "info" | "muted";

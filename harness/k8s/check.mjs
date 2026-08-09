@@ -173,4 +173,40 @@ if (fs.existsSync(webDockerfile)) {
   }
 }
 
+// ---------- ⑦ API 컨테이너의 타임존이 UTC로 고정돼 있는가 ----------
+// 이 프로젝트의 시각 데이터는 "DB의 벽시계 = 컨테이너 존"을 전제로 한다. 엔티티가
+// LocalDateTime.now()(시스템 존)로 값을 만들고, 응답도 같은 존으로 오프셋을 붙인다(JacksonConfig).
+//
+// 그래서 컨테이너 존이 바뀌면 **이미 저장된 행의 절대 시각이 통째로 이동한다.** 지금 DB에는
+// UTC 벽시계가 쌓여 있으므로 Asia/Seoul로 바꾸면 기존 예매의 결제 기한이 9시간 어긋난다.
+//
+// 배포 파일에 값을 적어두는 것만으로는 부족하다 — 지워져도 아무 증상이 없고, 그 다음 배포부터
+// 조용히 어긋나기 시작한다(오프셋 누락으로 좌석 선점이 즉시 만료된 사건과 같은 유형).
+// 그래서 규칙으로 못박는다. 존을 정말 바꾸려면 Instant/timestamptz 전환이 선행돼야 한다.
+const apiDeploy = manifests.find((f) => {
+  const raw = read(f);
+  return /\bkind:\s*Deployment\b/.test(raw) && /name:\s*flowticket-api\b/.test(raw);
+});
+if (!apiDeploy) {
+  r.fail("flowticket-api Deployment를 못 찾았다 — 규칙 ⑦이 무력화된 상태");
+} else {
+  const raw = read(apiDeploy);
+  const rel = path.relative(REPO_ROOT, apiDeploy);
+  // `- name: TZ` 바로 뒤의 value를 본다(줄 단위 파싱 — 규칙 ①과 같은 방식).
+  const tz = raw.match(/^\s*-\s*name:\s*TZ\s*$\r?\n\s*value:\s*["']?([A-Za-z0-9_/+-]+)["']?/m);
+  if (!tz) {
+    r.fail(
+      `API 컨테이너에 TZ가 고정돼 있지 않다: ${rel}. ` +
+        `엔티티는 LocalDateTime.now()(시스템 존)로 시각을 만들고 응답도 같은 존으로 오프셋을 ` +
+        `붙인다 — 존이 흔들리면 이미 저장된 행의 절대 시각이 이동한다. env에 {name: TZ, value: UTC} 필요`
+    );
+  } else if (tz[1] !== "UTC") {
+    r.fail(
+      `API 컨테이너 TZ가 UTC가 아니다: ${rel} → ${tz[1]}. ` +
+        `DB에는 UTC 벽시계가 쌓여 있어 존을 바꾸면 기존 행이 그 시차만큼 어긋난다 — ` +
+        `Instant/timestamptz 전환을 Expand-Contract로 먼저 해야 한다`
+    );
+  }
+}
+
 r.done();

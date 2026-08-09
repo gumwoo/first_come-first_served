@@ -76,15 +76,15 @@ data:
           ]
         },
         {
-          "type": "timeseries", "title": "상한(2s) 초과 요청률",
-          "description": "maximum-expected-value를 넘은 요청은 +Inf 버킷에 뭉쳐 백분위를 복구할 수 없다. 이 선이 0에서 뜨면 상한을 올려야 한다는 신호다 — 상한은 한 번 정하고 끝내는 값이 아니다.",
+          "type": "timeseries", "title": "상한(10s) 초과 요청률",
+          "description": "maximum-expected-value를 넘은 요청은 +Inf 버킷에 뭉쳐 백분위를 복구할 수 없다. 실제로 상한이 2s였을 때 300 VU 부하에서 8.1%가 넘어가 p95가 \"정확히 2000ms\"로 찍혔다 — 측정값이 아니라 더 못 잰다는 표시였다. 그래서 10s로 올렸다. 이 선이 0에서 뜨면 다시 올려야 한다는 신호다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
           "gridPos": { "h": 7, "w": 12, "x": 0, "y": 9 },
           "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
           "targets": [
             {
-              "expr": "sum(rate(http_server_requests_seconds_bucket{job=\"flowticket-api\", uri!~\"/actuator.*\", le=\"+Inf\"}[5m])) - sum(rate(http_server_requests_seconds_bucket{job=\"flowticket-api\", uri!~\"/actuator.*\", le=\"2.0\"}[5m]))",
-              "legendFormat": "2s 초과", "refId": "A"
+              "expr": "sum(rate(http_server_requests_seconds_bucket{job=\"flowticket-api\", uri!~\"/actuator.*\", le=\"+Inf\"}[5m])) - sum(rate(http_server_requests_seconds_bucket{job=\"flowticket-api\", uri!~\"/actuator.*\", le=\"10.0\"}[5m]))",
+              "legendFormat": "10s 초과", "refId": "A"
             }
           ]
         },

@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import java.io.IOException;
+import java.net.SocketTimeoutException;
+import java.net.http.HttpTimeoutException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -12,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
@@ -62,26 +66,59 @@ public class KopisClient {
      * 폴백이 정상 200으로 축약 응답을 내보내 사용자도 우리도 몰랐다. 발견한 경로는 대시보드에서
      * 이 엔드포인트만 p95가 높은 것을 보고 파고든 것이었다. 지표가 있었으면 실패율이 바로 보였다.
      *
-     * <p>태그는 셋으로 제한한다(카디널리티). {@code status}는 HTTP 상태 코드거나, 응답 자체를
-     * 받지 못한 경우 {@code "io"}다 — 400(차단)과 타임아웃을 구분해야 원인이 갈린다.
+     * <p>태그는 셋으로 제한한다(카디널리티).
+     * <pre>
+     *   operation : detail | list
+     *   outcome   : success | empty | error
+     *   cause     : none | http_400 등 | timeout | io | parse | unknown
+     * </pre>
+     *
+     * <p>{@code cause}를 <b>실패 종류</b>로 잡은 것이 핵심이다. 처음에는 이 자리에 HTTP 상태
+     * 코드를 넣었는데, 그러면 <b>200을 정상 수신하고 XML 파싱에서 깨진 경우</b>가 "응답을 받지
+     * 못함"으로 잘못 분류된다. 실패 원인을 가르려고 만든 지표가 원인을 뭉개면 의미가 없다.
+     * 실패 지점마다 던지는 예외 타입이 다르므로 호출 구조를 바꾸지 않고 그것으로 구분한다.
      */
     private <T> T recorded(String operation, Call<T> call, Function<T, String> outcomeOf)
             throws Exception {
         Timer.Sample sample = Timer.start(meterRegistry);
         String outcome = "error";
-        String status = "io";
+        String cause = "unknown";
         try {
             T result = call.get();
             outcome = outcomeOf.apply(result);
-            status = "200";
+            cause = "none";
             return result;
         } catch (RestClientResponseException e) {
-            status = String.valueOf(e.getStatusCode().value()); // 400 등 — 응답은 왔다
+            cause = "http_" + e.getStatusCode().value(); // 응답은 왔다(400 차단 등)
+            throw e;
+        } catch (ResourceAccessException e) {
+            cause = timedOut(e) ? "timeout" : "io"; // 응답 자체를 못 받음
+            throw e;
+        } catch (IOException e) {
+            cause = "parse"; // HTTP는 성공했고 우리 XmlMapper가 실패
             throw e;
         } finally {
             sample.stop(meterRegistry.timer(METRIC,
-                    "operation", operation, "outcome", outcome, "status", status));
+                    "operation", operation, "outcome", outcome, "cause", cause));
         }
+    }
+
+    /**
+     * 읽기/연결 타임아웃인지 판별한다. 예외 체인을 훑는 이유는 request factory에 따라
+     * 감싸는 타입이 다르기 때문이다 — JDK HttpClient는 {@link HttpTimeoutException},
+     * Simple/Apache 계열은 {@link SocketTimeoutException}을 싣는다.
+     * (실제로 무엇이 실리는지는 KopisTimeoutTest가 실측으로 확인한다.)
+     */
+    private static boolean timedOut(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof HttpTimeoutException || t instanceof SocketTimeoutException) {
+                return true;
+            }
+            if (t.getCause() == t) {
+                break; // 자기 참조 방어
+            }
+        }
+        return false;
     }
 
     /** XML 파싱이 checked 예외를 던지므로 Supplier로는 감쌀 수 없다. */

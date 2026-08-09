@@ -157,8 +157,8 @@ class KopisClientTest {
 
         assertThat(result).isEmpty(); // 사용자에게는 그대로 degrade
         Timer timer = f.meters().find("kopis.api.requests")
-                .tag("operation", "detail").tag("outcome", "error").tag("status", "400").timer();
-        assertThat(timer).as("400 실패가 status=400 태그로 계측돼야 한다").isNotNull();
+                .tag("operation", "detail").tag("outcome", "error").tag("cause", "http_400").timer();
+        assertThat(timer).as("400 실패는 cause=http_400으로 계측돼야 한다").isNotNull();
         assertThat(timer.count()).isEqualTo(1);
     }
 
@@ -175,7 +175,7 @@ class KopisClientTest {
         f.client().fetchDetail("PF260001");
 
         Timer timer = f.meters().find("kopis.api.requests")
-                .tag("operation", "detail").tag("outcome", "success").tag("status", "200").timer();
+                .tag("operation", "detail").tag("outcome", "success").tag("cause", "none").timer();
         assertThat(timer).isNotNull();
         assertThat(timer.count()).isEqualTo(1);
     }

@@ -144,11 +144,17 @@ management:
       minimum-expected-value:
         http.server.requests: 1ms
       # 상한을 넘는 요청은 +Inf 한 칸에 뭉쳐 그 구간의 백분위를 복구할 수 없다.
-      # 부하 테스트로 실제 분포를 본 뒤 재조정할 값이다 — "설정하고 끝"이 아니다.
-      # 초과 발생 여부는 이렇게 감시한다:
-      #   sum(rate(..._bucket{le="+Inf"}[5m])) - sum(rate(..._bucket{le="2.0"}[5m]))
+      #
+      # 처음엔 2s로 뒀다가 부하 테스트에서 **실제로 걸렸다.** 300 VU에서 전체 요청의 8.1%
+      # (10,181건 중 822건)가 2s를 넘어 p95가 +Inf 버킷에 들어갔고, histogram_quantile이
+      # 상한값을 그대로 돌려줬다 — 세 엔드포인트가 나란히 "정확히 2000.0ms"로 찍혔다.
+      # 그 숫자는 측정값이 아니라 **더 못 잰다는 표시**다.
+      #
+      # 10s로 올린다. 앞으로 개선 전후를 비교하려면 AS-IS가 검열되지 않아야 한다.
+      # 초과 발생 여부는 계속 감시한다(대시보드 "상한 초과 요청률" 패널):
+      #   sum(rate(..._bucket{le="+Inf"}[5m])) - sum(rate(..._bucket{le="10.0"}[5m]))
       maximum-expected-value:
-        http.server.requests: 2s
+        http.server.requests: 10s
 
 # 외부 연동 / 시크릿은 환경변수로만 주입 (application-local.yml은 gitignore)
 kopis:

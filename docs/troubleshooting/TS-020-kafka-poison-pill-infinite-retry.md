@@ -171,8 +171,29 @@ echo 'poison-1786254749' | kafka-console-producer.sh --bootstrap-server localhos
 > 어제는 이 메시지 **하나**가 노드 CPU를 100%까지 태우고 HPA를 오작동시켰다.
 > 지금은 조용히 DLT로 넘어가고 끝난다.
 
-**검증하지 못한 것**: `dlq_messages` 테이블의 행 내용은 admin API 인증이 필요해 직접 확인하지
-않았다. DLT 소비 그룹에 에러가 없다는 것으로 간접 확인했을 뿐이다.
+### DB 행까지 직접 확인했다
+
+DLT 소비 이후 `dlq_messages`에 실제로 적재됐는지도 봤다(RDS는 프라이빗 서브넷이라
+클러스터 안에 socat 터널 파드를 띄우고 `kubectl port-forward`로 접속).
+
+```sql
+SELECT id, topic, left(payload,40) AS payload, left(error_message,60) AS err, status, created_at
+FROM dlq_messages ORDER BY id DESC LIMIT 5;
+```
+```
+1 | order-events | poison-1786254749 | failed to deserialize | PENDING | 2026-08-09 05:52:33
+```
+
+**세 필드가 각각 다른 것을 증명한다.**
+
+| 필드 | 값 | 의미 |
+|---|---|---|
+| `payload` | `poison-1786254749` | **평문 그대로** — `byte[]` 직렬화가 맞다는 직접 증거. `JsonSerializer` 하나였다면 base64 문자열이었을 것이다 |
+| `error_message` | `failed to deserialize` | **역직렬화 경로**로 들어왔다. 리스너 실패(`boom`)와 구분된다 |
+| `status` | `PENDING` | 정상 DLQ 상태 — 재시도/폐기 판단 대기 |
+
+이로써 `poison → ErrorHandlingDeserializer → DefaultErrorHandler → DLT(byte[]) → DlqConsumer
+→ dlq_messages` **전 구간이 실환경에서 확인됐다.**
 
 ## 7. 교훈
 

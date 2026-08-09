@@ -10,3 +10,4 @@ kind: Kustomization
 #   2) kubectl apply -k k8s/monitoring
 resources:
   - servicemonitor-api.yaml
+  - dashboard-flowticket.yaml

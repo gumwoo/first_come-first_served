@@ -1,0 +1,199 @@
+# Grafana 대시보드를 ConfigMap으로 넣는다.
+#
+# kube-prometheus-stack의 grafana-sc-dashboard 사이드카가 `grafana_dashboard: "1"` 라벨이 붙은
+# ConfigMap을 **모든 네임스페이스에서** 감시해 자동 로드한다(실측: LABEL=grafana_dashboard,
+# LABEL_VALUE=1, NAMESPACE=ALL). 그래서 UI에서 손으로 임포트할 필요가 없고, 저장소에 커밋되므로
+# 관측 스택을 재설치해도 되살아난다(Grafana는 persistence를 끈 상태다).
+#
+# ⚠️ 여기 쓰인 메트릭 이름은 전부 실제 /actuator/prometheus 출력에서 확인한 것만 넣었다.
+# 특히 http_server_requests_seconds_**bucket**은 **존재하지 않아**(히스토그램 미설정) p95를
+# 그릴 수 없다. 그래서 지연은 sum/count 평균으로 낸다 — 없는 이름을 쓰면 조용히 빈 패널이 된다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flowticket-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  flowticket.json: |
+    {
+      "title": "FlowTicket — API / Kafka / 런타임",
+      "uid": "flowticket-api",
+      "timezone": "browser",
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "DS",
+            "type": "datasource",
+            "query": "prometheus",
+            "current": { "text": "Prometheus", "value": "Prometheus" },
+            "hide": 0
+          }
+        ]
+      },
+      "panels": [
+        {
+          "type": "row", "title": "서비스 (HTTP)",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+        },
+        {
+          "type": "timeseries", "title": "요청률 (outcome별)",
+          "description": "outcome이 SUCCESS가 아닌 선이 올라오면 장애 신호다.",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+          "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "sum by(outcome) (rate(http_server_requests_seconds_count{job=\"flowticket-api\"}[5m]))",
+              "legendFormat": "{{outcome}}", "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "timeseries", "title": "평균 응답시간",
+          "description": "히스토그램 버킷이 없어 p95를 낼 수 없다. sum/count 평균이라 꼬리 지연은 가려진다.",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+          "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "sum(rate(http_server_requests_seconds_sum{job=\"flowticket-api\"}[5m])) / sum(rate(http_server_requests_seconds_count{job=\"flowticket-api\"}[5m]))",
+              "legendFormat": "avg", "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "row", "title": "Kafka — TS-020이 보이게 하는 자리",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+        },
+        {
+          "type": "timeseries", "title": "Consumer lag (파티션별)",
+          "description": "독성 메시지로 컨슈머가 무한 재시도에 빠지면 파드는 Running·readiness UP인데 이 선만 올라간다. TS-020을 kubectl top으로 우연히 발견했던 자리다.",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 10 },
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "max by(topic, partition) (kafka_consumer_fetch_manager_records_lag{job=\"flowticket-api\"})",
+              "legendFormat": "{{topic}} p{{partition}}", "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "timeseries", "title": "리스너 처리율 (result별)",
+          "description": "failure 선이 서면 재시도 소진 → DLT 경로가 도는 중이다.",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 9, "w": 6, "x": 12, "y": 10 },
+          "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "sum by(result) (rate(spring_kafka_listener_seconds_count{job=\"flowticket-api\"}[5m]))",
+              "legendFormat": "{{result}}", "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "timeseries", "title": "마지막 리밸런스 이후 경과",
+          "description": "값이 자꾸 0으로 떨어지면 리밸런스가 반복되는 것 — 컨슈머가 안정적으로 붙어 있지 못한 상태다.",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 9, "w": 6, "x": 18, "y": 10 },
+          "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "max(kafka_consumer_coordinator_last_rebalance_seconds_ago{job=\"flowticket-api\"})",
+              "legendFormat": "경과", "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "row", "title": "런타임 / 용량",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 }
+        },
+        {
+          "type": "timeseries", "title": "힙 사용량 (파드별)",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 },
+          "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "sum by(pod) (jvm_memory_used_bytes{job=\"flowticket-api\", area=\"heap\"})",
+              "legendFormat": "{{pod}}", "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "timeseries", "title": "GC 정지 빈도",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 },
+          "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "sum by(pod) (rate(jvm_gc_pause_seconds_count{job=\"flowticket-api\"}[5m]))",
+              "legendFormat": "{{pod}}", "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "timeseries", "title": "프로세스 CPU",
+          "description": "TS-020 때 파드 하나가 711m까지 태웠다. HPA가 이걸 부하로 오해해 스케일업했다.",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 },
+          "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "process_cpu_usage{job=\"flowticket-api\"}",
+              "legendFormat": "{{pod}}", "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "timeseries", "title": "DB 커넥션 (active / pending)",
+          "description": "pending이 서면 풀이 말랐다는 뜻 — 커넥션 대기가 곧 응답 지연이 된다.",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 28 },
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "sum(hikaricp_connections_active{job=\"flowticket-api\"})",
+              "legendFormat": "active", "refId": "A"
+            },
+            {
+              "expr": "sum(hikaricp_connections_pending{job=\"flowticket-api\"})",
+              "legendFormat": "pending", "refId": "B"
+            }
+          ]
+        },
+        {
+          "type": "timeseries", "title": "JVM 스레드",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 28 },
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "jvm_threads_live_threads{job=\"flowticket-api\"}",
+              "legendFormat": "{{pod}}", "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "timeseries", "title": "HPA 레플리카 (현재 / 희망)",
+          "description": "kube-state-metrics 출처. 앱 메트릭이 아니라 클러스터 상태다.",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 28 },
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"flowticket\"}",
+              "legendFormat": "현재", "refId": "A"
+            },
+            {
+              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"flowticket\"}",
+              "legendFormat": "희망", "refId": "B"
+            }
+          ]
+        }
+      ]
+    }

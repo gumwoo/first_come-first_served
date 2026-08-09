@@ -34,6 +34,7 @@ const cases = [
   { name: "k8s-unknown-env", script: "k8s/check.mjs", expect: "앱이 읽지 않는 환경변수:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-unknown-env" } },
   { name: "k8s-ingress-api-direct", script: "k8s/check.mjs", expect: "Ingress가 API Service로 직결:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-ingress-api-direct" } },
   { name: "k8s-buildtime-env", script: "k8s/check.mjs", expect: "빌드 시점 값을 런타임 env로 주입:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-buildtime-env" } },
+  { name: "k8s-no-tz-pin", script: "k8s/check.mjs", expect: "TZ가 고정돼 있지 않다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-no-tz-pin" } },
   { name: "fe-missing-enum",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-enum" } },
   { name: "fe-bad-dep",          script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-bad-dep" } },
   { name: "fe-layer-breach",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },

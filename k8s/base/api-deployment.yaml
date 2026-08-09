@@ -35,6 +35,15 @@ spec:
           image: flowticket-api:REPLACE_TAG # kustomization.yaml의 images:가 덮어쓴다
           ports:
             - containerPort: 8080
+          # ⚠️ 이 값을 바꾸면 **이미 저장된 시각 데이터의 의미가 통째로 이동한다.**
+          # 엔티티는 LocalDateTime.now()(= 시스템 존의 벽시계)로 시각을 만들고, 응답 직렬화도
+          # 같은 존으로 오프셋을 붙인다(JacksonConfig). 즉 "DB의 벽시계 = 컨테이너 존"이 전제다.
+          # 지금 DB에는 UTC 벽시계가 쌓여 있으므로, Asia/Seoul로 바꾸면 기존 행 전부가 9시간
+          # 어긋난다. 존을 정말 바꾸려면 Instant/timestamptz 전환을 Expand-Contract로 해야 한다.
+          # 하네스 k8s 규칙 ⑦이 이 줄의 존재와 값을 강제한다.
+          env:
+            - name: TZ
+              value: UTC
           envFrom:
             - configMapRef: { name: flowticket-api-config }
             - secretRef: { name: flowticket-api-secrets } # 클러스터 밖에서 생성(k8s/README.md)

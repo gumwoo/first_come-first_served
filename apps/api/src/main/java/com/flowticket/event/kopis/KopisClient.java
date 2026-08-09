@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -15,14 +16,30 @@ import org.springframework.web.client.RestClient;
 @Component
 public class KopisClient {
 
-    private final RestClient restClient;
+    /**
+     * 사용자 요청 경로(GET /events/{id})에서 쓰는 클라이언트. <b>짧게</b> 끊는다.
+     * 상세 정보는 없어도 응답할 수 있으므로(폴백 존재), 기다리는 것보다 포기하는 편이 낫다.
+     */
+    private final RestClient detailClient;
+    /**
+     * 관리자 동기화 잡에서 쓰는 클라이언트. 사용자를 기다리게 하지 않으므로 더 너그럽게 준다.
+     * 목록 조회는 rows=100까지 받아 상세 조회보다 오래 걸릴 수 있는데, 여기에 3초를 걸면
+     * <b>지금 잘 돌던 시딩이 깨진다</b>(1,446건을 이 경로로 수집했다).
+     */
+    private final RestClient syncClient;
     private final String serviceKey;
     private final XmlMapper xmlMapper;
 
-    public KopisClient(RestClient.Builder builder,
-                       @Value("${kopis.base-url}") String baseUrl,
+    /**
+     * RestClient는 {@link KopisClientConfig}가 만들어 넘긴다 — 이 클래스가 직접 빌드하지 않는다.
+     * 타임아웃은 request factory에 붙는데, 그걸 여기서 설정하면 {@code MockRestServiceServer}가
+     * 심어둔 mock factory를 덮어써 단위 테스트가 실제 네트워크로 나가버린다.
+     */
+    public KopisClient(@Qualifier("kopisDetailClient") RestClient detailClient,
+                       @Qualifier("kopisSyncClient") RestClient syncClient,
                        @Value("${kopis.service-key:}") String serviceKey) {
-        this.restClient = builder.baseUrl(baseUrl).build();
+        this.detailClient = detailClient;
+        this.syncClient = syncClient;
         this.serviceKey = serviceKey;
         this.xmlMapper = (XmlMapper) new XmlMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -48,7 +65,7 @@ public class KopisClient {
     public List<KopisEvent> fetchList(String stdate, String eddate, int cpage, int rows) {
         try {
             // byte[]로 받아 XML 선언(UTF-8)을 XmlMapper가 직접 감지(String 변환 시 ISO-8859-1 깨짐 방지)
-            byte[] xml = restClient.get()
+            byte[] xml = syncClient.get()
                     .uri(uriBuilder -> uriBuilder.path("/pblprfr")
                             .queryParam("service", serviceKey)
                             .queryParam("stdate", stdate)
@@ -72,7 +89,7 @@ public class KopisClient {
     /** 공연상세 조회(관람시간/연령/가격 등). 실패 시 empty. */
     public Optional<KopisEventDetail> fetchDetail(String kopisId) {
         try {
-            byte[] xml = restClient.get()
+            byte[] xml = detailClient.get()
                     .uri(uriBuilder -> uriBuilder.path("/pblprfr/{id}")
                             .queryParam("service", serviceKey)
                             .build(kopisId))

@@ -26,10 +26,12 @@ class KopisClientTest {
     private record Fixture(KopisClient client, MockRestServiceServer server) {}
 
     private Fixture fixture() {
-        RestClient.Builder builder = RestClient.builder();
+        RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        KopisClient client = new KopisClient(builder, BASE_URL, "test-key");
-        return new Fixture(client, server);
+        // detail·sync 두 경로 모두 같은 mock 서버로 검증한다(파싱 로직은 공통).
+        // 운영에서는 KopisClientConfig가 타임아웃이 다른 RestClient 둘을 주입한다.
+        RestClient client = builder.build();
+        return new Fixture(new KopisClient(client, client, "test-key"), server);
     }
 
     @Test

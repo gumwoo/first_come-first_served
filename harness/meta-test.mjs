@@ -19,6 +19,7 @@ const cases = [
   { name: "be-table-no-doc",     script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-table-no-doc" } },
   { name: "be-jwt-no-type",      script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-jwt-no-type" } },
   { name: "be-actuator-open",    script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-actuator-open" } },
+  { name: "be-naive-datetime",   script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-naive-datetime" } },
   { name: "be-enum-ordinal",     script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-enum-ordinal" } },
   { name: "be-entity-data",      script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-entity-data" } },
   { name: "be-field-injection",  script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-field-injection" } },

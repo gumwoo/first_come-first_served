@@ -29,6 +29,14 @@ const STATUS: Record<string, { label: string; variant: BadgeProps["variant"] }> 
 
 const won = (n: number) => `${n.toLocaleString()}원`;
 const orderNo = (id: number) => `ORD-${String(id).padStart(8, "0")}`;
+// 문자열을 자르면(과거: `paidAt.slice(0, 10)`) 서버 존의 날짜가 나온다 — 서버는 UTC라
+// KST 자정~09시에 결제한 예매가 **하루 전날로** 표시된다. Date로 파싱해야 오프셋이 반영된다.
+const dateOnly = (s: string) => {
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "-";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
 const statusOf = (s: string) => STATUS[s] ?? { label: s, variant: "muted" as const };
 
 export default function MyOrdersPage() {
@@ -157,7 +165,7 @@ export default function MyOrdersPage() {
                         <Row k="예매번호" v={orderNo(detail.data.orderId)} />
                         <Row k="좌석" v={detail.data.items.map((it) => `${it.grade}석`).join(", ")} />
                         <Row k="수량" v={`${detail.data.items.length}매`} />
-                        {detail.data.paidAt && <Row k="예매일" v={detail.data.paidAt.slice(0, 10)} />}
+                        {detail.data.paidAt && <Row k="예매일" v={dateOnly(detail.data.paidAt)} />}
                       </dl>
                       <div className="flex justify-between border-t border-border pt-3 font-semibold">
                         <span>총 결제 금액</span><span className="text-primary">{won(detail.data.amount)}</span>

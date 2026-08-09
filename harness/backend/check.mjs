@@ -436,6 +436,39 @@ for (const file of [...javaFiles, ...migrationFiles]) {
   }
 }
 
+// ---------- 16. 응답의 LocalDateTime은 오프셋을 달고 나가야 함 ----------
+// LocalDateTime은 JSON에 "2026-08-09T06:56:54"처럼 타임존 없이 실린다. JS의 new Date()는
+// 오프셋이 없으면 그 값을 **브라우저 로컬 시간**으로 해석하므로(ES 명세), 서버 컨테이너가
+// UTC이고 사용자가 KST면 9시간이 어긋난다.
+//
+// 실제로 좌석 선점이 이것 때문에 깨졌다 — 5분 만료를 브라우저가 9시간 전으로 계산해서
+// '선택 완료' 즉시 만료 화면으로 튕겼다. **로컬에서는 재현되지 않는다**(JVM도 브라우저도 KST).
+// 그래서 테스트가 아니라 정적 규칙으로 막는다.
+const dtoWithLocalDateTime = [];
+for (const file of walk(API + "/src/main/java", [".java"])) {
+  const rel = path.relative(REPO_ROOT, file);
+  if (!/[\\/]dto[\\/]/.test(rel)) continue;
+  if (/\bLocalDateTime\s+\w+/.test(read(file))) dtoWithLocalDateTime.push(rel);
+}
+if (dtoWithLocalDateTime.length > 0) {
+  // 통과 조건: LocalDateTime 전용 직렬화기를 등록하면서 존 오프셋을 붙이는 설정이 있을 것.
+  const hasOffsetSerializer = walk(API + "/src/main/java", [".java"]).some((f) => {
+    const src = read(f);
+    return (
+      /serializerByType\(\s*LocalDateTime\.class/.test(src) &&
+      /atZone\(|ISO_OFFSET_DATE_TIME|toOffsetDateTime\(/.test(src)
+    );
+  });
+  if (!hasOffsetSerializer) {
+    r.fail(
+      `응답 DTO가 LocalDateTime을 노출하는데 오프셋 직렬화기가 없다 ` +
+        `(${dtoWithLocalDateTime.slice(0, 3).join(", ")}${dtoWithLocalDateTime.length > 3 ? " 외" : ""}). ` +
+        `타임존 없이 나가면 브라우저가 자기 로컬로 해석해 서버-클라이언트 시차만큼 어긋난다 ` +
+        `— 에러가 아니라 조용히 다른 화면으로 빠진다(좌석 선점 즉시 만료)`
+    );
+  }
+}
+
 function normalize(p) {
   return p.replace(/\{[^}]+\}/g, "{id}").replace(/\/+$/, "") || "/";
 }

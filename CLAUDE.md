@@ -5,6 +5,10 @@ FlowTicket(선착순 예매 시스템) 포트폴리오 프로젝트. 아래는 *
 ## 작업 태도 (필수)
 - **원인·상태·결과를 단정하기 전에 증거로 확인한다.** 로그/코드/리포트로 확인한 것만 사실로 말하고,
   확인 못 한 것은 "추론/추측"이라고 명시 구분한다 — 추론을 사실처럼 말하지 않는다.
+- **예측값을 실측값처럼 제시하지 않는다.** 수치를 말하려면 재고, 못 쟀으면 "예측"이라고 쓴다.
+  특히 표·코드블록에 넣는 순간 실측으로 읽히므로, 예측치는 표에 넣지 않거나 열 이름에 명시한다.
+  (실제 사고: 카디널리티 증가를 "+40,000"으로 표에 넣었으나 실측은 +6,422였다.)
+- 답변은 한국어로 쓴다. 기술 식별자(클래스·변수·API·라이브러리·설정 키)는 원 표기를 유지한다.
 
 ## PR 규칙 (필수)
 모든 PR 본문은 [`.github/pull_request_template.md`](.github/pull_request_template.md)의 **7개 섹션을
@@ -24,7 +28,9 @@ FlowTicket(선착순 예매 시스템) 포트폴리오 프로젝트. 아래는 *
 
 ## 검증
 - 프론트: `corepack pnpm@9.12.0 --dir apps/web typecheck | lint | build`
-- 계약/정적 가드: `npm run harness:check` (meta 27 + backend + frontend)
+- 계약/정적 가드: `npm run harness:check` (meta + schema + backend + frontend + k8s)
+  - 규칙을 추가하면 `harness/fixtures/violations/`에 **위반 fixture를 함께 만들고**
+    `harness/meta-test.mjs`에 등록한다 — 규칙이 실제로 잡는지 메타테스트가 판정한다.
 - 백엔드 컴파일/통합테스트: **로컬 gradle 없음 → CI(Testcontainers)에서만 검증**.
 
 ## DB 마이그레이션 (무중단 배포 전제)

@@ -1,6 +1,6 @@
 # 배포·운영 준비 (S09) — 한 장 지도
 
-- 상태: 계획(미착수). 구현 전 이 문서로 전체를 조망한다.
+- 상태(2026-08-10): **Phase 1~7 완료 / Phase 8은 이진 실증만 완료.** 상세는 [aws-eks-deploy-plan.md](aws-eks-deploy-plan.md) 머리말.
 - 성격: **인프라 트랙**(기능 슬라이스 아님). 지도의 작업 큐로 S09에 편입 — [docs/screens/_index.md](../screens/_index.md).
 - 우선순위: **S08 아웃박스(정합성)를 먼저** 끝낸 뒤 이 배포로. 배포는 "코드 선반영 완료"라 실증만 하고 동결.
 - 후속: S10 부하테스트·모니터링은 이 배포 위에서 실측.
@@ -16,12 +16,12 @@
 
 ## 멀티팟 준비 체크리스트
 
-> **①②③④ 코드 선반영 완료** — 단일 Pod에서도 동작·통합테스트 통과. 다만 ①②의 **cross-Pod 실증**(연결 Pod ≠ 소비 Pod 시 팬아웃, 다중 Pod 스케줄 중복 억제)은 다중 Pod 배포(S09) 시 부하로 확인. "코드 완료 / 다중 Pod 실측 예정".
+> **①②③④ 완료 — ①②는 2026-08-10 다중 Pod 실증까지 끝났다**([[TS-023]]). ① 연결 Pod ≠ 소비 Pod에서 SSE 전달 확인(4회 시행), ② 여러 Pod가 떠 있어도 스케줄 틱당 실행 1회 확인(락 키 + 로그 + Kafka 증가분 교차검증). 남은 한계는 TS-023 §3-3·§8 참조.
 
 | # | 항목 | 왜 필요 | 상태 | 상세 |
 |---|------|---------|------|------|
-| ① | **SSE Registry 팬아웃** | 인메모리 SSE는 Pod 간 공유 안 됨 → 소비 Pod ≠ 연결 Pod면 알림 누락 | **코드 완료**(Redis pub/sub, 실측 예정) | app-changes D-1 |
-| ② | **스케줄러 중복 실행(ShedLock)** | @Scheduled가 Pod마다 실행 → 중복(정합성은 조건부 UPDATE로 안전, 낭비만) | **코드 완료**(스윕 4개, 실측 예정) | app-changes D-2 |
+| ① | **SSE Registry 팬아웃** | 인메모리 SSE는 Pod 간 공유 안 됨 → 소비 Pod ≠ 연결 Pod면 알림 누락 | **실증 완료**([[TS-023]] §3) | app-changes D-1 |
+| ② | **스케줄러 중복 실행(ShedLock)** | @Scheduled가 Pod마다 실행 → 중복(정합성은 조건부 UPDATE로 안전, 낭비만) | **실증 완료**([[TS-023]] §2) | app-changes D-2 |
 | ④ | **정확한 seat.hold.expired 알림** | sweep이 결제로 안 풀린 SOLD 좌석까지 알림(과알림 오탐) | **완료**(홀드별 조건부 전이) | TS-011 §7 |
 | ③ | **PG 승인 후 롤백 보상** | 실 PG 승인 뒤 DB 롤백 시 승인만 남음(미아 승인) | **완료**(finalizePaid void, edge는 outbox 후속) | TS-011 §7·§한계 |
 
@@ -43,5 +43,5 @@
 ## 새 ADR/IMP/TS는?
 이 항목들은 "예정 작업"이라 지금은 지도 + 이 문서로 추적한다. 구현하다 결함이 나면 **TS**, 스케일 수치가 나오면 **IMP**(S10), 되돌아볼 설계 결정이면 **ADR**로 그때 승격한다.
 
-- **[ADR-009](../decisions/ADR-009-gitops-cd-argocd.md) GitOps CD — ArgoCD (Proposed)**: 배포를 push(Actions apply)가 아니라 **pull 기반 GitOps(ArgoCD)**로. Terraform=인프라 / Actions=빌드·이미지·Git 갱신 / **ArgoCD=앱 동기화·드리프트·롤백**. "Git이 단일 진실원" 철학을 런타임까지 확장. Application은 최소 유지(과설계 방지). Phase 6에서 구현 시 Accepted로 승격.
+- **[ADR-009](../decisions/ADR-009-gitops-cd-argocd.md) GitOps CD — ArgoCD (Proposed)**: 배포를 push(Actions apply)가 아니라 **pull 기반 GitOps(ArgoCD)**로. Terraform=인프라 / Actions=빌드·이미지·Git 갱신 / **ArgoCD=앱 동기화·드리프트·롤백**. "Git이 단일 진실원" 철학을 런타임까지 확장. Application은 최소 유지(과설계 방지). 2026-08-10 **Accepted로 승격**(구현·실증 완료, [[TS-022]]).
 - **[ADR-012](../decisions/ADR-012-3az-eks-infra-cost-control.md) 3AZ EKS 인프라 — 이중화 범위와 비용 통제 (Proposed)**: 3 AZ·AZ별 NAT·AZ별 노드그룹·CA를 **왜** 그렇게 골랐는지. 판단 기준은 "핵심 주장은 실증하고, 기본 안전장치는 근거를 남긴다". 상시 운영 대신 **apply/destroy**로 비용 통제. 구현 구조는 [terraform-design.md](terraform-design.md).

@@ -1,7 +1,14 @@
 # 배포 계획 — AWS EKS(라이브 K8s) + Strimzi 멀티브로커 Kafka
 
-- 상태: **Phase 1(컨테이너화)·Phase 2(ECR 이미지 파이프라인) 완료 / Phase 3~8 미착수.**
-  AWS 상시 과금은 Phase 3(EKS·RDS)부터 — 여기까지는 ECR 저장 비용뿐.
+- 상태(2026-08-10): **Phase 1~7 완료 / Phase 8은 부분 완료.**
+  - Phase 1·2 컨테이너화·ECR 파이프라인 — 완료
+  - Phase 3 Terraform(EKS·RDS·ElastiCache·ALB) — 기동 중([[ADR-012]] Accepted)
+  - Phase 4 Strimzi 멀티브로커(KRaft, 브로커 3) — 기동 중
+  - Phase 5 앱 프로덕션 설정 — 완료(멀티팟 대응 ①②③④ 포함)
+  - Phase 6 GitOps(ArgoCD)·HPA·Ingress·HTTPS — 완료, 자동 동기화 + selfHeal/prune([[ADR-009]] Accepted, [[TS-022]])
+  - Phase 7 관측성 — Prometheus/Grafana + 앱 메트릭 + Kafka 브로커/Consumer Lag 수집 완료
+  - **Phase 8 — 이진 실증(페일오버·Lag·멀티팟)은 완료([[TS-023]]), 정량 부하(RPS·p95)는 측정 환경 결정 대기([[TS-021]] §7)**
+- AWS 상시 과금은 Phase 3(EKS·RDS)부터 발생한다. 비용 통제는 apply/destroy 운용.
 - 목적: 백엔드 취업용 **살아있는 데모 URL** + **분산 시스템(K8s·멀티브로커 Kafka·오토스케일) 실증**.
 - 짝 문서: [앱 변경사항 — K8s·멀티브로커 대응](app-changes-for-k8s-kafka.md)
 - 슬라이스: 배포(S09). 부하테스트(S10) 측정 환경도 이 위에서. 선행: **S08 아웃박스(정합성) 먼저**.

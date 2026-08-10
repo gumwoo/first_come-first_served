@@ -33,4 +33,4 @@ IMP(정량 before/after 개선)와 달리, 여기 문서는 "무엇이 왜 깨�
 | [TS-018](TS-018-alb-idle-timeout-sync-endpoint.md) | 동기화가 500인데 데이터는 다 들어옴 — ALB idle timeout에 끊긴 장시간 요청 | S02/S09 | 배포 환경(API 설계) | 원인 규명(수정 보류) |
 | [TS-019](TS-019-hpa-without-metrics-server.md) | HPA를 선언했는데 스케일 판단 불가 — metrics-server 없음 | S09 | 배포 환경(누락) | 해결(스케일업 확인) |
 | [TS-020](TS-020-kafka-poison-pill-infinite-retry.md) | DLQ가 있는데 독성 메시지는 DLQ로 못 감 — 역직렬화 실패는 리스너에 도달하지 않음 | S08/S09 | 정합성·가용성(설정) | 해결 |
-| [TS-021](TS-021-hpa-exhausts-rds-connections.md) | 파드를 늘렸더니 DB가 한계 — HPA 최대치 × 커넥션 풀 > RDS 슬롯 | S09 | 용량(설정) | 수정 적용(풀 10→5, 하네스 강제) / 운영 검증 대기 |
+| [TS-021](TS-021-hpa-exhausts-rds-connections.md) | 파드를 늘렸더니 DB가 한계 — HPA 최대치 × 커넥션 풀 > RDS 슬롯 | S09 | 용량(설정) | 해결(풀 10→5 + 하네스 강제, 9파드 실기동 검증) |

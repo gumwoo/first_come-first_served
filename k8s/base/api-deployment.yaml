@@ -4,7 +4,14 @@ metadata:
   name: flowticket-api
   namespace: flowticket
 spec:
-  replicas: 3
+  # replicas를 **의도적으로 두지 않는다.** 이 Deployment는 HPA가 소유한다(api-hpa.yaml, min 3 / max 9).
+  # 여기에 값을 두면 ArgoCD가 sync할 때마다 HPA가 정한 파드 수를 Git 값으로 덮어쓴다.
+  #
+  # ignoreDifferences + RespectIgnoreDifferences=true 로 막으려 했으나 **실측에서 막지 못했다** —
+  # HPA가 없는 flowticket-web으로 통제 실험한 결과 4 → sync → 2로 되돌아갔고, ServerSideApply를
+  # 빼도 동일했다. 필드 자체를 Git에서 없애는 쪽이 확실하다.
+  #
+  # 하한은 HPA의 minReplicas가 담당한다. HPA가 없는 web 쪽은 replicas를 그대로 둔다.
   selector:
     matchLabels: { app: flowticket-api }
   strategy:

@@ -195,9 +195,20 @@ public class KopisClient {
         }
     }
 
-    /** 공연상세 조회(관람시간/연령/가격 등). 실패 시 empty. */
+    /**
+     * 공연상세 조회(관람시간/연령/가격 등). 실패 시 empty.
+     *
+     * <p><b>이제 호출자는 동기화 배치 하나다.</b> 예전에는 사용자 요청 경로에서 불렸고, 그때는
+     * 여기에 제한기를 걸 수 없었다 — 요청 스레드를 재우면 외부 지연이 톰캣 스레드를 묶어 API
+     * 전체가 멎는 실패를 방어 장치로 재현하는 꼴이기 때문이다. 사용자 경로에서 호출을 걷어낸
+     * 지금은 걸어야 한다. 걸지 않으면 상세 배치가 응답 속도만큼(약 80ms → 초당 12회) 나가
+     * IP 제한(1초 10회)을 다시 넘긴다.
+     *
+     * <p>목록과 <b>같은 제한기 인스턴스</b>를 쓰므로 list + detail 합산이 설정값 이하로 유지된다.
+     */
     public Optional<KopisEventDetail> fetchDetail(String kopisId) {
         try {
+            rateLimiter.acquire();
             return recorded("detail", () -> {
                 byte[] xml = detailClient.get()
                         .uri(uriBuilder -> uriBuilder.path("/pblprfr/{id}")
@@ -214,6 +225,12 @@ public class KopisClient {
                 }
                 return Optional.of(parsed.items.get(0));
             }, result -> result.isPresent() ? "success" : "empty");
+        } catch (InterruptedException e) {
+            // 목록 조회와 같은 이유로 삼키지 않는다 — 삼키면 종료 신호가 사라진다.
+            // KopisDetailSyncer의 루프가 매 건 isInterrupted()를 보고 빠져나간다.
+            Thread.currentThread().interrupt();
+            log.warn("[kopis] 상세 조회 중단(인터럽트) id={}", kopisId);
+            return Optional.empty();
         } catch (Exception e) {
             log.warn("[kopis] 상세 조회 실패 id={}: {}", kopisId, e.getMessage());
             return Optional.empty();

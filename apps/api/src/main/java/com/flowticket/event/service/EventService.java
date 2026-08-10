@@ -4,7 +4,6 @@ import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.dto.EventDetailResponse;
 import com.flowticket.event.dto.EventSummaryResponse;
-import com.flowticket.event.kopis.KopisClient;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.event.repository.EventSearchCondition;
 import com.flowticket.global.common.PageResponse;
@@ -18,7 +17,6 @@ import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -28,13 +26,11 @@ public class EventService {
     private static final int POPULAR_SIZE = 10;
 
     private final EventRepository eventRepository;
-    private final KopisClient kopisClient;
     private final RankingService rankingService;
 
-    public EventService(EventRepository eventRepository, KopisClient kopisClient,
-                        RankingService rankingService) {
+    // KopisClient 의존이 사라졌다 — 사용자 조회 경로에서 외부 호출을 걷어낸 결과다.
+    public EventService(EventRepository eventRepository, RankingService rankingService) {
         this.eventRepository = eventRepository;
-        this.kopisClient = kopisClient;
         this.rankingService = rankingService;
     }
 
@@ -89,19 +85,24 @@ public class EventService {
     }
 
     /**
-     * 상세 조회. KOPIS 상세(관람시간/연령/가격 등)는 진입 시 lazy 호출(외부 호출이라
-     * 트랜잭션 밖 — NOT_SUPPORTED). KOPIS 실패/미연동 시 DB 기본만 반환.
+     * 상세 조회. <b>DB만 읽는다 — 외부 호출이 없다.</b>
+     *
+     * <p>예전에는 여기서 KOPIS 상세를 lazy 호출했다. 그 구조의 대가가 컸다.
+     * <ul>
+     *   <li>외부 호출량이 <b>우리 트래픽의 함수</b>가 된다 — 부하 시 초당 70회가 나가 KOPIS
+     *       이용 제한(IP당 1초 10회)을 약 7배 초과했고 400 Request Blocked를 2,014건 맞았다</li>
+     *   <li>사용자 응답시간이 외부 지연에 직접 종속된다 — 이 경로만 p50 89ms, 다른 조회는 18ms</li>
+     *   <li>외부가 느려지면 요청 스레드가 묶인다 — 타임아웃이 없던 시절엔 API 전체가 멎을 수 있었다</li>
+     * </ul>
+     *
+     * <p>이제 동기화 배치가 미리 채운다. 아직 못 받은 공연은 해당 필드가 null인데, 이는 예전에
+     * 외부 호출이 실패했을 때 나가던 응답과 같은 모양이라 클라이언트 계약은 그대로다.
      */
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @Transactional(readOnly = true)
     public EventDetailResponse detail(Long id) {
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-        if (event.getKopisId() == null) {
-            return EventDetailResponse.from(event);
-        }
-        return kopisClient.fetchDetail(event.getKopisId())
-                .map(detail -> EventDetailResponse.from(event, detail))
-                .orElseGet(() -> EventDetailResponse.from(event));
+        return EventDetailResponse.from(event);
     }
 
     private PageResponse<EventSummaryResponse> search(EventSearchCondition condition, Pageable pageable) {

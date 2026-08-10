@@ -24,8 +24,18 @@
 | age_limit | VARCHAR(50) | Y | | | 관람 연령 |
 | status | VARCHAR(20) | N | 'SCHEDULED' | | EventStatus |
 | base_price | INTEGER | Y | | | 표시용 최소 가격(원) |
+| price_text | TEXT | Y | | | KOPIS `pcseguidance` — 가격 안내 원문 |
+| cast_info | TEXT | Y | | | KOPIS `prfcast` — 출연진. 컬럼명이 `cast`가 아닌 이유는 SQL 예약어 |
+| synopsis | TEXT | Y | | | KOPIS `sty` — 줄거리 |
+| schedule_text | TEXT | Y | | | KOPIS `dtguidance` — 공연시간 안내 원문 |
+| detail_synced_at | TIMESTAMP | Y | | | 상세 동기화 시각. NULL(미수집) 또는 오래된 값이면 갱신 대상 |
 | created_at | TIMESTAMP | N | now() | | 생성 시각 |
 | updated_at | TIMESTAMP | N | now() | | 갱신 시각 |
+
+> `price_text`~`schedule_text`는 KOPIS **상세** API에서만 오는 값이다(V16). 예전에는
+> `GET /events/{id}` 요청마다 외부를 호출해 채웠는데, 그러면 외부 호출량이 트래픽의 함수가 되어
+> KOPIS 이용 제한(IP당 1초 10회)을 부하 시 약 7배 초과했다. 이제 **동기화 배치가 미리 채우고
+> 사용자 요청은 DB만 읽는다**. 아직 못 받은 공연은 이 값들이 NULL이다.
 
 ## 인덱스 / 제약
 | 이름 | 종류 | 컬럼 | 이유 |

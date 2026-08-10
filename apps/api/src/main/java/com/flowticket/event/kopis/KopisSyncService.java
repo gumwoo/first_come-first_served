@@ -25,19 +25,22 @@ public class KopisSyncService {
 
     private final KopisClient kopisClient;
     private final KopisUpserter kopisUpserter;
+    private final KopisDetailSyncer detailSyncer;
     private final SeatSeeder seatSeeder;
     private final int syncDays;
     private final int rows;
     private final int maxPages;
     private final ObjectProvider<KopisSyncService> self; // 락 프록시 경유 self-호출용
 
-    public KopisSyncService(KopisClient kopisClient, KopisUpserter kopisUpserter, SeatSeeder seatSeeder,
+    public KopisSyncService(KopisClient kopisClient, KopisUpserter kopisUpserter,
+                            KopisDetailSyncer detailSyncer, SeatSeeder seatSeeder,
                             @Value("${kopis.sync.days:90}") int syncDays,
                             @Value("${kopis.sync.rows:100}") int rows,
                             @Value("${kopis.sync.max-pages:10}") int maxPages,
                             ObjectProvider<KopisSyncService> self) {
         this.kopisClient = kopisClient;
         this.kopisUpserter = kopisUpserter;
+        this.detailSyncer = detailSyncer;
         this.seatSeeder = seatSeeder;
         this.syncDays = syncDays;
         this.rows = rows;
@@ -65,6 +68,14 @@ public class KopisSyncService {
             all.addAll(kopisClient.fetchListAll(st.format(YMD), ed.format(YMD), rows, maxPages)); // 외부 호출
         }
         int upserted = kopisUpserter.upsertAll(all); // 트랜잭션 DB (kopis_id 멱등)
+        try {
+            // 상세는 목록 upsert 뒤에 채운다 — 신규 공연이 먼저 행으로 있어야 대상이 된다.
+            // best-effort: 상세 수집이 실패해도 목록 동기화 결과를 버리지 않는다.
+            // 남은 건은 detailSyncedAt이 NULL로 남아 다음 회차가 이어받는다.
+            detailSyncer.syncMissingDetails();
+        } catch (Exception e) {
+            log.warn("[kopis] 상세 동기화 실패: {}", e.getMessage());
+        }
         try {
             int seeded = seatSeeder.seedSellable(); // 판매 가능 공연에 좌석 자동 생성(멱등, best-effort)
             if (seeded > 0) {

@@ -60,8 +60,10 @@ public class KopisUpserter {
 
             Event found = existing.get(k.kopisId);
             if (found != null) {
+                // runningTime·ageLimit은 넘기지 않는다 — 목록 응답에 없는 필드이고,
+                // null을 넘기면 상세 동기화가 채운 값을 지운다(Event.updateFromSync 주석).
                 found.updateFromSync(k.title, k.venue, k.region, k.genre,
-                        k.posterUrl, start, end, null, null, status);
+                        k.posterUrl, start, end, status);
             } else {
                 eventRepository.save(Event.builder()
                         .kopisId(k.kopisId).title(k.title).venue(k.venue).region(k.region)

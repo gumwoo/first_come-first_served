@@ -17,12 +17,15 @@ ALTER TABLE events ADD COLUMN price_text    TEXT;
 ALTER TABLE events ADD COLUMN cast_info     TEXT;
 ALTER TABLE events ADD COLUMN synopsis      TEXT;
 ALTER TABLE events ADD COLUMN schedule_text TEXT;
--- 상세를 언제 받아왔는지. NULL이면 아직 못 받은 것 → 동기화가 다음 차례에 다시 시도한다.
--- 매번 1,446건을 전량 재호출하지 않기 위한 기준이기도 하다.
+-- 상세를 언제 받아왔는지. 동기화 대상 선정의 기준이다.
+--   NULL          → 아직 못 받음(최우선)
+--   오래된 timestamp → 갱신 대상(기본 7일)
+-- 오래된 순으로 회차당 상한만큼만 처리해 순환 갱신한다. 전량을 매번 재호출하면
+-- 레이트 리밋 때문에 밀린다.
 ALTER TABLE events ADD COLUMN detail_synced_at TIMESTAMP;
 
 COMMENT ON COLUMN events.price_text       IS 'KOPIS pcseguidance — 가격 안내 원문("전석 30,000원")';
 COMMENT ON COLUMN events.cast_info        IS 'KOPIS prfcast — 출연진. 컬럼명이 cast가 아닌 이유는 SQL 예약어';
 COMMENT ON COLUMN events.synopsis         IS 'KOPIS sty — 줄거리';
 COMMENT ON COLUMN events.schedule_text    IS 'KOPIS dtguidance — 공연시간 안내 원문';
-COMMENT ON COLUMN events.detail_synced_at IS '상세 동기화 시각. NULL이면 미수집 → 다음 동기화 대상';
+COMMENT ON COLUMN events.detail_synced_at IS '상세 동기화 시각. NULL(미수집) 또는 오래된 값이면 갱신 대상';

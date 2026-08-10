@@ -2,6 +2,7 @@ package com.flowticket.event.repository;
 
 import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -29,14 +30,36 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
     List<Long> findIdsByStatusIn(@Param("statuses") Collection<EventStatus> statuses);
 
     /**
-     * 상세를 아직 못 받은 공연 id. 동기화가 이 목록만 KOPIS 상세로 채운다.
+     * 상세를 받아야 할 공연 id. <b>미수집 + 오래된 것</b> 둘 다 대상이다.
      *
-     * <p>매번 전량(1,446건)을 재호출하지 않기 위한 기준이다. KOPIS는 IP당 1초 10회 제한이 있어
-     * 전량 재호출은 5분씩 걸리고 제한을 압박한다. 이미 받은 건 다시 부르지 않는다.
+     * <pre>
+     *   detailSyncedAt IS NULL           → 아직 한 번도 못 받음 (최우선)
+     *   detailSyncedAt &lt; staleBefore     → 받은 지 오래됨 (순환 갱신)
+     *   정렬: 오래된 순, NULL 먼저
+     * </pre>
+     *
+     * <p><b>왜 오래된 것도 넣나.</b> 초안은 NULL만 대상으로 삼아 <b>한 번 채우면 영원히 다시
+     * 보지 않았다.</b> KOPIS에서 가격·출연진·공연시간이 바뀌어도 우리 값은 그대로 남는다.
+     *
+     * <p><b>왜 전량을 매일 다시 받지 않나.</b> 공연 약 1,446건인데 레이트 리밋(5회/초) 때문에
+     * 전량이면 약 5분이고, 회차당 상한이 300건이라 매일 전부를 대상으로 만들면 계속 밀린다.
+     * 대신 <b>오래된 순으로 300건씩 순환</b>시킨다 — 전체가 한 바퀴 도는 데 약 5일이 걸리고,
+     * 그 사이 KOPIS 호출량은 하루 300건으로 일정하다.
+     *
+     * <p><b>알려진 한계</b>: 정렬이 NULL을 앞에 두므로, 상세 조회가 <b>영구적으로 실패하는</b>
+     * 공연이 회차 상한(300)보다 많으면 그것들이 매 회차를 차지해 뒤가 굶는다. 실패 시
+     * {@code detailSyncedAt}을 남기지 않는 설계의 대가다. 실제로 그런 상황이 생기면
+     * "시도 시각"을 성공 시각과 분리해 기록해야 한다 — 지금은 넣지 않았다.
      *
      * <p>id만 뽑는 이유는 한 번에 다 로드하지 않기 위해서다 — 상세 수집은 건별 외부 호출이라
      * 오래 걸리므로, 엔티티를 통째로 들고 있으면 그 시간 내내 영속성 컨텍스트에 남는다.
      */
-    @Query("select e.id from Event e where e.kopisId is not null and e.detailSyncedAt is null")
-    List<Long> findIdsNeedingDetail(Pageable pageable);
+    @Query("""
+            select e.id from Event e
+             where e.kopisId is not null
+               and (e.detailSyncedAt is null or e.detailSyncedAt < :staleBefore)
+             order by e.detailSyncedAt asc nulls first
+            """)
+    List<Long> findIdsNeedingDetail(@Param("staleBefore") LocalDateTime staleBefore,
+                                    Pageable pageable);
 }

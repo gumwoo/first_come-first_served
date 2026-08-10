@@ -28,7 +28,7 @@
 | cast_info | TEXT | Y | | | KOPIS `prfcast` — 출연진. 컬럼명이 `cast`가 아닌 이유는 SQL 예약어 |
 | synopsis | TEXT | Y | | | KOPIS `sty` — 줄거리 |
 | schedule_text | TEXT | Y | | | KOPIS `dtguidance` — 공연시간 안내 원문 |
-| detail_synced_at | TIMESTAMP | Y | | | 상세 동기화 시각. NULL이면 미수집 → 다음 동기화 대상 |
+| detail_synced_at | TIMESTAMP | Y | | | 상세 동기화 시각. NULL(미수집) 또는 오래된 값이면 갱신 대상 |
 | created_at | TIMESTAMP | N | now() | | 생성 시각 |
 | updated_at | TIMESTAMP | N | now() | | 갱신 시각 |
 

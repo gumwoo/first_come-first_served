@@ -186,10 +186,18 @@ kopis:
     days: ${KOPIS_SYNC_DAYS:90}            # 오늘부터 며칠치 수집(31일 청크로 분할)
     rows: ${KOPIS_SYNC_ROWS:100}          # 페이지당 행 수(KOPIS 최대 100)
     max-pages: ${KOPIS_SYNC_MAX_PAGES:10} # 청크당 페이지 상한(안전장치)
-    # 한 회차에 채울 상세 건수 상한. 레이트 리밋(5회/초) 때문에 300건이면 약 1분이다.
-    # 전량(1,446건)을 한 번에 하면 5분이 걸려 ShedLock의 lockAtMostFor=PT10M을 크게 잡아먹는다.
-    # 남은 건은 detail_synced_at이 NULL로 남아 다음 회차가 이어받는다.
+    # 한 회차에 처리할 상세 건수 상한. 레이트 리밋(5회/초) 때문에 300건이면 약 1분이다.
+    # 전량(약 1,446건)을 한 번에 하면 5분이 걸려 ShedLock의 lockAtMostFor=PT10M을 크게 잡아먹는다.
     detail-batch-limit: ${KOPIS_SYNC_DETAIL_BATCH_LIMIT:300}
+    # 상세를 다시 받아올 주기. 이보다 오래된 건은 갱신 대상이 된다.
+    #
+    # ⚠️ 이 값이 없던 초안은 detail_synced_at IS NULL만 대상으로 삼아, 한 번 채우면
+    # **영원히 다시 보지 않았다** — KOPIS에서 가격·출연진이 바뀌어도 우리 값은 그대로였다.
+    #
+    # 대상은 "오래된 순, NULL 먼저"로 고르므로 미수집 채우기와 순환 갱신이 같은 규칙으로 처리된다.
+    # 회차당 300건이면 전체가 한 바퀴 도는 데 약 5일이다 — 이 값을 그보다 짧게 잡으면
+    # 대상이 쌓여 계속 밀리므로 batch-limit과 함께 봐야 한다.
+    detail-refresh-after-days: ${KOPIS_SYNC_DETAIL_REFRESH_AFTER_DAYS:7}
 
 jwt:
   secret: ${JWT_SECRET:}

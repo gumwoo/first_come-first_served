@@ -79,9 +79,8 @@ public class EventService {
     /** 랭킹 데이터가 없을 때(초기/유입 전) 보여줄 기본: 판매중 최신순. */
     private List<EventSummaryResponse> fallbackLatest() {
         var onSale = new EventSearchCondition(null, null, null, EventStatus.ON_SALE, null, null);
-        return eventRepository.search(onSale, Pageable.ofSize(POPULAR_SIZE)).stream()
-                .map(EventSummaryResponse::from)
-                .toList();
+        // search()가 이미 요약 DTO를 돌려준다(목록에 필요한 컬럼만 SELECT).
+        return eventRepository.search(onSale, Pageable.ofSize(POPULAR_SIZE)).stream().toList();
     }
 
     /**
@@ -106,8 +105,7 @@ public class EventService {
     }
 
     private PageResponse<EventSummaryResponse> search(EventSearchCondition condition, Pageable pageable) {
-        return PageResponse.from(
-                eventRepository.search(condition, pageable).map(EventSummaryResponse::from));
+        return PageResponse.from(eventRepository.search(condition, pageable));
     }
 
     private EventStatus parseStatus(String status) {

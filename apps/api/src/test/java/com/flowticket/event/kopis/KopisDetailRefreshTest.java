@@ -3,9 +3,11 @@ package com.flowticket.event.kopis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.flowticket.event.domain.Event;
+import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.support.IntegrationTestSupport;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -79,6 +81,40 @@ class KopisDetailRefreshTest extends IntegrationTestSupport {
         assertThat(ids)
                 .as("NULL 먼저, 그다음 오래된 순 — 회차당 상한이 있으므로 정렬이 곧 우선순위다")
                 .containsExactly(never.getId(), older.getId(), newer.getId());
+    }
+
+    /**
+     * 목록 동기화가 상세 동기화의 결과를 지우면 안 된다.
+     *
+     * <p>초안은 {@code updateFromSync(..., null, null, status)}로 {@code runningTime}·
+     * {@code ageLimit}에 null을 넘겼고 그 메서드가 무조건 덮어썼다. 그래서 상세가 채운 값을
+     * <b>다음날 목록 동기화가 지웠고</b>, {@code detailSyncedAt}은 그대로라 갱신 주기(7일)가
+     * 지나기 전엔 다시 채워지지도 않았다.
+     *
+     * <p>이 결함은 원래 있었지만 보이지 않았다 — 예전에는 상세를 요청마다 외부에서 받아
+     * DB 값을 덮어 썼기 때문이다. DB에서 읽기 시작하면서 드러났다.
+     */
+    @Test
+    void 목록_재동기화가_상세필드를_지우지_않는다() {
+        Event e = eventRepository.saveAndFlush(
+                Event.builder().kopisId("PF-KEEP").title("원래 제목").build());
+        // 상세 동기화가 채운 상태
+        e.updateDetail("120분", "만 12세 이상", "전석 30,000원", "출연진", "줄거리", "매일 19시");
+        eventRepository.saveAndFlush(e);
+
+        // 다음날 목록 동기화 — 목록에는 runningTime·ageLimit이 없다
+        e.updateFromSync("바뀐 제목", "올림픽홀", "서울특별시", "대중음악",
+                "http://p.jpg", LocalDate.now(), LocalDate.now().plusDays(1), EventStatus.ON_SALE);
+        eventRepository.saveAndFlush(e);
+
+        Event reloaded = eventRepository.findById(e.getId()).orElseThrow();
+        assertThat(reloaded.getTitle()).as("목록 필드는 갱신된다").isEqualTo("바뀐 제목");
+        assertThat(reloaded.getRunningTime()).as("상세가 채운 값이 살아 있어야 한다").isEqualTo("120분");
+        assertThat(reloaded.getAgeLimit()).isEqualTo("만 12세 이상");
+        assertThat(reloaded.getPriceText()).isEqualTo("전석 30,000원");
+        assertThat(reloaded.getCastInfo()).isEqualTo("출연진");
+        assertThat(reloaded.getSynopsis()).isEqualTo("줄거리");
+        assertThat(reloaded.getScheduleText()).isEqualTo("매일 19시");
     }
 
     @Test

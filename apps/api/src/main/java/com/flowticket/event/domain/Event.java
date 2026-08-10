@@ -112,10 +112,27 @@ public class Event {
         this.updatedAt = this.createdAt;
     }
 
-    /** KOPIS 동기화 시 변경 가능한 메타 갱신(upsert). */
+    /**
+     * KOPIS <b>목록</b> 동기화가 갱신하는 메타. 목록 응답에 있는 필드만 다룬다.
+     *
+     * <p>⚠️ {@code runningTime}·{@code ageLimit}은 <b>여기서 건드리지 않는다.</b> 그 둘은 KOPIS
+     * <b>상세</b> 응답에만 있고({@code KopisEvent}에는 아예 없다), 목록 동기화는 넘길 값이 없어
+     * {@code null}을 전달하고 있었다. 그런데 이 메서드가 무조건 덮어써서 <b>상세 동기화가 채운
+     * 값을 다음날 목록 동기화가 지웠다.</b> 게다가 {@code detailSyncedAt}은 그대로라 갱신 주기
+     * (기본 7일)가 지나기 전까지 다시 채워지지도 않았다.
+     *
+     * <p>이 결함은 원래부터 있었지만 보이지 않았다 — 예전에는 상세 응답을 요청마다 외부에서
+     * 받아 DB 값을 덮어 썼기 때문이다. DB에서 읽기 시작하면서 드러났다.
+     *
+     * <p>그래서 <b>목록/상세의 필드 책임을 분리한다.</b>
+     * <pre>
+     *   목록 → title · venue · region · genre · posterUrl · 기간 · status
+     *   상세 → runningTime · ageLimit · priceText · castInfo · synopsis · scheduleText
+     * </pre>
+     */
     public void updateFromSync(String title, String venue, String region, String genre,
                                String posterUrl, LocalDate startDate, LocalDate endDate,
-                               String runningTime, String ageLimit, EventStatus status) {
+                               EventStatus status) {
         this.title = title;
         this.venue = venue;
         this.region = region;
@@ -123,8 +140,6 @@ public class Event {
         this.posterUrl = posterUrl;
         this.startDate = startDate;
         this.endDate = endDate;
-        this.runningTime = runningTime;
-        this.ageLimit = ageLimit;
         if (status != null) {
             this.status = status;
         }

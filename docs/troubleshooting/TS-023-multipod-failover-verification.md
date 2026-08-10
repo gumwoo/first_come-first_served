@@ -164,9 +164,18 @@ t3.large 3대에 얹혀 있다). 1·2회차가 0건이었던 것은 운이다.
 
 ### 4-4. 대신 더 정확한 사실 두 가지
 
-**유실은 4회차 모두 0이다.** 6000/6000 PUBLISHED, `underMinIsr`은 전 구간 0 — Kafka가 쓰기를
-거부한 적이 한 번도 없다. RF=3 / `min.insync.replicas=2`의 "내결함성 정확히 1대"(ADR-008)가
-실제로 성립한다.
+**유실은 4회차 모두 0이다.** 6000/6000 PUBLISHED이고, 발행 실패는 전부 `TimeoutException`
+(아래 "타임아웃은 실패가 아니라 중복이다" 참조)이며 `NotEnoughReplicas` 계열은 한 건도 없었다. 관측 구간에서 `underMinIsr`은
+0을 유지했다.
+
+⚠️ **"쓰기가 거부된 적이 없다"고까지는 말할 수 없다.** Prometheus 스크레이프가 15초라
+그보다 짧은 min ISR 미달은 지표에서 놓칠 수 있다. 이 문서가 말할 수 있는 것은
+**관측 구간에서 `underMinIsr=0`이 유지됐고, 애플리케이션에서도 min ISR 부족에 따른 발행 거부가
+관측되지 않았다**까지다. 더 강한 근거는 지표가 아니라 결과 쪽에 있다 — 6000/6000 PUBLISHED,
+실패 유형, Kafka 증가분.
+
+이 범위에서 RF=3 / `min.insync.replicas=2`의 "내결함성 정확히 1대"(ADR-008)와 어긋나는 관측은
+없었다.
 
 ```
 14:55:32  underRepl=0   underMinIsr=0  offline=0

@@ -1,6 +1,7 @@
 # 배포·운영 준비 (S09) — 한 장 지도
 
-- 상태(2026-08-10): **Phase 1~7 완료 / Phase 8은 이진 실증만 완료.** 상세는 [aws-eks-deploy-plan.md](aws-eks-deploy-plan.md) 머리말.
+- 상태(2026-08-10): **Phase 1~7 완료 / Phase 8은 이진 실증만 완료 — DoD 9개 중 8개 충족.**
+  잔여 1개는 "부하 시 HPA 수평 확장 곡선(RPS/p95)". 상세는 [aws-eks-deploy-plan.md](aws-eks-deploy-plan.md) §6.
 - 성격: **인프라 트랙**(기능 슬라이스 아님). 지도의 작업 큐로 S09에 편입 — [docs/screens/_index.md](../screens/_index.md).
 - 우선순위: **S08 아웃박스(정합성)를 먼저** 끝낸 뒤 이 배포로. 배포는 "코드 선반영 완료"라 실증만 하고 동결.
 - 후속: S10 부하테스트·모니터링은 이 배포 위에서 실측.
@@ -43,5 +44,5 @@
 ## 새 ADR/IMP/TS는?
 이 항목들은 "예정 작업"이라 지금은 지도 + 이 문서로 추적한다. 구현하다 결함이 나면 **TS**, 스케일 수치가 나오면 **IMP**(S10), 되돌아볼 설계 결정이면 **ADR**로 그때 승격한다.
 
-- **[ADR-009](../decisions/ADR-009-gitops-cd-argocd.md) GitOps CD — ArgoCD (Proposed)**: 배포를 push(Actions apply)가 아니라 **pull 기반 GitOps(ArgoCD)**로. Terraform=인프라 / Actions=빌드·이미지·Git 갱신 / **ArgoCD=앱 동기화·드리프트·롤백**. "Git이 단일 진실원" 철학을 런타임까지 확장. Application은 최소 유지(과설계 방지). 2026-08-10 **Accepted로 승격**(구현·실증 완료, [[TS-022]]).
-- **[ADR-012](../decisions/ADR-012-3az-eks-infra-cost-control.md) 3AZ EKS 인프라 — 이중화 범위와 비용 통제 (Proposed)**: 3 AZ·AZ별 NAT·AZ별 노드그룹·CA를 **왜** 그렇게 골랐는지. 판단 기준은 "핵심 주장은 실증하고, 기본 안전장치는 근거를 남긴다". 상시 운영 대신 **apply/destroy**로 비용 통제. 구현 구조는 [terraform-design.md](terraform-design.md).
+- **[ADR-009](../decisions/ADR-009-gitops-cd-argocd.md) GitOps CD — ArgoCD (**Accepted**, 2026-08-10)**: 배포를 push(Actions apply)가 아니라 **pull 기반 GitOps(ArgoCD)**로. Terraform=인프라 / Actions=빌드·이미지·Git 갱신 / **ArgoCD=앱 동기화·드리프트·롤백**. "Git이 단일 진실원" 철학을 런타임까지 확장. Application은 최소 유지(과설계 방지). 2026-08-10 **Accepted로 승격**(구현·실증 완료, [[TS-022]]).
+- **[ADR-012](../decisions/ADR-012-3az-eks-infra-cost-control.md) 3AZ EKS 인프라 — 이중화 범위와 비용 통제 (**Accepted**, 2026-08-10)**: 3 AZ·AZ별 NAT·AZ별 노드그룹·CA를 **왜** 그렇게 골랐는지. 판단 기준은 "핵심 주장은 실증하고, 기본 안전장치는 근거를 남긴다". 상시 운영 대신 **apply/destroy**로 비용 통제. 구현 구조는 [terraform-design.md](terraform-design.md). 2026-08-10 기준 3AZ 클러스터가 실제로 기동 중이라 **Accepted로 승격**.

@@ -27,4 +27,16 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
     /** 좌석 시딩 대상: 판매 가능 상태의 이벤트 id (S04 자동 시딩). */
     @Query("select e.id from Event e where e.status in :statuses")
     List<Long> findIdsByStatusIn(@Param("statuses") Collection<EventStatus> statuses);
+
+    /**
+     * 상세를 아직 못 받은 공연 id. 동기화가 이 목록만 KOPIS 상세로 채운다.
+     *
+     * <p>매번 전량(1,446건)을 재호출하지 않기 위한 기준이다. KOPIS는 IP당 1초 10회 제한이 있어
+     * 전량 재호출은 5분씩 걸리고 제한을 압박한다. 이미 받은 건 다시 부르지 않는다.
+     *
+     * <p>id만 뽑는 이유는 한 번에 다 로드하지 않기 위해서다 — 상세 수집은 건별 외부 호출이라
+     * 오래 걸리므로, 엔티티를 통째로 들고 있으면 그 시간 내내 영속성 컨텍스트에 남는다.
+     */
+    @Query("select e.id from Event e where e.kopisId is not null and e.detailSyncedAt is null")
+    List<Long> findIdsNeedingDetail(Pageable pageable);
 }

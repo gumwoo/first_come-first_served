@@ -189,6 +189,10 @@ kopis:
     days: ${KOPIS_SYNC_DAYS:90}            # 오늘부터 며칠치 수집(31일 청크로 분할)
     rows: ${KOPIS_SYNC_ROWS:100}          # 페이지당 행 수(KOPIS 최대 100)
     max-pages: ${KOPIS_SYNC_MAX_PAGES:10} # 청크당 페이지 상한(안전장치)
+    # 한 회차에 채울 상세 건수 상한. 레이트 리밋(5회/초) 때문에 300건이면 약 1분이다.
+    # 전량(1,446건)을 한 번에 하면 5분이 걸려 ShedLock의 lockAtMostFor=PT10M을 크게 잡아먹는다.
+    # 남은 건은 detail_synced_at이 NULL로 남아 다음 회차가 이어받는다.
+    detail-batch-limit: ${KOPIS_SYNC_DETAIL_BATCH_LIMIT:300}
 
 jwt:
   secret: ${JWT_SECRET:}

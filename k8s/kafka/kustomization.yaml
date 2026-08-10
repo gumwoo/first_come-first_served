@@ -1,0 +1,23 @@
+# Kafka 적용 단위. `kubectl apply -k k8s/kafka` 한 번으로 끝난다.
+#
+# **왜 묶는가**: Kafka CR의 `metricsConfig.valueFrom.configMapKeyRef`가 `kafka-metrics`
+# ConfigMap을 참조한다. 파일이 따로 놀면 "ConfigMap 먼저, 그다음 Kafka CR"이라는 순서를
+# **사람이 기억해야** 하고, kafka.yaml만 적용하면 Kafka CR이 존재하지 않는 ConfigMap을
+# 가리키게 된다. monitoring 쪽은 이미 묶여 있는데 여기만 빠져 있었다.
+#
+# ⚠️ **configMapGenerator로 바꾸지 마라.** 생성기를 쓰면 이름에 해시 접미사가 붙는데
+# (`kafka-metrics-9f8g7h...`), kustomize의 이름 참조 변환기는 Strimzi CRD의
+# `spec.kafka.metricsConfig.valueFrom`을 모른다. 참조가 옛 이름에 남아 브로커가
+# ConfigMap을 못 찾는다. 평범한 resources 항목으로 두는 것이 여기서는 맞다.
+#
+# 적용 순서(전체):
+#   1) Strimzi 오퍼레이터 설치(helm) — CRD가 먼저 있어야 이 apply가 성립한다
+#   2) kubectl apply -k k8s/kafka
+#   3) kubectl apply -k k8s/monitoring   (PodMonitor는 kube-prometheus-stack CRD에 의존)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: kafka
+
+resources:
+  - kafka-metrics-configmap.yaml
+  - kafka.yaml

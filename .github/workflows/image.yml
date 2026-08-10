@@ -14,6 +14,8 @@ on:
 # OIDC로 AWS 역할을 맡으려면 id-token 발급 권한이 필요하다(장기 액세스 키를 쓰지 않는 이유).
 permissions:
   id-token: write
+  # 기본은 읽기만. write가 실제로 필요한 건 bump-tag 하나뿐이라 그 잡에만 준다
+  # (잡 레벨 permissions는 이 블록을 대체하므로 bump-tag는 id-token을 받지 않는다 — 필요 없다).
   contents: read
 
 env:
@@ -162,3 +164,67 @@ jobs:
         run: |
           echo "### Web 이미지 push 완료" >> "$GITHUB_STEP_SUMMARY"
           echo "\`${{ steps.ecr.outputs.registry }}/flowticket-web:${{ needs.guard.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # GitOps: 새 이미지 태그를 **Git에 커밋**한다. ArgoCD는 Git만 보므로 이 단계가 없으면
+  # 이미지를 아무리 push해도 클러스터에 반영되지 않는다("설치는 했는데 하는 일이 없는" GitOps).
+  #
+  # ⚠️ 무한 루프 주의: CI가 `push: [main]`에 반응하고, 이미지 워크플로는 그 CI의 완료에
+  # 반응한다. 태그 커밋을 그냥 밀면 CI → image → 커밋 → CI → … 가 끝없이 돈다.
+  # 커밋 메시지에 **[skip ci]** 를 넣어 GitHub이 워크플로를 건너뛰게 해서 고리를 끊는다.
+  # ─────────────────────────────────────────────────────────────────────────────
+  bump-tag:
+    name: 매니페스트 태그 갱신(GitOps)
+    runs-on: ubuntu-latest
+    needs: [guard, api, web]
+    if: needs.guard.outputs.ready == 'true'
+    permissions:
+      # 이 잡만 main에 태그 커밋을 push한다. 다른 잡은 읽기 권한만 갖는다.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 태그는 항상 main 최신에 얹는다. 빌드한 코드의 SHA는 아래에서 값으로만 쓴다.
+          ref: main
+          # 기본 GITHUB_TOKEN으로 푸시한다. 이 토큰의 푸시는 워크플로를 다시 트리거하지 않지만,
+          # 그 동작에 기대지 않고 [skip ci]로도 막는다(이중 방어).
+          persist-credentials: true
+
+      - name: kustomization 태그 갱신
+        id: bump
+        run: |
+          SHA="${{ needs.guard.outputs.sha }}"
+          F=k8s/overlays/demo-local/kustomization.yaml
+          if [ ! -f "$F" ]; then echo "::error::$F 가 없다 — 오버레이가 커밋돼 있어야 한다"; exit 1; fi
+          # newTag 값만 교체(40자 hex). 역참조를 쓰지 않는다 — 치환문에 그대로 다시 쓰면 되고,
+          # 역참조는 여러 겹의 이스케이프를 거치며 깨지기 쉽다(실제로 제어문자가 들어갔다).
+          sed -i -E "s|newTag: [0-9a-f]{40}|newTag: ${SHA}|g" "$F"
+          if git diff --quiet -- "$F"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "태그가 이미 $SHA — 커밋 생략"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            grep -n "newTag:" "$F"
+          fi
+
+      - name: 커밋 & 푸시
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add k8s/overlays/demo-local/kustomization.yaml
+          git commit -m "chore(deploy): 이미지 태그 ${{ needs.guard.outputs.sha }} [skip ci]"
+          # 빌드가 도는 동안 main이 움직였을 수 있다. 리베이스 후 재시도한다(최대 3회).
+          for i in 1 2 3; do
+            if git push origin main; then exit 0; fi
+            echo "푸시 실패 — main을 리베이스하고 재시도($i/3)"
+            git pull --rebase origin main
+          done
+          echo "::error::태그 커밋 푸시 실패 — main 경합이 3회 이상 발생했다"
+          exit 1
+
+      - name: 요약
+        run: |
+          echo "### 매니페스트 태그" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA: \`${{ needs.guard.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 커밋: ${{ steps.bump.outputs.changed }}" >> "$GITHUB_STEP_SUMMARY"

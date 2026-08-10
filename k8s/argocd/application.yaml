@@ -1,0 +1,55 @@
+# ArgoCD Application — 이 저장소의 k8s/overlays/demo-local 을 클러스터에 지속 동기화한다.
+#
+# 왜 GitOps인가: 이 프로젝트의 철학이 "Git이 단일 진실원, 계약/가드로 스스로 증명"이다(ADR-009).
+# 코드 계약은 harness가 검사하고, **클러스터의 실제 상태는 ArgoCD가 Git과 diff**한다.
+#
+# 실제로 필요했다 — 성능 측정을 하느라 `kubectl set image`(구버전 롤백), `kubectl patch hpa`
+# (min=max=3 고정), `kubectl set env`(Flyway 우회)를 손으로 넣었고, 그중 HPA는 **며칠간
+# 드리프트로 남아** git과 클러스터가 어긋난 상태였다(TS-021 §6-1). 사람이 기억으로 되돌리는
+# 방식은 실패한다.
+#
+# ⚠️ 부트스트랩은 한 번 수동이다: kubectl apply -f k8s/argocd/application.yaml
+#    (이 파일 자체를 ArgoCD가 관리하게 하려면 App-of-Apps가 필요한데, 계획서상 지양한다 —
+#     스코프가 커지고 이 규모에서 얻는 게 없다.)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: flowticket
+  namespace: argocd
+  finalizers:
+    # Application을 지울 때 배포된 리소스도 함께 정리되도록 한다(고아 리소스 방지).
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/gumwoo/first_come-first_served.git
+    targetRevision: main
+    # kustomize 오버레이를 가리킨다. base가 아니라 오버레이여야 이미지 태그·엔드포인트가 채워진다.
+    path: k8s/overlays/demo-local
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: flowticket
+  syncPolicy:
+    # ⚠️ 처음에는 **자동 동기화를 켜지 않는다**(automated 블록 없음 = manual).
+    # 이유: selfHeal이 켜져 있으면 클러스터에서 손으로 바꾼 것을 즉시 되돌린다. 그 자체는
+    # 원하는 동작이지만, **CI가 이미지 태그를 Git에 커밋하는 단계가 먼저 붙어야** GitOps가
+    # 성립한다. 그 전에 자동화를 켜면 "새 이미지를 배포할 방법이 없는" 상태가 된다.
+    # 태그 커밋이 붙은 뒤 automated + prune + selfHeal 로 올린다.
+    syncOptions:
+      # 네임스페이스가 없으면 만든다(base에 namespace.yaml이 있지만 순서 의존을 없앤다).
+      - CreateNamespace=true
+      # 대량 리소스가 아니므로 서버사이드 적용으로 필드 소유권 충돌을 줄인다.
+      - ServerSideApply=true
+      # ⚠️ 이게 없으면 아래 ignoreDifferences 는 **diff 계산에만** 적용된다.
+      # 즉 OutOfSync로는 안 뜨지만 sync가 도는 순간 Git의 replicas 값이 그대로 적용돼
+      # HPA가 정한 파드 수를 덮어쓴다. "replicas는 HPA 소유"라는 의도를 실제로 강제하려면
+      # sync 단계에서도 무시해야 한다.
+      - RespectIgnoreDifferences=true
+  # 무시할 차이: HPA가 관리하는 replicas를 ArgoCD가 되돌리면 스케일이 취소된다.
+  # Deployment.spec.replicas는 **HPA의 소유**이므로 제외한다.
+  # (위 RespectIgnoreDifferences=true 와 짝이다 — 단독으로는 diff에서만 빠진다.)
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

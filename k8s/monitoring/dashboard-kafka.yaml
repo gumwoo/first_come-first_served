@@ -189,7 +189,7 @@ data:
         {
           "type": "timeseries",
           "title": "ISR 축소 / 확장",
-          "description": "브로커를 죽이면 shrink가, 복구되면 expand가 오른다. 페일오버의 시각 표식.",
+          "description": "expand는 브로커 복귀 시 오른다. shrink는 브로커 소실로는 오르지 않는다 — KRaft에서 ISR 제거는 컨트롤러 fencing이 처리한다(TS-023 실측: 종료 방식 3가지 모두 0). 살아 있지만 뒤처진 팔로워에서만 오를 것으로 추정.",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
           "targets": [
             {

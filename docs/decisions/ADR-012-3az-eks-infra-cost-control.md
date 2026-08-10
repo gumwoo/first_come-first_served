@@ -1,6 +1,7 @@
 # ADR-012 · 3AZ EKS 운영 유사 인프라 — 이중화 범위와 비용 통제 전략
 
-- 상태: Proposed (Terraform `apply`로 실제 기동 시 Accepted로 승격)
+- 상태: **Accepted** (2026-08-10 기준 3AZ EKS 클러스터가 실제로 기동 중 — 노드 t3.large 3대,
+  RDS·ElastiCache·ALB 연결 확인. 비용 통제를 위한 apply/destroy 운용은 그대로 유지)
 - 날짜: 2026-08-04
 - 슬라이스: S09(배포·운영 준비) Phase 3 — 인프라 트랙
 - 관련: [[ADR-009]](GitOps CD), [[ADR-008]](Kafka 백본),

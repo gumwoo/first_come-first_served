@@ -1,6 +1,7 @@
 # ADR-009 · GitOps CD — ArgoCD 채택 (Terraform=인프라 / ArgoCD=앱)
 
-- 상태: Proposed (S09 배포 착수 시 Accepted로 승격)
+- 상태: **Accepted** (2026-08-10 구현·실증 완료 — ArgoCD 설치, CI 태그 커밋, 자동 동기화 + selfHeal/prune,
+  드리프트 self-heal 실증. 구현 중 나온 사건은 [[TS-022]])
 - 날짜: 2026-07-31
 - 슬라이스: S09(배포·운영 준비) — 선행 S08(아웃박스) 먼저
 - 관련: [[ADR-008]](Kafka 이벤트 백본), `docs/deployment/aws-eks-deploy-plan.md`, `docs/deployment/app-changes-for-k8s-kafka.md`

@@ -29,7 +29,10 @@ data:
         name: kafka_server_replicamanager_$1
         type: GAUGE
 
-      # ISR 축소/확장 횟수. 브로커를 죽이면 shrink가, 살아나면 expand가 오른다.
+      # ISR 축소/확장 횟수.
+      # ⚠️ shrink는 **브로커 소실로는 오르지 않는다**(TS-023 실측). SIGTERM/force-delete/
+      # JVM SIGKILL 세 방식 모두 0이었다 — KRaft는 브로커가 사라지면 컨트롤러가 fencing으로
+      # ISR에서 빼므로 리더 쪽 카운터를 거치지 않는다. expand는 복귀 시 정상적으로 오른다.
       - pattern: kafka.server<type=ReplicaManager, name=(IsrShrinksPerSec|IsrExpandsPerSec)><>Count
         name: kafka_server_replicamanager_$1_total
         type: COUNTER

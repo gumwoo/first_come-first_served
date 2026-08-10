@@ -38,6 +38,11 @@ public class KopisClient {
     private final String serviceKey;
     private final XmlMapper xmlMapper;
     private final MeterRegistry meterRegistry;
+    /**
+     * <b>동기화 경로에만</b> 적용한다. 사용자 요청 경로(fetchDetail)에 쓰면 요청 스레드를 재우게 되어,
+     * 외부 지연이 톰캣 스레드를 묶는 실패를 방어 장치로 재현하는 꼴이 된다({@link KopisRateLimiter}).
+     */
+    private final KopisRateLimiter rateLimiter;
 
     /** 외부 연동 지표 이름. Prometheus에서는 kopis_api_requests_seconds_{count,sum}이 된다. */
     private static final String METRIC = "kopis.api.requests";
@@ -50,11 +55,13 @@ public class KopisClient {
     public KopisClient(@Qualifier("kopisDetailClient") RestClient detailClient,
                        @Qualifier("kopisSyncClient") RestClient syncClient,
                        @Value("${kopis.service-key:}") String serviceKey,
-                       MeterRegistry meterRegistry) {
+                       MeterRegistry meterRegistry,
+                       KopisRateLimiter rateLimiter) {
         this.detailClient = detailClient;
         this.syncClient = syncClient;
         this.serviceKey = serviceKey;
         this.meterRegistry = meterRegistry;
+        this.rateLimiter = rateLimiter;
         this.xmlMapper = (XmlMapper) new XmlMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
@@ -143,9 +150,16 @@ public class KopisClient {
         return all;
     }
 
-    /** 공연목록 조회(기간/페이지). 실패 시 빈 목록 반환(동기화는 best-effort). */
+    /**
+     * 공연목록 조회(기간/페이지). 실패 시 빈 목록 반환(동기화는 best-effort).
+     *
+     * <p><b>동기화 배치 전용</b>이므로 호출 전에 레이트 리밋을 통과한다. 90일을 31일 청크로
+     * 나누면 청크 3개 × 최대 10페이지 = <b>최대 30회 연속 호출</b>이고, 간격 없이 쏘면
+     * KOPIS의 IP 제한(1초 10회)을 넘길 수 있다.
+     */
     public List<KopisEvent> fetchList(String stdate, String eddate, int cpage, int rows) {
         try {
+            rateLimiter.acquire();
             return recorded("list", () -> {
                 // byte[]로 받아 XML 선언(UTF-8)을 XmlMapper가 직접 감지(String 변환 시 ISO-8859-1 깨짐 방지)
                 byte[] xml = syncClient.get()
@@ -164,6 +178,17 @@ public class KopisClient {
                 KopisListResponse parsed = xmlMapper.readValue(xml, KopisListResponse.class);
                 return parsed.items != null ? parsed.items : Collections.<KopisEvent>emptyList();
             }, result -> result.isEmpty() ? "empty" : "success");
+        } catch (InterruptedException e) {
+            // 플래그를 복구해 인터럽트를 삼키지 않는다 — 삼키면 종료 신호가 사라진다.
+            //
+            // 다만 이것이 **배치 전체를 즉시 끝내지는 않는다.** 여기서 빈 목록을 돌려주면
+            // fetchListAll의 페이지 루프만 끝나고, 상위 sync()는 다음 31일 청크로 넘어간다.
+            // 플래그가 살아 있어 다음 acquire()에서 곧바로 다시 던지므로 실질적으로는 빠르게
+            // 빠져나가지만, 구조적 보장은 아니다. upsert가 멱등이라 중간 종료가 데이터를
+            // 망가뜨리지는 않는다.
+            Thread.currentThread().interrupt();
+            log.warn("[kopis] 목록 조회 중단(인터럽트)");
+            return Collections.emptyList();
         } catch (Exception e) {
             log.warn("[kopis] 목록 조회 실패: {}", e.getMessage());
             return Collections.emptyList();

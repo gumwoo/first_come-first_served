@@ -1,0 +1,28 @@
+# ArgoCD Helm values — 부트스트랩 전용(클러스터에 helm으로 설치하며, ArgoCD가 스스로 관리하지 않는다).
+#
+# 이 규모에서 쓰지 않는 컴포넌트는 끈다. t3.large 3노드에 이미 26개 파드가 떠 있고,
+# 안 쓰는 컨트롤러를 띄우면 측정 노이즈만 늘어난다.
+dex:
+  enabled: false        # SSO 미사용 — 로컬 admin 계정만 쓴다
+notifications:
+  enabled: false        # 알림 연동 없음
+# ApplicationSet 컨트롤러는 이 차트 버전에 on/off 토글이 없어 항상 뜬다(끄려고 넣은
+# applicationSet.enabled 는 무시됐다 — `helm get values`로 확인). 우리는 쓰지 않지만
+# 파드 1개라 그대로 둔다.
+
+configs:
+  params:
+    # ALB/Ingress 없이 port-forward로만 접근한다. TLS 종단이 없으므로 서버는 평문으로 띄운다.
+    server.insecure: true
+
+server:
+  service:
+    type: ClusterIP     # 외부 노출하지 않는다. 접근은 kubectl port-forward.
+
+# 요청량은 보수적으로 — 남는 여유를 앱이 쓰게 둔다.
+controller:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+repoServer:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }

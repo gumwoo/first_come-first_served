@@ -30,11 +30,21 @@ spec:
     server: https://kubernetes.default.svc
     namespace: flowticket
   syncPolicy:
-    # ⚠️ 처음에는 **자동 동기화를 켜지 않는다**(automated 블록 없음 = manual).
-    # 이유: selfHeal이 켜져 있으면 클러스터에서 손으로 바꾼 것을 즉시 되돌린다. 그 자체는
-    # 원하는 동작이지만, **CI가 이미지 태그를 Git에 커밋하는 단계가 먼저 붙어야** GitOps가
-    # 성립한다. 그 전에 자동화를 켜면 "새 이미지를 배포할 방법이 없는" 상태가 된다.
-    # 태그 커밋이 붙은 뒤 automated + prune + selfHeal 로 올린다.
+    # 자동 동기화를 켠다. 두 전제가 모두 충족된 뒤에 켰다.
+    #  1) CI가 이미지 태그를 Git에 커밋한다(image.yml의 bump-tag). 이게 없으면 자동화는
+    #     "새 이미지를 배포할 방법이 없는" 상태가 된다. #204 머지 후 실제 성공을 확인했다.
+    #  2) sync가 HPA의 파드 수를 덮어쓰지 않는다. 실측: replicas 6으로 스케일한 상태에서
+    #     sync(12:39:20Z) → 36초간 6 유지, managedFields에서 argocd-controller가
+    #     spec.replicas를 소유하지 않음. 이게 깨진 채로 selfHeal을 켜면 부하 중 스케일아웃이
+    #     자동으로 취소된다.
+    automated:
+      # 클러스터에서 손으로 바꾼 것을 Git 상태로 되돌린다. 이 프로젝트가 도입한 이유 그 자체다
+      # (TS-021 §6-1: HPA 수동 패치가 며칠간 드리프트로 남았다).
+      selfHeal: true
+      # Git에서 지운 리소스를 클러스터에서도 지운다. 없으면 "삭제"만 GitOps 밖으로 새어나가
+      # 고아 리소스가 쌓인다. 적용 전 확인함 — 추적 대상은 Git 매니페스트와 1:1이고,
+      # 손으로 만든 k6-load Job·k6-scripts ConfigMap·pgcheck Pod는 추적 밖이라 지워지지 않는다.
+      prune: true
     syncOptions:
       # 네임스페이스가 없으면 만든다(base에 namespace.yaml이 있지만 순서 의존을 없앤다).
       - CreateNamespace=true

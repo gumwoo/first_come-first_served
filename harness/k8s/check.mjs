@@ -8,6 +8,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import yaml from "js-yaml";
 import { walk, read, Reporter, REPO_ROOT } from "../lib/util.mjs";
 
 const r = new Reporter("k8s");
@@ -207,6 +208,49 @@ if (!apiDeploy) {
         `Instant/timestamptz 전환을 Expand-Contract로 먼저 해야 한다`
     );
   }
+}
+
+// ---------- ⑧ HPA가 소유하는 Deployment에 replicas를 두지 않는다 ----------
+// ArgoCD가 붙으면서 실제로 터진 문제다. Git에 replicas가 있으면 sync가 돌 때마다 HPA가 정한
+// 파드 수를 Git 값으로 덮어쓴다. 부하 중 스케일아웃이 sync 한 번에 취소된다는 뜻이다.
+//
+// ignoreDifferences + RespectIgnoreDifferences=true 로 막으려 했으나 **실측에서 막지 못했다**
+// (HPA가 없는 flowticket-web으로 통제 실험: 4 → sync → 2. ServerSideApply를 빼도 동일).
+// 확실한 방어는 필드를 매니페스트에서 없애는 것이고, 없앤 상태를 유지하는 건 이 규칙이 한다.
+// 하한은 HPA의 minReplicas가 담당하므로 잃는 것이 없다.
+//
+// HPA가 없는 Deployment(web)는 대상이 아니다 — 그쪽은 Git이 replicas를 소유해야 맞다.
+const docs = [];
+for (const f of manifests) {
+  let parsed;
+  try {
+    parsed = yaml.loadAll(read(f));
+  } catch {
+    continue; // 파싱이 안 되는 파일은 다른 규칙이 본다
+  }
+  for (const d of parsed) if (d && typeof d === "object") docs.push({ doc: d, file: f });
+}
+
+const hpaTargets = new Set();
+for (const { doc } of docs) {
+  if (doc.kind !== "HorizontalPodAutoscaler") continue;
+  const t = doc.spec?.scaleTargetRef;
+  if (t?.kind === "Deployment" && t.name) hpaTargets.add(t.name);
+}
+if (hpaTargets.size === 0) {
+  r.fail("HPA를 하나도 못 찾았다 — 규칙 ⑧이 무력화된 상태");
+}
+
+for (const { doc, file } of docs) {
+  if (doc.kind !== "Deployment") continue;
+  if (!hpaTargets.has(doc.metadata?.name)) continue;
+  if (doc.spec?.replicas === undefined) continue;
+  r.fail(
+    `HPA가 소유하는 Deployment에 replicas가 있다: ${path.relative(REPO_ROOT, file)} ` +
+      `→ ${doc.metadata.name} (replicas: ${doc.spec.replicas}). ArgoCD가 sync할 때마다 HPA가 정한 ` +
+      `파드 수를 이 값으로 덮어쓴다 — 부하 중 스케일아웃이 취소된다. 필드를 지우고 하한은 HPA의 ` +
+      `minReplicas에 맡겨라(ignoreDifferences로는 sync를 막지 못하는 것을 실측했다)`
+  );
 }
 
 r.done();

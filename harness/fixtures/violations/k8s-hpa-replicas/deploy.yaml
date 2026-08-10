@@ -1,0 +1,37 @@
+# 위반: HPA가 소유하는 Deployment에 replicas가 박혀 있다.
+# ArgoCD가 sync할 때마다 HPA가 정한 파드 수를 이 값으로 되돌린다 — 부하 중 스케일아웃이 취소된다.
+# ignoreDifferences로는 sync를 막지 못하는 것을 실측으로 확인했으므로, 필드 자체가 없어야 한다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: flowticket-api }
+  template:
+    metadata:
+      labels: { app: flowticket-api }
+    spec:
+      containers:
+        - name: api
+          image: flowticket-api:REPLACE_TAG
+          env:
+            - name: TZ
+              value: UTC
+          ports:
+            - containerPort: 8080
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: flowticket-api
+  minReplicas: 3
+  maxReplicas: 9

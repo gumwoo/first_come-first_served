@@ -10,6 +10,18 @@ spring:
     url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:flowticket}}
     username: ${DB_USERNAME:flowticket}
     password: ${DB_PASSWORD:flowticket}
+    hikari:
+      # ⚠️ 이 값은 혼자 정할 수 없다 — HPA 최대 파드 수와 **곱해져** DB 한도와 겨룬다.
+      #
+      #   maxReplicas × maximum-pool-size + 앱 외 세션 + 여유 ≤ max_connections − reserved
+      #
+      # 기본값 10을 쓰던 때 9파드 × 10 = 90이 실질 한도 76을 넘어, 부하로 9까지 확장되자
+      # 8번째부터 Flyway가 커넥션을 못 얻어 기동 실패했다(TS-021). 두 값이 각자 합리적이어도
+      # 곱이 한도를 넘을 수 있는데, 그 곱을 계산하는 자리가 코드 어디에도 없었다.
+      #
+      # 5로 낮춰 9 × 5 = 45로 만든다. 실측상 부하 중 pending은 0, active도 파드당 0~1이라
+      # 이 워크로드는 풀을 거의 쓰지 않는다. 하네스 backend 규칙 17이 이 곱을 검사한다.
+      maximum-pool-size: ${DB_POOL_MAX:5}
   jpa:
     hibernate:
       ddl-auto: validate

@@ -1,0 +1,7 @@
+# 위반: Hikari 풀이 커서 HPA 최대 파드 수와 곱하면 DB 한도를 넘는다.
+# maxReplicas(9) × pool(10) = 90 > 가용 56 (t4g.micro 79 − reserved 3 − 앱외여유 20)
+# 파드가 최대로 확장되면 뒤쪽 파드가 커넥션을 못 얻어 기동에 실패한다(TS-021).
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 10

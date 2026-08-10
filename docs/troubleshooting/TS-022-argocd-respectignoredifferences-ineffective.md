@@ -1,4 +1,4 @@
-# TS-022 · 리뷰가 짚어준 대로 고쳤는데 안 먹었다 — ArgoCD `RespectIgnoreDifferences`가 sync를 막지 못함
+# TS-022 · 리뷰가 짚어준 대로 고쳤는데 안 먹었다 — `RespectIgnoreDifferences=true`인데 sync가 replicas를 덮어씀 (ArgoCD v3.5.0 구성 실측)
 
 - 슬라이스: S09(배포/운영)
 - 날짜: 2026-08-10
@@ -90,15 +90,25 @@ kube-controller-manager      Update  status  2026-08-10T12:06:57Z   <== spec.rep
 ### 4-4. 부분적으로는 동작했다
 
 replicas가 4인데도 Application은 `Synced`로 표시됐다. **diff 단계의 무시는 정상 동작한다.**
-`ignoreDifferences`는 "OutOfSync로 안 뜨게" 해줄 뿐이고, sync가 도는 순간 desired state가 그대로
-적용된다. 이게 이 사건에서 가장 위험한 성질이다 — **UI는 초록인데 뒤에서는 덮어쓴다.**
+즉 `ignoreDifferences`가 OutOfSync 표시를 없애는 것까지는 문서대로였고, 여기서 어긋난 것은
+sync 단계뿐이다.
+
+이 사건에서 가장 위험한 성질이 이것이다 — **UI는 초록인데 실제로는 덮어쓰고 있었다.** 표시가
+정상이므로 사람이 눈치챌 계기가 없다. 부하 시험 중이었다면 파드가 줄어든 것을 HPA의 판단으로
+읽었을 가능성이 높다.
 
 환경: ArgoCD v3.5.0 (Helm chart `argo/argo-cd`), EKS 1.3x, t3.large × 3.
 
 ## 5. 근본 원인
 
-`RespectIgnoreDifferences=true`가 이 조합에서 sync 단계의 무시를 강제하지 못했다. 문서상 기대와
-실제 동작이 어긋난다.
+**관측한 사실.** 이 클러스터의 ArgoCD v3.5.0 구성에서는 `RespectIgnoreDifferences=true`를
+설정했음에도 `spec.replicas`가 sync 시 적용되는 것을 실측했다. ArgoCD 공식 문서는 이 옵션이
+sync 단계에서도 ignored field를 제외하도록 설계됐다고 명시하므로, **문서상 기대 동작과 다른
+현상이었다.** 정확한 내부 원인까지는 규명하지 않았다 — ArgoCD 일반 동작이라고 읽으면 안 되고,
+이 구성에서 그렇게 관측됐다는 것까지가 이 문서가 말할 수 있는 범위다.
+
+(원인을 더 좁히지 않은 이유: 아래 §6의 해결책이 이 옵션에 의존하지 않으므로, 규명해도 채택할
+구조가 바뀌지 않는다. 옵션 동작이 나중에 달라지더라도 §6은 그대로 유효하다.)
 
 더 깊은 원인은 따로 있다. **`replicas`를 Git에 둔 것 자체가 잘못이었다.** HPA가 붙는 순간 그 값은
 실효를 잃고 "HPA가 뜨기 전 한 번만 의미 있는 값"이 된다. 그런 값을 매니페스트에 남겨두고 도구
@@ -115,8 +125,9 @@ spec:
 desired state에 `replicas`가 없으면 apply가 그 필드를 건드리지 않는다. 잃는 것도 없다 —
 하한은 HPA `minReplicas: 3`이 정한다.
 
-- `RespectIgnoreDifferences=true`는 **제거**했다. 동작하지 않는 옵션을 "이걸로 막힌다"는 주석과
-  함께 남겨두면 다음 사람이 그 말을 믿는다. 왜 뺐고 어떻게 확인했는지를 주석에 적었다.
+- `RespectIgnoreDifferences=true`는 **제거**했다. 설계 의도가 무엇이든 이 구성에서는 막지 못하는
+  것을 실측했고, "이걸로 막힌다"는 주석과 함께 남겨두면 다음 사람이 그 말을 믿는다. 왜 뺐고
+  어떻게 확인했는지를 주석에 적었다.
 - `ignoreDifferences`는 **남기되 `name: flowticket-api`로 좁혔다.** Git에 `replicas`가 없으니
   클러스터의 실제 값이 늘 "추가된 필드"로 잡혀 diff 노이즈가 되는데, 그걸 죽이는 용도다.
   `web`은 HPA가 없어 Git이 replicas를 소유해야 하고, 거기서 드리프트가 나면 알아야 한다.

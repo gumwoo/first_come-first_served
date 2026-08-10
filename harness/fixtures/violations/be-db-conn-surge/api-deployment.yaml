@@ -1,0 +1,11 @@
+# 위반: 평상시(9 × 5 = 45)는 예산 안이지만, 롤링 중에는 maxUnavailable=0이라
+# (9 + 5) × 5 = 70으로 예산 56을 넘는다. "배포하는 순간에만 터지는" 구성이다.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: flowticket-api }
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 5

@@ -469,6 +469,84 @@ if (dtoWithLocalDateTime.length > 0) {
   }
 }
 
+// ---------- 17. DB 커넥션 상한: (maxReplicas + maxSurge) × pool 이 DB 한도를 넘지 않는가 ----------
+// 이 한도는 **곱셈으로 정해지는데 곱하는 자리가 코드에 없었다.** HPA maxReplicas(9)와 Hikari
+// 기본 풀(10)이 각자 합리적이었지만 곱이 90이라 실질 한도 76을 넘었고, 부하로 9까지 확장되자
+// 8번째 파드부터 Flyway가 커넥션을 얻지 못해 기동 실패했다(TS-021).
+//
+// ⚠️ **maxSurge를 빼면 안 된다.** 롤링 배포 중에는 새 Pod가 Ready가 된 뒤에 옛 Pod가 빠지므로
+// (maxUnavailable=0, maxSurge=1) 순간적으로 maxReplicas + maxSurge 개가 공존한다. 평상시 값만
+// 검사하면 "배포하는 순간에만 넘는" 구성을 통과시킨다 — 초안이 그 구멍을 갖고 있었고 리뷰에서
+// 지적받아 고쳤다.
+//
+// 네 값이 서로 다른 곳에 흩어져 있어 사람이 맞추기 어렵다 — maxReplicas는 k8s/api-hpa.yaml,
+// maxSurge는 k8s/api-deployment.yaml, 풀 크기는 application.yml, max_connections는
+// **저장소 밖**(RDS 인스턴스 클래스에서 파생)이다.
+// 마지막 값은 클래스별 실측치를 여기에 표로 둔다(추정 아님 — pg_settings로 직접 조회한 값).
+const DB_MAX_CONNECTIONS = {
+  "db.t4g.micro": 79, // 2026-08-10 pg_settings 실측
+};
+// 앱이 전부 쓰는 게 아니다. rdsadmin·운영 도구·마이그레이션 세션이 같은 풀에서 가져간다.
+// 조사 시점 앱 외 세션이 7개였다(rdsadmin 3 + 기타 4). 여유를 포함해 20으로 잡는다.
+const NON_APP_HEADROOM = 20;
+
+{
+  // ⚠️ 경로는 반드시 REPO_ROOT 기준으로 만든다. CI는 `harness/`에서 실행하므로
+  // 저장소 상대 경로를 그대로 fs에 넘기면 cwd 기준으로 풀려 파일을 못 찾고,
+  // 그러면 규칙이 **실패가 아니라 조용히 건너뛰어진다**(거짓 안전). 실제로 그렇게 통과했다.
+  // fixture가 k8s 쪽 값을 갈아끼울 수 있게 열어둔다(maxSurge 항이 실제로 계산에 들어가는지 검증).
+  const K8S = process.env.HARNESS_K8S_DIR || "k8s/base";
+  const hpaFile = path.join(REPO_ROOT, K8S, "api-hpa.yaml");
+  const depFile = path.join(REPO_ROOT, K8S, "api-deployment.yaml");
+  const ymlFile = path.join(REPO_ROOT, API, "src/main/resources/application.yml");
+  const rdsVars = path.join(REPO_ROOT, "infra/terraform/platform/modules/rds/variables.tf");
+
+  // application.yml이 없는 fixture도 있으므로 그것만 선택적으로 다룬다(없으면 기본값 10).
+  if (!fs.existsSync(hpaFile) || !fs.existsSync(rdsVars) || !fs.existsSync(depFile)) {
+    r.fail("커넥션 상한 검사 대상 파일을 못 찾았다(api-hpa.yaml / api-deployment.yaml / rds variables.tf) — 규칙이 무력화된 상태");
+  } else {
+    const maxReplicas = Number(read(hpaFile).match(/^\s*maxReplicas:\s*(\d+)/m)?.[1]);
+    // 설정이 없으면 HikariCP 기본값 10이다 — "안 정한 것"도 정해진 값으로 취급해야 한다.
+    const poolRaw = fs.existsSync(ymlFile)
+      ? read(ymlFile).match(/^\s*maximum-pool-size:\s*(?:\$\{[A-Z_]+:)?(\d+)/m)?.[1]
+      : undefined;
+    const pool = poolRaw ? Number(poolRaw) : 10;
+    const cls = read(rdsVars).match(/variable\s+"instance_class"[\s\S]*?default\s*=\s*"([^"]+)"/)?.[1];
+    // maxSurge는 정수 또는 백분율("25%")이다. 백분율이면 maxReplicas 기준으로 올림한다.
+    const surgeRaw = read(depFile).match(/^\s*maxSurge:\s*"?([0-9]+%?)"?/m)?.[1];
+    const maxSurge = surgeRaw === undefined
+      // 명시하지 않으면 k8s 기본값이 25%다. 1로 가정하면 과소평가되므로 기본값대로 계산한다.
+      ? Math.ceil((maxReplicas * 25) / 100)
+      : surgeRaw.endsWith("%")
+        ? Math.ceil((maxReplicas * parseInt(surgeRaw, 10)) / 100)
+        : Number(surgeRaw);
+    const maxConn = DB_MAX_CONNECTIONS[cls];
+
+    if (!maxReplicas || !cls) {
+      r.fail("커넥션 상한 검사에 필요한 값을 못 읽었다(maxReplicas/instance_class) — 규칙이 무력화된 상태");
+    } else if (maxConn === undefined) {
+      r.fail(
+        `RDS 인스턴스 클래스 ${cls}의 max_connections를 모른다. ` +
+          `harness/backend/check.mjs의 DB_MAX_CONNECTIONS에 **실측값**을 추가할 것 ` +
+          `(pg_settings 조회. 공식 없이 추정하지 말 것)`
+      );
+    } else {
+      const reserved = 3; // superuser_reserved_connections
+      const budget = maxConn - reserved - NON_APP_HEADROOM;
+      const peakPods = maxReplicas + maxSurge; // 롤링 중 공존 최대치
+      const demand = peakPods * pool;
+      if (demand > budget) {
+        r.fail(
+          `DB 커넥션 상한 초과: (maxReplicas ${maxReplicas} + maxSurge ${maxSurge}) × pool ${pool} = ${demand} > ` +
+            `가용 ${budget} (${cls} max_connections ${maxConn} − reserved ${reserved} − 앱외여유 ${NON_APP_HEADROOM}). ` +
+            `maxUnavailable=0이라 롤링 중 ${peakPods}개가 공존한다 — 그 순간 뒤쪽 파드가 커넥션을 ` +
+            `얻지 못해 기동에 실패한다(TS-021)`
+        );
+      }
+    }
+  }
+}
+
 function normalize(p) {
   return p.replace(/\{[^}]+\}/g, "{id}").replace(/\/+$/, "") || "/";
 }

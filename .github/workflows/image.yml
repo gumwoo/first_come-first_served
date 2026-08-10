@@ -14,8 +14,9 @@ on:
 # OIDC로 AWS 역할을 맡으려면 id-token 발급 권한이 필요하다(장기 액세스 키를 쓰지 않는 이유).
 permissions:
   id-token: write
-  # 태그 갱신 커밋을 main에 밀어야 하므로 write가 필요하다(GitOps: Git이 desired-state).
-  contents: write
+  # 기본은 읽기만. write가 실제로 필요한 건 bump-tag 하나뿐이라 그 잡에만 준다
+  # (잡 레벨 permissions는 이 블록을 대체하므로 bump-tag는 id-token을 받지 않는다 — 필요 없다).
+  contents: read
 
 env:
   AWS_REGION: ap-northeast-2
@@ -177,6 +178,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [guard, api, web]
     if: needs.guard.outputs.ready == 'true'
+    permissions:
+      # 이 잡만 main에 태그 커밋을 push한다. 다른 잡은 읽기 권한만 갖는다.
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:

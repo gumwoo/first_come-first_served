@@ -40,8 +40,14 @@ spec:
       - CreateNamespace=true
       # 대량 리소스가 아니므로 서버사이드 적용으로 필드 소유권 충돌을 줄인다.
       - ServerSideApply=true
+      # ⚠️ 이게 없으면 아래 ignoreDifferences 는 **diff 계산에만** 적용된다.
+      # 즉 OutOfSync로는 안 뜨지만 sync가 도는 순간 Git의 replicas 값이 그대로 적용돼
+      # HPA가 정한 파드 수를 덮어쓴다. "replicas는 HPA 소유"라는 의도를 실제로 강제하려면
+      # sync 단계에서도 무시해야 한다.
+      - RespectIgnoreDifferences=true
   # 무시할 차이: HPA가 관리하는 replicas를 ArgoCD가 되돌리면 스케일이 취소된다.
-  # Deployment.spec.replicas는 **HPA의 소유**이므로 diff에서 제외한다.
+  # Deployment.spec.replicas는 **HPA의 소유**이므로 제외한다.
+  # (위 RespectIgnoreDifferences=true 와 짝이다 — 단독으로는 diff에서만 빠진다.)
   ignoreDifferences:
     - group: apps
       kind: Deployment

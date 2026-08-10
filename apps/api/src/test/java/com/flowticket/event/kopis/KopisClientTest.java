@@ -37,7 +37,7 @@ class KopisClientTest {
         // 운영에서는 KopisClientConfig가 타임아웃이 다른 RestClient 둘을 주입한다.
         RestClient client = builder.build();
         MeterRegistry meters = new SimpleMeterRegistry();
-        return new Fixture(new KopisClient(client, client, "test-key", meters), server, meters);
+        return new Fixture(new KopisClient(client, client, "test-key", meters, new KopisRateLimiter(1000)), server, meters);
     }
 
     @Test

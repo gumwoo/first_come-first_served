@@ -70,7 +70,8 @@ class KopisTimeoutTest {
                 config.kopisDetailClient(org.springframework.web.client.RestClient.builder(), baseUrl),
                 config.kopisSyncClient(org.springframework.web.client.RestClient.builder(), baseUrl),
                 "test-key",
-                meters);
+                meters,
+                new KopisRateLimiter(1000));
     }
 
     @Test

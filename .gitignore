@@ -47,5 +47,9 @@ crash.log
 backend.hcl
 
 # k8s 오버레이의 실제 값(계정 ID·엔드포인트 포함) — 공개 저장소에 커밋하지 않는다.
-# 구조는 k8s/overlays/demo-local.example/ 에 있다.
-k8s/overlays/demo-local/
+# k8s/overlays/demo-local/ 는 **커밋한다**(2026-08-10, ArgoCD 도입).
+# GitOps는 Git이 desired-state이므로 오버레이가 저장소에 없으면 ArgoCD가 볼 것이 없다.
+#
+# 그 안에 든 것은 자격증명이 아니라 식별자다 — AWS 계정 ID, RDS/Redis 엔드포인트, ACM ARN.
+# RDS는 PubliclyAccessible=false로 프라이빗 서브넷에 있고(확인함), Redis는 전송 암호화가 켜져 있다.
+# 진짜 시크릿(JWT·DB 비번·OAuth·KOPIS 키)은 여전히 매니페스트 밖이며 클러스터에서 직접 만든다.

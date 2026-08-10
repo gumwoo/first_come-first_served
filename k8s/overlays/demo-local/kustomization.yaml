@@ -16,11 +16,11 @@ resources:
 # ── 이미지: base의 placeholder를 실제 레지스트리·태그로 ──────────────
 images:
   - name: flowticket-api
-    newName: <ACCOUNT_ID>.dkr.ecr.ap-northeast-2.amazonaws.com/flowticket-api
-    newTag: <COMMIT_SHA>
+    newName: 891612580915.dkr.ecr.ap-northeast-2.amazonaws.com/flowticket-api
+    newTag: 8afa51f6667819a08ed132b98d0775a28409bea1
   - name: flowticket-web
-    newName: <ACCOUNT_ID>.dkr.ecr.ap-northeast-2.amazonaws.com/flowticket-web
-    newTag: <COMMIT_SHA>
+    newName: 891612580915.dkr.ecr.ap-northeast-2.amazonaws.com/flowticket-web
+    newTag: 8afa51f6667819a08ed132b98d0775a28409bea1
 
 # ── ConfigMap: 데이터 엔드포인트 ──────────────────────────────────
 # DB_HOST에는 **포트를 붙이지 않는다** — 모듈이 aws_db_instance.address(호스트만)를 반환하고
@@ -30,12 +30,12 @@ patches:
     patch: |
       - op: replace
         path: /data/DB_HOST
-        value: <DB_ENDPOINT>
+        value: flowticket.chom4k282bmy.ap-northeast-2.rds.amazonaws.com
       - op: replace
         path: /data/REDIS_HOST
-        value: <REDIS_ENDPOINT>
+        value: master.flowticket-redis.nazwah.apn2.cache.amazonaws.com
   - target: { kind: Ingress, name: flowticket }
     patch: |
       - op: replace
         path: /metadata/annotations/alb.ingress.kubernetes.io~1certificate-arn
-        value: <ACM_CERT_ARN>
+        value: arn:aws:acm:ap-northeast-2:891612580915:certificate/5b774cb4-6765-4f35-8b13-c6500ff0ddb9

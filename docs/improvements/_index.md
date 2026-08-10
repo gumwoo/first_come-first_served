@@ -32,6 +32,7 @@ naive → 측정 → 개선 → 재측정 순서로 수치를 **커밋으로 박
 | [IMP-015](IMP-015-rolling-zero-downtime.md) | 롤링 배포 무중단 실측(EKS) | 인프라 | 3,600건 중 5xx **0건** — 단 조건 한정(§5) | 부분 |
 | [IMP-016](IMP-016-kafka-broker-failover.md) | Kafka 브로커 1대 장애 실증 | 인프라 | ISR 3→2, 리더 자동 선출, acks=all 쓰기 지속 — 앱 경로는 미검증 | 부분 |
 | [IMP-017](IMP-017-pdb-node-drain.md) | 노드 드레인 중 무중단(PDB) | 인프라 | 2,400건 5xx **0건** — 파드 5개 여유 조건 | 완료 |
+| [IMP-018](IMP-018-kopis-detail-hotpath-removal.md) | 사용자 요청이 외부 API 호출을 증폭시키던 구조 제거 | S02/S09 | 부하 중 외부 호출 **약 22,000→0건**(제한 34배 초과 해소) · 응답시간은 측정 환경 변동으로 미주장 | 완료 |
 
 ## 누적 지표 보드
 프로젝트 전체에서 모은 정량 성과 요약: [METRICS.md](METRICS.md)

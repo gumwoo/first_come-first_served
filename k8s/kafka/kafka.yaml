@@ -61,6 +61,30 @@ spec:
       transaction.state.log.min.isr: 2
       # 앱이 토픽을 자동 생성한다(KAFKA_TOPIC_PARTITIONS/REPLICAS로 파티션·RF 지정).
       auto.create.topics.enable: "true"
+    # 브로커 JMX를 Prometheus 형식으로 노출한다(포트 9404, 이름 tcp-prometheus).
+    # 규칙은 kafka-metrics-configmap.yaml — 노출 범위를 좁힌 이유를 거기에 적었다.
+    #
+    # 왜 필요한가: Phase 8이 "브로커 페일오버 시 쓰기가 계속되는가"를 증명하려면
+    # UnderMinIsr·ISR 변동을 **볼 수 있어야** 한다. 지금까지는 수집 자체가 없어서
+    # 브로커를 죽여도 "앱이 안 죽었다"까지만 말할 수 있었다.
+    metricsConfig:
+      type: jmxPrometheusExporter
+      valueFrom:
+        configMapKeyRef:
+          name: kafka-metrics
+          key: kafka-metrics-config.yml
   entityOperator:
     topicOperator: {}
     userOperator: {}
+  # Consumer Lag은 브로커 JMX에 없다 — 컨슈머 그룹의 커밋 오프셋과 로그 끝 오프셋의 차이라
+  # 별도 수집기가 필요하다. Kafka Exporter가 그걸 `kafka_consumergroup_lag`으로 노출한다.
+  #
+  # Phase 8에서 이게 없으면 "아웃박스 릴레이가 밀렸는지"를 볼 수 없다. 처리량(BytesIn)은
+  # 발행 쪽만 말해주고, 소비가 따라오는지는 lag으로만 판단된다.
+  kafkaExporter:
+    # 관심 대상만 본다. 정규식이 넓으면 __consumer_offsets 같은 내부 토픽까지 시리즈가 붙는다.
+    topicRegex: "order-events.*"
+    groupRegex: ".*"
+    resources:
+      requests: { cpu: 20m, memory: 64Mi }
+      limits: { memory: 128Mi }

@@ -1,0 +1,259 @@
+# Grafana 대시보드 — Kafka 클러스터(브로커 + Consumer Lag).
+#
+# 앱 대시보드(dashboard-flowticket.yaml)와 **분리한 이유**: 보는 시점이 다르다. 앱 대시보드는
+# "요청이 느린가"를 볼 때, 이건 "브로커가 살아 있고 소비가 따라오는가"를 볼 때 연다.
+# 특히 Phase 8의 페일오버 실증에서는 이 화면만 띄워두고 브로커를 죽인다.
+#
+# ⚠️ 여기 쓴 메트릭 이름은 전부 실제 /metrics 출력과 Prometheus 쿼리로 확인한 것만 넣었다.
+# 없는 이름을 쓰면 에러가 아니라 조용히 빈 패널이 된다(앱 대시보드에서 겪었다).
+# 확인한 것: kafka_server_replicamanager_*, kafka_controller_*, kafka_server_brokertopicmetrics_*,
+#           kafka_consumergroup_lag, kafka_brokers, jvm_gc_collection_seconds
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  kafka.json: |
+    {
+      "title": "FlowTicket — Kafka 브로커 / Consumer Lag",
+      "uid": "flowticket-kafka",
+      "timezone": "browser",
+      "refresh": "15s",
+      "time": { "from": "now-30m", "to": "now" },
+      "panels": [
+        {
+          "type": "stat",
+          "title": "살아있는 브로커",
+          "description": "3이 정상. 페일오버 실증 중 2로 떨어졌다가 돌아와야 한다.",
+          "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+          "targets": [{ "expr": "max(kafka_brokers)", "refId": "A" }],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 2 },
+                  { "color": "green", "value": 3 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "활성 컨트롤러",
+          "description": "정확히 1이어야 한다. 0이면 메타데이터 갱신 불가, 2 이상이면 split-brain 의심.",
+          "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+          "targets": [{ "expr": "sum(kafka_controller_activecontrollercount)", "refId": "A" }],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 },
+                  { "color": "red", "value": 2 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "min.insync 미달 파티션",
+          "description": "0이 아니면 acks=all 발행이 막힌다. 브로커 2대가 죽으면 여기가 오른다(min.insync=2).",
+          "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+          "targets": [{ "expr": "sum(kafka_server_replicamanager_underminisrpartitioncount)", "refId": "A" }],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "복제 미달 파티션",
+          "description": "브로커 1대가 죽으면 여기가 먼저 오른다. 쓰기는 아직 된다(min.insync 충족).",
+          "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+          "targets": [{ "expr": "sum(kafka_server_replicamanager_underreplicatedpartitions)", "refId": "A" }],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 1 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "오프라인 파티션",
+          "description": "리더가 없는 파티션. 0이 아니면 그 파티션은 읽기·쓰기 모두 불가.",
+          "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+          "targets": [{ "expr": "max(kafka_controller_offlinepartitionscount)", "refId": "A" }],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "총 Consumer Lag",
+          "description": "커밋 오프셋과 로그 끝의 차이. 아웃박스 릴레이가 밀어낸 것을 소비가 따라오는지.",
+          "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+          "targets": [{ "expr": "sum(kafka_consumergroup_lag > 0) or vector(0)", "refId": "A" }]
+        },
+        {
+          "type": "timeseries",
+          "title": "Consumer Lag — 그룹·토픽별",
+          "description": "음수(-1)는 아직 커밋한 적 없는 파티션이라 제외한다(kafka_exporter 표기).",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "targets": [
+            {
+              "expr": "sum by (consumergroup, topic) (kafka_consumergroup_lag >= 0)",
+              "legendFormat": "{{consumergroup}} / {{topic}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "브로커별 파티션 / 리더 수",
+          "description": "브로커를 죽이면 리더가 남은 브로커로 옮겨간다 — 그 이동이 여기 보인다.",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "targets": [
+            {
+              "expr": "kafka_server_replicamanager_leadercount",
+              "legendFormat": "{{broker}} 리더",
+              "refId": "A"
+            },
+            {
+              "expr": "kafka_server_replicamanager_partitioncount",
+              "legendFormat": "{{broker}} 파티션",
+              "refId": "B"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "토픽 처리량 — 초당 메시지",
+          "description": "브로커 합산. 아웃박스 릴레이가 실제로 얼마나 밀어냈는지.",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "targets": [
+            {
+              "expr": "sum by (topic) (rate(kafka_server_brokertopicmetrics_messagesinpersec_total{topic!=\"\"}[1m]))",
+              "legendFormat": "{{topic}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": { "defaults": { "unit": "reqps" } }
+        },
+        {
+          "type": "timeseries",
+          "title": "토픽 처리량 — 초당 바이트",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "targets": [
+            {
+              "expr": "sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesinpersec_total{topic!=\"\"}[1m]))",
+              "legendFormat": "{{topic}} in",
+              "refId": "A"
+            },
+            {
+              "expr": "sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesoutpersec_total{topic!=\"\"}[1m]))",
+              "legendFormat": "{{topic}} out",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": { "defaults": { "unit": "Bps" } }
+        },
+        {
+          "type": "timeseries",
+          "title": "ISR 축소 / 확장",
+          "description": "브로커를 죽이면 shrink가, 복구되면 expand가 오른다. 페일오버의 시각 표식.",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "targets": [
+            {
+              "expr": "sum(rate(kafka_server_replicamanager_isrshrinkspersec_total[1m]))",
+              "legendFormat": "shrink",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(kafka_server_replicamanager_isrexpandspersec_total[1m]))",
+              "legendFormat": "expand",
+              "refId": "B"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "요청 처리 여력 (idle 비율)",
+          "description": "1에 가까울수록 여유. 0에 가까워지면 브로커가 병목이다.",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "targets": [
+            {
+              "expr": "kafka_server_requesthandler_avg_idle_percent",
+              "legendFormat": "{{broker}} 핸들러",
+              "refId": "A"
+            },
+            {
+              "expr": "kafka_network_processor_avg_idle_percent",
+              "legendFormat": "{{broker}} 네트워크",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": { "defaults": { "max": 1, "min": 0 } }
+        },
+        {
+          "type": "timeseries",
+          "title": "발행 지연 (Produce TotalTimeMs)",
+          "description": "acks=all이라 복제까지 포함된 시간이다. 브로커가 빠지면 여기가 먼저 튄다.",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+          "targets": [
+            {
+              "expr": "max by (quantile) (kafka_network_requestmetrics_totaltimems{request=\"Produce\", quantile=~\"0.50|0.95|0.99\"})",
+              "legendFormat": "p{{quantile}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": { "defaults": { "unit": "ms" } }
+        },
+        {
+          "type": "timeseries",
+          "title": "브로커 JVM — 힙 / GC",
+          "description": "GC로 브로커가 멈추면 위 지표가 흔들리는 이유가 된다.",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+          "targets": [
+            {
+              "expr": "kafka_jvm_memory_heap_used_bytes",
+              "legendFormat": "{{broker}} 힙 사용",
+              "refId": "A"
+            },
+            {
+              "expr": "sum by (broker) (rate(jvm_gc_collection_seconds_sum{job=~\".*kafka.*\"}[1m]))",
+              "legendFormat": "{{broker}} GC 초/초",
+              "refId": "B"
+            }
+          ]
+        }
+      ]
+    }

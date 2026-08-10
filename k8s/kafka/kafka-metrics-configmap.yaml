@@ -1,0 +1,88 @@
+# JMX Prometheus Exporter 규칙 — 브로커의 JMX MBean을 Prometheus 메트릭으로 변환한다.
+#
+# **전부 노출하지 않는다.** Kafka의 MBean은 수천 개고 토픽·파티션·요청타입별로 곱해지면
+# 시리즈가 폭발한다. 이 클러스터의 Prometheus는 t3.large 위에 떠 있고 앱 메트릭도 함께
+# 받으므로, Phase 8에서 **실제로 볼 것만** 남긴다.
+#
+# 남긴 기준 — Phase 8이 증명하려는 두 가지에 필요한 것:
+#   1) 브로커 페일오버: 브로커 1대를 죽였을 때 쓰기가 계속되는가
+#      → UnderReplicated/UnderMinIsr/OfflinePartitions/ActiveController/Isr 변동
+#   2) 처리량과 부하: 아웃박스 릴레이가 실제로 얼마나 밀어냈는가
+#      → BytesIn/Out, MessagesIn, 요청 지연
+#
+# Consumer Lag은 여기 없다 — 브로커 JMX가 아니라 Kafka Exporter가 제공한다(kafka.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-metrics
+  namespace: kafka
+data:
+  kafka-metrics-config.yml: |
+    lowercaseOutputName: true
+    # 매칭되지 않은 MBean은 버린다. 이 옵션이 없으면 규칙에 없는 것까지 기본 변환돼
+    # 시리즈를 줄이려는 의도가 무너진다.
+    rules:
+      # ── 1) 복제 상태: 페일오버 실증의 핵심 지표 ────────────────────────
+      # UnderReplicatedPartitions > 0 = 복제본이 따라오지 못하는 파티션이 있다.
+      # UnderMinIsrPartitionCount > 0 = min.insync.replicas 미달 → acks=all 쓰기가 막힌다.
+      - pattern: kafka.server<type=ReplicaManager, name=(UnderReplicatedPartitions|UnderMinIsrPartitionCount|PartitionCount|LeaderCount)><>Value
+        name: kafka_server_replicamanager_$1
+        type: GAUGE
+
+      # ISR 축소/확장 횟수. 브로커를 죽이면 shrink가, 살아나면 expand가 오른다.
+      - pattern: kafka.server<type=ReplicaManager, name=(IsrShrinksPerSec|IsrExpandsPerSec)><>Count
+        name: kafka_server_replicamanager_$1_total
+        type: COUNTER
+
+      # ── 2) 컨트롤러: KRaft 모드에서도 활성 컨트롤러는 정확히 1이어야 한다 ──
+      # 합계가 0이면 컨트롤러 부재(쓰기 불가), 2 이상이면 split-brain 의심.
+      - pattern: kafka.controller<type=KafkaController, name=(ActiveControllerCount|OfflinePartitionsCount|GlobalPartitionCount|GlobalTopicCount|PreferredReplicaImbalanceCount)><>Value
+        name: kafka_controller_$1
+        type: GAUGE
+
+      # ── 3) 처리량 — 토픽별 (topic 라벨 있는 패턴을 먼저 둔다) ───────────
+      # ⚠️ 순서가 중요하다. 아래의 topic 없는 패턴이 먼저 오면 토픽별 MBean까지
+      # 그 규칙에 먹혀 topic 라벨이 사라진다(JMX exporter는 첫 매칭 규칙만 적용).
+      - pattern: kafka.server<type=BrokerTopicMetrics, name=(BytesInPerSec|BytesOutPerSec|MessagesInPerSec|TotalProduceRequestsPerSec|TotalFetchRequestsPerSec), topic=(.+)><>Count
+        name: kafka_server_brokertopicmetrics_$1_total
+        type: COUNTER
+        labels:
+          topic: "$2"
+
+      # 브로커 합계(topic 라벨 없음)
+      - pattern: kafka.server<type=BrokerTopicMetrics, name=(BytesInPerSec|BytesOutPerSec|MessagesInPerSec|TotalProduceRequestsPerSec|TotalFetchRequestsPerSec)><>Count
+        name: kafka_server_brokertopicmetrics_$1_total
+        type: COUNTER
+
+      # ── 4) 요청 지연 — 발행/조회만 (전체 요청 타입은 시리즈가 과하다) ────
+      - pattern: kafka.network<type=RequestMetrics, name=TotalTimeMs, request=(Produce|Fetch|FetchConsumer|FetchFollower)><>(\d+)thPercentile
+        name: kafka_network_requestmetrics_totaltimems
+        type: GAUGE
+        labels:
+          request: "$1"
+          quantile: "0.$2"
+
+      - pattern: kafka.network<type=RequestMetrics, name=RequestsPerSec, request=(Produce|Fetch|FetchConsumer|FetchFollower), version=(.+)><>Count
+        name: kafka_network_requestmetrics_requests_total
+        type: COUNTER
+        labels:
+          request: "$1"
+
+      # ── 5) 요청 처리 여력 — 풀이 마르면 지연이 급증한다 ─────────────────
+      - pattern: kafka.server<type=KafkaRequestHandlerPool, name=RequestHandlerAvgIdlePercent><>OneMinuteRate
+        name: kafka_server_requesthandler_avg_idle_percent
+        type: GAUGE
+
+      - pattern: kafka.network<type=SocketServer, name=NetworkProcessorAvgIdlePercent><>Value
+        name: kafka_network_processor_avg_idle_percent
+        type: GAUGE
+
+      # ── 6) JVM — 브로커가 GC로 멈추면 위 지표가 흔들리는 이유가 된다 ─────
+      - pattern: java.lang<type=Memory><HeapMemoryUsage>(used|max)
+        name: kafka_jvm_memory_heap_$1_bytes
+        type: GAUGE
+
+      # GC 규칙은 두지 않는다. 처음에 `java.lang<type=GarbageCollector...>CollectionTime`
+      # 규칙을 넣었으나 **매칭되지 않았고**(kafka_jvm_gc 시리즈 0개), 확인해보니 JMX Exporter가
+      # 내장 컬렉터로 이미 `jvm_gc_collection_seconds{gc="G1 Young Generation"}` 형태를
+      # 노출하고 있었다. 안 먹는 규칙을 남기면 "GC를 보고 있다"고 착각하게 된다.

@@ -1,0 +1,50 @@
+# Kafka 메트릭 수집 — 브로커(JMX Exporter)와 Kafka Exporter(Consumer Lag).
+#
+# **ServiceMonitor가 아니라 PodMonitor인 이유**: Strimzi가 만드는 Service는 브로커 전체를
+# 대표하는 bootstrap/brokers 서비스라 메트릭 포트를 노출하지 않는다. 반면 메트릭은 브로커
+# **파드마다** 따로 봐야 의미가 있다(어느 브로커가 리더인지, 어느 브로커의 ISR이 줄었는지).
+# PodMonitor는 파드를 직접 골라 스크레이프하므로 브로커별 시리즈가 그대로 남는다.
+#
+# 차트의 `podMonitorSelectorNilUsesHelmValues: false` 덕에 release 라벨이 없어도 잡힌다
+# (k8s/monitoring/kube-prometheus-stack.values.yaml).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kafka-brokers
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: ["kafka"]
+  selector:
+    # 브로커 파드만 고른다. strimzi.io/kind=Kafka 만 쓰면 kafka-exporter 파드까지 걸려
+    # 같은 잡에 성격이 다른 타깃이 섞인다(아래에서 별도 PodMonitor로 분리했다).
+    matchLabels:
+      strimzi.io/name: flowticket-kafka
+  podMetricsEndpoints:
+    # Strimzi가 metricsConfig를 켜면 이 이름으로 9404 포트를 연다.
+    - port: tcp-prometheus
+      path: /metrics
+      interval: 15s
+      relabelings:
+        # 브로커를 구분할 수 있게 파드 이름을 라벨로 남긴다. 기본 라벨만으로는
+        # "0번 브로커의 ISR이 줄었다"를 쿼리로 표현하기 어렵다.
+        - sourceLabels: [__meta_kubernetes_pod_label_strimzi_io_pod_name]
+          targetLabel: broker
+---
+# Consumer Lag 전용. 브로커 JMX에는 lag이 없다 — 컨슈머 그룹의 커밋 오프셋과 로그 끝
+# 오프셋의 차이라 별도 수집기가 계산해야 한다.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kafka-exporter
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: ["kafka"]
+  selector:
+    matchLabels:
+      strimzi.io/name: flowticket-kafka-exporter
+  podMetricsEndpoints:
+    - port: tcp-prometheus
+      path: /metrics
+      interval: 15s

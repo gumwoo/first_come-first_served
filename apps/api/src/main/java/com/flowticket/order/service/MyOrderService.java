@@ -86,7 +86,8 @@ public class MyOrderService {
         }
         Event e = eventRepository.findById(o.getEventId()).orElse(null);
         List<OrderItemResponse> items = orderItemRepository.findByOrderId(orderId).stream()
-                .map(i -> new OrderItemResponse(i.getSeatId(), i.getGrade().name(), i.getPrice()))
+                .map(i -> new OrderItemResponse(i.getSeatId(), i.getGrade().name(), i.getPrice(),
+                        i.getSeatRow(), i.getSeatCol()))
                 .toList();
         return new MyOrderDetail(
                 o.getId(), o.getEventId(),

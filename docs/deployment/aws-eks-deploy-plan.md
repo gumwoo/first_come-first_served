@@ -162,7 +162,35 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 - [x] Grafana에 **Kafka·Consumer Lag·HPA** 대시보드 — #208(14패널, 쿼리 19개 전부 데이터 반환)
 - [x] `k8s/` 차트 + 배포 절차 문서 — `k8s/{base,overlays,kafka,monitoring,argocd}` + 각 kustomization
 
+### 클러스터 재생성 절차 (bring-up)
+
+`terraform-design.md` §6에 destroy 순서는 있으나 **반대 방향이 없었다.** 2026-08-11 재기동에서
+순서를 기억에 의존해 진행했고, metrics-server가 빠진 것을 나중에 발견했다([[TS-019]] 재발).
+
+```
+1. terraform apply (platform)                       # EKS·RDS·ElastiCache·NAT
+2. aws eks update-kubeconfig --name flowticket
+3. helm: aws-load-balancer-controller               # IRSA ARN·VPC ID 인자 필요
+   helm: strimzi (ns kafka)
+   helm: kube-prometheus-stack (-f k8s/monitoring/...values.yaml)
+   helm: argocd (-f k8s/argocd/values.yaml)
+   # metrics-server 는 EKS Add-ons 로 terraform 이 만든다(TS-019)
+4. bash k8s/external-secrets/bootstrap.sh           # ESO + 시크릿 동기화
+5. kubectl apply -k k8s/kafka
+   kubectl apply -k k8s/monitoring
+   kubectl apply -f k8s/argocd/application.yaml
+6. Route53 A 레코드를 새 ALB로 갱신                   # 클러스터 재생성 시 ALB 이름이 바뀐다
+```
+
+⚠️ 4번이 3번보다 뒤인 이유: ESO는 CRD를 스스로 설치하므로 순서 의존이 없지만, api Pod가
+시크릿을 기다리므로 앱 배포(5번) 전에 끝나 있어야 한다.
+
 **DoD 밖의 후속 개선** — ✅ **2026-08-11 완료**: External Secrets Operator 도입.
 `flowticket-api-secrets`는 이제 AWS에서 동기화된다(SSM Parameter Store 9개 + Secrets Manager
-DB 자격증명 2개). 클러스터를 재생성해도 매니페스트만으로 복구된다 — 시크릿을 삭제해도 약 4초 만에
-재생성되는 것을 실증했다. 완료 조건은 아니었으나 운영 재현성의 마지막 구멍이었다.
+DB 자격증명 2개). 시크릿을 삭제해도 약 4초 만에 재생성되는 것을 실증했다. 완료 조건은 아니었으나 운영 재현성의
+마지막 구멍이었다.
+
+재생성 범위는 정확히 이렇다 — **RDS를 포함해 인프라를 전부 재생성해도** `bootstrap.sh`가
+`terraform output -raw db_secret_arn`으로 RDS 시크릿 ARN을 매번 채우므로 사람이 매니페스트를
+고칠 일이 없다. 다만 **SSM 파라미터 9개(JWT·OAuth·KOPIS·TOSS·관리자 계정)는 AWS 계정에 남아
+있어야 한다** — 그것까지 지우면 값을 다시 등록해야 하고, 그 값은 애초에 사람만 아는 것이다.

@@ -47,10 +47,10 @@ k6 run -e K6_BASE_URL=... -e RATE=200 -e RUN_FOR=90s infra/k6/read-load-rate.js
 
 VU 고정은 보조로 쓴다:
 ```
-k6 run -e K6_VUS=300  --summary-export=benchmarks/read-load-vu300.json  infra/k6/read-load.js
-k6 run -e K6_VUS=500  --summary-export=benchmarks/read-load-vu500.json  infra/k6/read-load.js
-k6 run -e K6_VUS=750  --summary-export=benchmarks/read-load-vu750.json  infra/k6/read-load.js
-k6 run -e K6_VUS=1000 --summary-export=benchmarks/read-load-vu1000.json infra/k6/read-load.js
+k6 run -e VUS=300  --summary-export=benchmarks/read-load-vu300.json  infra/k6/read-load.js
+k6 run -e VUS=500  --summary-export=benchmarks/read-load-vu500.json  infra/k6/read-load.js
+k6 run -e VUS=750  --summary-export=benchmarks/read-load-vu750.json  infra/k6/read-load.js
+k6 run -e VUS=1000 --summary-export=benchmarks/read-load-vu1000.json infra/k6/read-load.js
 ```
 (대상 서버가 다르면 `-e K6_BASE_URL=http://host:8080`)
 

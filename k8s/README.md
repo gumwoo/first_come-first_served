@@ -88,7 +88,12 @@ SeatSseController    @GetMapping("/sse/events/{id}/seats", produces = TEXT_EVENT
 
 ## 시크릿은 이 디렉터리에 없다
 
-`flowticket-api-secrets`(JWT_SECRET·DB_PASSWORD·OAuth 키·KOPIS 키 등)는 **매니페스트에 두지
+`flowticket-api-secrets`는 **External Secrets Operator가 AWS에서 동기화한다**(2026-08-11~).
+출처는 SSM Parameter Store(값 9개) + Secrets Manager(DB 자격증명 2개)이며, 매니페스트는
+`k8s/external-secrets/`에 있다. 이전에는 손으로 만들었고 클러스터를 재생성할 때마다 사람이
+값을 다시 넣어야 했다 — 그것이 매니페스트만으로 복구되지 않던 유일한 구멍이었다.
+
+(과거 서술) `flowticket-api-secrets`(JWT_SECRET·DB_PASSWORD·OAuth 키·KOPIS 키 등)는 **매니페스트에 두지
 않는다**(ADR-013, 프로젝트 규칙). RDS 마스터 비밀번호는 Terraform이
 `manage_master_user_password`로 Secrets Manager에 만든다.
 

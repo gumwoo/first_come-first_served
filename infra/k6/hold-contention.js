@@ -29,12 +29,15 @@ const USERS = JSON.parse(open(__ENV.TOKENS || "./tokens.json"));
 
 export const options = {
   scenarios: {
-    // shared-iterations: 각 VU가 정확히 1회씩만 실행한다. 같은 좌석에 동시에 달려드는
-    // 상황을 만드는 것이 목적이라 도착률이 아니라 **동시 출발**이 중요하다.
+    // ⚠️ **per-vu-iterations 여야 한다.** shared-iterations는 전체 iteration을 VU들이
+    // 나눠 갖는 방식이라, 빠른 VU가 여러 번 가져가고 어떤 VU는 한 번도 실행하지 않을 수 있다.
+    // 이 스크립트는 exec.vu.idInTest로 사용자를 고정하므로, 그 경우 "서로 다른 100명이
+    // 각각 1번씩"이라는 전제가 깨진다(같은 사용자가 두 번 쏘고 다른 사용자는 안 쏜다).
+    // 2026-08-11 첫 측정이 그 상태였고, 리뷰에서 잡혀 다시 돌렸다.
     contention: {
-      executor: "shared-iterations",
+      executor: "per-vu-iterations",
       vus: USERS.length,
-      iterations: USERS.length,
+      iterations: 1, // VU당 정확히 1회
       maxDuration: "60s",
     },
   },
@@ -50,11 +53,20 @@ export default function () {
     JSON.stringify({ seatIds: [Number(SEAT_ID)], queueToken: u.q }),
     { headers: { "Content-Type": "application/json", Authorization: `Bearer ${u.t}` } }
   );
-  // 성공은 200 하나뿐이고, 나머지는 SOLD_OUT 등 **정상 거절**이어야 한다.
-  // 500이 섞이면 정합성은 지켰더라도 거절 경로가 깨진 것이므로 별도로 센다.
+  // 패자는 **SOLD_OUT(409)** 이어야 한다. 단순히 4xx로 세면 인증 실패(401)·권한(403)·
+  // 잘못된 좌석(400)·rate limit(429)까지 "정상 거절"로 집계돼, 패자가 진짜 좌석 경합에서
+  // 진 것인지 알 수 없다. 에러 코드까지 확인한다.
+  let code = null;
+  try {
+    code = res.json("error.code");
+  } catch (e) {
+    code = null;
+  }
   check(res, {
-    "hold 성공(200)": (r) => r.status === 200,
-    "정상 거절(4xx)": (r) => r.status >= 400 && r.status < 500,
-    "서버 오류 아님(5xx 0)": (r) => r.status < 500,
+    "승자 200": (r) => r.status === 200,
+    "패자 409 SOLD_OUT": (r) => r.status === 409 && code === "SOLD_OUT",
+    "5xx 없음": (r) => r.status < 500,
+    // 위 둘 중 어느 쪽도 아닌 응답을 잡는다(401·403·400·429 등). 0이어야 정상이다.
+    "그 외 응답": (r) => !(r.status === 200) && !(r.status === 409 && code === "SOLD_OUT"),
   });
 }

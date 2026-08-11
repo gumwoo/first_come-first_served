@@ -2,6 +2,9 @@
 
 정적 하네스로 검증 불가 → **부하 테스트(k6) 결과로 관리**. (S10 슬라이스)
 
+- 실행 계획: [`docs/testing/loadtest-plan.md`](../testing/loadtest-plan.md)
+- 실행 절차: [`infra/k6/README.md`](../../infra/k6/README.md)
+
 ## 1. 기준 지표 (목표 임계)
 | 지표 | 기준 |
 |---|---|

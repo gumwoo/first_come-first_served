@@ -7,8 +7,9 @@
   - Phase 5 앱 프로덕션 설정 — 완료(멀티팟 대응 ①②③④ 포함)
   - Phase 6 GitOps(ArgoCD)·HPA·Ingress·HTTPS — 완료, 자동 동기화 + selfHeal/prune([[ADR-009]] Accepted, [[TS-022]])
   - Phase 7 관측성 — Prometheus/Grafana + 앱 메트릭 + Kafka 브로커/Consumer Lag 수집 완료
-  - **Phase 8 — 이진 실증(페일오버·Lag·멀티팟)은 완료([[TS-023]]), 정량 부하(RPS·p95)는 측정 환경 결정 대기([[TS-021]] §7)**
-  - **DoD 기준 8/9** — §6 참조. S09는 아직 `done`이 아니다
+  - **Phase 8 — 이진 실증([[TS-023]])과 정량 부하 실측이 모두 완료.** capacity knee 600~650 rps,
+    포화 징후는 노드 CPU와 Hikari pending에서 동시에 관측(`benchmarks/phase1-saturation/`)
+  - **DoD 기준 9/9** — §6 참조
 - AWS 상시 과금은 Phase 3(EKS·RDS)부터 발생한다. 비용 통제는 apply/destroy 운용.
 - 목적: 백엔드 취업용 **살아있는 데모 URL** + **분산 시스템(K8s·멀티브로커 Kafka·오토스케일) 실증**.
 - 짝 문서: [앱 변경사항 — K8s·멀티브로커 대응](app-changes-for-k8s-kafka.md)
@@ -147,7 +148,7 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 
 ## 6. 완료 정의(DoD)
 
-> 2026-08-10 기준 **8/9**. 각 항목 뒤에 근거를 적었다 — 근거를 못 대는 항목은 체크하지 않는다.
+> 2026-08-11 기준 **9/9**. 각 항목 뒤에 근거를 적었다 — 근거를 못 대는 항목은 체크하지 않는다.
 
 - [x] 공개 HTTPS URL 동작 — `https://flow-ticket.com` 200, `/api/events` 200 확인.
       ⚠️ **결제까지의 전체 플로우를 이번에 다시 훑지는 않았다**(진입점과 목록 API만 확인)
@@ -156,8 +157,14 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 - [x] **ArgoCD Synced/Healthy** + 드리프트 self-heal 데모 — [[TS-022]] §6-3(양성 2건 + 음성 대조군 1건)
 - [x] Terraform으로 EKS·데이터·네트워크 재현 — 3AZ 클러스터 기동 중([[ADR-012]] Accepted)
 - [x] Strimzi **브로커 3·RF 3** + `order-events` **파티션 6** — `--describe`로 확인
-- [ ] **부하 시 api HPA 수평 확장 곡선(RPS/p95)** — **미완.** 정량 수치를 주장하려면 측정 환경을
-      먼저 정해야 한다([[TS-021]] §7: 버스터블 노드 + 같은 클러스터 k6). **S09의 유일한 잔여 항목**
+- [x] **부하 시 api HPA 수평 확장 곡선(RPS/p95)** — 2026-08-11 완료.
+      k6를 **클러스터 밖(노트북)**에서 돌려 [[TS-021]] §7의 자원 경합 문제를 피했다.
+      HPA 확장 곡선(3→9, 68초)과 도착률별 RPS/p95를 **클라이언트·서버 양쪽**으로 기록했고,
+      AS-IS/TO-BE 비교로 병목 이동까지 추적했다:
+      `benchmarks/{asis-web2pod,tobe-web-hpa,phase1-saturation}/`
+      - capacity knee **600~650 rps**, 포화 징후가 **노드 CPU와 Hikari pending에서 동시에** 나타남
+      - web 병목 개선 전후: 600 rps에서 실패 4.06% → 0%, p95 10,006ms → 123ms
+      - ⚠️ 수치는 노트북에서 인터넷 경유로 측정 — 절대 성능이 아니라 동일 조건 비교값이다
 - [x] **브로커 페일오버**에도 서비스 지속 — [[TS-023]] §4(4회차, 유실 0)
 - [x] Grafana에 **Kafka·Consumer Lag·HPA** 대시보드 — #208(14패널, 쿼리 19개 전부 데이터 반환)
 - [x] `k8s/` 차트 + 배포 절차 문서 — `k8s/{base,overlays,kafka,monitoring,argocd}` + 각 kustomization

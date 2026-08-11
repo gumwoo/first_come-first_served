@@ -1,7 +1,7 @@
 # 배포·운영 준비 (S09) — 한 장 지도
 
-- 상태(2026-08-10): **Phase 1~7 완료 / Phase 8은 이진 실증만 완료 — DoD 9개 중 8개 충족.**
-  잔여 1개는 "부하 시 HPA 수평 확장 곡선(RPS/p95)". 상세는 [aws-eks-deploy-plan.md](aws-eks-deploy-plan.md) §6.
+- 상태(2026-08-11): **Phase 1~8 완료 — DoD 9/9.** 정량 부하까지 실측했다(capacity knee 600~650 rps).
+  상세는 [aws-eks-deploy-plan.md](aws-eks-deploy-plan.md) §6, 원자료는 `benchmarks/`.
 - 성격: **인프라 트랙**(기능 슬라이스 아님). 지도의 작업 큐로 S09에 편입 — [docs/screens/_index.md](../screens/_index.md).
 - 우선순위: **S08 아웃박스(정합성)를 먼저** 끝낸 뒤 이 배포로. 배포는 "코드 선반영 완료"라 실증만 하고 동결.
 - 후속: S10 부하테스트·모니터링은 이 배포 위에서 실측.

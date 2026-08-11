@@ -6,6 +6,7 @@ import { User, Ticket, Receipt, ChevronRight } from "lucide-react";
 import { useMyOrders, useMyOrder } from "@/features/order/hooks/useMyOrders";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import type { MyOrderSummary } from "@/features/order/api/order";
+import { seatLabel } from "@/features/order/api/order";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -163,7 +164,7 @@ export default function MyOrdersPage() {
                       </div>
                       <dl className="space-y-1 border-t border-border pt-3 text-xs">
                         <Row k="예매번호" v={orderNo(detail.data.orderId)} />
-                        <Row k="좌석" v={detail.data.items.map((it) => `${it.grade}석`).join(", ")} />
+                        <Row k="좌석" v={detail.data.items.map(seatLabel).join(", ")} />
                         <Row k="수량" v={`${detail.data.items.length}매`} />
                         {detail.data.paidAt && <Row k="예매일" v={dateOnly(detail.data.paidAt)} />}
                       </dl>

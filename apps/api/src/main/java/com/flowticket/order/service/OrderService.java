@@ -140,7 +140,9 @@ public class OrderService {
         for (Seat s : seats) {
             orderItemRepository.save(OrderItem.builder()
                     .orderId(order.getId()).seatId(s.getId())
-                    .grade(s.getGrade()).price(priceMap.getOrDefault(s.getGrade(), 0)).build());
+                    .grade(s.getGrade()).price(priceMap.getOrDefault(s.getGrade(), 0))
+                    // 좌석 위치도 주문 시점 값으로 굳힌다(가격과 같은 이유 — ADR-004).
+                    .seatRow(s.getSeatRow()).seatCol(s.getSeatCol()).build());
         }
         return order;
     }
@@ -155,7 +157,8 @@ public class OrderService {
 
     private OrderResponse toResponse(Order o) {
         List<OrderItemResponse> items = orderItemRepository.findByOrderId(o.getId()).stream()
-                .map(i -> new OrderItemResponse(i.getSeatId(), i.getGrade().name(), i.getPrice()))
+                .map(i -> new OrderItemResponse(i.getSeatId(), i.getGrade().name(), i.getPrice(),
+                        i.getSeatRow(), i.getSeatCol()))
                 .toList();
         return new OrderResponse(o.getId(), o.getEventId(), o.getStatus().name(),
                 o.getAmount(), o.getExpiresAt(), items);

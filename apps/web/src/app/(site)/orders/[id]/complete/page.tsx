@@ -1,5 +1,7 @@
 "use client";
 
+import { seatLabel } from "@/features/order/api/order";
+
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
@@ -55,7 +57,7 @@ export default function CompletePage() {
           <div className="border-t border-border pt-2">
             {order.items.map((i) => (
               <div key={i.seatId} className="flex justify-between text-xs">
-                <span>{i.grade}석</span><span>{i.price.toLocaleString()}원</span>
+                <span>{seatLabel(i)}</span><span>{i.price.toLocaleString()}원</span>
               </div>
             ))}
             <div className="mt-1 flex justify-between font-semibold">

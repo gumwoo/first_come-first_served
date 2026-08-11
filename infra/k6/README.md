@@ -14,13 +14,38 @@
 ## 시나리오
 | 파일 | 시나리오 | 상태 |
 |------|----------|------|
-| `read-load.js` | ① 조회 API 부하(목록/좌석맵/상세) — 무릎 탐색 | 지금 |
+| `read-load.js` | ① 조회 API 부하 — VU 고정(closed model) | 있음 |
+| `read-load-rate.js` | ①' 조회 API 부하 — **도착률 고정(open model)**. 무릎 탐색은 이쪽이 정확하다 | 있음 |
 | (예정) `hold-contention.js` | ② 매진 경합 — 잔여 N석 동시 HOLD, 초과판매 0 | 다음 |
 | (예정) `spike-queue.js` | ③ 스파이크 — 오픈 순간 대기열 진입, over-admit 0 | 다음 |
 | (예정) `failure-dlq.js` | ④ 실패주입 → DLQ (Kafka 필요) | **S07 이후** |
 
+## ⚠️ 옵션 이름에 `K6_` 접두사를 쓰지 않는다
+
+`K6_VUS`·`K6_DURATION` 같은 이름은 **k6 자신의 환경변수 옵션**이라 스크립트의 `scenarios`를
+통째로 덮어쓴다. 2026-08-11 측정에서 실제로 당했다 — `constant-arrival-rate`가 사라지고
+`vus_max=1`로 돌아 100 rps를 요청했는데 25 rps만 나왔다.
+
+```
+level=warning msg="env level configuration overrode scenarios configuration entirely"
+scenarios: 1 scenario, 1 max VUs
+```
+
+경고가 뜨지만 실행은 되므로 **결과를 보기 전에는 알아채기 어렵다.** 그래서 옵션을
+`VUS`·`RATE`·`RUN_FOR`로 쓴다.
+
 ## ① 조회 부하 — 무릎 찾기
-VU를 올려가며 각각 실행해 RPS 정체·p95/p99 급등 지점을 본다:
+
+**도착률 고정(open model)을 우선한다.** VU 고정은 서버가 느려지면 한 VU의 사이클이 길어져
+부하가 스스로 줄어들기 때문에, 포화점을 지나쳐도 그래프가 완만해 보인다.
+
+```
+k6 run -e K6_BASE_URL=... -e RATE=100 -e RUN_FOR=90s infra/k6/read-load-rate.js
+k6 run -e K6_BASE_URL=... -e RATE=200 -e RUN_FOR=90s infra/k6/read-load-rate.js
+...
+```
+
+VU 고정은 보조로 쓴다:
 ```
 k6 run -e K6_VUS=300  --summary-export=benchmarks/read-load-vu300.json  infra/k6/read-load.js
 k6 run -e K6_VUS=500  --summary-export=benchmarks/read-load-vu500.json  infra/k6/read-load.js
@@ -35,3 +60,9 @@ k6 run -e K6_VUS=1000 --summary-export=benchmarks/read-load-vu1000.json infra/k6
 ## 해석 원칙 (정직성)
 - 로컬 단일 인스턴스 = k6와 서버가 자원 공유 → **절대 처리량이 아니라 추세**로 해석.
 - 수치는 실측만 기록. before/after는 최적화 전후 동일 조건에서.
+
+## 실측 기록
+
+| 위치 | 내용 |
+|---|---|
+| `benchmarks/asis-web2pod/` | 2026-08-11 AS-IS(web 2파드 고정). 무릎 450~600 rps, 첫 병목 web 티어 |

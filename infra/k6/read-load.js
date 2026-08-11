@@ -12,17 +12,21 @@
 //   이제 VU를 올려도 외부로 나가지 않는다 — 부하가 우리 시스템 안에서만 돈다.
 //   (보장은 EventDetailNoExternalCallTest가 회귀로 지킨다)
 //
+// ⚠️ 옵션 이름에 K6_ 접두사를 쓰지 않는다 — K6_VUS·K6_DURATION은 k6 자신의 환경변수 옵션이라
+// 아래 scenarios를 덮어쓴다. 2026-08-11 측정에서 이 경고를 흘려 넘겨 arrival-rate 시나리오가
+// 통째로 무효화된 적이 있다(vus_max=1로 돌았다).
+//
 // 실행(VU를 바꿔가며 각각):
-//   k6 run -e K6_VUS=300  --summary-export=benchmarks/read-load-vu300.json infra/k6/read-load.js
-//   k6 run -e K6_VUS=500  --summary-export=benchmarks/read-load-vu500.json infra/k6/read-load.js
-//   k6 run -e K6_VUS=750  --summary-export=benchmarks/read-load-vu750.json infra/k6/read-load.js
-//   k6 run -e K6_VUS=1000 --summary-export=benchmarks/read-load-vu1000.json infra/k6/read-load.js
+//   k6 run -e VUS=300  --summary-export=benchmarks/read-load-vu300.json infra/k6/read-load.js
+//   k6 run -e VUS=500  --summary-export=benchmarks/read-load-vu500.json infra/k6/read-load.js
+//   k6 run -e VUS=750  --summary-export=benchmarks/read-load-vu750.json infra/k6/read-load.js
+//   k6 run -e VUS=1000 --summary-export=benchmarks/read-load-vu1000.json infra/k6/read-load.js
 import http from "k6/http";
 import { check } from "k6";
 import { BASE, THRESHOLDS, discoverEvent } from "./lib.js";
 
-const VUS = __ENV.K6_VUS ? parseInt(__ENV.K6_VUS, 10) : 300;
-const DURATION = __ENV.K6_DURATION || "30s";
+const VUS = __ENV.VUS ? parseInt(__ENV.VUS, 10) : 300;
+const DURATION = __ENV.RUN_FOR || "30s";
 
 export const options = {
   scenarios: {

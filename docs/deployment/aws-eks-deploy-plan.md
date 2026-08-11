@@ -8,7 +8,7 @@
   - Phase 6 GitOps(ArgoCD)·HPA·Ingress·HTTPS — 완료, 자동 동기화 + selfHeal/prune([[ADR-009]] Accepted, [[TS-022]])
   - Phase 7 관측성 — Prometheus/Grafana + 앱 메트릭 + Kafka 브로커/Consumer Lag 수집 완료
   - **Phase 8 — 이진 실증([[TS-023]])과 정량 부하 실측이 모두 완료.** capacity knee 600~650 rps,
-    첫 포화 자원은 노드 CPU + DB 커넥션 풀(`benchmarks/phase1-saturation/`)
+    포화 징후는 노드 CPU와 Hikari pending에서 동시에 관측(`benchmarks/phase1-saturation/`)
   - **DoD 기준 9/9** — §6 참조
 - AWS 상시 과금은 Phase 3(EKS·RDS)부터 발생한다. 비용 통제는 apply/destroy 운용.
 - 목적: 백엔드 취업용 **살아있는 데모 URL** + **분산 시스템(K8s·멀티브로커 Kafka·오토스케일) 실증**.
@@ -162,7 +162,7 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
       HPA 확장 곡선(3→9, 68초)과 도착률별 RPS/p95를 **클라이언트·서버 양쪽**으로 기록했고,
       AS-IS/TO-BE 비교로 병목 이동까지 추적했다:
       `benchmarks/{asis-web2pod,tobe-web-hpa,phase1-saturation}/`
-      - capacity knee **600~650 rps**, 첫 포화 자원은 **노드 CPU + DB 커넥션 풀**
+      - capacity knee **600~650 rps**, 포화 징후가 **노드 CPU와 Hikari pending에서 동시에** 나타남
       - web 병목 개선 전후: 600 rps에서 실패 4.06% → 0%, p95 10,006ms → 123ms
       - ⚠️ 수치는 노트북에서 인터넷 경유로 측정 — 절대 성능이 아니라 동일 조건 비교값이다
 - [x] **브로커 페일오버**에도 서비스 지속 — [[TS-023]] §4(4회차, 유실 0)

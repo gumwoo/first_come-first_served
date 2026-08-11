@@ -205,8 +205,16 @@ resource "aws_eks_node_group" "this" {
 # (2026-08-11). ArgoCD의 HPA health check가 ScalingActive=False를 Degraded로 잡아
 # 앱 전체가 Degraded로 표시됐고, 원인을 찾는 데 시간이 걸렸다.
 #
-# "고쳤다"와 "재현 가능하게 고쳤다"는 다르다. 그래서 관리형 애드온으로 못박는다 —
-# IRSA가 필요 없으므로 아래 for_each 목록에 넣으면 충분하다.
+# "고쳤다"와 "재현 가능하게 고쳤다"는 다르다. 그래서 EKS Add-ons로 못박는다.
+#
+# ⚠️ metrics-server는 **community add-on**이다 — AWS가 만든 add-on(vpc-cni 등)과 달리
+# AWS는 설치·업데이트·삭제 같은 lifecycle만 지원하고 기능 자체는 커뮤니티가 책임진다.
+# 다만 IAM 정책이나 IRSA가 필요 없어 아래 for_each 목록에 넣는 것으로 충분하다
+# (EBS CSI를 별도 리소스로 뺀 이유가 IRSA였다).
+#
+# addon_version을 지정하지 않으므로 **생성 시점의 Kubernetes 버전에 맞는 기본 호환 버전**이
+# 선택된다. 클러스터 버전을 올려도 기존 add-on이 자동으로 올라가지는 않으므로,
+# 갱신이 필요하면 별도로 수행해야 한다.
 resource "aws_eks_addon" "this" {
   for_each = toset(["vpc-cni", "coredns", "kube-proxy", "metrics-server"])
 

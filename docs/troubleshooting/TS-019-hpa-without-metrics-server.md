@@ -112,9 +112,14 @@ ArgoCD의 HPA health check가 `ScalingActive=False`를 Degraded로 판정하고,
 ⚠️ 처음에 이것을 "초기 기동 시 파드가 한 번 죽은 잔상으로 **추측**된다"고 말했는데 틀렸다.
 실제 원인이 있었고, 추측을 접고 계속 판 것이 맞았다.
 
-### 조치 — 관리형 애드온으로 못박음
+### 조치 — EKS Add-ons로 못박음
 
-`metrics-server`는 EKS 관리형 애드온으로 제공된다(IRSA 불필요). 그래서 기존 애드온 목록에 넣었다.
+`metrics-server`는 EKS Add-ons로 설치할 수 있고 **IAM 정책이나 IRSA가 필요 없다.** 그래서 별도
+리소스를 만들지 않고 기존 애드온 목록에 넣었다(EBS CSI를 따로 뺀 이유가 IRSA였다).
+
+⚠️ 정확히 하자면 metrics-server는 **community add-on**이다. AWS가 만든 add-on(vpc-cni 등)과 달리
+AWS는 설치·업데이트·삭제 같은 lifecycle만 지원하고 기능 자체는 커뮤니티가 책임진다.
+`aws_eks_addon`으로 관리한다는 점은 같지만 지원 범위가 다르므로 "AWS 관리형"이라고 부르면 과장이다.
 
 ```hcl
 resource "aws_eks_addon" "this" {
@@ -122,8 +127,12 @@ resource "aws_eks_addon" "this" {
 ```
 
 Helm 릴리스를 먼저 걷어내고 apply했으며, 적용 후 HPA가 즉시 CPU(4%)를 읽고 `ScalingActive=True`,
-ArgoCD 앱도 `Healthy`가 되는 것을 확인했다. 부수적으로 관리형 애드온은 복제본이 2라 Helm 기본(1)보다
-가용성이 낫다.
+ArgoCD 앱도 `Healthy`가 되는 것을 확인했다. 부수적으로 add-on으로 선 metrics-server는 복제본이
+2로 떴다(Helm 차트 기본은 1) — 의도한 것은 아니고 관측된 차이다.
+
+`addon_version`은 지정하지 않았다. 생성 시점의 Kubernetes 버전에 맞는 기본 호환 버전이 선택되며,
+**클러스터 버전을 올려도 기존 add-on이 자동으로 업그레이드되지는 않는다** — 갱신이 필요하면 별도로
+수행해야 한다.
 
 ### 이 사건이 A5(정량 부하 측정)를 막고 있었다
 

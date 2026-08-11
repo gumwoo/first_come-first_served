@@ -1,0 +1,22 @@
+# External Secrets Operator — 부트스트랩 전용(helm으로 설치하며 ESO가 스스로를 관리하지 않는다).
+#
+# ServiceAccount 이름·네임스페이스가 **IRSA 신뢰 정책과 정확히 일치해야 한다**
+# (infra/terraform/platform/modules/eks/irsa.tf 의 eso 항목):
+#   system:serviceaccount:external-secrets:external-secrets
+# 어긋나면 AssumeRoleWithWebIdentity가 거부되고, 증상은 "권한 없음"이 아니라
+# ExternalSecret이 조용히 SecretSynced=False로 남는 형태로 나타난다.
+serviceAccount:
+  create: true
+  name: external-secrets
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::891612580915:role/flowticket-external-secrets
+
+# 이 규모에서 쓰지 않는 컴포넌트는 끈다.
+webhook:
+  create: true # ExternalSecret 검증에 필요 — 끄면 잘못된 CR이 조용히 통과한다
+certController:
+  create: true # webhook 인증서 관리
+
+resources:
+  requests: { cpu: 20m, memory: 96Mi }
+  limits: { memory: 192Mi }

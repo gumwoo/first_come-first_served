@@ -162,6 +162,7 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 - [x] Grafana에 **Kafka·Consumer Lag·HPA** 대시보드 — #208(14패널, 쿼리 19개 전부 데이터 반환)
 - [x] `k8s/` 차트 + 배포 절차 문서 — `k8s/{base,overlays,kafka,monitoring,argocd}` + 각 kustomization
 
-**DoD 밖의 후속 개선**(완료 조건이 아니다): External Secrets로 시크릿을 Git/AWS Secrets Manager
-경유로 옮기는 것. 현재 `flowticket-api-secrets`는 클러스터에서 손으로 만들며, 클러스터를 재생성하면
-매니페스트만으로는 복구되지 않는다. 운영 재현성 문제이지 S09의 실증 항목은 아니다.
+**DoD 밖의 후속 개선** — ✅ **2026-08-11 완료**: External Secrets Operator 도입.
+`flowticket-api-secrets`는 이제 AWS에서 동기화된다(SSM Parameter Store 9개 + Secrets Manager
+DB 자격증명 2개). 클러스터를 재생성해도 매니페스트만으로 복구된다 — 시크릿을 삭제해도 약 4초 만에
+재생성되는 것을 실증했다. 완료 조건은 아니었으나 운영 재현성의 마지막 구멍이었다.

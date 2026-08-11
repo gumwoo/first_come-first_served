@@ -5,6 +5,7 @@ import com.flowticket.global.error.ErrorCode;
 import com.flowticket.queue.domain.QueueStatus;
 import com.flowticket.queue.dto.QueueStatusResponse;
 import com.flowticket.queue.dto.QueueTokenResponse;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -141,7 +142,16 @@ public class QueueService {
 
     /** 좌석(S04) 게이트: 이 토큰이 해당 이벤트에 입장(ADMITTED)했는가. */
     public boolean isAdmitted(String token, Long eventId) {
-        if (token == null || !Boolean.TRUE.equals(redis.hasKey(QueueKeys.admit(token)))) {
+        if (token == null) {
+            return false;
+        }
+        // admitExp는 이벤트 단위 ZSet이라 이 검사 자체가 소속 이벤트를 보장한다.
+        Double expiresAt = redis.opsForZSet().score(QueueKeys.admitExp(eventId), token);
+        if (expiresAt != null && expiresAt > Instant.now().getEpochSecond()) {
+            return true;
+        }
+        // 폴백: admit 키는 토큰만 보므로 다른 이벤트의 입장으로 좌석을 잡지 못하게 소속을 확인한다.
+        if (!Boolean.TRUE.equals(redis.hasKey(QueueKeys.admit(token)))) {
             return false;
         }
         Object tokenEvent = redis.opsForHash().get(QueueKeys.token(token), "eventId");
@@ -193,11 +203,27 @@ public class QueueService {
     }
 
     private QueueStatus statusOf(String token, Long eventId) {
-        if (Boolean.TRUE.equals(redis.hasKey(QueueKeys.admit(token)))) {
+        if (admittedNow(token, eventId)) {
             return QueueStatus.ADMITTED;
         }
         Long r = redis.opsForZSet().rank(QueueKeys.wait(eventId), token);
         return r != null ? QueueStatus.WAITING : QueueStatus.EXPIRED;
+    }
+
+    /**
+     * 입장 여부 판정의 단일 규칙. **admit 키가 빠른 경로이고 권위는 admitExp다.**
+     *
+     * 승격은 pop·카운트·admitExp 등록까지 한 Lua로 확정되고, admit 키는 그 뒤에 붙는다.
+     * 따라서 확정됐지만 admit 키가 아직 없는 순간이 존재하며, 그 창에서 admit 키만 보면
+     * "입장 안 했다"로 오판한다 — 예전에 진입 응답이 EXPIRED로 나가던 원인이다([[TS-024]]).
+     * admitExp는 이벤트 단위 ZSet이라 소속 이벤트 검사도 겸한다.
+     */
+    private boolean admittedNow(String token, Long eventId) {
+        if (Boolean.TRUE.equals(redis.hasKey(QueueKeys.admit(token)))) {
+            return true; // 대부분 여기서 끝난다(왕복 1회)
+        }
+        Double expiresAt = redis.opsForZSet().score(QueueKeys.admitExp(eventId), token);
+        return expiresAt != null && expiresAt > Instant.now().getEpochSecond();
     }
 
     private long rankOf(String token, Long eventId) {

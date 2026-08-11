@@ -87,3 +87,55 @@ helm install metrics-server metrics-server/metrics-server -n kube-system
 - ~~HPA 스케일업~~ → **§4에서 확인**(3→4)
 - **PDB** — 노드 드레인을 해본 적 없음
 - **브로커 페일오버** — 브로커를 죽여본 적 없음
+
+## 재발 (2026-08-11) — "고쳤다"와 "재현 가능하게 고쳤다"는 다르다
+
+클러스터를 destroy 후 재생성했더니 **같은 문제가 그대로 돌아왔다.** 원인은 단순하다 —
+당시 metrics-server를 `helm install`로 손수 깔고 이 문서를 "해결"로 닫았는데, **그 설치가
+IaC에도 매니페스트에도 없었다.** 저장소를 `metrics-server`로 검색하면 TS 문서 세 개만 나왔다.
+
+### 이번엔 증상이 다르게 나타났다
+
+TS-019 당시에는 HPA의 `TARGETS`가 `<unknown>`인 것으로 알아챘다. 이번에는 **ArgoCD가 먼저
+알려줬다** — 앱 전체가 `Synced/Degraded`인데 `status.resources`의 리소스 9개는 전부 health가
+비어 있어 어느 것이 문제인지 안 보였다.
+
+```
+HPA TARGETS:  cpu: <unknown>/60%
+HPA conditions: AbleToScale=True, ScalingActive=False (reason=FailedGetResourceMetric)
+```
+
+ArgoCD의 HPA health check가 `ScalingActive=False`를 Degraded로 판정하고, 그것이 앱 집계로
+올라간 것이다. 하드 리프레시와 application-controller 재시작으로도 사라지지 않은 것이 단서였다
+— 캐시 잔상이라면 그때 지워졌어야 한다.
+
+⚠️ 처음에 이것을 "초기 기동 시 파드가 한 번 죽은 잔상으로 **추측**된다"고 말했는데 틀렸다.
+실제 원인이 있었고, 추측을 접고 계속 판 것이 맞았다.
+
+### 조치 — EKS Add-ons로 못박음
+
+`metrics-server`는 EKS Add-ons로 설치할 수 있고 **IAM 정책이나 IRSA가 필요 없다.** 그래서 별도
+리소스를 만들지 않고 기존 애드온 목록에 넣었다(EBS CSI를 따로 뺀 이유가 IRSA였다).
+
+⚠️ 정확히 하자면 metrics-server는 **community add-on**이다. AWS가 만든 add-on(vpc-cni 등)과 달리
+AWS는 설치·업데이트·삭제 같은 lifecycle만 지원하고 기능 자체는 커뮤니티가 책임진다.
+`aws_eks_addon`으로 관리한다는 점은 같지만 지원 범위가 다르므로 "AWS 관리형"이라고 부르면 과장이다.
+
+```hcl
+resource "aws_eks_addon" "this" {
+  for_each = toset(["vpc-cni", "coredns", "kube-proxy", "metrics-server"])
+```
+
+Helm 릴리스를 먼저 걷어내고 apply했으며, 적용 후 HPA가 즉시 CPU(4%)를 읽고 `ScalingActive=True`,
+ArgoCD 앱도 `Healthy`가 되는 것을 확인했다. 부수적으로 add-on으로 선 metrics-server는 복제본이
+2로 떴다(Helm 차트 기본은 1) — 의도한 것은 아니고 관측된 차이다.
+
+`addon_version`은 지정하지 않았다. 생성 시점의 Kubernetes 버전에 맞는 기본 호환 버전이 선택되며,
+**클러스터 버전을 올려도 기존 add-on이 자동으로 업그레이드되지는 않는다** — 갱신이 필요하면 별도로
+수행해야 한다.
+
+### 이 사건이 A5(정량 부하 측정)를 막고 있었다
+
+metrics-server가 없으면 부하를 줘도 HPA가 늘지 않는다. 그 상태로 부하 시험을 했다면 "부하가
+부족한가"로 오진했을 것이다. S09 DoD의 마지막 항목이 "부하 시 HPA 수평 확장 곡선"이므로,
+이 재발을 먼저 잡지 않았으면 그 측정 자체가 성립하지 않았다.

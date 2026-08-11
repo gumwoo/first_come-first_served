@@ -31,7 +31,7 @@ IMP(정량 before/after 개선)와 달리, 여기 문서는 "무엇이 왜 깨�
 | [TS-016](TS-016-kafka-required-at-startup.md) | readiness에서 Kafka를 뺐는데도 Pod가 못 뜸 — 기동 의존과 트래픽 의존은 다르다 | S09 | 배포/기동(설정) | 해결(구조적 문제는 남음) |
 | [TS-017](TS-017-oauth-callback-not-proxied.md) | 소셜 로그인 콜백 404 — 시작 경로만 프록시하고 콜백을 빠뜨림(로컬 미재현) | S01/S09 | 배포 환경(설정) | 해결 |
 | [TS-018](TS-018-alb-idle-timeout-sync-endpoint.md) | 동기화가 500인데 데이터는 다 들어옴 — ALB idle timeout에 끊긴 장시간 요청 | S02/S09 | 배포 환경(API 설계) | 원인 규명(수정 보류) |
-| [TS-019](TS-019-hpa-without-metrics-server.md) | HPA를 선언했는데 스케일 판단 불가 — metrics-server 없음 | S09 | 배포 환경(누락) | 해결(스케일업 확인) |
+| [TS-019](TS-019-hpa-without-metrics-server.md) | HPA를 선언했는데 스케일 판단 불가 — metrics-server 없음 | S09 | 배포 환경(누락) | 해결 → **2026-08-11 재발**(설치가 IaC 밖이었다) → EKS Add-ons(community add-on)로 못박음 |
 | [TS-020](TS-020-kafka-poison-pill-infinite-retry.md) | DLQ가 있는데 독성 메시지는 DLQ로 못 감 — 역직렬화 실패는 리스너에 도달하지 않음 | S08/S09 | 정합성·가용성(설정) | 해결 |
 | [TS-021](TS-021-hpa-exhausts-rds-connections.md) | 파드를 늘렸더니 DB가 한계 — HPA 최대치 × 커넥션 풀 > RDS 슬롯 | S09 | 용량(설정) | 해결(풀 10→5 + 하네스 강제, 9파드 실기동 검증) |
 | [TS-022](TS-022-argocd-respectignoredifferences-ineffective.md) | 리뷰대로 고쳤는데 안 먹음 — `RespectIgnoreDifferences=true`인데 sync가 replicas를 덮어씀(UI는 Synced), ArgoCD v3.5.0 구성 실측 | S09 | 배포 도구 동작 불일치(설정) | 해결(필드 제거 + 하네스 규칙 ⑧, 통제 실험으로 검증) |

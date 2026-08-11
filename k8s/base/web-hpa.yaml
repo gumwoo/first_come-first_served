@@ -1,0 +1,39 @@
+# web 수평 확장. api에만 HPA가 있고 web은 2파드 고정이었다.
+#
+# 왜 필요했나: 2026-08-11 AS-IS 실측에서 **첫 실패 지점이 web 티어**였다(ALB → web target 구간).
+#   600 rps: ELB_5XX 457 == TargetConnectionError 457, Target_5XX 0
+#            같은 시점 api 서버 p95 15ms, Hikari pending 0
+# api를 9파드까지 늘려도 앞단 2파드가 막고 있으면 사용자는 502를 본다. 확장이 절반만 걸려 있었다.
+#
+# 노드 예산: allocatable 5,790m 안에서 api·web이 동시에 최대로 갈 수 없다.
+#   api 7×300 + web 4×300 + 기타 1,650 = 4,950m (85%)
+# 그래서 api maxReplicas를 9→7로 줄여 web에 여유를 넘겼다(api는 병목이 아니었다는 실측 근거).
+#
+# ⚠️ 롤링 배포 surge까지 보면 여유가 얇다. 둘 다 maxSurge=1 / maxUnavailable=0 이므로
+# 최악의 경우(양쪽이 최대 상태에서 동시에 롤링) +600m이 더 붙는다.
+#   4,950 + 600 = 5,550m / 5,790m  → 남는 여유 **240m**
+# 다른 Pod의 requests가 조금만 늘어도 바로 빡빡해진다 — 새 워크로드를 얹기 전에 이 계산을
+# 다시 해야 한다.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flowticket-web
+  namespace: flowticket
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: flowticket-web }
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        # api와 같은 기준을 쓴다. requests 300m 기준 180m을 넘으면 확장.
+        # ⚠️ 실측상 600 rps에서 web은 파드당 약 0.59 core를 썼다. 4파드로도 타깃(180m)에
+        # 도달하지 못하고 상한에 붙을 가능성이 높다 — 그때는 노드 추가 없이는 더 못 늘린다.
+        target: { type: Utilization, averageUtilization: 60 }
+  behavior:
+    scaleUp:
+      # api와 같은 이유 — 선착순 트래픽은 계단식으로 들어온다.
+      stabilizationWindowSeconds: 0
+    scaleDown:
+      stabilizationWindowSeconds: 300

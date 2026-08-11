@@ -59,10 +59,19 @@ spec:
   # diff 노이즈 제거용으로만 남긴다. api는 Git에 replicas가 없으므로 클러스터의 실제 값
   # (HPA가 정한 수)이 항상 "추가된 필드"로 잡히는데, 그걸 OutOfSync로 띄우지 않기 위해서다.
   # **이것만으로 sync를 막지는 못한다**(위 참조) — 방어는 매니페스트에서 필드를 뺀 것이다.
-  # name으로 좁힌다: web은 HPA가 없어 replicas를 Git이 소유하며, 드리프트가 나면 알아야 한다.
+  # ⚠️ **name으로 하나씩 명시한다. kind 전체로 넓히지 않는다.**
+  # 넓히면 앞으로 추가되는 모든 Deployment의 replicas 드리프트까지 조용히 무시된다.
+  # 하네스 규칙 ⑧은 "HPA 대상 Deployment에 replicas 금지"만 막을 뿐,
+  # **HPA가 없는 새 Deployment**의 드리프트가 무시되는 것은 막지 못한다 — 방향이 반대다.
+  # HPA를 붙일 때마다 여기에 한 줄 추가하는 수고가 그 위험보다 싸다.
   ignoreDifferences:
     - group: apps
       kind: Deployment
       name: flowticket-api
+      jsonPointers:
+        - /spec/replicas
+    - group: apps
+      kind: Deployment
+      name: flowticket-web
       jsonPointers:
         - /spec/replicas

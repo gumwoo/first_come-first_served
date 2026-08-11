@@ -4,7 +4,8 @@ metadata:
   name: flowticket-web
   namespace: flowticket
 spec:
-  replicas: 2
+  # replicas를 두지 않는다 — web-hpa.yaml이 소유한다(하네스 규칙 ⑧).
+  # Git에 값을 두면 ArgoCD가 sync할 때마다 HPA가 정한 파드 수를 덮어쓴다(TS-022).
   selector:
     matchLabels: { app: flowticket-web }
   strategy:
@@ -41,7 +42,14 @@ spec:
             preStop:
               exec: { command: ["sh", "-c", "sleep 5"] }
           resources:
-            requests: { cpu: "100m", memory: "256Mi" }
+            # 100m은 현재 부하·오토스케일 기준에 비해 과소 예약이었다. 2026-08-11 실측에서
+            # 파드당 0.16~0.59 core를 썼으므로 스케줄러가 배치를 실제보다 가볍게 보고 있었고,
+            # HPA의 CPU utilization 기준선으로도 너무 낮아 워크로드 특성과 맞지 않았다.
+            # (request를 peak보다 낮게 잡는 것 자체는 정상적인 선택이다 — 문제는 정도였다)
+            #
+            # 300m으로 올린다 — 실측 최대(0.59)보다는 낮지만, api max 7과 함께 노드
+            # allocatable(5,790m) 안에 들어가는 값이다. requests는 상한이 아니라 예약이다.
+            requests: { cpu: "300m", memory: "256Mi" }
             limits: { memory: "512Mi" }
           securityContext:
             allowPrivilegeEscalation: false

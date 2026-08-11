@@ -9,6 +9,7 @@ resources:
   - api-hpa.yaml
   - api-pdb.yaml
   - web-deployment.yaml
+  - web-hpa.yaml
   - ingress.yaml
 
 # 이미지 레지스트리·태그는 **오버레이가 정한다**(k8s/overlays/).

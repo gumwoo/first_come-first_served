@@ -8,7 +8,12 @@ metadata:
 spec:
   scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: flowticket-api }
   minReplicas: 3
-  maxReplicas: 9
+  # 9 → 7로 줄였다. 2026-08-11 AS-IS 실측에서 **api는 병목이 아니었다** — 600 rps에서
+  # 서버 p95 15ms, Hikari pending 0이었고 실패는 전부 ALB→web 연결에서 났다.
+  # api를 9까지 늘릴 여유를 web에 넘긴다(노드 allocatable 5,790m 안에서 둘 다 최대로 갈 수 없다).
+  #
+  # 부수 효과로 TS-021의 커넥션 상한이 더 안전해진다: 9×5=45 → 7×5=35.
+  maxReplicas: 7
   metrics:
     - type: Resource
       resource:

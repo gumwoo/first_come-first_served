@@ -32,6 +32,16 @@ prometheus:
     # k8s/monitoring/servicemonitor-api.yaml이 **조용히 무시된다**.
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
+    # k6가 부하 결과를 직접 밀어 넣을 수 있게 remote write 수신을 연다.
+    #   k6 run -o experimental-prometheus-rw ...
+    #
+    # 왜 필요한가: 부하 시험에서 **클라이언트 지표와 서버 지표를 같은 시간축에서** 봐야 한다.
+    # 2026-08-11 측정에서 k6가 본 p95는 2,769ms인데 앱 히스토그램은 27ms였다(100배 차이).
+    # 둘을 따로 뽑아 손으로 대조하느라 원인 규명이 늦었다 — 실제 병목은 앱이 아니라
+    # web 티어였고 ALB 지표를 역추적해서야 갈렸다.
+    #
+    # 이걸 켜면 k6의 RPS·p95·실패율이 파드 CPU·HPA 파드 수·DB 커넥션과 한 대시보드에 뜬다.
+    enableRemoteWriteReceiver: true
     resources:
       requests: { cpu: 200m, memory: 1Gi }
       limits: { memory: 2Gi }

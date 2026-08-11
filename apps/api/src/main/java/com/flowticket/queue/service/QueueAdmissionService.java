@@ -23,13 +23,26 @@ import org.springframework.stereotype.Service;
 public class QueueAdmissionService {
 
     // 여유 슬롯(capacity - admitted)만큼만 wait head를 pop → 원자적. 반환 {member,score,...}
+    //
+    // ⚠️ 만료 등록(KEYS[3]=admitExp)까지 **이 스크립트 안에서** 한다. 예전에는 pop+INCRBY까지만
+    // 원자였고 admitExp 등록은 Java 루프였는데, 그 사이가 벌어져 두 가지가 샜다([[TS-024]]).
+    //   ① wait에서도 빠지고 입장 표시도 없는 창 → 상태 조회가 EXPIRED로 떨어진다
+    //   ② 그 창에서 Pod가 죽으면 admitcount만 오른 채 admitExp에 없어 **영구 누수**가 된다
+    //      (카운트를 줄이는 경로는 RECLAIM/LEAVE뿐이고 둘 다 admitExp를 근거로 움직인다)
+    // admitExp는 이벤트 단위 키라 KEYS로 넘길 수 있다 — Lua 안에서 키 이름을 만들지 않으므로
+    // Redis Cluster 슬롯 제약(IMP-004 §8)을 새로 만들지 않는다.
     private static final String ADMIT_LUA = """
             local admitted = tonumber(redis.call('GET', KEYS[2]) or '0')
             local free = tonumber(ARGV[1]) - admitted
             if free <= 0 then return {} end
             local popped = redis.call('ZPOPMIN', KEYS[1], free)
             local n = #popped / 2
-            if n > 0 then redis.call('INCRBY', KEYS[2], n) end
+            if n > 0 then
+              redis.call('INCRBY', KEYS[2], n)
+              for i = 1, #popped, 2 do
+                redis.call('ZADD', KEYS[3], ARGV[2], popped[i])
+              end
+            end
             return popped
             """;
 
@@ -65,18 +78,21 @@ public class QueueAdmissionService {
 
     /** 여유 슬롯만큼 승격. 승격된 토큰 수 반환. */
     public int admit(Long eventId) {
+        long expiresAt = Instant.now().getEpochSecond() + admitTtl;
         List<?> popped = redis.execute(ADMIT_SCRIPT,
-                List.of(QueueKeys.wait(eventId), QueueKeys.admitCount(eventId)),
-                String.valueOf(capacity));
+                List.of(QueueKeys.wait(eventId), QueueKeys.admitCount(eventId), QueueKeys.admitExp(eventId)),
+                String.valueOf(capacity), String.valueOf(expiresAt));
         if (popped == null || popped.isEmpty()) {
             return 0;
         }
-        long expiresAt = Instant.now().getEpochSecond() + admitTtl;
+        // 여기 도착한 시점에 승격은 이미 확정이다(pop+카운트+만료등록이 위에서 원자로 끝났다).
+        // 아래 둘은 그 확정을 뒤따르는 부수 작업이라, 중간에 죽어도 슬롯이 새지 않는다.
+        //   - admit 키: 상태 조회의 빠른 경로(권위는 admitExp). 없으면 admitExp로 판정된다.
+        //   - SSE: 알림. 놓치면 클라이언트 폴백 폴링이 받는다.
         int admitted = 0;
         for (int i = 0; i < popped.size(); i += 2) { // {member,score,...}
             String token = String.valueOf(popped.get(i));
             redis.opsForValue().set(QueueKeys.admit(token), "1", Duration.ofSeconds(admitTtl));
-            redis.opsForZSet().add(QueueKeys.admitExp(eventId), token, expiresAt);
             sse.send(token, "queue.admitted", Map.of("redirect", "/events/" + eventId + "/seats"));
             admitted++;
         }

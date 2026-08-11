@@ -271,8 +271,12 @@ quota 초과 = 0 / 결제 멱등 / 동일 hold 중복 결제 = 0 / 콜백 중복
 
 ## Phase 4 — Spike (선착순의 정체성)
 
-> ✅ **실측 완료(2026-08-12)** — 결과: [`benchmarks/spike-queue/`](../../benchmarks/spike-queue/README.md)
-> 3,000명(정원의 30배) 동시 진입에서 over-admit 0(277샘플 전부 100), 순서 보존(추월 0건), 5xx 0.
+> ⏳ **1차 실측 완료, 미완료(2026-08-12)** — 결과: [`benchmarks/spike-queue/`](../../benchmarks/spike-queue/README.md)
+> 3,000명(정원의 30배) 동시 진입 3회. 관측된 모든 샘플에서 `admitcount` ≤ 100,
+> 종료 스냅샷에서 추월 흔적 0, 5xx 0.
+> **완료 처리하지 않는 이유**: 명제 ③("나머지는 에러가 아니라 대기")이 run-2에서 10건 깨졌고,
+> 원인이 앱의 실제 결함으로 확정됐다 → [TS-024](../troubleshooting/TS-024-queue-admit-visibility-gap.md).
+> 수정 후 재측정으로 닫는다.
 
 티켓 오픈 순간은 **정의상 스파이크**다. 평상시 0에서 순간 폭주로 튀는 것이 이 시스템이 존재하는 이유다.
 

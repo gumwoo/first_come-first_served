@@ -36,3 +36,4 @@ IMP(정량 before/after 개선)와 달리, 여기 문서는 "무엇이 왜 깨�
 | [TS-021](TS-021-hpa-exhausts-rds-connections.md) | 파드를 늘렸더니 DB가 한계 — HPA 최대치 × 커넥션 풀 > RDS 슬롯 | S09 | 용량(설정) | 해결(풀 10→5 + 하네스 강제, 9파드 실기동 검증) |
 | [TS-022](TS-022-argocd-respectignoredifferences-ineffective.md) | 리뷰대로 고쳤는데 안 먹음 — `RespectIgnoreDifferences=true`인데 sync가 replicas를 덮어씀(UI는 Synced), ArgoCD v3.5.0 구성 실측 | S09 | 배포 도구 동작 불일치(설정) | 해결(필드 제거 + 하네스 규칙 ⑧, 통제 실험으로 검증) |
 | [TS-023](TS-023-multipod-failover-verification.md) | 다중 Pod·페일오버 실증 — ShedLock 단일 실행 / SSE cross-Pod 팬아웃 / 브로커 1대 소실 / Lag 회복 | S09 | 검증 로그 | 완료(A1은 대조군이 초기 결론을 정정) |
+| [TS-024](TS-024-queue-admit-visibility-gap.md) | 진입하자마자 "만료" — 승격의 원자 구간이 `ZPOPMIN`에서 끝나고 `admit` 키 생성은 Lua 밖이라 그 창에서 상태가 `EXPIRED`로 보임 | S10 | 동시성(상태 가시성) | **원인 확정, 수정 보류** |

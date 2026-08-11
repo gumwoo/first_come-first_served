@@ -8,6 +8,12 @@
 # 노드 예산: allocatable 5,790m 안에서 api·web이 동시에 최대로 갈 수 없다.
 #   api 7×300 + web 4×300 + 기타 1,650 = 4,950m (85%)
 # 그래서 api maxReplicas를 9→7로 줄여 web에 여유를 넘겼다(api는 병목이 아니었다는 실측 근거).
+#
+# ⚠️ 롤링 배포 surge까지 보면 여유가 얇다. 둘 다 maxSurge=1 / maxUnavailable=0 이므로
+# 최악의 경우(양쪽이 최대 상태에서 동시에 롤링) +600m이 더 붙는다.
+#   4,950 + 600 = 5,550m / 5,790m  → 남는 여유 **240m**
+# 다른 Pod의 requests가 조금만 늘어도 바로 빡빡해진다 — 새 워크로드를 얹기 전에 이 계산을
+# 다시 해야 한다.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:

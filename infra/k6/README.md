@@ -65,4 +65,5 @@ k6 run -e VUS=1000 --summary-export=benchmarks/read-load-vu1000.json infra/k6/re
 
 | 위치 | 내용 |
 |---|---|
-| `benchmarks/asis-web2pod/` | 2026-08-11 AS-IS(web 2파드 고정). 무릎 450~600 rps, 첫 병목 web 티어 |
+| `benchmarks/asis-web2pod/` | 2026-08-11 AS-IS(web 2파드 고정). capacity knee 450~600 rps, 첫 실패 지점 web 티어 |
+| `benchmarks/tobe-web-hpa/` | 2026-08-11 TO-BE(web HPA 2~4 + api max 7). 600 rps에서 실패 4.06%→0%, p95 10,006→123ms |

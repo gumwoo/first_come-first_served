@@ -16,7 +16,7 @@
 |------|----------|------|
 | `read-load.js` | ① 조회 API 부하 — VU 고정(closed model) | 있음 |
 | `read-load-rate.js` | ①' 조회 API 부하 — **도착률 고정(open model)**. 무릎 탐색은 이쪽이 정확하다 | 있음 |
-| (예정) `hold-contention.js` | ② 매진 경합 — 잔여 N석 동시 HOLD, 초과판매 0 | 다음 |
+| `hold-contention.js` | ② 매진 경합 — 1석 vs 100명 동시, **초과판매 0** | 있음 |
 | (예정) `spike-queue.js` | ③ 스파이크 — 오픈 순간 대기열 진입, over-admit 0 | 다음 |
 | (예정) `failure-dlq.js` | ④ 실패주입 → DLQ (Kafka 필요) | **S07 이후** |
 
@@ -68,3 +68,4 @@ k6 run -e VUS=1000 --summary-export=benchmarks/read-load-vu1000.json infra/k6/re
 | `benchmarks/asis-web2pod/` | 2026-08-11 AS-IS(web 2파드 고정). capacity knee 450~600 rps, 첫 실패 지점 web 티어 |
 | `benchmarks/tobe-web-hpa/` | 2026-08-11 TO-BE(web HPA 2~4 + api max 7). 600 rps에서 실패 4.06%→0%, p95 10,006→123ms |
 | `benchmarks/phase1-saturation/` | 2026-08-11 포화점 탐색. **capacity knee 600~650 rps**, 포화 징후 노드 CPU·Hikari pending 동시 |
+| `benchmarks/hold-contention/` | 2026-08-11 매진 경합. 1석 vs 100명 **20회 전승**, DB 불변식 검증(초과판매 0) |

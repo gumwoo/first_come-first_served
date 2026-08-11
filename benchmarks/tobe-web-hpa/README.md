@@ -49,6 +49,11 @@ TargetConnectionErrorCount        0
 
 AS-IS 600 rps 구간에서 457건이던 `TargetConnectionError`가 **전 구간 0**이 됐다.
 
+⚠️ **다만 "실패 0"은 아니다.** 원자료의 checks를 보면 **300 rps 구간에서 non-200 응답이 1건**
+있었다(`passes=26,999 / fails=1`, `http_req_failed = 0.0037%`). 위 표의 `0.00%`는 소수 둘째
+자리 반올림이다. ALB의 5XX가 0이라는 것과 사용자 응답이 전부 정상이었다는 것은 다른 말이며,
+이 1건이 4xx인지 다른 응답인지는 **확인하지 않았다.**
+
 ## 판정
 
 **capacity knee가 600 rps 위로 올라갔다.** AS-IS에서 무너지던 지점(도착률 미달 551, 실패 4.06%,

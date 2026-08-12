@@ -147,6 +147,9 @@ for (const file of docFiles) {
         return;
       }
       if (inFence) return;
+      // ⚠️ 사각지대: 참조 자체를 백틱으로 감싸면(`TS-024` (미수정)) 여기서 함께 지워져
+      // 검사되지 않는다. 인용을 단언으로 오인하지 않기 위해 재현율을 내준 것이며,
+      // 문서 작성 방식이 링크형에서 백틱형으로 바뀌면 조용히 우회된다([[TS-025]] §4).
       const line = raw.replace(/`[^`]*`/g, ""); // 인라인 코드 제거
       for (const m of line.matchAll(REF_THEN_MARK)) {
         const ref = `${m[1].toUpperCase()}-${m[2]}`;

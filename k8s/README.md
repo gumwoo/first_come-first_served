@@ -80,11 +80,16 @@ SeatSseController    @GetMapping("/sse/events/{id}/seats", produces = TEXT_EVENT
 |---|---|
 | `REPLACE_DB_HOST` / `REPLACE_REDIS_HOST` | `terraform output db_endpoint` / `redis_endpoint` |
 | `REPLACE_ACM_CERT_ARN` | bootstrap 스택의 ACM 인증서 |
-| `REPLACE_ECR_REGISTRY` | `<account>.dkr.ecr.ap-northeast-2.amazonaws.com` |
-| `REPLACE_TAG` | CI가 push한 이미지 태그(= 커밋 SHA) |
+| `REPLACE_TAG` | base 기본값. 실제로는 오버레이의 `images.newTag`가 덮어쓴다 |
 
-> ECR 레지스트리에는 **AWS 계정 ID**가 들어간다. 공개 저장소라 placeholder로 두고,
-> 실제 값은 apply 시점에 채운다.
+> ⚠️ `REPLACE_ECR_REGISTRY` 행이 2026-08-12까지 이 표에 남아 있었다. **매니페스트에는 그런
+> placeholder가 없다** — 레지스트리는 `overlays/demo-local/kustomization.yaml`의
+> `images.newName`에 실제 값으로 들어가 있고, 거기에는 **AWS 계정 ID가 그대로 커밋돼 있다.**
+> 표 아래에 붙어 있던 "공개 저장소라 placeholder로 둔다"는 설명은 사실과 반대였다.
+>
+> 계정 ID는 자격증명이 아니라 식별자라 프로젝트의 비밀 규칙(ADR-013) 위반은 아니다. 다만
+> **문서가 "숨겼다"고 말하는데 실제로는 커밋돼 있는 상태**는 그 자체로 위험하다 — 읽는 사람이
+> 저장소의 노출 범위를 잘못 알게 된다.
 
 ## 시크릿은 이 디렉터리에 없다
 
@@ -93,13 +98,13 @@ SeatSseController    @GetMapping("/sse/events/{id}/seats", produces = TEXT_EVENT
 `k8s/external-secrets/`에 있다. 이전에는 손으로 만들었고 클러스터를 재생성할 때마다 사람이
 값을 다시 넣어야 했다 — 그것이 매니페스트만으로 복구되지 않던 유일한 구멍이었다.
 
-(과거 서술) `flowticket-api-secrets`(JWT_SECRET·DB_PASSWORD·OAuth 키·KOPIS 키 등)는 **매니페스트에 두지
-않는다**(ADR-013, 프로젝트 규칙). RDS 마스터 비밀번호는 Terraform이
-`manage_master_user_password`로 Secrets Manager에 만든다.
+비밀 값 자체(JWT_SECRET·DB_PASSWORD·OAuth 키·KOPIS 키 등)는 **매니페스트에 두지 않는다**
+(ADR-013, 프로젝트 규칙). RDS 마스터 비밀번호는 Terraform이 `manage_master_user_password`로
+Secrets Manager에 만든다. Deployment는 `secretRef: flowticket-api-secrets`를 참조만 한다.
 
-**현재 상태**: Deployment가 `secretRef: flowticket-api-secrets`를 참조만 하고, 그 Secret을
-만드는 것은 이 디렉터리 밖이다. External Secrets Operator로 Secrets Manager와 연결하는 것이
-목표이고 **아직 하지 않았다** — 그전까지는 클러스터에 직접 만들어야 한다.
+> ⚠️ 2026-08-12까지 이 절에는 **"ESO 연결은 목표이고 아직 하지 않았다"**는 문단이 아래에 함께
+> 남아 있었다. 위 문단(했다)과 정면으로 모순인데도 같은 절 안에 공존했다 — 새 서술을 얹으면서
+> 옛 문단을 지우지 않았기 때문이다. 그 문단을 제거했다.
 
 ## 무중단 배포를 위해 짝을 맞춘 값들
 
@@ -125,9 +130,18 @@ kubectl apply --dry-run=client -k k8s/base
 
 `REPLACE_*`가 남아 있어도 렌더링은 된다 — **문법은 검증되지만 값은 검증되지 않는다.**
 
-## 아직 없는 것
+## 이 디렉터리에 무엇이 있나
 
-- **Strimzi Kafka CR** — `KAFKA_BOOTSTRAP_SERVERS`가 가리키는 대상(Phase 4)
-- **ArgoCD `Application`** — 이 디렉터리를 가리킬 리소스(Phase 6)
-- **kube-prometheus-stack** — 관측(Phase 7)
-- **ExternalSecret** — 위 시크릿 절
+한때 여기에 **"아직 없는 것"** 목록이 있었다. 네 항목 전부 그 뒤로 생겼는데 목록은 그대로
+남아 **문서가 저장소를 반대로 설명하는 상태**가 됐다(2026-08-12 리뷰에서 발견). 목록을
+현재 상태로 바꾸고, 같은 종류의 드리프트를 하네스 규칙 ⑯이 잡도록 했다.
+
+| 대상 | 위치 |
+|---|---|
+| Strimzi Kafka CR — `KAFKA_BOOTSTRAP_SERVERS`가 가리키는 대상 | `kafka/kafka.yaml` |
+| ArgoCD `Application` — 이 디렉터리를 가리키는 리소스 | `argocd/application.yaml` |
+| kube-prometheus-stack — 관측 | `monitoring/kube-prometheus-stack.values.yaml` |
+| ExternalSecret — 위 시크릿 절 | `external-secrets/externalsecret-api.yaml` |
+
+**"아직 없다"고 쓸 때는 경로를 백틱으로 적는다.** 규칙 ⑯이 그 경로의 실존을 검사하므로,
+나중에 생기면 CI가 문서를 고치라고 말해 준다. 경로 없이 자연어로만 쓰면 아무도 못 잡는다.

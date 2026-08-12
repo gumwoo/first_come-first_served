@@ -105,7 +105,8 @@ run-3은 **남은 2,900개가 101~3000**으로 **둘 다 구멍 0**이다.
 ⚠️ 같은 측정에서 **별개의 결함**이 나왔다 — 승격 시 `ZPOPMIN`(Lua 안)과 `queue:admit:{token}`
 생성(Lua 밖) 사이의 창에서 상태가 `EXPIRED`로 보인다. 정원·순서 불변식은 그대로이고
 **상태 가시성**만 깨지는 문제로, 이 IMP의 원자화가 다루는 범위 밖이었다.
-→ [TS-024](../troubleshooting/TS-024-queue-admit-visibility-gap.md) (미수정)
+→ [TS-024](../troubleshooting/TS-024-queue-admit-visibility-gap.md) (해결 — 승격 커밋을 한 Lua로
+모아 `admitExp` 등록까지 원자화했다. 이 IMP가 그은 원자 경계가 **한 단계 더 넓어진 셈**이다)
 
 상세·원자료는 [`benchmarks/spike-queue/`](../../benchmarks/spike-queue/README.md).
 

@@ -15,7 +15,7 @@ IMP(개선 일지: 문제→측정→개선)와 구분 — ADR은 "무엇을·�
 | [ADR-008](ADR-008-kafka-event-backbone-dlq.md) | Kafka 이벤트 백본 + DLQ — SSE 라스트홉, AFTER_COMMIT | Accepted |
 | [ADR-009](ADR-009-gitops-cd-argocd.md) | GitOps CD — ArgoCD 채택(Terraform=인프라/ArgoCD=앱) | Proposed |
 | [ADR-010](ADR-010-transactional-outbox.md) | 트랜잭셔널 아웃박스(DB↔Kafka exactly-once) + 정산 분리 | Accepted |
-| [ADR-011](ADR-011-payment-reconciliation.md) | 결제 정산·보상 — 외부 PG↔내부 주문 불일치(미아 승인 취소) | Accepted |
+| [ADR-011](ADR-011-payment-reconciliation.md) | 결제 정산·보상 — 외부 PG↔내부 주문 불일치(미아 승인 취소) | Accepted (구현 완료 / 실 PG 실증 미실시) |
 | [ADR-012](ADR-012-3az-eks-infra-cost-control.md) | 3AZ EKS 인프라 — 이중화 범위와 비용 통제(apply/destroy) | Proposed |
 | [ADR-013](ADR-013-iac-ownership-secrets-access.md) | IaC 소유 경계와 비밀·접근 통제 — data/import 기준, state에 비밀 금지, 열어 둔 곳 3개 | Proposed |
 | [ADR-014](ADR-014-modular-monolith-layering.md) | 모듈러 모놀리스와 계층 경계 — DDD 전술 패턴은 선택적으로만(사후 정리) | Accepted |

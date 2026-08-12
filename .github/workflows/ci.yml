@@ -48,9 +48,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      # ⚠️ lockfile 실패에 fallback을 두지 않는다.
+      # 예전에는 `npm ci || npm install`(pnpm은 `--frozen-lockfile || pnpm install`)이었다.
+      # lockfile이 package.json과 어긋나면 `npm ci`는 실패해야 하는데, fallback이 그걸 받아
+      # **다른 의존성 트리로 초록불**을 만든다. 그러면 로컬과 CI가 서로 다른 트리를 검증한 것이라
+      # 하네스·테스트 결과의 근거가 통째로 흔들린다. 결정론을 내세우는 저장소에서 가장 아래
+      # 토대가 비결정적이었던 셈이다([[TS-027]]).
+      # 제거 시점 확인: harness·e2e `npm ci --dry-run`, apps/web `--frozen-lockfile` 모두 통과 —
+      # 즉 이 fallback은 당시 아무것도 덮고 있지 않았고, 앞으로 깨질 때만 조용히 덮었을 자리다.
       - name: install harness deps
         working-directory: harness
-        run: npm ci || npm install
+        run: npm ci
       - name: contract schema check (계약 형식 검증)
         working-directory: harness
         run: node schema-check.mjs
@@ -91,7 +99,7 @@ jobs:
           gradle-version: "8.10.2"
       - name: harness deps
         working-directory: harness
-        run: npm ci || npm install
+        run: npm ci
       - name: backend harness check
         run: node harness/backend/check.mjs
       # 매니페스트가 앱 코드와 어긋나는지 — apply 전에는 무증상이라 여기서만 잡을 수 있다.
@@ -129,12 +137,12 @@ jobs:
           version: 9
       - name: harness deps
         working-directory: harness
-        run: npm ci || npm install
+        run: npm ci
       - name: frontend harness check
         run: node harness/frontend/check.mjs
       - name: install
         working-directory: apps/web
-        run: pnpm install --frozen-lockfile || pnpm install
+        run: pnpm install --frozen-lockfile
       - name: typecheck
         working-directory: apps/web
         run: pnpm typecheck
@@ -218,7 +226,7 @@ jobs:
       - name: build & run web
         working-directory: apps/web
         run: |
-          pnpm install --frozen-lockfile || pnpm install
+          pnpm install --frozen-lockfile
           pnpm build
           nohup pnpm start > ../../web.log 2>&1 &
       - name: wait for web
@@ -233,7 +241,7 @@ jobs:
       - name: install e2e deps
         working-directory: e2e
         run: |
-          npm ci || npm install
+          npm ci
           npx playwright install --with-deps chromium
       - name: run e2e
         working-directory: e2e

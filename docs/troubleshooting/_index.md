@@ -38,3 +38,4 @@ IMP(정량 before/after 개선)와 달리, 여기 문서는 "무엇이 왜 깨�
 | [TS-023](TS-023-multipod-failover-verification.md) | 다중 Pod·페일오버 실증 — ShedLock 단일 실행 / SSE cross-Pod 팬아웃 / 브로커 1대 소실 / Lag 회복 | S09 | 검증 로그 | 완료(A1은 대조군이 초기 결론을 정정) |
 | [TS-024](TS-024-queue-admit-visibility-gap.md) | 진입하자마자 "만료" — 승격 커밋이 Lua 밖으로 새어 ① 상태가 `EXPIRED`로 보이는 창 ② Pod 크래시 시 **정원 영구 누수** | S10 | 동시성(원자 경계) | 해결(승격 커밋 원자화 + 판정 규칙 통일, 회귀 3건) — 스파이크 재측정 대기 |
 | [TS-025](TS-025-docs-drift-harness.md) | 하네스가 코드↔계약은 잡는데 문서↔현재 상태는 못 잡았다 — "아직 없는 것" 네 항목이 전부 실존, 한 절 안에서 자기모순, 참조 상태 표기 낡음 | 전반(문서 규율) | 프로세스(규칙 사각지대) | 해결(드리프트 4건 수정 + 하네스 규칙 ⑯·⑰, 초안 오탐 2회 정정) |
+| [TS-026](TS-026-dlq-retry-unconfirmed-publish.md) | DLQ 재처리가 브로커 확인 없이 RETRIED로 기록 — 같은 문제를 OutboxRelay는 `.get()`으로 확인하고 있었다 | S07 | 메시지 신뢰성(확인 전 상태 확정) | 해결(ACK 확인 후 마킹 + 실패 종류 분리, 회귀 2건) |

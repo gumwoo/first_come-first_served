@@ -254,6 +254,9 @@ outbox:
   retention-days: ${OUTBOX_RETENTION_DAYS:7}        # PUBLISHED 보존 기간(운영 가시성) — 이후 purge
   purge-cron: ${OUTBOX_PURGE_CRON:0 0 3 * * *}      # 매일 새벽 3시 정리(PENDING·실패는 제외)
 
+dlq:
+  send-timeout-ms: ${DLQ_SEND_TIMEOUT:3000}         # 운영 재발행 확인 대기 상한(TS-026)
+
 # 결제 게이트웨이 선택(ADR-005). mock=결정론(테스트/E2E/CI 기본), toss=실 PG 테스트 연동(데모).
 payment:
   gateway: ${PAYMENT_GATEWAY:mock}

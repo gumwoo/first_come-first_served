@@ -1,6 +1,7 @@
 package com.flowticket.dlq;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -11,7 +12,10 @@ import com.flowticket.dlq.domain.DlqMessage;
 import com.flowticket.dlq.domain.DlqStatus;
 import com.flowticket.dlq.repository.DlqMessageRepository;
 import com.flowticket.dlq.service.AdminDlqService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.flowticket.global.config.KafkaConfig;
+import com.flowticket.global.error.BusinessException;
+import com.flowticket.global.error.ErrorCode;
 import com.flowticket.order.event.OrderEvent;
 import com.flowticket.order.sse.OrderSseRegistry;
 import java.time.Duration;
@@ -70,6 +74,7 @@ class DlqIntegrationTest {
     @Autowired KafkaTemplate<String, Object> kafkaTemplate;
     @Autowired DlqMessageRepository dlqRepository;
     @Autowired AdminDlqService adminDlqService;
+    @Autowired ObjectMapper objectMapper;
 
     @BeforeEach
     void setup() {
@@ -125,6 +130,41 @@ class DlqIntegrationTest {
                                     .containsIgnoringCase("deserial");
                             assertThat(m.getTopic()).isEqualTo(KafkaConfig.ORDER_EVENTS_TOPIC);
                         }));
+    }
+
+    @Test
+    void 재발행이_실패하면_RETRIED로_바꾸지_않는다() throws Exception {
+        // [[TS-026]] 회귀. 예전에는 kafkaTemplate.send()만 호출하고 브로커 확인 없이 곧바로
+        // markRetried()를 했다. 전송은 비동기라 "DB는 재처리했다는데 실제로는 유실"이 가능했고,
+        // 상태가 RETRIED로 바뀌면 운영자 목록에서도 사라져 영영 못 찾는다.
+        //
+        // 발행 실패를 **결정적으로** 만들기 위해 Kafka 토픽명 규칙을 위반한 이름을 쓴다
+        // (허용 문자는 [a-zA-Z0-9._-]). 브로커 다운을 흉내 내는 것보다 재현이 확실하다.
+        String payload = objectMapper.writeValueAsString(OrderEvent.of("order.paid", 444L));
+        DlqMessage row = dlqRepository.save(new DlqMessage("invalid topic name!", payload, "err"));
+
+        assertThatThrownBy(() -> adminDlqService.retry(row.getId()))
+                .as("발행이 확인되지 않으면 예외여야 한다")
+                .isInstanceOf(BusinessException.class);
+
+        assertThat(dlqRepository.findById(row.getId()).orElseThrow().getStatus())
+                .as("발행 실패 시 상태는 그대로여야 운영자가 다시 시도할 수 있다")
+                .isEqualTo(DlqStatus.PENDING);
+    }
+
+    @Test
+    void 깨진_페이로드는_발행을_시도하지_않고_400으로_구분된다() {
+        // 페이로드 파손은 몇 번을 눌러도 실패하므로 폐기 대상이고, 발행 실패는 나중에 다시 누르면
+        // 되는 것이다. 예전에는 둘 다 VALIDATION_ERROR로 뭉뚱그려 그 구분이 안 됐다.
+        DlqMessage row = dlqRepository.save(
+                new DlqMessage(KafkaConfig.ORDER_EVENTS_TOPIC, "not-json-at-all", "err"));
+
+        assertThatThrownBy(() -> adminDlqService.retry(row.getId()))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_ERROR);
+
+        assertThat(dlqRepository.findById(row.getId()).orElseThrow().getStatus())
+                .isEqualTo(DlqStatus.PENDING);
     }
 
     @Test

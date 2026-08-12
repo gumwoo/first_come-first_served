@@ -47,6 +47,13 @@ const cases = [
   { name: "fe-missing-required-event", script: "frontend/check.mjs", env: {
     HARNESS_CONTRACTS_DIR: "harness/fixtures/violations/fe-missing-required-event",
     HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-required-event/web" } },
+  // docs: 문서가 저장소의 현재 상태를 반대로 설명하는 두 경로(둘 다 코드는 멀쩡해 CI가 통과한다)
+  { name: "docs-absent-but-exists", script: "docs/check.mjs", expect: "없다고 단언한 대상이 실존한다:", env: {
+    HARNESS_DOCS_DIR: "harness/fixtures/violations/docs-absent-but-exists",
+    HARNESS_DOCS_EXTRA: "harness/fixtures/violations/docs-absent-but-exists" } },
+  { name: "docs-status-drift", script: "docs/check.mjs", expect: "문서 상태가 어긋난다:", env: {
+    HARNESS_DOCS_DIR: "harness/fixtures/violations/docs-status-drift",
+    HARNESS_DOCS_EXTRA: "harness/fixtures/violations/docs-status-drift" } },
   // ③ 계약 스키마 위반 (깨진 api.yaml만 override, 나머지는 실제 폴백)
   { name: "contract-bad-schema", script: "schema-check.mjs", env: {
     HARNESS_CONTRACTS_DIR: "harness/fixtures/violations/contract-bad-schema" } },

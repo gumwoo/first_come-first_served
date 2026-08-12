@@ -57,6 +57,13 @@ jobs:
       - name: meta test (false-negative guard)
         working-directory: harness
         run: node meta-test.mjs
+      # 문서 드리프트 검사는 **이 잡에 둔다**(backend/frontend가 아니라).
+      # 이 규칙이 필요한 순간이 바로 "문서만 고친 PR"인데, 그런 PR은 변경 영역 필터에 걸려
+      # backend·frontend가 전부 skip된다. 거기 두면 정작 필요할 때 돌지 않는다.
+      # harness-meta는 needs·if 없이 항상 실행되고, 이 검사는 1초 미만이라 비용도 없다.
+      - name: docs harness check (문서 ↔ 현재 상태 드리프트)
+        working-directory: harness
+        run: node docs/check.mjs
 
   backend:
     name: 백엔드 (하네스 → 테스트)

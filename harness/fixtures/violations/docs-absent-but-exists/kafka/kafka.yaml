@@ -1,0 +1,5 @@
+# 위반 fixture: 아래 README가 "아직 없다"고 단언하지만 이 파일은 실존한다.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: fixture

@@ -2,7 +2,7 @@
 
 - 슬라이스: S10(부하 시험) — 발견 경로는 [`benchmarks/spike-queue/`](../../benchmarks/spike-queue/README.md)
 - 날짜: 2026-08-12
-- 유형: 결함 발견 → 수정 — **원인 확정, 조치 완료(CI 검증 대기)**
+- 유형: 결함 발견 → 수정 — **원인 확정, 조치 완료(CI 통과)**
 - 관련: [IMP-004](../improvements/IMP-004-queue-admission.md)(승격 Lua 원자화), ADR-002(원자성 계층)
 - 상태: **해결** — 승격 커밋을 한 Lua로 모으고 판정 규칙을 통일했다. 회귀 테스트 3건 추가
 

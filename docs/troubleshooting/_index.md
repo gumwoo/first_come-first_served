@@ -39,3 +39,4 @@ IMP(정량 before/after 개선)와 달리, 여기 문서는 "무엇이 왜 깨�
 | [TS-024](TS-024-queue-admit-visibility-gap.md) | 진입하자마자 "만료" — 승격 커밋이 Lua 밖으로 새어 ① 상태가 `EXPIRED`로 보이는 창 ② Pod 크래시 시 **정원 영구 누수** | S10 | 동시성(원자 경계) | 해결(승격 커밋 원자화 + 판정 규칙 통일, 회귀 3건) — 스파이크 재측정 대기 |
 | [TS-025](TS-025-docs-drift-harness.md) | 하네스가 코드↔계약은 잡는데 문서↔현재 상태는 못 잡았다 — "아직 없는 것" 네 항목이 전부 실존, 한 절 안에서 자기모순, 참조 상태 표기 낡음 | 전반(문서 규율) | 프로세스(규칙 사각지대) | 해결(드리프트 4건 수정 + 하네스 규칙 ⑯·⑰, 초안 오탐 2회 정정) |
 | [TS-026](TS-026-dlq-retry-unconfirmed-publish.md) | DLQ 재처리가 브로커 확인 없이 RETRIED로 기록 — 같은 문제를 OutboxRelay는 `.get()`으로 확인하고 있었다 | S07 | 메시지 신뢰성(확인 전 상태 확정) | 해결(ACK 확인 후 마킹 + 실패 종류 분리, 회귀 2건) |
+| [TS-027](TS-027-ci-nondeterministic-install.md) | 결정론을 내세우면서 CI 의존성 설치에는 fallback이 있었다 — `npm ci` 실패를 뒤의 `npm install`이 흡수해 초록불의 의미가 사라졌다 | 전반(CI) | 프로세스(검증의 토대) | 해결(fallback 6곳 제거, lockfile 3개 정상 확인) |

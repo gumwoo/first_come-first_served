@@ -116,7 +116,8 @@ jobs:
         run: node harness/k8s/check.mjs
       - name: gradle build (test 포함)
         working-directory: apps/api
-        run: gradle build --no-daemon
+        # ⚠️ 임시: 측정 실행용 -PciTiming. 이 브랜치에서만 켠다 — **머지 전에 되돌린다.**
+        run: gradle build --no-daemon -PciTiming
 
       # 실패 리포트를 남긴다. 콘솔에 FULL 출력을 켰어도(build.gradle.kts) 긴 진단 메시지는
       # 로그에서 찾기 어렵고, 간헐적 실패는 러너가 사라지면 다시 볼 방법이 없다.

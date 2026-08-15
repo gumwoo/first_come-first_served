@@ -11,6 +11,18 @@ on:
   # 최초 검증·재시도용(파이프라인만 확인하고 싶을 때).
   workflow_dispatch:
 
+# ⚠️ CI와 **일부러 다르게** 잡는다 — cancel-in-progress를 켜지 않는다.
+# 배포를 중간에 죽이면 "이미지는 ECR에 올라갔는데 태그 커밋은 안 된" 상태가 남는다.
+# false면 실행 중인 것은 끝까지 가고, 대기 중인 것은 가장 최신만 남는다(오래된 pending 교체).
+#
+# ⚠️ **이것만으로 stale 배포 역전이 막히지 않는다.** GitHub은 같은 concurrency group의
+# 실행 순서를 보장하지 않는다고 명시한다. concurrency는 동시 실행 창을 줄일 뿐이고,
+# "내가 쓰려는 SHA가 이미 배포된 것보다 오래됐는가"는 판별하지 못한다 —
+# 그건 bump-tag의 조상 검사가 한다. 상세: [[TS-029]]
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
+
 # OIDC로 AWS 역할을 맡으려면 id-token 발급 권한이 필요하다(장기 액세스 키를 쓰지 않는 이유).
 permissions:
   id-token: write
@@ -52,6 +64,14 @@ jobs:
           # workflow_run에는 paths 필터를 걸 수 없어, 이미지에 영향 있는 변경인지 직접 판별한다.
           # (문서만 고친 머지에 이미지 빌드를 돌리지 않기 위함 — CI의 paths 필터와 같은 취지)
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # ⚠️ **main에서만 허용한다.** 이 워크플로의 산출물은 main의 배포 태그이므로
+            # feature 브랜치에서 돌리면 머지되지 않은 커밋이 배포 대상이 된다.
+            # bump-tag가 main 히스토리 포함을 다시 보지만(⓪), 여기서 먼저 끊어
+            # ECR 빌드 비용조차 쓰지 않는다. 상세: [[TS-029]]
+            if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+              echo "::error::workflow_dispatch는 main에서만 허용된다(현재: ${{ github.ref }})"
+              exit 1
+            fi
             echo "ready=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           if git diff --name-only HEAD^ HEAD | grep -qE '^(apps/(api|web)/|infra/|\.dockerignore|\.github/workflows/image\.yml)'; then
@@ -186,16 +206,81 @@ jobs:
         with:
           # 태그는 항상 main 최신에 얹는다. 빌드한 코드의 SHA는 아래에서 값으로만 쓴다.
           ref: main
+          # 조상 검사(아래 stale 가드)에 전체 히스토리가 필요하다. 기본값 1이면
+          # merge-base가 "not a valid object"로 죽는다. workflow_dispatch로 다른 브랜치에서
+          # 돌 수도 있으므로 모든 ref를 받는다.
+          fetch-depth: 0
           # 기본 GITHUB_TOKEN으로 푸시한다. 이 토큰의 푸시는 워크플로를 다시 트리거하지 않지만,
           # 그 동작에 기대지 않고 [skip ci]로도 막는다(이중 방어).
           persist-credentials: true
 
-      - name: kustomization 태그 갱신
-        id: bump
+      # ── stale 배포 역전 방지 ───────────────────────────────────────────────
+      # 이 잡은 `ref: main`으로 체크아웃한 뒤 자기가 빌드한 SHA를 값으로 쓴다. 그래서
+      # 오래된 커밋 A의 빌드가 새 커밋 B보다 **늦게 끝나면 A가 B의 태그를 덮는다.**
+      # concurrency는 이걸 막지 못한다(위 주석) — 조상 관계를 직접 본다.
+      #
+      # 네 가지 상태를 구분한다. ④를 조용히 통과시키지 않는 것이 핵심이다 —
+      # 배포에서 "예상 밖인데 일단 진행"은 가장 나쁜 기본값이다.
+      #   ① SHA == 현재 태그            → 같은 버전, 갱신 불필요
+      #   ② SHA가 현재 태그의 조상       → 내가 stale, 덮지 않는다
+      #   ③ 현재 태그가 SHA의 조상       → 내가 최신, 갱신한다
+      #   ④ 둘 다 아님(무관계)          → 분기·force-push·타 브랜치 dispatch → 실패시킨다
+      #
+      # ④는 가상이 아니다. workflow_run은 branches:[main]로 묶여 선형이지만
+      # **workflow_dispatch는 아무 브랜치에서나 돌 수 있어** main과 무관계한 SHA가 들어온다.
+      - name: stale 배포 가드(조상 검사)
+        id: staleguard
         run: |
           SHA="${{ needs.guard.outputs.sha }}"
           F=k8s/overlays/demo-local/kustomization.yaml
           if [ ! -f "$F" ]; then echo "::error::$F 가 없다 — 오버레이가 커밋돼 있어야 한다"; exit 1; fi
+          CURRENT=$(grep -oE 'newTag: [0-9a-f]{40}' "$F" | head -1 | awk '{print $2}')
+          echo "빌드 SHA=$SHA / 현재 태그=$CURRENT"
+
+          # ⓪ 빌드 SHA가 **main 히스토리에 포함되는가** — 4상태보다 먼저 본다.
+          #
+          # ⚠️ 이 검사가 없으면 ③이 구멍이 된다. 초안은 "무관계면 ④에서 막힌다"고 봤는데,
+          # **흔한 feature 브랜치는 최신 main에서 따므로 main 태그의 후손이다.**
+          #   main:    A ── B ── C        (태그 = C)
+          #   feature:           └── X    ← C의 조상이 아니라 **후손**
+          # 그러면 "③ 현재 태그가 SHA의 조상 = 내가 최신"으로 판정돼 **머지도 안 된 커밋이
+          # main 배포 태그가 된다.** ④(무관계)보다 흔하고 위험하다. 리뷰에서 잡혔고,
+          # git 시뮬레이션으로 재현한 뒤 이 검사를 앞에 뒀다.
+          MAIN=$(git rev-parse --verify origin/main 2>/dev/null || true)
+          if [ -z "$MAIN" ]; then
+            echo "::error::origin/main 을 찾을 수 없다 — fetch-depth 설정을 확인할 것"; exit 1
+          fi
+          if ! git merge-base --is-ancestor "$SHA" "$MAIN"; then
+            echo "::error::⓪ 빌드 SHA($SHA)가 main 히스토리에 없다. 머지되지 않은 커밋은 배포하지 않는다"
+            exit 1
+          fi
+          if [ -z "$CURRENT" ]; then
+            echo "::error::현재 태그를 읽지 못했다 — 오버레이의 newTag 형식을 확인할 것"; exit 1
+          fi
+          # 두 커밋이 로컬에 있어야 조상 검사가 성립한다. 없으면 판정 불가이므로 멈춘다.
+          for C in "$SHA" "$CURRENT"; do
+            if ! git cat-file -e "${C}^{commit}" 2>/dev/null; then
+              echo "::error::커밋 $C 를 찾을 수 없다 — 조상 관계를 판정할 수 없어 중단한다"; exit 1
+            fi
+          done
+          if [ "$SHA" = "$CURRENT" ]; then
+            echo "① 같은 버전 — 갱신 불필요"; echo "proceed=false" >> "$GITHUB_OUTPUT"
+          elif git merge-base --is-ancestor "$SHA" "$CURRENT"; then
+            echo "② 이 빌드($SHA)는 현재 태그($CURRENT)의 조상 = stale — 덮지 않는다"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          elif git merge-base --is-ancestor "$CURRENT" "$SHA"; then
+            echo "③ 이 빌드가 최신 — 갱신한다"; echo "proceed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::④ $SHA 와 $CURRENT 가 조상 관계가 아니다(분기/force-push/타 브랜치 dispatch). 사람이 판단할 것"
+            exit 1
+          fi
+
+      - name: kustomization 태그 갱신
+        id: bump
+        if: steps.staleguard.outputs.proceed == 'true'
+        run: |
+          SHA="${{ needs.guard.outputs.sha }}"
+          F=k8s/overlays/demo-local/kustomization.yaml
           # newTag 값만 교체(40자 hex). 역참조를 쓰지 않는다 — 치환문에 그대로 다시 쓰면 되고,
           # 역참조는 여러 겹의 이스케이프를 거치며 깨지기 쉽다(실제로 제어문자가 들어갔다).
           sed -i -E "s|newTag: [0-9a-f]{40}|newTag: ${SHA}|g" "$F"
@@ -215,6 +300,8 @@ jobs:
           git add k8s/overlays/demo-local/kustomization.yaml
           git commit -m "chore(deploy): 이미지 태그 ${{ needs.guard.outputs.sha }} [skip ci]"
           # 빌드가 도는 동안 main이 움직였을 수 있다. 리베이스 후 재시도한다(최대 3회).
+          # 그 사이 **다른 워크플로가 더 새 태그를 썼다면 같은 줄이 바뀌어 리베이스가 충돌**하고
+          # 여기서 실패한다 — 조용히 덮이지 않는다(위 stale 가드와 이중 방어).
           for i in 1 2 3; do
             if git push origin main; then exit 0; fi
             echo "푸시 실패 — main을 리베이스하고 재시도($i/3)"
@@ -227,4 +314,5 @@ jobs:
         run: |
           echo "### 매니페스트 태그" >> "$GITHUB_STEP_SUMMARY"
           echo "- SHA: \`${{ needs.guard.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 갱신 진행: ${{ steps.staleguard.outputs.proceed }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- 커밋: ${{ steps.bump.outputs.changed }}" >> "$GITHUB_STEP_SUMMARY"

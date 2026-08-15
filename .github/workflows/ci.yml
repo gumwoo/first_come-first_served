@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+# 같은 브랜치에 새 커밋이 오면 이전 CI는 의미가 없다 — 즉시 취소해 러너 시간을 아낀다.
+# 리뷰 → 수정 → push 루프에서 낭비가 컸다.
+#
+# ⚠️ image.yml은 **일부러 다르게** 잡는다(cancel-in-progress: false). 배포는 중간에 죽이면
+# 이미지는 올라갔는데 태그 커밋은 안 된 상태가 남는다. 상세: [[TS-029]]
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   changes:
     name: 변경 영역 판별

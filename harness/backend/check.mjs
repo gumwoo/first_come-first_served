@@ -559,14 +559,26 @@ const NON_APP_HEADROOM = 20;
 // 실제로 KOPIS는 지키고 있었는데 TossPaymentGateway는 `RestClient.builder().baseUrl(..).build()`
 // 였다([[TS-028]]). 같은 위험을 한쪽만 막고 있었던 것이고, 런타임 테스트로는 잡기 어렵다
 // (타임아웃을 재현하려면 응답 없는 서버가 필요해 느리고 불안정하다) — 정적으로만 싸게 잡힌다.
-const HTTP_BUILD_RE = /RestClient\s*\.\s*(builder|create)\s*\(/;
+// 클라이언트를 **만드는** 두 가지 형태를 모두 본다.
+//   ① RestClient.builder(...) / RestClient.create(...)      — 직접 만든다
+//   ② RestClient.Builder 를 주입받아 .build() 한다           — 스프링 빌더를 쓴다
+//
+// ⚠️ 초안은 ①만 봤고, 그래서 **이 규칙을 만든 그 수정 자체를 검사하지 못했다.**
+// TossPaymentGateway를 고치면서 `RestClient.builder()`가 `builder.clone()`으로 바뀌었는데,
+// 그 순간 파일이 규칙의 시야에서 사라졌다 — 누가 requestFactory를 다시 지워도 통과한다.
+// 리뷰에서 잡혔고, `requestFactory`만 제거한 뒤 하네스를 돌려 실제로 통과하는 것을 확인했다.
+const HTTP_DIRECT_RE = /RestClient\s*\.\s*(builder|create)\s*\(/;
+const HTTP_INJECTED_RE = /RestClient\s*\.\s*Builder/;
+const BUILD_CALL_RE = /\.\s*build\s*\(\s*\)/;
 // ⚠️ **주석을 걷어내고 본다.** 초안은 원문 그대로 `raw.includes("requestFactory(")`를 썼는데,
 // 위반 fixture의 javadoc에 그 단어가 들어 있다는 이유만으로 통과해 버렸다(규칙이 자기 fixture를
 // 못 잡았다). 주석에 이름을 언급하는 것과 실제로 호출하는 것은 다르다.
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 for (const file of javaFiles) {
   const code = stripComments(read(file));
-  if (!HTTP_BUILD_RE.test(code)) continue;
+  const buildsClient =
+    HTTP_DIRECT_RE.test(code) || (HTTP_INJECTED_RE.test(code) && BUILD_CALL_RE.test(code));
+  if (!buildsClient) continue;
   // 주입받은 빌더를 그대로 쓰는 파일이라도, 타임아웃은 어딘가에서 반드시 걸려야 한다.
   if (code.includes("requestFactory(")) continue;
   r.fail(

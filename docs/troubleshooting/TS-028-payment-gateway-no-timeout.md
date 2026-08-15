@@ -115,8 +115,42 @@ this.client = builder.clone().baseUrl(BASE_URL)
 ```
 
 **주석에 이름을 언급하는 것과 실제로 호출하는 것은 다르다.** 주석을 걷어내고 보도록 고쳤다.
-[[TS-025]]에서 규칙을 세 번 좁혀야 했던 것과 같은 종류의 일이고, 이번에도 **fixture가 규칙의
-결함을 먼저 잡았다.**
+
+### 그리고 규칙이 **자기가 만든 수정을 못 보게 됐다**
+
+초안은 클라이언트를 만드는 형태를 `RestClient.builder()` / `RestClient.create()` 하나로만 봤다.
+그런데 **이 TS의 수정이 Toss를 다른 형태로 바꿨다.**
+
+```java
+// 수정 전 — 규칙의 시야 안
+this.client = RestClient.builder().baseUrl(BASE_URL).build();
+
+// 수정 후 — 규칙의 시야 밖
+this.client = builder.clone().baseUrl(BASE_URL).requestFactory(...).build();
+```
+
+`builder.clone()`에는 `RestClient.builder(`가 없다. **고치는 순간 그 파일이 규칙에서 사라졌다.**
+누군가 나중에 `requestFactory(...)`만 지워도 하네스는 통과한다 — 즉 **재발 방지 규칙이 정작
+이 사건의 재발을 못 막는 상태**였다.
+
+리뷰에서 잡혔고, 말로 따지지 않고 확인했다. `requestFactory`만 제거하고 하네스를 돌리자
+**통과했다.** 그래서 규칙이 두 형태를 다 보게 고쳤다.
+
+| 형태 | 예 |
+|---|---|
+| ① 직접 만든다 | `RestClient.builder(...)` · `RestClient.create(...)` |
+| ② 주입 빌더를 쓴다 | `RestClient.Builder`를 받아 `.build()` |
+
+고친 뒤 같은 절차를 반복해 **정확히 `TossPaymentGateway`를 지목해 실패**하는 것을 확인했고,
+②를 위한 fixture(`be-http-no-timeout-injected`)를 추가해 메타테스트에 등록했다.
+
+> 여기서 아이러니한 것은, **자기 fixture에 속은 것(주석)**과 **자기 수정에 눈이 먼 것(형태 변경)**이
+> 같은 규칙에서 연달아 나왔다는 점이다. 규칙을 쓸 때는 "무엇을 잡느냐"만이 아니라
+> **"내가 방금 바꾼 코드를 여전히 보고 있느냐"**를 확인해야 한다. 그 확인 방법은 하나뿐이다 —
+> **고친 것을 되돌려 보고 규칙이 우는지 본다.**
+
+[[TS-025]]에서 규칙을 세 번 좁혀야 했던 것과 같은 종류의 일이고, 이번에도 **fixture와 리뷰가
+규칙의 결함을 먼저 잡았다.**
 
 ## 4. 배운 점
 

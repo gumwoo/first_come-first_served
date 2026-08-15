@@ -33,6 +33,7 @@ const cases = [
   { name: "be-destructive-ddl",  script: "backend/check.mjs", expect: "파괴적 DDL:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-destructive-ddl" } },
   { name: "be-dangling-doc-ref", script: "backend/check.mjs", expect: "끊어진 문서 참조:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-dangling-doc-ref" } },
   { name: "be-http-no-timeout", script: "backend/check.mjs", expect: "외부 HTTP 클라이언트에 타임아웃이 없다:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-http-no-timeout" } },
+  { name: "be-http-no-timeout-injected", script: "backend/check.mjs", expect: "외부 HTTP 클라이언트에 타임아웃이 없다:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-http-no-timeout-injected" } },
   // k8s: 매니페스트가 애플리케이션 코드와 어긋나는 두 경로(둘 다 apply 전에는 무증상)
   { name: "k8s-unknown-env", script: "k8s/check.mjs", expect: "앱이 읽지 않는 환경변수:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-unknown-env" } },
   { name: "k8s-ingress-api-direct", script: "k8s/check.mjs", expect: "Ingress가 API Service로 직결:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-ingress-api-direct" } },

@@ -3,11 +3,14 @@ package com.flowticket.order.gateway;
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.web.client.ClientHttpRequestFactories;
+import org.springframework.boot.web.client.ClientHttpRequestFactorySettings;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -27,8 +30,32 @@ public class TossPaymentGateway implements PaymentGateway {
     private final RestClient client;
     private final String authHeader;
 
-    public TossPaymentGateway(@Value("${TOSS_SECRET_KEY:}") String secretKey) {
-        this.client = RestClient.builder().baseUrl(BASE_URL).build();
+    /**
+     * ⚠️ <b>타임아웃을 반드시 건다.</b> 이전에는 {@code RestClient.builder().baseUrl(..).build()}
+     * 였는데, request factory를 주지 않으면 RestClient는 클래스패스에서 고르고 이 이미지에는
+     * Apache HttpClient5·Jetty·OkHttp가 없어 <b>JDK HttpClient로 떨어진다. 그쪽은 connect/read
+     * 기본 타임아웃이 없다</b>({@link com.flowticket.event.kopis.KopisClientConfig}가 같은 사실을
+     * 이미 적어 두었다 — KOPIS만 지키고 결제는 안 지키고 있었다).
+     *
+     * <p>결제는 KOPIS보다 나쁘다. 이 호출은 <b>DB 트랜잭션 안</b>에서 일어나므로(PaymentService·
+     * RefundService), 응답 없는 PG 하나가 톰캣 스레드와 <b>Hikari 커넥션을 함께</b> 묶는다.
+     * 풀은 파드당 5다({@code DB_POOL_MAX}, TS-021) — 느린 결제 5건이면 그 파드의 DB가 멎는다.
+     *
+     * <p><b>read 타임아웃이 새 실패 유형을 만든다는 점을 알고 고른 값이다.</b> 타임아웃은
+     * "승인 안 됨"이 아니라 <b>"모름"</b>이다 — Toss는 승인했는데 우리가 못 받았을 수 있고,
+     * 그러면 롤백돼 DB에 흔적이 없는 <b>미아 승인</b>이 된다. 그 클래스를 회수하려고 만든 것이
+     * ADR-011 정산 잡이라, 이 타임아웃은 <b>그 장치가 있기 때문에</b> 안전하다.
+     * 반대로 값이 짧으면 멀쩡한 결제를 미아로 만들므로 넉넉히 준다(기본 10초).
+     */
+    public TossPaymentGateway(RestClient.Builder builder,
+                              @Value("${TOSS_SECRET_KEY:}") String secretKey,
+                              @Value("${toss.connect-timeout-ms:2000}") long connectTimeoutMs,
+                              @Value("${toss.read-timeout-ms:10000}") long readTimeoutMs) {
+        this.client = builder.clone().baseUrl(BASE_URL)
+                .requestFactory(ClientHttpRequestFactories.get(ClientHttpRequestFactorySettings.DEFAULTS
+                        .withConnectTimeout(Duration.ofMillis(connectTimeoutMs))
+                        .withReadTimeout(Duration.ofMillis(readTimeoutMs))))
+                .build();
         // Basic 인증: base64(secretKey + ":")
         this.authHeader = "Basic " + Base64.getEncoder()
                 .encodeToString((secretKey + ":").getBytes(StandardCharsets.UTF_8));

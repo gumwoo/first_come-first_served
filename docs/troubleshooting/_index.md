@@ -40,3 +40,4 @@ IMP(정량 before/after 개선)와 달리, 여기 문서는 "무엇이 왜 깨�
 | [TS-025](TS-025-docs-drift-harness.md) | 하네스가 코드↔계약은 잡는데 문서↔현재 상태는 못 잡았다 — "아직 없는 것" 네 항목이 전부 실존, 한 절 안에서 자기모순, 참조 상태 표기 낡음 | 전반(문서 규율) | 프로세스(규칙 사각지대) | 해결(드리프트 4건 수정 + 하네스 규칙 ⑯·⑰, 초안 오탐 2회 정정) |
 | [TS-026](TS-026-dlq-retry-unconfirmed-publish.md) | DLQ 재처리가 브로커 확인 없이 RETRIED로 기록 — 같은 문제를 OutboxRelay는 `.get()`으로 확인하고 있었다 | S07 | 메시지 신뢰성(확인 전 상태 확정) | 해결(ACK 확인 후 마킹 + 실패 종류 분리, 회귀 2건) |
 | [TS-027](TS-027-ci-nondeterministic-install.md) | 결정론을 내세우면서 CI 의존성 설치에는 fallback이 있었다 — `npm ci` 실패를 뒤의 `npm install`이 흡수해 초록불의 의미가 사라졌다 | 전반(CI) | 프로세스(검증의 토대) | 해결(fallback 6곳 제거, lockfile 3개 정상 확인) |
+| [TS-028](TS-028-payment-gateway-no-timeout.md) | 결제 PG 호출에 타임아웃이 없었다 — KOPIS는 걸어 두고 결제만 안 걸어, 응답 없는 PG가 Hikari 커넥션(파드당 5)까지 묶을 수 있었다 | S05 | 가용성(외부 호출 경계) | 해결(타임아웃 + 하네스 규칙 ⑱ — 규칙이 자기 수정을 못 보던 false negative를 리뷰에서 잡아 두 형태 모두 검사) |

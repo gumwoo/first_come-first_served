@@ -120,14 +120,29 @@ jobs:
 
       # 실패 리포트를 남긴다. 콘솔에 FULL 출력을 켰어도(build.gradle.kts) 긴 진단 메시지는
       # 로그에서 찾기 어렵고, 간헐적 실패는 러너가 사라지면 다시 볼 방법이 없다.
-      - name: upload backend test reports
+      # JUnit XML은 **성공해도** 남긴다. 클래스·메서드별 소요 시간이 여기에만 있고,
+      # 그게 없으면 "CI가 왜 느린가"를 추측으로만 말하게 된다.
+      # (실측: backend median 9m46s 중 `:test` 하나가 501s. 그 안의 구성은 아직 모른다.)
+      #
+      # ⚠️ XML의 testcase 시간 합은 `:test` wall-clock과 같지 않다. Spring 컨텍스트 초기화·
+      # 컨테이너 기동·워커 오버헤드는 개별 testcase에 귀속되지 않아 **미귀속 시간**으로 남는다.
+      # 두 숫자의 차이가 곧 "테스트 코드 밖에서 쓰는 시간"이라 그 자체가 판단 근거다.
+      #
+      # HTML 리포트는 용량이 커서 실패 시에만 올린다 — 진단용이고 시간 분석엔 XML이면 된다.
+      - name: upload backend test results (timing)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: apps/api/build/test-results/
+          retention-days: 14
+
+      - name: upload backend test reports (html, 실패 시)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-reports
-          path: |
-            apps/api/build/reports/tests/
-            apps/api/build/test-results/
+          path: apps/api/build/reports/tests/
           retention-days: 14
 
   frontend:

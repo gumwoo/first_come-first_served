@@ -257,6 +257,14 @@ outbox:
 dlq:
   send-timeout-ms: ${DLQ_SEND_TIMEOUT:3000}         # 운영 재발행 확인 대기 상한(TS-026)
 
+# 결제 PG(Toss) 호출 타임아웃. 이 호출은 DB 트랜잭션 안에서 일어나므로 상한이 없으면
+# 느린 PG 하나가 Hikari 커넥션(파드당 5)을 물고 늘어진다. 상세: TS-028
+toss:
+  connect-timeout-ms: ${TOSS_CONNECT_TIMEOUT:2000}
+  # 짧게 잡으면 멀쩡한 결제를 '미아 승인'으로 만든다(타임아웃 = 승인 안 됨이 아니라 '모름').
+  # 회수는 ADR-011 정산 잡이 한다.
+  read-timeout-ms: ${TOSS_READ_TIMEOUT:10000}
+
 # 결제 게이트웨이 선택(ADR-005). mock=결정론(테스트/E2E/CI 기본), toss=실 PG 테스트 연동(데모).
 payment:
   gateway: ${PAYMENT_GATEWAY:mock}

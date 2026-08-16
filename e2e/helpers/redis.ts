@@ -13,9 +13,9 @@ import net from "node:net";
  *   <li>`redis-cli` — 러너 이미지에 있는지 보장되지 않는다. 확인하려면 CI를 한 바퀴 돌려야 하고,
  *       설치 스텝을 추가하면 그 스텝이 이미지 변화에 계속 묶인다.</li>
  *   <li>npm 클라이언트 — e2e는 의존성이 `@playwright/test` <b>하나뿐</b>인 독립 인프라다
- *       (package.json 설명). SET/DEL 두 명령을 위해 그 원칙을 깨지 않는다.</li>
+ *       (package.json 설명). INCRBY/DECRBY 두 명령을 위해 그 원칙을 깨지 않는다.</li>
  * </ul>
- * RESP는 안정된 프로토콜이고 여기서 쓰는 명령의 응답 형식은 단순 문자열·정수뿐이라
+ * RESP는 안정된 프로토콜이고 여기서 쓰는 명령의 응답 형식은 정수뿐이라
  * 20줄이면 충분하다.
  *
  * <p><b>⚠️ 로컬/CI Redis 전용이다.</b> 기본 대상이 127.0.0.1이고, 운영 Redis를 가리키게
@@ -93,6 +93,10 @@ const filled = new Set<number>();
  * R을 줄여도 우리가 얹은 +100은 그대로라 복원이 어긋나지 않는다.
  */
 export async function fillQueueCapacity(eventId: number, capacity = 100): Promise<void> {
+  // 두 번 호출되면 +200이 들어가는데 해제는 한 번뿐이라 100이 샌다. 이미 채워둔 이벤트는 건너뛴다.
+  if (filled.has(eventId)) {
+    return;
+  }
   await command("INCRBY", admitCountKey(eventId), String(capacity));
   filled.add(eventId);
 }
@@ -105,10 +109,15 @@ export async function fillQueueCapacity(eventId: number, capacity = 100): Promis
  *
  * <p>그래서 호출부는 `finally`에 둔다 — 테스트가 중간에 실패해도 돌아야 한다.
  * 채워두지 않은 이벤트에 대해서는 아무것도 하지 않는다(멱등).
+ *
+ * <p><b>표시를 지우는 것은 DECRBY가 성공한 뒤여야 한다.</b> 먼저 지우면 DECRBY가 실패했을 때
+ * Redis에는 +capacity가 남았는데 표시는 사라져, `finally`의 재시도가 "채운 적 없음"으로
+ * 판단해 그냥 돌아간다 — <b>멱등을 위해 둔 장치가 복구를 막는다.</b>
  */
 export async function releaseQueueCapacity(eventId: number, capacity = 100): Promise<void> {
-  if (!filled.delete(eventId)) {
+  if (!filled.has(eventId)) {
     return;
   }
   await command("DECRBY", admitCountKey(eventId), String(capacity));
+  filled.delete(eventId);
 }

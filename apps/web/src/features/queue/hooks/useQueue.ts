@@ -60,6 +60,23 @@ export function useQueue(eventId: number) {
         setQueueToken(t.token);
         apply(t);
 
+        // 상태 재조회 — 폴링과 onopen 재동기화가 **같은 순번 가드를 공유한다.**
+        // 따로 두면 재연결 직후의 조회가 느릴 때 그 사이 도착한 최신 폴링 응답을 덮어쓴다.
+        // 성공·실패 양쪽에 같은 검사를 둔다 — 한쪽만 막으면 낡은 오류 응답이 최신 성공을 덮는다.
+        let latest = 0;
+        const refresh = async () => {
+          if (terminal) return;
+          const seq = ++latest;
+          try {
+            const s = await queueApi.getQueueStatus(t.token);
+            if (terminal || seq !== latest) return;
+            apply(s);
+          } catch (err) {
+            if (terminal || seq !== latest) return;
+            if (err instanceof ApiError && err.code === "QUEUE_EXPIRED") settle("expired");
+          }
+        };
+
         es = new EventSource(queueApi.queueSseUrl(t.token));
         es.addEventListener("queue.admitted", (e) => {
           try {
@@ -71,25 +88,23 @@ export function useQueue(eventId: number) {
           settle("admitted");
         });
         es.addEventListener("queue.expired", () => settle("expired"));
-        // 여기만 onopen 재조회가 없다 — 아래 2초 폴링이 재연결 공백을 이미 메우기 때문이다.
-        // (useOrder·useSeats에는 폴링이 없어 onopen에서 직접 다시 읽는다.)
+        // 구독이 성립한 시점마다 다시 읽는다 — useOrder·useSeats와 같은 규칙이다(ADR-008).
+        //
+        // SSE 이벤트는 재전송되지 않는다: 서버는 그 순간 연결이 없으면 그냥 버린다
+        // (QueueSseRegistry.deliverLocal). 따라서 연결이 끊긴 사이 승격되면
+        // queue.admitted 이벤트 자체는 놓칠 수 있다.
+        //
+        // 현재는 2초 폴링이 /queue/status를 다시 읽어 이 공백을 복구한다.
+        // onopen 재조회는 이 복구를 SSE 재연결 경로에도 만들어,
+        // 이후 폴링 주기를 늘릴 수 있게 하는 선행 조건이다([[ADR-015]]).
+        es.onopen = () => refresh();
+        // onerror에서 할 일은 없다. EventSource가 스스로 재연결하고, 복구는 onopen이 한다.
         es.onerror = () => {};
 
-        // 응답이 2초를 넘으면 폴링끼리도 겹친다. 순번으로 마지막 요청의 응답만 반영한다.
-        // 성공·실패 양쪽에 같은 검사를 둔다 — 한쪽만 막으면 낡은 오류 응답이 최신 성공을 덮는다.
-        let latest = 0;
+        // 최종 안전망 — SSE가 아예 열리지 않는 환경(일부 프록시)에서는 이것만 남는다.
+        // 주기는 ADR-015 ③에서 측정 후 조정한다.
         if (!terminal) {
-          poll = setInterval(async () => {
-            const seq = ++latest;
-            try {
-              const s = await queueApi.getQueueStatus(t.token);
-              if (terminal || seq !== latest) return;
-              apply(s);
-            } catch (err) {
-              if (terminal || seq !== latest) return;
-              if (err instanceof ApiError && err.code === "QUEUE_EXPIRED") settle("expired");
-            }
-          }, 2000);
+          poll = setInterval(refresh, 2000);
         }
       } catch {
         if (!cancelled) setPhase("error");

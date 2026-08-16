@@ -28,6 +28,7 @@ codes:
   - { code: HOLD_EXPIRED,     http: 410 }
   - { code: QUEUE_NOT_ADMITTED, http: 403 }
   - { code: MAX_PER_USER_EXCEEDED, http: 409 }
+  - { code: EVENT_NOT_ON_SALE, http: 409 }
   - { code: DUPLICATE_BOOKING, http: 409 }
   # 결제
   - { code: PAYMENT_FAILED,   http: 402 }

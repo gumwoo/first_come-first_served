@@ -1,6 +1,8 @@
 package com.flowticket.seat.service;
 
 import com.flowticket.global.error.BusinessException;
+import com.flowticket.event.domain.Event;
+import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.error.ErrorCode;
 import com.flowticket.queue.service.QueueService;
 import com.flowticket.seat.domain.Seat;
@@ -33,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class SeatService {
 
+    private final EventRepository eventRepository;
     private final SeatRepository seatRepository;
     private final EventSeatPriceRepository priceRepository;
     private final SeatHoldRepository holdRepository;
@@ -43,12 +46,14 @@ public class SeatService {
     private final long holdTtl;
     private final int maxPerUser;
 
-    public SeatService(SeatRepository seatRepository, EventSeatPriceRepository priceRepository,
+    public SeatService(EventRepository eventRepository,
+                       SeatRepository seatRepository, EventSeatPriceRepository priceRepository,
                        SeatHoldRepository holdRepository, SeatHoldItemRepository holdItemRepository,
                        SeatQuotaRepository quotaRepository,
                        QueueService queueService, SeatSseRegistry sse,
                        @Value("${seat.hold-ttl:300}") long holdTtl,
                        @Value("${seat.max-per-user:4}") int maxPerUser) {
+        this.eventRepository = eventRepository;
         this.seatRepository = seatRepository;
         this.priceRepository = priceRepository;
         this.holdRepository = holdRepository;
@@ -87,6 +92,16 @@ public class SeatService {
         }
         if (!queueService.isAdmitted(queueToken, eventId)) {
             throw new BusinessException(ErrorCode.QUEUE_NOT_ADMITTED);
+        }
+        // 판매 상태 게이트. 대기열이 이미 같은 검사를 하지만 **여기서도 본다.**
+        //   ① 입장 토큰은 admit-ttl(기본 300초) 동안 살아 있어, 그 사이 운영자가 공연을
+        //      PAUSED·CLOSED로 바꿔도 이미 발급된 토큰으로 계속 선점할 수 있다.
+        //   ② 대기열을 통과한 토큰만 여기 오지만, 그 토큰이 발급된 시점의 상태와
+        //      지금 상태는 다를 수 있다 — 검사 시점이 다르면 다른 검사다.
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+        if (!event.getStatus().isBookable()) {
+            throw new BusinessException(ErrorCode.EVENT_NOT_ON_SALE);
         }
         // 좌석이 이 이벤트 소속인지 검증(다른 이벤트 좌석 id 혼입 차단). 원자 UPDATE에도 eventId 가드를 둔다.
         if (seatRepository.countByIdInAndEventId(seatIds, eventId) != seatIds.size()) {

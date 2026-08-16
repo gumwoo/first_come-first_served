@@ -21,16 +21,21 @@ import com.flowticket.seat.repository.SeatHoldRepository;
 import com.flowticket.seat.repository.SeatQuotaRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.sse.SeatSseRegistry;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 좌석 조회/선점/해제. 선점은 조건부 UPDATE로 원자화(초과판매 0, ADR-003). */
+@Slf4j
 @Service
 @Transactional(readOnly = true)
 public class SeatService {
@@ -43,16 +48,22 @@ public class SeatService {
     private final SeatQuotaRepository quotaRepository;
     private final QueueService queueService;
     private final SeatSseRegistry sse;
+    private final StringRedisTemplate redis;
+    private final ObjectMapper objectMapper;
     private final long holdTtl;
     private final int maxPerUser;
+    /** 좌석맵 캐시 TTL(ms). 0이면 캐시를 쓰지 않는다 — 기본값이 0이라 켜지 않으면 동작이 그대로다. */
+    private final long mapCacheTtlMs;
 
     public SeatService(EventRepository eventRepository,
                        SeatRepository seatRepository, EventSeatPriceRepository priceRepository,
                        SeatHoldRepository holdRepository, SeatHoldItemRepository holdItemRepository,
                        SeatQuotaRepository quotaRepository,
                        QueueService queueService, SeatSseRegistry sse,
+                       StringRedisTemplate redis, ObjectMapper objectMapper,
                        @Value("${seat.hold-ttl:300}") long holdTtl,
-                       @Value("${seat.max-per-user:4}") int maxPerUser) {
+                       @Value("${seat.max-per-user:4}") int maxPerUser,
+                       @Value("${seat.map-cache-ttl-ms:0}") long mapCacheTtlMs) {
         this.eventRepository = eventRepository;
         this.seatRepository = seatRepository;
         this.priceRepository = priceRepository;
@@ -61,12 +72,62 @@ public class SeatService {
         this.quotaRepository = quotaRepository;
         this.queueService = queueService;
         this.sse = sse;
+        this.redis = redis;
+        this.objectMapper = objectMapper;
         this.holdTtl = holdTtl;
         this.maxPerUser = maxPerUser;
+        this.mapCacheTtlMs = mapCacheTtlMs;
     }
 
-    /** 좌석맵: 등급 요약(가격·잔여) + 개별 좌석. */
+    /**
+     * 좌석맵: 등급 요약(가격·잔여) + 개별 좌석.
+     *
+     * <p><b>{@code seat.map-cache-ttl-ms}가 0보다 크면 짧은 TTL 캐시를 태운다. 기본값은 0(끔)이다.</b>
+     * 0단계 실측에서 이 경로가 API CPU 비용의 약 57%를 차지해(요청 비율은 50%) 캐시 후보 1순위였다
+     * (`benchmarks/cache-experiment/`).
+     *
+     * <p>⚠️ <b>이건 성능 상한을 확인하기 위한 실험용이지 운영 최종 설계가 아니다.</b>
+     * 좌석은 단순 조회 데이터가 아니라 <b>재고성 상태</b>라, TTL 동안 이미 선점된 좌석이
+     * AVAILABLE로 보일 수 있다. 최종 선점은 조건부 UPDATE가 막지만(ADR-003) 사용자가 고른 뒤
+     * 거절당하는 충돌은 늘어난다.
+     *
+     * <p>운영 설계로 가려면 이벤트 기반 무효화를 얹어야 한다 —
+     * {@code seat.held/released/expired} 발생 시 해당 eventId 캐시를 지우고, 이벤트 유실에 대비해
+     * 짧은 TTL을 함께 둔다. 그 판단은 <b>이 실험의 개선폭을 보고</b> 한다.
+     *
+     * <p>⚠️ <b>TTL 만료 시 동시 miss에 대한 single-flight/lock을 구현하지 않았다.</b>
+     * 도착률이 높고 TTL이 짧으면 키가 만료되는 순간 여러 요청이 동시에 miss를 보고 전부
+     * {@code loadSeatMap()}으로 들어간다(cache stampede). correctness 문제는 아니지만
+     * <b>측정에는 주기적인 만료 버스트 비용이 포함</b>되며, 그것을 단순 캐시의 실제 비용으로 읽는다.
+     *
+     * <p>⚠️ 이 클래스는 {@code @Transactional(readOnly = true)}라 <b>캐시 hit이어도 트랜잭션
+     * 프록시를 통과한다.</b> 따라서 "캐시를 넣으면 DB 경로를 전혀 타지 않는다"고 읽으면 안 된다 —
+     * 트랜잭션 진입 비용은 남는다. TO-BE에서 개선폭이 이론 상한에 못 미치는 이유 중 하나다.
+     */
     public SeatMapResponse getSeats(Long eventId) {
+        if (mapCacheTtlMs <= 0) {
+            return loadSeatMap(eventId);
+        }
+        String key = "cache:seatmap:" + eventId;
+        try {
+            String hit = redis.opsForValue().get(key);
+            if (hit != null) {
+                return objectMapper.readValue(hit, SeatMapResponse.class);
+            }
+        } catch (Exception e) {
+            log.warn("[seat] 좌석맵 캐시 읽기 실패 event={} — DB로 폴백: {}", eventId, e.getMessage());
+        }
+        SeatMapResponse fresh = loadSeatMap(eventId);
+        try {
+            redis.opsForValue().set(key, objectMapper.writeValueAsString(fresh),
+                    Duration.ofMillis(mapCacheTtlMs));
+        } catch (Exception e) {
+            log.warn("[seat] 좌석맵 캐시 쓰기 실패 event={}: {}", eventId, e.getMessage());
+        }
+        return fresh;
+    }
+
+    private SeatMapResponse loadSeatMap(Long eventId) {
         Map<SeatGrade, Integer> prices = priceMap(eventId);
         List<Seat> seats = seatRepository.findByEventId(eventId);
 

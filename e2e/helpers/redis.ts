@@ -70,21 +70,45 @@ function command(...args: string[]): Promise<string> {
 const admitCountKey = (eventId: number) => `queue:admitcount:${eventId}`;
 
 /**
+ * 지금 정원을 채워 둔 이벤트들. {@link releaseQueueCapacity}를 **멱등**으로 만들기 위한 것 —
+ * 테스트 본문에서 한 번 풀고 `finally`에서 또 부르는 형태가 자연스러운데, 아래 DECRBY는
+ * 두 번 불리면 그만큼 음수로 내려간다.
+ */
+const filled = new Set<number>();
+
+/**
  * 이벤트의 입장 정원을 채워 이후 진입자가 WAITING에 머물게 한다.
  *
  * <p>승격 Lua가 `free = capacity - admitted`를 보고 `free <= 0`이면 아무도 pop하지 않는다.
+ *
+ * <p><b>SET이 아니라 INCRBY인 이유.</b> 이 이벤트에 <b>실제 ADMITTED 사용자가 이미 있을 수
+ * 있다</b> — 앞선 테스트가 같은 이벤트를 골랐다면 `admitExp`에 그 토큰들이 admit-ttl(300초)
+ * 동안 남아 있고 `admitcount`도 그만큼이다. 거기에 SET으로 100을 덮어쓰고 나중에 DEL하면
+ * <b>실제 카운트가 사라진다.</b> 그러면 reclaim이 만료분 n개를 지우며 `DECRBY`할 때 키가
+ * 없어 0에서 출발해 <b>−n</b>이 되고, 그 다음 승격은 `free = capacity − (−n)`으로
+ * <b>정원을 초과 승격</b>한다.
+ *
+ * <p>INCRBY는 기존 값 R을 보존한 채 R+100으로 만든다. `free = 100 − (R+100) = −R ≤ 0`이라
+ * 목적은 그대로 달성하면서, 아래 DECRBY로 정확히 R로 되돌아간다. 실행 중 reclaim이 끼어들어
+ * R을 줄여도 우리가 얹은 +100은 그대로라 복원이 어긋나지 않는다.
  */
 export async function fillQueueCapacity(eventId: number, capacity = 100): Promise<void> {
-  await command("SET", admitCountKey(eventId), String(capacity));
+  await command("INCRBY", admitCountKey(eventId), String(capacity));
+  filled.add(eventId);
 }
 
 /**
  * <b>반드시 정리해야 한다.</b> reclaim은 `queue:admitexp:<eventId>`에 들어 있는 만료 토큰
- * 수만큼만 `DECRBY`하는데, 여기서는 admitExp에 아무것도 넣지 않으므로 **줄어들 일이 없다.**
- * 남겨두면 그 이벤트는 영구히 정원이 찬 상태가 되어 뒤따르는 E2E가 전부 대기열에 막힌다.
+ * 수만큼만 `DECRBY`하는데, 여기서 얹은 몫은 admitExp에 대응하는 토큰이 없으므로
+ * <b>스스로 줄어들지 않는다.</b> 남겨두면 그 이벤트는 영구히 정원이 찬 상태가 되어
+ * 뒤따르는 E2E가 전부 대기열에 막힌다.
  *
- * <p>그래서 호출부는 `finally`나 `afterEach`에 둔다 — 테스트가 중간에 실패해도 돌아야 한다.
+ * <p>그래서 호출부는 `finally`에 둔다 — 테스트가 중간에 실패해도 돌아야 한다.
+ * 채워두지 않은 이벤트에 대해서는 아무것도 하지 않는다(멱등).
  */
-export async function releaseQueueCapacity(eventId: number): Promise<void> {
-  await command("DEL", admitCountKey(eventId));
+export async function releaseQueueCapacity(eventId: number, capacity = 100): Promise<void> {
+  if (!filled.delete(eventId)) {
+    return;
+  }
+  await command("DECRBY", admitCountKey(eventId), String(capacity));
 }

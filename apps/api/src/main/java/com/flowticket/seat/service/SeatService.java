@@ -22,6 +22,7 @@ import com.flowticket.seat.repository.SeatQuotaRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.sse.SeatSseRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.ObjectProvider;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -32,6 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 좌석 조회/선점/해제. 선점은 조건부 UPDATE로 원자화(초과판매 0, ADR-003). */
@@ -50,6 +52,8 @@ public class SeatService {
     private final SeatSseRegistry sse;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
+    /** 트랜잭션 프록시를 거쳐 자기 메서드를 부르기 위한 것(PaymentService와 같은 패턴). */
+    private final ObjectProvider<SeatService> self;
     private final long holdTtl;
     private final int maxPerUser;
     /** 좌석맵 캐시 TTL(ms). 0이면 캐시를 쓰지 않는다 — 기본값이 0이라 켜지 않으면 동작이 그대로다. */
@@ -61,6 +65,7 @@ public class SeatService {
                        SeatQuotaRepository quotaRepository,
                        QueueService queueService, SeatSseRegistry sse,
                        StringRedisTemplate redis, ObjectMapper objectMapper,
+                       ObjectProvider<SeatService> self,
                        @Value("${seat.hold-ttl:300}") long holdTtl,
                        @Value("${seat.max-per-user:4}") int maxPerUser,
                        @Value("${seat.map-cache-ttl-ms:0}") long mapCacheTtlMs) {
@@ -74,6 +79,7 @@ public class SeatService {
         this.sse = sse;
         this.redis = redis;
         this.objectMapper = objectMapper;
+        this.self = self;
         this.holdTtl = holdTtl;
         this.maxPerUser = maxPerUser;
         this.mapCacheTtlMs = mapCacheTtlMs;
@@ -100,13 +106,19 @@ public class SeatService {
      * {@code loadSeatMap()}으로 들어간다(cache stampede). correctness 문제는 아니지만
      * <b>측정에는 주기적인 만료 버스트 비용이 포함</b>되며, 그것을 단순 캐시의 실제 비용으로 읽는다.
      *
-     * <p>⚠️ 이 클래스는 {@code @Transactional(readOnly = true)}라 <b>캐시 hit이어도 트랜잭션
-     * 프록시를 통과한다.</b> 따라서 "캐시를 넣으면 DB 경로를 전혀 타지 않는다"고 읽으면 안 된다 —
-     * 트랜잭션 진입 비용은 남는다. TO-BE에서 개선폭이 이론 상한에 못 미치는 이유 중 하나다.
+     * <p><b>{@code NOT_SUPPORTED}로 트랜잭션 밖에서 돈다.</b> 클래스 레벨
+     * {@code @Transactional(readOnly = true)}를 그대로 두면 <b>캐시 hit이어도 트랜잭션이 열리고
+     * 커넥션을 빌린다</b> — 2026-08-16 실측에서 요청 36,002건에 커넥션 획득 36,173회로
+     * <b>요청당 1회</b>가 그대로 나왔다. 캐시가 쿼리는 없앴는데 트랜잭션·커넥션 비용은 남은 것이다.
+     *
+     * <p>그래서 조회는 트랜잭션 밖에서 하고, <b>miss일 때만</b> 프록시를 거쳐
+     * {@link #loadSeatMap(Long)}을 불러 트랜잭션을 연다. 자기 호출은 프록시를 타지 않으므로
+     * {@code self}를 거친다(PaymentService와 같은 패턴).
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SeatMapResponse getSeats(Long eventId) {
         if (mapCacheTtlMs <= 0) {
-            return loadSeatMap(eventId);
+            return self.getObject().loadSeatMap(eventId);
         }
         String key = "cache:seatmap:" + eventId;
         try {
@@ -117,7 +129,7 @@ public class SeatService {
         } catch (Exception e) {
             log.warn("[seat] 좌석맵 캐시 읽기 실패 event={} — DB로 폴백: {}", eventId, e.getMessage());
         }
-        SeatMapResponse fresh = loadSeatMap(eventId);
+        SeatMapResponse fresh = self.getObject().loadSeatMap(eventId);
         try {
             redis.opsForValue().set(key, objectMapper.writeValueAsString(fresh),
                     Duration.ofMillis(mapCacheTtlMs));
@@ -127,7 +139,9 @@ public class SeatService {
         return fresh;
     }
 
-    private SeatMapResponse loadSeatMap(Long eventId) {
+    /** DB에서 좌석맵을 읽는다. 프록시를 통해 불려야 트랜잭션이 열린다(위 getSeats 참고). */
+    @Transactional(readOnly = true)
+    public SeatMapResponse loadSeatMap(Long eventId) {
         Map<SeatGrade, Integer> prices = priceMap(eventId);
         List<Seat> seats = seatRepository.findByEventId(eventId);
 

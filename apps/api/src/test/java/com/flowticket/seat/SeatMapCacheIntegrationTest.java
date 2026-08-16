@@ -9,6 +9,7 @@ import com.flowticket.seat.dto.SeatMapResponse;
 import com.flowticket.seat.service.SeatSeeder;
 import com.flowticket.seat.service.SeatService;
 import com.flowticket.support.IntegrationTestSupport;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +34,7 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
     @Autowired SeatSeeder seatSeeder;
     @Autowired EventRepository eventRepository;
     @Autowired JdbcTemplate jdbc;
+    @Autowired MeterRegistry meterRegistry;
 
     private Long eventId;
 
@@ -51,6 +53,36 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
         assertThat(second.seats()).hasSameSizeAs(first.seats());
         assertThat(second.eventId()).isEqualTo(first.eventId());
         assertThat(second.grades()).hasSameSizeAs(first.grades());
+    }
+
+    /**
+     * <b>캐시 hit은 DB 커넥션을 빌리지 않아야 한다.</b>
+     *
+     * <p>처음에는 클래스 레벨 {@code @Transactional(readOnly = true)} 때문에 캐시 hit이어도
+     * 트랜잭션이 열리고 커넥션을 빌렸다 — 2026-08-16 실측에서 요청 36,002건에 커넥션 획득
+     * 36,173회로 <b>요청당 1회</b>가 그대로 나왔다. 캐시가 쿼리는 없앴는데 트랜잭션 비용은
+     * 남은 것이다. {@code getSeats}를 {@code NOT_SUPPORTED}로 빼서 고쳤고, 이 테스트가
+     * 그 수정을 고정한다.
+     */
+    @Test
+    void 캐시_hit은_DB_커넥션을_빌리지_않는다() {
+        seatService.getSeats(eventId); // 첫 호출 = miss → 여기서만 커넥션을 쓴다
+
+        double before = acquireCount();
+        for (int i = 0; i < 5; i++) {
+            seatService.getSeats(eventId);
+        }
+        double after = acquireCount();
+
+        assertThat(after - before)
+                .as("캐시 hit 5회가 커넥션을 추가로 빌리면 안 된다")
+                .isZero();
+    }
+
+    /** Hikari 커넥션 획득 누적 횟수. 없으면 0(다른 이유로 지표가 빠진 경우 테스트가 오탐하지 않게). */
+    private double acquireCount() {
+        var t = meterRegistry.find("hikaricp.connections.acquire").timer();
+        return t == null ? 0 : t.count();
     }
 
     @Test

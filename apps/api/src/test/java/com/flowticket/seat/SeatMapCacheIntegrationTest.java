@@ -9,6 +9,7 @@ import com.flowticket.seat.dto.SeatMapResponse;
 import com.flowticket.seat.service.SeatSeeder;
 import com.flowticket.seat.service.SeatService;
 import com.flowticket.support.IntegrationTestSupport;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +34,7 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
     @Autowired SeatSeeder seatSeeder;
     @Autowired EventRepository eventRepository;
     @Autowired JdbcTemplate jdbc;
+    @Autowired MeterRegistry meterRegistry;
 
     private Long eventId;
 
@@ -51,6 +53,45 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
         assertThat(second.seats()).hasSameSizeAs(first.seats());
         assertThat(second.eventId()).isEqualTo(first.eventId());
         assertThat(second.grades()).hasSameSizeAs(first.grades());
+    }
+
+    /**
+     * <b>캐시 hit은 DB 커넥션을 빌리지 않아야 한다.</b>
+     *
+     * <p>처음에는 클래스 레벨 {@code @Transactional(readOnly = true)} 때문에 캐시 hit이어도
+     * 트랜잭션이 열리고 커넥션을 빌렸다 — 2026-08-16 실측에서 요청 36,002건에 커넥션 획득
+     * 36,173회로 <b>요청당 1회</b>가 그대로 나왔다. 캐시가 쿼리는 없앴는데 트랜잭션 비용은
+     * 남은 것이다. {@code getSeats}를 {@code NOT_SUPPORTED}로 빼서 고쳤고, 이 테스트가
+     * 그 수정을 고정한다.
+     */
+    @Test
+    void 캐시_hit은_DB_커넥션을_빌리지_않는다() {
+        seatService.getSeats(eventId); // 첫 호출 = miss → 여기서만 커넥션을 쓴다
+
+        long before = acquireCount();
+        for (int i = 0; i < 5; i++) {
+            seatService.getSeats(eventId);
+        }
+        long after = acquireCount();
+
+        assertThat(after - before)
+                .as("캐시 hit 5회가 커넥션을 추가로 빌리면 안 된다")
+                .isZero();
+    }
+
+    /**
+     * Hikari 커넥션 획득 누적 횟수.
+     *
+     * <p><b>지표가 없으면 실패시킨다.</b> null일 때 0을 돌려주면 before·after가 모두 0이 되어
+     * <b>계측기가 없어도 테스트가 통과</b>한다 — 이 테스트의 주장("캐시 hit은 커넥션을 빌리지
+     * 않는다")을 증명할 수단이 사라졌는데 초록불이 되는 것이라, 회귀 테스트로서 의미가 없다.
+     */
+    private long acquireCount() {
+        var timer = meterRegistry.find("hikaricp.connections.acquire").timer();
+        assertThat(timer)
+                .as("Hikari 커넥션 획득 지표가 등록돼 있어야 이 테스트가 성립한다")
+                .isNotNull();
+        return timer.count();
     }
 
     @Test

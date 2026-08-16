@@ -76,6 +76,29 @@ tasks.withType<Test> {
         showStackTraces = true
         showCauses = true
     }
+
+    // ── 측정 모드(-PciTiming) ─────────────────────────────────────────────
+    // 기본은 꺼져 있다. CI가 느린 이유를 재려고 **한 번씩만** 켠다.
+    //
+    // 왜 필요한가: `:test` wall-clock 526s 중 JUnit XML의 testcase 시간 합은 58.1s뿐이고
+    // **468s가 testcase에 귀속되지 않는다**(실측). 그 안에 무엇이 있는지는 XML로 알 수 없다 —
+    // Spring 컨텍스트 초기화·Testcontainers 기동·lifecycle·워커 오버헤드가 섞여 있다.
+    //
+    // ⚠️ **어노테이션이 아니라 시스템 프로퍼티로 켠다.** @TestPropertySource를 추가하면
+    // 그 자체가 Spring 컨텍스트 캐시 키를 바꿔 **측정 대상이 달라진다.** 시스템 프로퍼티는
+    // 캐시 키에 들어가지 않으므로 관측이 대상을 건드리지 않는다.
+    //
+    // 보고 싶은 것:
+    //   · "cache statistics: [size=N, hitCount=X, missCount=Y]" → 실제 컨텍스트 생성 수
+    //   · Testcontainers "Container ... started in PT..S"        → 컨테이너별 기동 시간
+    //   · 각 로그의 타임스탬프 간격                                → 526s 안의 긴 공백 위치
+    if (project.hasProperty("ciTiming")) {
+        // 컨테이너·컨텍스트 로그는 테스트 JVM의 stdout으로 나간다. 이걸 켜야 CI 로그에 보인다.
+        testLogging { showStandardStreams = true }
+        systemProperty("logging.level.org.springframework.test.context.cache", "DEBUG")
+        // 기동 시간을 찍는 로거(🐳 tc.<image>)는 INFO다. 명시해 둔다.
+        systemProperty("logging.level.org.testcontainers", "INFO")
+    }
 }
 
 // 하네스 검사: 컨트롤러/enum/계층/스택을 contracts/와 diff (스크립트 위임)

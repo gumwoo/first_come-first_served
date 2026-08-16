@@ -34,6 +34,26 @@ import org.springframework.test.context.TestPropertySource;
         // 새 컨텍스트가 뜰 때마다 스윕이 발사됐고, 그 UPDATE(RowExclusive)가 다른 테스트의
         // TRUNCATE(ACCESS EXCLUSIVE)와 데드락을 만들어 CI가 6번 깨졌다.
         "flowticket.scheduling.enabled=false",
+        // ⚠️ **토픽 자동 생성을 끈다.** 이 한 줄이 컨텍스트 부트를 41초 → 1초대로 바꾼다.
+        //
+        // KafkaConfig에 NewTopic 빈이 둘 있어(order-events, order-events.DLT) Spring Boot의
+        // KafkaAdmin이 **부팅 시 브로커에 붙어 토픽을 만들려 한다.** 이 그룹은 브로커를 쓰지 않아
+        // 아래 @DynamicPropertySource가 bootstrap을 연결 불가 주소로 박으므로, admin 클라이언트가
+        // 붙지 못한 채 재시도하다 **약 40초 뒤에야 포기**한다.
+        //
+        // 실측(2026-08-16 CI) — 부트 마일스톤 타임라인:
+        //   + 0.0s  Starting
+        //   + 0.6s  Initialized JPA EntityManagerFactory   ← JPA·Flyway·Hikari·Repository 전부 0.6초
+        //   + 1.4s  Kafka version 3.7.1 (client.id=...-admin-N)
+        //   +41.4s  Kafka version 3.7.1                    ← 40.0초 단일 공백
+        //   +41.4s  Started in 41.443 seconds
+        //
+        // ⚠️ 리스너(spring.kafka.listener.auto-startup)를 끄는 것으로는 해결되지 않는다. 실제로
+        // 그걸 먼저 시도했고 **NetworkClient 로그가 34% 줄었는데 시간은 0.7%만 줄었다** —
+        // 멈추는 주체가 리스너가 아니라 admin 클라이언트이기 때문이다.
+        //
+        // Kafka를 실제로 쓰는 테스트 4개는 이 베이스를 상속하지 않으므로 토픽 생성이 유지된다.
+        "spring.kafka.admin.auto-create=false",
 })
 public abstract class IntegrationTestSupport {
 

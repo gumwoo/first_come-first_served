@@ -94,6 +94,15 @@ public class SeatService {
      * <p>운영 설계로 가려면 이벤트 기반 무효화를 얹어야 한다 —
      * {@code seat.held/released/expired} 발생 시 해당 eventId 캐시를 지우고, 이벤트 유실에 대비해
      * 짧은 TTL을 함께 둔다. 그 판단은 <b>이 실험의 개선폭을 보고</b> 한다.
+     *
+     * <p>⚠️ <b>TTL 만료 시 동시 miss에 대한 single-flight/lock을 구현하지 않았다.</b>
+     * 도착률이 높고 TTL이 짧으면 키가 만료되는 순간 여러 요청이 동시에 miss를 보고 전부
+     * {@code loadSeatMap()}으로 들어간다(cache stampede). correctness 문제는 아니지만
+     * <b>측정에는 주기적인 만료 버스트 비용이 포함</b>되며, 그것을 단순 캐시의 실제 비용으로 읽는다.
+     *
+     * <p>⚠️ 이 클래스는 {@code @Transactional(readOnly = true)}라 <b>캐시 hit이어도 트랜잭션
+     * 프록시를 통과한다.</b> 따라서 "캐시를 넣으면 DB 경로를 전혀 타지 않는다"고 읽으면 안 된다 —
+     * 트랜잭션 진입 비용은 남는다. TO-BE에서 개선폭이 이론 상한에 못 미치는 이유 중 하나다.
      */
     public SeatMapResponse getSeats(Long eventId) {
         if (mapCacheTtlMs <= 0) {

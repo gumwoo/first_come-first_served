@@ -199,6 +199,35 @@ knee 절대값을 Phase 1과 직접 비교하지 않는다.
 ⚠️ node-exporter는 Phase 1 시점에 **3대 중 1대만 수집**되고 있었다. 노드 CPU를 교차 확인하려면
 먼저 이것부터 확인한다.
 
+## 4-1. 2단계에서 반드시 함께 볼 것 — 만료 버스트
+
+실험용 캐시에는 **single-flight/lock이 없다.** TTL이 짧고 도착률이 높으면 키 만료 순간
+여러 요청이 동시에 miss를 보고 전부 DB로 간다(cache stampede).
+
+```
+평소 cache hit → TTL 만료 → 수십~수백 요청이 동시 DB 조회 → pending·latency 스파이크
+```
+
+**평균 CPU만 보면 이 비용이 안 보인다.** 그래서 TO-BE에서는 아래를 함께 본다.
+
+| 지표 | 버스트를 잡는가 |
+|---|---|
+| `hikaricp_connections_pending`(게이지) | ❌ **스크레이프 30초** — TTL 2초 버스트는 샘플 사이로 빠진다 |
+| `http_server_requests_seconds_bucket`(히스토그램) | ✅ 누적이라 **모든 요청이 반영**된다 → p99가 드러낸다 |
+| `hikaricp_connections_acquire_seconds_max` | ✅ 커넥션 대기 피크 |
+
+⚠️ **게이지로 "pending 0"을 확인해도 버스트가 없었다는 뜻이 아니다.** 30초 간격 샘플이
+2초 주기 버스트를 놓칠 수 있다. 판정은 히스토그램(p99)과 acquire max로 한다.
+
+## 4-2. 캐시 hit도 트랜잭션 프록시를 통과한다
+
+`SeatService`가 클래스 레벨 `@Transactional(readOnly = true)`이라 **캐시 hit이어도 트랜잭션
+진입 비용이 남는다.** 따라서 "캐시 = DB 경로 완전 회피"로 해석하면 안 되고, TO-BE 개선폭이
+이론 상한에 못 미치는 이유의 후보다.
+
+⚠️ 실제로 커넥션까지 빌리는지는 **확인하지 않았다.** TO-BE에서 `hikaricp_connections_active`가
+캐시 hit 구간에도 유지되는지로 간접 관측한다.
+
 ## 5. 기록 템플릿
 
 `benchmarks/cache-experiment/README.md`에 아래 형식으로 남긴다. **예측치는 표에 넣지 않는다.**

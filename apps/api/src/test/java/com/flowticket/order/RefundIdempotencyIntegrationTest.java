@@ -8,6 +8,7 @@ import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.order.domain.OrderStatus;
+import com.flowticket.order.dto.RefundResponse;
 import com.flowticket.order.repository.OrderItemRepository;
 import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.order.repository.PaymentRepository;
@@ -26,6 +27,8 @@ import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.service.SeatSeeder;
 import com.flowticket.seat.service.SeatService;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -101,19 +104,40 @@ class RefundIdempotencyIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    void 동시_더블클릭_같은키는_정확히_한번만_환불된다() throws Exception {
+    void 동시_더블클릭_같은키는_전부_같은_환불결과를_받는다() throws Exception {
         // IMP-009 after: idempotency_key UNIQUE + 조건부 전이 + 충돌 시 기존 결과 반환
+        //
+        // 결제 쪽과 같은 구멍이 있었다 — `catch (Exception ignored)`로 삼키고 DB 최종 상태만 봐서,
+        // **1건만 성공하고 9건이 터져도 통과했다.** 환불은 금액이 실려 있어 더 나쁘다:
+        // 더블클릭한 사용자가 에러를 보면 "환불이 안 됐다"고 판단해 다시 누르거나 문의한다.
+        // 자세한 근거는 PaymentIdempotencyIntegrationTest의 같은 테스트 주석 참고.
         Ctx c = paidOrder(71L);
         String key = "R-conc-" + c.orderId;
+        int threads = 10;
 
-        concurrent(10, i -> {
+        List<RefundResponse> responses = Collections.synchronizedList(new ArrayList<>());
+        List<Throwable> failures = Collections.synchronizedList(new ArrayList<>());
+        concurrent(threads, i -> {
             try {
-                refundService.refund(71L, c.orderId, "변심", key);
-            } catch (Exception ignored) {
-                // 멱등 처리로 예외 없어야 정상
+                responses.add(refundService.refund(71L, c.orderId, "변심", key));
+            } catch (Throwable t) {
+                failures.add(t);
             }
             return 0;
         });
+
+        assertThat(failures).as("같은 멱등키면 예외 없이 기존 결과를 돌려줘야 한다").isEmpty();
+        assertThat(responses).hasSize(threads);
+        assertThat(responses).extracting(RefundResponse::refundId)
+                .as("전부 같은 환불 건을 가리켜야 한다").containsOnly(responses.get(0).refundId());
+        // 금액이 호출마다 다르면 사용자에게 서로 다른 환불액이 보인다.
+        assertThat(responses).extracting(RefundResponse::refundAmount)
+                .containsOnly(responses.get(0).refundAmount());
+        assertThat(responses).extracting(RefundResponse::fee).containsOnly(responses.get(0).fee());
+
+        // 응답의 orderStatus는 단언하지 않는다 — refundTx의 중복 감지 경로가 이미 로드한
+        // Order 엔티티(1차 캐시)를 쓰기 때문에 먼저 커밋한 스레드의 REFUNDED가 안 실릴 수 있다.
+        // 강제하면 간헐 실패한다. 실제 정합성은 아래 DB 최종 상태로 본다.
 
         assertThat(orderRepository.findById(c.orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.REFUNDED);
         assertThat(refundRepository.count()).isEqualTo(1);      // 환불 1건만

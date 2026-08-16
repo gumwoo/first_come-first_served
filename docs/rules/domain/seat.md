@@ -5,10 +5,13 @@
 ## 재고 / 좌석
 - 좌석 상태: `AVAILABLE → HELD → SOLD`. 해제/만료 시 `HELD → AVAILABLE`로 복구. [T]
 - **좌석 선점은 원자적** — `UPDATE seats SET status='HELD' WHERE id IN(:ids) AND status='AVAILABLE'`
-  후 **영향 행 수 == 요청 수** 검증. 아니면 롤백 + `SOLD_OUT`. check-then-act 금지(초과판매). [T] ([ADR-003], [[IMP-003-oversell]])
+  후 **영향 행 수 == 요청 수** 검증. 아니면 전량 롤백. check-then-act 금지(초과판매). [T] ([ADR-003], [[IMP-003-oversell]])
 - **재고 정합성 불변식**: 총좌석 = AVAILABLE + HELD + SOLD (횡단, domain-rules.md). [T]
 - 매진(잔여 0)에서 신규 선점 금지 → `SOLD_OUT`. [T]
-- 부분 선점 실패(요청 3석 중 1석 매진) → **전부-or-전무**(전체 롤백 + SOLD_OUT). [T]
+- 부분 선점 실패(요청 3석 중 1석 매진) → **전부-or-전무**(전체 롤백). [T]
+- **롤백 뒤의 에러코드는 잔여 좌석 수가 가른다** — 잔여 0이면 `SOLD_OUT`, 남아 있으면
+  `SEAT_CONFLICT`. 둘을 뭉뚱그리면 1석 경합에도 사용자를 매진 화면으로 보내 예매를
+  포기시킨다. 프론트 분기도 이 코드에 붙는다. [T]
 
 ## 선점(HOLD) / 상태전이
 - HOLD 상태(`SeatHoldStatus`): `HELD → RELEASED`(사용자 해제) / `HELD → EXPIRED`(TTL 만료) / `HELD → CONVERTED`(결제 확정, S05).

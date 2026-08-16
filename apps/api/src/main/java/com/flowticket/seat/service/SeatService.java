@@ -119,7 +119,7 @@ public class SeatService {
         // 원자적 선점 — AVAILABLE인 좌석만 HELD. 요청 수와 다르면 일부 매진 → 롤백.
         int held = seatRepository.holdIfAvailable(seatIds, eventId, SeatStatus.HELD, SeatStatus.AVAILABLE);
         if (held != seatIds.size()) {
-            throw new BusinessException(ErrorCode.SOLD_OUT);
+            throw new BusinessException(soldOutOrConflict(eventId, held));
         }
         SeatHold hold = holdRepository.save(SeatHold.builder()
                 .eventId(eventId).userId(userId)
@@ -130,6 +130,24 @@ public class SeatService {
         int total = totalPrice(eventId, seatIds);
         sse.broadcast(eventId, "seat.held", Map.of("seatIds", seatIds)); // 실시간 좌석맵 반영
         return new HoldResponse(hold.getId(), seatIds, total, hold.getExpiresAt());
+    }
+
+    /**
+     * 선점 실패의 원인을 가른다 — <b>공연이 매진된 것</b>과 <b>내가 고른 좌석만 뺏긴 것</b>은 다르다.
+     *
+     * <p>예전에는 둘 다 {@code SOLD_OUT}이었다. 그래서 100석 중 1석을 남에게 뺏긴 사용자가
+     * 매진 화면으로 튕겨 나갔다 — 99석이 남아 있는데도 예매를 포기하게 만드는 최악의 오안내다.
+     * {@code docs/rules/domain/seat.md}는 원래 SOLD_OUT을 "잔여 0"으로 정의하고 있었고,
+     * 코드만 그 규칙과 어긋나 있었다.
+     *
+     * <p><b>{@code held}를 더하는 것이 핵심이다.</b> 이 메서드는 롤백 <i>전</i>에 불린다.
+     * 방금 조건부 UPDATE로 HELD가 된 {@code held}석은 예외로 트랜잭션이 되감기면 다시
+     * AVAILABLE로 돌아온다. 더하지 않으면 "요청 좌석을 전부 잡았지만 다른 이유로 실패"한
+     * 경우에 잔여를 0으로 잘못 읽어 매진이라고 답하게 된다.
+     */
+    private ErrorCode soldOutOrConflict(Long eventId, int held) {
+        long remaining = seatRepository.countByEventIdAndStatus(eventId, SeatStatus.AVAILABLE) + held;
+        return remaining == 0 ? ErrorCode.SOLD_OUT : ErrorCode.SEAT_CONFLICT;
     }
 
     /**

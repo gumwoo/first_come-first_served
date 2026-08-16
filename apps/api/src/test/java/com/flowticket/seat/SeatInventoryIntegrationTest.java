@@ -15,6 +15,7 @@ import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.error.BusinessException;
+import com.flowticket.global.error.ErrorCode;
 import com.flowticket.queue.service.QueueAdmissionService;
 import com.flowticket.queue.service.QueueService;
 import com.flowticket.seat.domain.Seat;
@@ -152,12 +153,27 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    void 입장토큰_선점_성공하고_같은좌석_재선점은_SOLD_OUT() {
+    void 입장토큰_선점_성공하고_같은좌석_재선점은_SEAT_CONFLICT() {
         String token = admittedToken(7L, eventId);
         assertThat(seatService.hold(7L, eventId, List.of(aSeatId), token).seatIds()).containsExactly(aSeatId);
 
+        // 이 좌석은 뺏겼지만 나머지 99석은 남아 있다 — 매진이 아니다.
+        // 예전에는 SOLD_OUT이라 프론트가 매진 화면으로 튕겼다.
         assertThatThrownBy(() -> seatService.hold(7L, eventId, List.of(aSeatId), token))
-                .isInstanceOf(BusinessException.class); // 이미 HELD → SOLD_OUT
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.SEAT_CONFLICT);
+    }
+
+    @Test
+    void 잔여가_0일_때만_SOLD_OUT이다() {
+        // 위 테스트와 쌍이다. 같은 "선점 실패"라도 잔여가 0이면 매진, 아니면 경합 —
+        // 이 둘이 갈리지 않으면 SEAT_CONFLICT 분리가 의미가 없다.
+        String token = admittedToken(9L, eventId);
+        jdbc.update("update seats set status='SOLD' where event_id=?", eventId); // 전석 소진
+
+        assertThatThrownBy(() -> seatService.hold(9L, eventId, List.of(aSeatId), token))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.SOLD_OUT);
     }
 
     @Test

@@ -28,7 +28,11 @@ public enum ErrorCode {
     REFRESH_TOKEN_REUSED(HttpStatus.UNAUTHORIZED, "재사용된 토큰이 감지되었습니다. 다시 로그인해 주세요."),
     ACCESS_TOKEN_BLACKLISTED(HttpStatus.UNAUTHORIZED, "로그아웃된 토큰입니다."),
     // 선착순 핵심
+    // SOLD_OUT은 **공연 잔여가 0**일 때만 쓴다(docs/rules/domain/seat.md).
+    // "내가 고른 좌석을 남이 먼저 가져갔다"는 SEAT_CONFLICT — 다른 좌석은 아직 남아 있으므로
+    // 사용자가 할 수 있는 행동(다시 고르기)이 전혀 다르다.
     SOLD_OUT(HttpStatus.CONFLICT, "매진되었습니다."),
+    SEAT_CONFLICT(HttpStatus.CONFLICT, "선택하신 좌석이 방금 다른 분에게 선점되었습니다. 다른 좌석을 선택해 주세요."),
     QUEUE_EXPIRED(HttpStatus.GONE, "대기시간이 만료되었습니다."),
     HOLD_EXPIRED(HttpStatus.GONE, "좌석 선점이 만료되었습니다."),
     QUEUE_NOT_ADMITTED(HttpStatus.FORBIDDEN, "대기열 입장이 허용되지 않았습니다."),

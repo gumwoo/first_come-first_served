@@ -33,6 +33,7 @@ naive → 측정 → 개선 → 재측정 순서로 수치를 **커밋으로 박
 | [IMP-016](IMP-016-kafka-broker-failover.md) | Kafka 브로커 1대 장애 실증 | 인프라 | ISR 3→2, 리더 자동 선출, acks=all 쓰기 지속 — 앱 경로는 미검증 | 부분 |
 | [IMP-017](IMP-017-pdb-node-drain.md) | 노드 드레인 중 무중단(PDB) | 인프라 | 2,400건 5xx **0건** — 파드 5개 여유 조건 | 완료 |
 | [IMP-018](IMP-018-kopis-detail-hotpath-removal.md) | 사용자 요청이 외부 API 호출을 증폭시키던 구조 제거 | S02/S09 | 부하 중 외부 호출 **약 22,000→0건**(제한 34배 초과 해소) · 응답시간은 측정 환경 변동으로 미주장 | 완료 |
+| [IMP-019](IMP-019-ci-backend-context-boot.md) | CI 백엔드 느림 — 컨텍스트 부트를 붙잡던 KafkaAdmin 토픽 생성 | 전반(CI) | backend 잡 9m46s→3m08s (-68%) | 완료 |
 
 ## 누적 지표 보드
 프로젝트 전체에서 모은 정량 성과 요약: [METRICS.md](METRICS.md)

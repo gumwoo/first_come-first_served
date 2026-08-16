@@ -132,6 +132,9 @@ export default function SeatSelectPage() {
       const result = await seatApi.holdSeats(id, selected, queueToken, accessToken);
       setHeld(result);
     } catch (e) {
+      // SOLD_OUT은 공연 잔여가 0일 때만 온다 — 이때만 매진 화면으로 보낸다.
+      // 고른 좌석만 뺏긴 SEAT_CONFLICT는 아래 else로 떨어져 좌석맵을 갱신하고 다시 고르게 한다.
+      // (예전에는 서버가 둘 다 SOLD_OUT으로 줘서, 1석 경합에도 매진 화면으로 튕겼다)
       if (e instanceof ApiError && e.code === "SOLD_OUT") {
         router.replace(`/events/${id}/sold-out`);
       } else if (e instanceof ApiError && e.code === "QUEUE_NOT_ADMITTED") {

@@ -9,7 +9,7 @@ REST 기준. 인증은 `Authorization: Bearer <accessToken>`. 에러는 공통 �
 // 에러
 { "error": { "code": "QUEUE_EXPIRED", "message": "대기시간이 만료되었습니다." } }
 ```
-주요 에러코드: `SOLD_OUT`, `QUEUE_EXPIRED`, `HOLD_EXPIRED`, `PAYMENT_FAILED`,
+주요 에러코드: `SOLD_OUT`, `SEAT_CONFLICT`, `QUEUE_EXPIRED`, `HOLD_EXPIRED`, `PAYMENT_FAILED`,
 `UNAUTHORIZED`, `FORBIDDEN`, `VALIDATION_ERROR`
 
 ## 인증 (S01)
@@ -62,7 +62,7 @@ REST 기준. 인증은 `Authorization: Bearer <accessToken>`. 에러는 공통 �
 - 좌석 등급: `SeatGrade`(VIP/R/S/A), 등급별 가격은 이벤트별로 정의(KOPIS엔 없음)
 - `GET /events/:id/seats` — 좌석맵/등급별 잔여
 - `POST /events/:id/seats/hold` — 좌석 선점(HOLD, TTL ~5분) → `holdId`
-  - 재고 0 → `SOLD_OUT`
+  - 잔여 0 → `SOLD_OUT` / 고른 좌석만 선점됨 → `SEAT_CONFLICT`(다시 고르기)
 - `DELETE /seats/hold/:holdId` — 선점 해제
 - HOLD TTL 만료 → `HOLD_EXPIRED`
 

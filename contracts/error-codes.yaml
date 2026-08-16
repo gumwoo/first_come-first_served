@@ -23,7 +23,8 @@ codes:
   - { code: REFRESH_TOKEN_REUSED,  http: 401 }
   - { code: ACCESS_TOKEN_BLACKLISTED, http: 401 }
   # 선착순 핵심
-  - { code: SOLD_OUT,         http: 409 }
+  - { code: SOLD_OUT,         http: 409 }   # 공연 잔여 0
+  - { code: SEAT_CONFLICT,    http: 409 }   # 고른 좌석만 선점됨(다른 좌석은 남음)
   - { code: QUEUE_EXPIRED,    http: 410 }
   - { code: HOLD_EXPIRED,     http: 410 }
   - { code: QUEUE_NOT_ADMITTED, http: 403 }

@@ -49,7 +49,15 @@ export function seatTitle(grade: string, col: number): string {
   return `${grade} ${Math.floor((col - 1) / 10) + 1}열 ${col}번`;
 }
 
-export async function seedAdmittedUser(page: Page): Promise<Admitted> {
+export type LoggedIn = { eventId: number; accessToken: string; email: string };
+
+/**
+ * 가입 → 로그인 → 대상 이벤트 선택까지. **대기열 토큰은 발급하지 않는다.**
+ *
+ * <p>대기(WAITING) 화면을 보려면 토큰 발급 자체를 테스트가 통제해야 해서 분리했다.
+ * {@link seedAdmittedUser}는 여기에 토큰 발급 + 승격 대기를 얹은 것이다.
+ */
+export async function seedLoggedInUser(page: Page): Promise<LoggedIn> {
   const req = page.request;
   const rnd = `${Date.now()}`.slice(-8) + Math.floor(Math.random() * 90 + 10); // 10자리
   const email = `e2e_${rnd}@test.com`;
@@ -86,20 +94,36 @@ export async function seedAdmittedUser(page: Page): Promise<Admitted> {
   }
   if (!eventId) throw new Error("판매중이면서 좌석 여유(>=8)가 있는 이벤트를 찾지 못함");
 
-  // 5) 대기열 입장 토큰 발급 후 승격(ADMITTED) 대기
-  const tokRes = await req.post(`/api/events/${eventId}/queue/token`, {
+  return { eventId, accessToken, email };
+}
+
+/** 대기열 토큰 발급(승격 대기 없음). 정원이 차 있으면 WAITING에 머문다. */
+export async function issueQueueToken(
+  page: Page,
+  eventId: number,
+  accessToken: string
+): Promise<string> {
+  const res = await page.request.post(`/api/events/${eventId}/queue/token`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  const queueToken = (await tokRes.json()).data.token as string;
+  return (await res.json()).data.token as string;
+}
+
+/** 대기열 상태 1회 조회. */
+export async function queueStatus(page: Page, token: string): Promise<string> {
+  const res = await page.request.get(`/api/queue/status?token=${token}`);
+  return (await res.json()).data.status as string;
+}
+
+export async function seedAdmittedUser(page: Page): Promise<Admitted> {
+  const { eventId, accessToken, email } = await seedLoggedInUser(page);
+  const queueToken = await issueQueueToken(page, eventId, accessToken);
 
   await expect
-    .poll(
-      async () => {
-        const s = await req.get(`/api/queue/status?token=${queueToken}`);
-        return (await s.json()).data.status as string;
-      },
-      { timeout: 15_000, intervals: [400, 600, 1000] }
-    )
+    .poll(async () => queueStatus(page, queueToken), {
+      timeout: 15_000,
+      intervals: [400, 600, 1000],
+    })
     .toBe("ADMITTED");
 
   return { eventId, queueToken, accessToken, email };

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedAdmittedUser, firstSelectable, seatTitle } from "../helpers/seed";
+import { seedAdmittedUser, seedOrder, firstSelectable, seatTitle } from "../helpers/seed";
 
 /**
  * [[ADR-015]] §① 검증 경과에서 확인한 결함이 **좌석 SSE에도 같은 형태로 있었다.**
@@ -52,4 +52,47 @@ test("SSE가 끊긴 사이 좌석이 선점돼도 재연결하면 좌석맵이 �
   await page.unroute(sseRoute);
 
   await expect(page.getByTitle(title, { exact: true })).toBeDisabled({ timeout: 30_000 });
+});
+
+/**
+ * 같은 결함의 **주문 경로** 회귀. `OrderSseRegistry`도 초기 프레임 없이는 `onopen`이 불리지
+ * 않아 `useOrder`의 재연결 재조회가 발동하지 못했다.
+ *
+ * <p>가상계좌(무통장)를 고르면 화면은 "입금 대기"에 머물고, 입금은 <b>서버 밖에서</b>
+ * 확정된다(실서비스는 PG 웹훅, 여기서는 개발용 트리거 API). 즉 <b>UI가 스스로 알 수 없는
+ * 상태 변경</b>이라 이 결함을 재현하기에 정확한 시나리오다.
+ *
+ * <p>결제 대기 화면은 주문이 PAID가 되면 완료 화면으로 자동 이동한다
+ * (`orders/[id]/pay/page.tsx` — `if (order?.status === "PAID") router.replace(...)`).
+ * 그 상태는 SSE 이벤트 아니면 `refresh()`로만 들어온다.
+ */
+test("SSE가 끊긴 사이 입금이 확정돼도 재연결하면 완료로 넘어간다", async ({ page }) => {
+  const { orderId, accessToken } = await seedOrder(page);
+
+  // 1) 주문 SSE를 막는다. 마운트 refresh는 정상이라 초기 주문 상태는 최신이다.
+  const sseRoute = "**/sse/orders/*";
+  await page.route(sseRoute, (route) => route.abort());
+
+  await page.goto(`/orders/${orderId}/pay`);
+  await page.getByRole("button", { name: "무통장입금" }).click();
+  await page.getByRole("button", { name: /결제하기/ }).click();
+  await expect(page.getByText("입금 대기")).toBeVisible();
+
+  // 2) **브라우저 UI 밖에서** 입금을 확정한다(실서비스의 PG 웹훅에 해당).
+  //    화면의 "입금 확인" 버튼을 누르면 그 핸들러가 직접 이동시켜버려 SSE 경로를 못 본다.
+  const res = await page.request.post(`/api/dev/vbank/${orderId}/deposit`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  expect(res.ok()).toBeTruthy();
+
+  // 3) 화면은 아직 입금 대기다 — 이 훅에는 폴링이 없어 스스로 갱신될 경로가 없다.
+  //    복구 가능한 경로가 SSE 재연결뿐이라는 조건을 고정한다.
+  await page.waitForTimeout(2000);
+  await expect(page).toHaveURL(new RegExp(`/orders/${orderId}/pay`));
+
+  // 4) SSE를 풀면 재연결 → (초기 프레임 덕에) onopen → refresh() → PAID → 완료 화면.
+  //    입금 이벤트는 이미 소실됐으므로 재조회 말고는 알아낼 방법이 없다.
+  await page.unroute(sseRoute);
+
+  await expect(page).toHaveURL(new RegExp(`/orders/${orderId}/complete`), { timeout: 30_000 });
 });

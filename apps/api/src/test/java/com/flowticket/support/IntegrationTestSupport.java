@@ -34,6 +34,15 @@ import org.springframework.test.context.TestPropertySource;
         // 새 컨텍스트가 뜰 때마다 스윕이 발사됐고, 그 UPDATE(RowExclusive)가 다른 테스트의
         // TRUNCATE(ACCESS EXCLUSIVE)와 데드락을 만들어 CI가 6번 깨졌다.
         "flowticket.scheduling.enabled=false",
+        // ⚠️ **Kafka 리스너를 띄우지 않는다.** 이 그룹은 브로커를 쓰지 않아 아래 @DynamicPropertySource가
+        // bootstrap을 연결 불가 주소(localhost:59092)로 박는데, 그래도 @KafkaListener 컨테이너는
+        // 뜬다. 붙을 곳이 없으니 **부트 내내 재연결을 반복**한다.
+        //
+        // 실측(2026-08-16 CI): 컨텍스트 부트 로그 1,325줄 중 869줄이 NetworkClient였고, 그중 398줄이
+        // 59092를 언급했다. 전체 로그 47,288줄 중 20,987줄(44%)이 NetworkClient다. 그리고
+        // **Kafka 컨테이너를 쓰는 컨텍스트는 1~4초, 안 쓰는 컨텍스트는 41초**로 갈렸다 —
+        // "Kafka를 안 쓰는 테스트"가 Kafka 때문에 느렸다.
+        "spring.kafka.listener.auto-startup=false",
 })
 public abstract class IntegrationTestSupport {
 

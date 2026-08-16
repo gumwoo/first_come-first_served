@@ -2,6 +2,9 @@ package com.flowticket.queue;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.flowticket.event.domain.Event;
+import com.flowticket.event.domain.EventStatus;
+import com.flowticket.event.repository.EventRepository;
 import com.flowticket.support.IntegrationTestSupport;
 import org.springframework.test.context.TestPropertySource;
 
@@ -31,7 +34,21 @@ class QueueIntegrationTest extends IntegrationTestSupport {
     @Autowired QueueAdmissionService admissionService;
     @Autowired StringRedisTemplate redisTemplate;
 
-    private static final Long EVENT = 42L;
+    @Autowired EventRepository eventRepository;
+
+    /**
+     * 예전에는 {@code 42L}이라는 <b>DB에 없는 id</b>를 썼다. 대기열이 Redis만 보던 시절엔 통했지만
+     * 발급 전 판매상태 게이트가 생기면서 실재하는 ON_SALE 이벤트가 필요해졌다.
+     * (게이트 자체의 회귀는 {@link QueueSaleStateIntegrationTest}가 본다)
+     */
+    private Long EVENT;
+
+    @BeforeEach
+    void 판매중_이벤트를_만든다() {
+        EVENT = eventRepository.save(Event.builder()
+                .kopisId("QUEUE-ONSALE").title("판매중").genre("연극").status(EventStatus.ON_SALE).build())
+                .getId();
+    }
 
     @Test
     void 같은_유저_2회발급은_동일_토큰() {

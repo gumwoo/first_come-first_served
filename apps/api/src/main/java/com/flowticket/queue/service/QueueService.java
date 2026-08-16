@@ -2,6 +2,8 @@ package com.flowticket.queue.service;
 
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
+import com.flowticket.event.domain.Event;
+import com.flowticket.event.repository.EventRepository;
 import com.flowticket.queue.domain.QueueStatus;
 import com.flowticket.queue.dto.QueueStatusResponse;
 import com.flowticket.queue.dto.QueueTokenResponse;
@@ -66,15 +68,17 @@ public class QueueService {
             new DefaultRedisScript<>(TAKEOVER_LUA, Long.class);
 
     private final StringRedisTemplate redis;
+    private final EventRepository eventRepository;
     private final int capacity;
     private final long tokenTtl;
     private final long admitIntervalMs;
 
-    public QueueService(StringRedisTemplate redis,
+    public QueueService(StringRedisTemplate redis, EventRepository eventRepository,
                         @Value("${queue.capacity:100}") int capacity,
                         @Value("${queue.token-ttl:1800}") long tokenTtl,
                         @Value("${queue.admit-interval-ms:1500}") long admitIntervalMs) {
         this.redis = redis;
+        this.eventRepository = eventRepository;
         this.capacity = capacity;
         this.tokenTtl = tokenTtl;
         this.admitIntervalMs = admitIntervalMs;
@@ -85,6 +89,7 @@ public class QueueService {
      * user 키를 SET NX로 원자 예약해, 같은 유저 동시 요청(더블클릭)에도 토큰이 하나만 생기게 한다.
      */
     public QueueTokenResponse issue(Long userId, Long eventId) {
+        requireBookable(eventId);
         String userKey = QueueKeys.user(eventId, userId);
         String token = UUID.randomUUID().toString();
 
@@ -108,6 +113,28 @@ public class QueueService {
         redis.execute(TAKEOVER_SCRIPT, keys,
                 token, String.valueOf(tokenTtl), String.valueOf(userId), String.valueOf(eventId));
         return tokenResponse(token, eventId);
+    }
+
+    /**
+     * 판매 중인 공연인지 확인한다. <b>대기열 진입의 첫 관문</b>이다.
+     *
+     * <p>예전에는 이 검사가 없어 <b>이벤트를 조회조차 하지 않았다.</b> 그래서 직접 API를 치면
+     * DRAFT·PAUSED·CLOSED 공연은 물론 <b>존재하지도 않는 eventId</b>로도 토큰이 발급됐고,
+     * 거기서 좌석 선점·주문·결제까지 이어질 수 있었다.
+     *
+     * <p>존재 검사가 특히 중요하다 — {@code ISSUE_LUA}가 {@code SADD queue:active-events}를 하고
+     * 승격 워커가 그 집합을 1.5초마다 순회하므로, 임의의 id로 발급을 반복하면 <b>Redis 키와
+     * 순회 대상이 무한히 쌓인다.</b>
+     *
+     * <p>⚠️ 진입 경로에 DB 조회가 하나 늘어난다. PK 단건이라 싸지만 공짜는 아니다 —
+     * 스파이크(정원의 30배 도착)에서는 그만큼의 조회가 더 발생한다. 측정하지 않았다.
+     */
+    private void requireBookable(Long eventId) {
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+        if (!event.getStatus().isBookable()) {
+            throw new BusinessException(ErrorCode.EVENT_NOT_ON_SALE);
+        }
     }
 
     /** 발급 스크립트 공통 KEYS: 유저키·순번·대기ZSet·토큰메타·활성이벤트. */

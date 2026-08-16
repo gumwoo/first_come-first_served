@@ -33,6 +33,7 @@ public enum ErrorCode {
     HOLD_EXPIRED(HttpStatus.GONE, "좌석 선점이 만료되었습니다."),
     QUEUE_NOT_ADMITTED(HttpStatus.FORBIDDEN, "대기열 입장이 허용되지 않았습니다."),
     MAX_PER_USER_EXCEEDED(HttpStatus.CONFLICT, "1인 구매 가능 수량을 초과했습니다."),
+    EVENT_NOT_ON_SALE(HttpStatus.CONFLICT, "지금 예매할 수 있는 공연이 아닙니다."),
     DUPLICATE_BOOKING(HttpStatus.CONFLICT, "이미 예매한 회차입니다."),
     // 결제
     PAYMENT_FAILED(HttpStatus.PAYMENT_REQUIRED, "결제에 실패했습니다."),

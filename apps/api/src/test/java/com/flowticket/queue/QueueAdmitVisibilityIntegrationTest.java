@@ -4,7 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.flowticket.queue.service.QueueAdmissionService;
 import com.flowticket.queue.service.QueueService;
+import com.flowticket.event.domain.Event;
+import com.flowticket.event.domain.EventStatus;
+import com.flowticket.event.repository.EventRepository;
 import com.flowticket.support.IntegrationTestSupport;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -36,7 +40,17 @@ class QueueAdmitVisibilityIntegrationTest extends IntegrationTestSupport {
     @Autowired QueueAdmissionService admissionService;
     @Autowired StringRedisTemplate redisTemplate;
 
-    private static final Long EVENT = 77L;
+    @Autowired EventRepository eventRepository;
+
+    /** 발급 게이트가 실재하는 ON_SALE 이벤트를 요구한다 — {@link QueueIntegrationTest} 주석 참고. */
+    private Long EVENT;
+
+    @BeforeEach
+    void 판매중_이벤트를_만든다() {
+        EVENT = eventRepository.save(Event.builder()
+                .kopisId("QUEUE-ADMIT").title("판매중").genre("연극").status(EventStatus.ON_SALE).build())
+                .getId();
+    }
 
     @Test
     void 승격이_확정됐으면_admit키가_없어도_ADMITTED로_판정한다() {

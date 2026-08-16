@@ -51,6 +51,20 @@ public class SeatSseRegistry implements MessageListener {
             emitter.complete();
         });
         emitter.onError(e -> remove.run());
+        // 연결 직후 1회 전송 — 이게 없으면 응답이 커밋되지 않아 브라우저 EventSource가
+        // OPEN으로 전이하지 않고 onopen이 불리지 않는다. 이 훅은 **폴링이 없어서**
+        // onopen 재조회가 재연결 복구의 유일한 수단이다 — 그게 발동하지 않으면 끊긴 사이
+        // 발생한 이벤트를 영영 못 받는다. 대기열에서 재현 테스트로 확인한 것과 같은
+        // 원인이다([[ADR-015]] §① 검증 경과, #238).
+        //
+        // ⚠️ 연결 성립을 위한 1회 전송이고, 유휴 연결이 프록시에 끊기는 것을 막는
+        // 주기적 하트비트와는 다른 문제다(ADR-015 ②는 미착수).
+        try {
+            emitter.send(SseEmitter.event().comment("open"));
+        } catch (Exception e) {
+            remove.run(); // 구독 시작도 못 한 연결 — 남기면 이후 전송이 계속 실패한다
+            log.debug("SSE 초기 프레임 전송 실패 eventId={}", eventId, e);
+        }
         return emitter;
     }
 

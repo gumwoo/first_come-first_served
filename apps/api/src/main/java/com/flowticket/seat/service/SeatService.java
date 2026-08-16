@@ -109,11 +109,18 @@ public class SeatService {
      * <p><b>{@code NOT_SUPPORTED}로 트랜잭션 밖에서 돈다.</b> 클래스 레벨
      * {@code @Transactional(readOnly = true)}를 그대로 두면 <b>캐시 hit이어도 트랜잭션이 열리고
      * 커넥션을 빌린다</b> — 2026-08-16 실측에서 요청 36,002건에 커넥션 획득 36,173회로
-     * <b>요청당 1회</b>가 그대로 나왔다. 캐시가 쿼리는 없앴는데 트랜잭션·커넥션 비용은 남은 것이다.
+     * <b>요청당 약 1회</b>가 그대로 나왔다. 캐시 hit이 좌석 조회 쿼리를 회피하더라도
+     * <b>트랜잭션·커넥션 경계 비용은 남아 있었다.</b>
+     * (⚠️ 쿼리 수를 직접 센 것은 아니다 — 잰 것은 커넥션 획득 횟수다.)
      *
      * <p>그래서 조회는 트랜잭션 밖에서 하고, <b>miss일 때만</b> 프록시를 거쳐
      * {@link #loadSeatMap(Long)}을 불러 트랜잭션을 연다. 자기 호출은 프록시를 타지 않으므로
      * {@code self}를 거친다(PaymentService와 같은 패턴).
+     *
+     * <p>⚠️ {@code NOT_SUPPORTED}는 "트랜잭션을 새로 열지 않는다"가 아니라 <b>호출자가 이미
+     * 트랜잭션 안이면 그것을 일시 중단(suspend)한다.</b> 현재 호출처는
+     * {@code SeatController} 하나뿐이고 그쪽에 {@code @Transactional}이 없어 문제가 없다 —
+     * <b>트랜잭션 안에서 이 메서드를 부르는 코드가 생기면 그 의미를 다시 봐야 한다.</b>
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SeatMapResponse getSeats(Long eventId) {

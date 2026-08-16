@@ -125,9 +125,19 @@ payload가 작아도 servlet write·네트워크·ALB 커넥션 처리 비용이
 
 ## 미확정 — 확인 전에는 단정하지 않는다
 
-- **ALB idle timeout.** 저장소에 override가 보이지 않는다(`k8s/`·terraform 검색). 실제 ALB도
-  기본 설정이라면 60초다. **`describe-load-balancer-attributes`로 확인해야 확정된다.**
-  재연결 빈도는 여기서 나오므로, 하트비트 주기도 이 값을 보고 정한다.
+- ~~**ALB idle timeout.**~~ **2026-08-16 실측으로 확정 — 60초.**
+
+  ```
+  $ aws elbv2 describe-load-balancer-attributes --load-balancer-arn <arn>       --query "Attributes[?Key=='idle_timeout.timeout_seconds'].Value"
+  60
+  ```
+
+  저장소에 override가 없다는 관찰과 일치한다(기본값 그대로). ②의 하트비트 주기는 이 값보다
+  **충분히 짧아야** 한다.
+
+  ⚠️ **다만 "60초마다 끊긴다"는 뜻이 아니다.** idle timeout은 **바이트가 흐르지 않을 때**만
+  적용된다. 폴링이나 SSE 이벤트가 그 사이에 흐르면 연결은 유휴가 아니다. 따라서
+  **재연결 빈도는 여전히 미실측**이고, 하트비트의 필요성 자체는 이 값만으로 결론나지 않는다.
 - **`/queue/status`의 요청당 비용.** Redis 전용이라 조회(DB 경유)보다 쌀 것으로 **추정**하나
   **한 번도 재지 않았다.** 이 값에 따라 "폴링 주기를 줄이는 것"과 "수평 확장" 중 무엇이
   답인지 갈린다.

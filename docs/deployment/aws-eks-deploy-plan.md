@@ -182,7 +182,8 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
    helm: kube-prometheus-stack (-f k8s/monitoring/...values.yaml)
    helm: argocd (-f k8s/argocd/values.yaml)
    # metrics-server 는 EKS Add-ons 로 terraform 이 만든다(TS-019)
-4. bash k8s/external-secrets/bootstrap.sh           # ESO + 시크릿 동기화
+4. kubectl apply -f k8s/base/namespace.yaml         # ← 반드시 ESO보다 먼저(아래 ⚠️)
+   bash k8s/external-secrets/bootstrap.sh           # ESO + 시크릿 동기화
 5. kubectl apply -k k8s/kafka
    kubectl apply -k k8s/monitoring
    kubectl apply -f k8s/argocd/application.yaml
@@ -191,6 +192,15 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 
 ⚠️ 4번이 3번보다 뒤인 이유: ESO는 CRD를 스스로 설치하므로 순서 의존이 없지만, api Pod가
 시크릿을 기다리므로 앱 배포(5번) 전에 끝나 있어야 한다.
+
+⚠️ **네임스페이스를 4번 앞에 둔 이유 — 이게 없으면 절차대로 해도 반드시 실패한다.**
+`bootstrap.sh`의 마지막 단계가 `flowticket` 네임스페이스에 ExternalSecret을 만드는데,
+그 네임스페이스는 **5번(`kubectl apply -k k8s/overlays/...`)이 만든다.** 즉 4번 → 5번 순서
+자체는 맞지만 네임스페이스 생성만 앞으로 빼야 한다. 2026-08-16 재기동에서 실제로 걸렸다:
+
+```
+Error from server (NotFound): error when creating "STDIN": namespaces "flowticket" not found
+```
 
 **DoD 밖의 후속 개선** — ✅ **2026-08-11 완료**: External Secrets Operator 도입.
 `flowticket-api-secrets`는 이제 AWS에서 동기화된다(SSM Parameter Store 9개 + Secrets Manager

@@ -41,6 +41,12 @@ coverage/
 # validate 때와 plan 때 다른 버전이 선택될 수 있다.
 crash.log
 *.tfvars
+# plan 파일은 절대 커밋하지 않는다. 바이너리(zip)라 리뷰가 불가능하고, **tfvars 값이
+# 그대로 박혀 있다** — 이 저장소는 public이다. 2026-08-16에 실제로 한 번 들어갔다(#241).
+# 값이 자격증명이 아니어도 VPC CIDR·접속 허용 IP 같은 토폴로지가 노출된다.
+# plan을 파일로 남길 일이 있으면 저장소 **밖**(예: 임시 디렉터리)에 쓴다.
+tfplan
+*.tfplan
 !*.tfvars.example
 
 # backend 설정은 계정 ID를 담으므로 커밋하지 않는다(.example만 커밋).

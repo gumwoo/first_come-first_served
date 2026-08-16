@@ -37,7 +37,24 @@ public class QueueSseRegistry implements MessageListener {
         this.pubSub = pubSub;
     }
 
-    /** 토큰용 SSE 스트림 생성·등록. 완료/타임아웃/에러 시 자동 정리. */
+    /**
+     * 토큰용 SSE 스트림 생성·등록. 완료/타임아웃/에러 시 자동 정리.
+     *
+     * <p><b>연결 직후 코멘트 프레임을 한 번 보낸다.</b> 이게 없으면 응답이 커밋되지 않아
+     * 브라우저의 {@code EventSource}가 OPEN으로 전이하지 않고 <b>{@code onopen}이 불리지
+     * 않는다.</b> 프론트는 재연결 시 {@code onopen}에서 상태를 다시 읽어 놓친 승격 알림을
+     * 복구하는데([[ADR-015]] ①), 그 복구가 통째로 발동하지 못한다.
+     *
+     * <p>2026-08-16 E2E trace로 관측했다 — 재연결 요청은 성립했는데 그 뒤 상태 조회가
+     * 한 건도 없었다. 승격 이벤트를 놓친 사용자는 폴링이 없으면 계속 대기 화면에 남았다.
+     *
+     * <p>코멘트({@code :}로 시작)를 쓰는 이유는 <b>프로토콜 표면을 늘리지 않기 위해서다</b> —
+     * {@code EventSource}가 무시하므로 프론트에 리스너를 추가할 필요가 없다.
+     *
+     * <p>⚠️ 이것은 <b>연결 성립을 위한 1회 전송</b>이고, 오래 유휴한 연결이 프록시(ALB 등)에
+     * 끊기는 것을 막는 <b>주기적 하트비트와는 다른 문제</b>다. 후자는 idle timeout 실제값을
+     * 확인한 뒤 별도로 정한다(ADR-015 ②).
+     */
     public SseEmitter subscribe(String token) {
         SseEmitter emitter = new SseEmitter(timeoutMs);
         emitters.put(token, emitter);
@@ -47,6 +64,13 @@ public class QueueSseRegistry implements MessageListener {
             emitter.complete();
         });
         emitter.onError(e -> emitters.remove(token));
+        try {
+            emitter.send(SseEmitter.event().comment("open"));
+        } catch (Exception e) {
+            // 구독 시작도 못 한 연결이다 — 맵에 남기면 이후 전송이 계속 실패한다.
+            emitters.remove(token);
+            log.debug("SSE 초기 프레임 전송 실패 token={}", token, e);
+        }
         return emitter;
     }
 

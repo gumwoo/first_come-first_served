@@ -38,6 +38,19 @@ ENV API_ORIGIN=$API_ORIGIN
 ARG NEXT_PUBLIC_TOSS_CLIENT_KEY=
 ENV NEXT_PUBLIC_TOSS_CLIENT_KEY=$NEXT_PUBLIC_TOSS_CLIENT_KEY
 
+# 대기열 상태 폴링 주기(ms). SSE가 아예 열리지 않는 환경을 위한 최종 안전망이라
+# 환경별 조정이 필요할 수 있어 운영 파라미터로 둔다(ADR-015 ③).
+#
+# 여기서 받는 이유는 위 토스 키와 같다 — NEXT_PUBLIC_* 는 번들에 구워져 런타임 주입이
+# 불가능하다. 다만 이 값은 **비어도 안전하다**: useQueue가 `|| 2000`으로 기본값을 쓴다.
+# 그래도 ARG를 두는 것은, 나중에 운영값을 바꿔야 할 때 이미지 재빌드 경로가 여기뿐이기
+# 때문이다(k8s Secret/ConfigMap으로는 못 바꾼다).
+#
+# ⚠️ E2E는 600000(10분)을 준다. 그건 **운영 후보값이 아니라** 폴링을 테스트 시간 밖으로
+# 밀어내 SSE 재연결 복구(onopen)를 격리 검증하기 위한 값이다.
+ARG NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS=
+ENV NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS=$NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS
+
 # standalone은 로컬(Windows) 빌드를 심볼릭 링크 권한 문제로 깨뜨리므로 이미지 빌드에서만 켠다.
 ENV NEXT_OUTPUT_STANDALONE=true
 ENV NEXT_TELEMETRY_DISABLED=1

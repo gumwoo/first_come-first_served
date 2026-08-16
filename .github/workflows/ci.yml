@@ -249,6 +249,14 @@ jobs:
       # 3) 프론트 빌드 → 백그라운드 기동 → 대기
       - name: build & run web
         working-directory: apps/web
+        env:
+          # 대기열 폴링을 테스트 시간 밖으로 밀어낸다(10분). **운영 후보값이 아니다** —
+          # admit-ttl(300초)보다도 길어 운영에서는 성립하지 않는다. 폴링이 살아 있으면
+          # SSE 재연결 복구(onopen)를 그것이 먼저 덮어버려 회귀 테스트가 성립하지 않는다.
+          #
+          # ⚠️ NEXT_PUBLIC_*은 **빌드 시점에 번들로 박힌다.** 아래 pnpm start에만 주면 늦다.
+          # build와 start가 같은 스텝이라 이 env가 둘 다에 적용된다.
+          NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS: "600000"
         run: |
           pnpm install --frozen-lockfile
           pnpm build

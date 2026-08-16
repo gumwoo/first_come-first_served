@@ -8,6 +8,21 @@ import * as queueApi from "@/features/queue/api/queue";
 export type QueuePhase = "loading" | "waiting" | "admitted" | "expired" | "error";
 
 /**
+ * 대기열 상태 폴링 주기(ms). **환경별로 조정 가능한 운영 파라미터**다 —
+ * SSE가 아예 열리지 않는 환경(일부 프록시)을 위한 최종 안전망이라 완전히 없앨 수는 없고,
+ * 얼마나 자주 돌지는 부하와 반응성의 트레이드오프라 환경마다 다를 수 있다([[ADR-015]] ③).
+ *
+ * <p>현재 기본값 2000ms는 **운영에서 아직 바꾸지 않았다.** ③의 최종 주기는
+ * `/queue/status`의 요청당 비용과 사용자 반응성을 재고 나서 정한다.
+ *
+ * <p>⚠️ E2E는 이 값을 600000(10분)으로 준다. **그 값은 운영 후보가 아니다** —
+ * `admit-ttl`(300초)보다도 길어 운영에서는 성립하지 않는다. 폴링을 테스트 시간 밖으로
+ * 밀어내 <b>재연결 시 onopen 재조회만으로 복구되는지를 격리 검증</b>하기 위한 값이다.
+ * 폴링이 살아 있으면 그게 먼저 복구해버려 onopen 경로를 증명할 수 없다.
+ */
+const POLL_INTERVAL_MS = Number(process.env.NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS) || 2000;
+
+/**
  * 대기열 진입 + 실시간(SSE) + 폴링 폴백. 상태를 phase로 노출.
  * admitted 시 redirect(좌석) 경로, waiting 시 rank/total/eta/progress.
  */
@@ -102,9 +117,9 @@ export function useQueue(eventId: number) {
         es.onerror = () => {};
 
         // 최종 안전망 — SSE가 아예 열리지 않는 환경(일부 프록시)에서는 이것만 남는다.
-        // 주기는 ADR-015 ③에서 측정 후 조정한다.
+        // 주기는 위 POLL_INTERVAL_MS 참고(운영 기본 2000ms, ADR-015 ③에서 측정 후 조정).
         if (!terminal) {
-          poll = setInterval(refresh, 2000);
+          poll = setInterval(refresh, POLL_INTERVAL_MS);
         }
       } catch {
         if (!cancelled) setPhase("error");

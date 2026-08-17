@@ -28,6 +28,9 @@ _아직 측정 결과 없음 — 성능 슬라이스에서 k6 실행 후 자동 
 | 환불 이중 처리(동시 10 더블클릭) | 7건 | 0건 | -100% | [IMP-009](IMP-009-refund-idempotency.md) |
 | 좌석 만료↔결제 양방향 레이스 불일치(10시행×2방향) | 20건 | 0건 | -100% | [IMP-010](IMP-010-seat-payment-race.md) |
 | 사용자 부하 중 외부 API 호출(50 VU, k6 구간 약 64초) | 약 22,000건 | **0건** | -100% | [IMP-018](IMP-018-kopis-detail-hotpath-removal.md) |
+| 좌석맵 조회 API CPU(400 rps·90초) | 2.55 ms/req | **1.56 ms/req** | -39% | [IMP-020](IMP-020-seat-map-cache.md) · [요약](../../benchmarks/cache-experiment/RESULT.md) |
+| 좌석맵 조회 서버 p99(같은 구간) | 24.5 ms | **9.7 ms** | -60% | 〃 |
+| 좌석맵 조회 DB 커넥션/요청 | 1.005 회 | **0.025 회** | -97% | 〃 |
 | 같은 구간 제한 허용량(약 640건) 대비 | **약 34배 초과** | 위반 없음 | — | [IMP-018](IMP-018-kopis-detail-hotpath-removal.md) |
 | (예) 예매 API p95 | 850ms | 210ms | -75% | IMP-00x |
 | (예) 처리량 TPS | 120 | 1,400 | +11.6x | IMP-00x |

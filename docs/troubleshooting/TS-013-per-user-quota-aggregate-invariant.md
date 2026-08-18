@@ -196,6 +196,32 @@ quotaRepository.acquireQuotaLock(quotaLockKey(userId), quotaLockKey(eventId));
   > 주제다 — `terraform validate` 통과 후 apply에서 터진 결함 4건(ADR-013), 주석이 가리키는
   > 대상이 없던 TS-012와 같은 계열이다.
 - **advisory lock은 PostgreSQL 전용이다.** 다른 DB로 옮기면 재설계해야 한다.
+  MySQL/InnoDB라면 갈래가 셋이고, 성질이 서로 다르다.
+
+  - **`GET_LOCK`/`RELEASE_LOCK`은 가장 가까운 대응물이지만 세션 범위다.** ㉣에서 `xact` 변형을
+    고른 이유(커넥션이 락을 쥔 채 풀에 반납된다)를 그대로 떠안는다. 커밋·롤백으로 풀리지 않아
+    `finally` 해제라는 **애플리케이션 규율**에 정합성을 맡기게 된다. 복제 구성(Galera/PXC)에서는
+    서버-로컬이라 클러스터 전체를 직렬화하지도 않는다.
+  - **㉣의 팬텀 근거는 DB에 의존한다.** "기존 홀드 행을 잠가도 새 홀드 삽입은 막지 못한다"는
+    PostgreSQL의 성질이다. InnoDB는 기본 REPEATABLE READ에서 `SELECT ... FOR UPDATE`가
+    next-key lock(레코드 + 갭)을 잡아 **해당 인덱스 범위로의 INSERT를 대기시킨다.** 즉 MySQL이면
+    advisory lock 없이도 직렬화가 성립할 수 있다. 대신 갭 락은 데드락 확률을 올리고
+    인덱스 설계에 결과가 민감하게 의존한다.
+  - **두 DB에서 함께 도는 안은 "전용 락 행"이다.** ㉣에서 쿼터 행을 기각한 이유는 *카운터*
+    때문이었는데, 그 우려는 **카운터를 둘 때만** 성립한다. 행을 뮤텍스로만 쓰고 개수는 지금처럼
+    원본에서 세면 파생 상태는 하나도 늘지 않는다.
+
+    ```sql
+    INSERT IGNORE INTO user_event_lock (user_id, event_id) VALUES (?, ?);  -- 대개 no-op
+    SELECT 1 FROM user_event_lock WHERE user_id = ? AND event_id = ? FOR UPDATE;
+    ```
+
+    커밋·롤백과 함께 풀리는 성질이 유지되고, 키가 `BIGINT` 컬럼이라 아래 int4 범위 한계도
+    같이 사라진다. 비용은 락 행 확보 경로 하나와 테이블 하나다.
+
+  ⚠️ **셋 다 실제로 돌려보지 않았다.** MySQL 문서상 알려진 동작을 근거로 한 설계 검토이고,
+  이 프로젝트를 MySQL에서 구동해 확인한 결과가 아니다. 지금 옮길 계획도 없다 —
+  "PostgreSQL 전용"이라는 한계에 **알려진 탈출구가 있다는 것까지**가 여기서 말할 수 있는 범위다.
 - **id가 int4 범위를 넘으면 즉시 실패한다.** 지금은 시퀀스 값이 작아 문제없지만 영구 전제는 아니다.
 - **`hold()` 트랜잭션 동안 그 사용자의 다른 선점 요청이 대기한다.** 사용자 단위라 다른
   사용자에게는 영향이 없지만, 이 트랜잭션이 느려지면 그 사용자만 느려진다.

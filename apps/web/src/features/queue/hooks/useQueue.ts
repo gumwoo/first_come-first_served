@@ -106,6 +106,29 @@ export function useQueue(eventId: number) {
           }
         };
 
+        // 최종 안전망. setInterval이 아니라 매번 다시 예약하는 이유는 **주기가 변하기 때문**이다.
+        //
+        // SSE가 성립해 있는 동안에는 주기를 배로 늘린다(상한 POLL_MAX_MS). 재연결 공백은
+        // onopen 재조회가 닫으므로(#238), 그 구간의 복구를 폴링에 의존하지 않아도 된다.
+        // SSE가 한 번도 열리지 않았거나 끊긴 동안에는 최소 주기를 유지한다 — 그때는 폴링이
+        // 유일한 복구 경로다.
+        //
+        // ⚠️ 대가: SSE가 **열려 있는데도** 이벤트가 유실되는 경우의 복구가 최대 POLL_MAX_MS까지
+        // 늦어진다. 연결이 살아 있으면 서버가 그 연결로 보내므로(QueueSseRegistry.deliverLocal)
+        // 흔한 경우는 아니지만, 0은 아니다.
+        // 예약은 **항상 하나만** 유지한다. onerror가 재예약을 요청할 때 기존 예약을 지우지
+        // 않으면 타이머가 둘이 되어 폴링이 겹친다 — 부하를 줄이려는 변경이 반대로 늘린다.
+        const schedulePoll = () => {
+          if (terminal || cancelled) return;
+          if (poll) clearTimeout(poll);
+          poll = setTimeout(async () => {
+            poll = null;
+            await refresh();
+            if (sseHealthy) pollDelay = Math.min(pollDelay * 2, POLL_MAX_MS);
+            schedulePoll();
+          }, pollDelay);
+        };
+
         es = new EventSource(queueApi.queueSseUrl(t.token));
         es.addEventListener("queue.admitted", (e) => {
           try {
@@ -136,26 +159,12 @@ export function useQueue(eventId: number) {
         es.onerror = () => {
           sseHealthy = false;
           pollDelay = POLL_MIN_MS;
+          // **다시 예약까지 해야 한다.** 값만 되돌리면 이미 걸려 있는 긴 타이머는 그대로라,
+          // 15초짜리 예약 직후에 끊기면 그 14초 동안 SSE도 폴링도 없는 구간이 생긴다.
+          // 안전망을 촘촘하게 만드는 것이 목적인데, 정작 촘촘해져야 할 그 순간에 늦어진다.
+          schedulePoll();
         };
 
-        // 최종 안전망. setInterval이 아니라 매번 다시 예약하는 이유는 **주기가 변하기 때문**이다.
-        //
-        // SSE가 성립해 있는 동안에는 주기를 배로 늘린다(상한 POLL_MAX_MS). 재연결 공백은
-        // onopen 재조회가 닫으므로(#238), 그 구간의 복구를 폴링에 의존하지 않아도 된다.
-        // SSE가 한 번도 열리지 않았거나 끊긴 동안에는 최소 주기를 유지한다 — 그때는 폴링이
-        // 유일한 복구 경로다.
-        //
-        // ⚠️ 대가: SSE가 **열려 있는데도** 이벤트가 유실되는 경우의 복구가 최대 POLL_MAX_MS까지
-        // 늦어진다. 연결이 살아 있으면 서버가 그 연결로 보내므로(QueueSseRegistry.deliverLocal)
-        // 흔한 경우는 아니지만, 0은 아니다.
-        const schedulePoll = () => {
-          if (terminal || cancelled) return;
-          poll = setTimeout(async () => {
-            await refresh();
-            if (sseHealthy) pollDelay = Math.min(pollDelay * 2, POLL_MAX_MS);
-            schedulePoll();
-          }, pollDelay);
-        };
         if (!terminal) {
           schedulePoll();
         }

@@ -3,8 +3,11 @@ package com.flowticket.admin.controller;
 import com.flowticket.admin.dto.AdminOrderSummary;
 import com.flowticket.admin.service.AdminOrderService;
 import com.flowticket.global.common.ApiResponse;
+import com.flowticket.global.common.PageQuery;
 import com.flowticket.global.common.PageResponse;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -21,8 +24,7 @@ public class AdminOrderController {
     @GetMapping("/admin/orders")
     public ApiResponse<PageResponse<AdminOrderSummary>> list(
             @RequestParam(required = false) String status,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.ok(adminOrderService.list(status, page, size));
+            @Valid @ModelAttribute PageQuery pageQuery) {
+        return ApiResponse.ok(adminOrderService.list(status, pageQuery.page(), pageQuery.size()));
     }
 }

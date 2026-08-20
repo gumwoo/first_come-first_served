@@ -53,6 +53,10 @@ public class OutboxEvent {
     @Column(name = "published_at")
     private LocalDateTime publishedAt;
 
+    /**
+     * <b>마지막 시도의 실패 원인.</b> 성공하면 비운다 — 남겨두면 PUBLISHED인데 오류가 붙어 있는
+     * 모순된 상태가 되어 운영자가 "발행됐는데 아직 문제가 있나"로 읽는다.
+     */
     @Column(name = "last_error", columnDefinition = "text")
     private String lastError;
 
@@ -75,11 +79,15 @@ public class OutboxEvent {
     public void markPublished() {
         this.status = OutboxStatus.PUBLISHED;
         this.publishedAt = LocalDateTime.now();
+        // 앞선 틱의 일시적 실패 기록을 지운다. attempts는 남겨 "몇 번 만에 나갔는지"를 보존한다.
+        this.lastError = null;
     }
 
     /**
      * <b>일시적</b> 발행 실패 — PENDING을 유지해 다음 틱에 재시도. 시도 횟수는 운영 가시성용.
      * 브로커·네트워크 장애가 여기 해당하며, 시도 횟수만으로 DEAD로 넘기지 않는다.
+     *
+     * <p>여기서 남긴 원인은 <b>다음 시도가 성공하면 지워진다</b>({@link #markPublished()}).
      */
     public void markAttemptFailed(String reason) {
         this.attempts++;

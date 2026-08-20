@@ -8,7 +8,7 @@
 --  * last_error는 nullable이라 구버전 INSERT가 그대로 통과한다.
 ALTER TABLE outbox_events ADD COLUMN last_error TEXT;
 
-COMMENT ON COLUMN outbox_events.last_error IS '마지막 실패 원인(DEAD 판단 근거). 운영자가 폐기/복구를 판단하는 데 쓴다.';
+COMMENT ON COLUMN outbox_events.last_error IS '마지막 시도의 실패 원인. 발행에 성공하면 NULL로 비운다(PUBLISHED에 오류가 남아 오해를 부르지 않게). DEAD 행에서는 격리 근거로 남는다.';
 
 -- 릴레이가 매 틱 "선행 DEAD가 있는 aggregate"를 조회한다. DEAD는 드물어 부분 인덱스가 작다.
 CREATE INDEX ix_outbox_dead ON outbox_events (aggregate_type, aggregate_id) WHERE status = 'DEAD';

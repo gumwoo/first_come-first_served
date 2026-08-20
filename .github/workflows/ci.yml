@@ -173,6 +173,11 @@ jobs:
       - name: lint
         working-directory: apps/web
         run: pnpm lint
+      # 단위 테스트는 build 앞에 둔다 — 실패 시 더 빨리 알고, 느린 build를 낭비하지 않는다.
+      # E2E와 역할이 다르다: E2E는 브라우저 전체 흐름을, 이쪽은 타이밍 로직(폴링 재예약 등)을 본다.
+      - name: unit test
+        working-directory: apps/web
+        run: pnpm test
       - name: build
         working-directory: apps/web
         run: pnpm build

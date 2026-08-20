@@ -60,3 +60,8 @@ frontend:
     - "@types/*"
     - postcss
     - autoprefixer
+    # 단위 테스트(2026-08-20 추가). E2E는 브라우저 전체 흐름을 보고, 이쪽은 **타이밍 로직**을 본다 —
+    # 폴링 백오프 재예약·SSE readyState 분기처럼 E2E로는 관측조차 못 한 것들이 있었다.
+    - vitest
+    - jsdom                        # renderHook에 DOM 환경이 필요하다
+    - "@testing-library/react"     # 훅을 실제 React 수명주기에서 돌린다(래핑이 아니라 실물)

@@ -74,26 +74,21 @@ class OutboxPoisonEventIntegrationTest {
     @Autowired OutboxRelay relay;
     @Autowired ObjectMapper mapper;
 
-    private UUID poisonId;
-
     @BeforeEach
     void setUp() {
         outboxRepository.deleteAll();
-        // 독성 행이 반드시 배치의 맨 앞에 오게 한다. 정렬 키가 created_at 하나라
-        // 같은 순간에 저장하면 동률이 되어 순서가 결정적이지 않다.
-        poisonId = appendPoison();
+    }
+
+    @Test
+    @DisplayName("역직렬화 불가 행 하나가 다른 주문의 이벤트를 막지 않는다")
+    void 독성_행이_뒤_이벤트를_막지_않는다() {
+        appendPoison(ORDER_BASE - 1);
         sleepPastTimestampResolution();
         for (int i = 0; i < HEALTHY; i++) {
             appendHealthy(ORDER_BASE + i);
         }
-    }
 
-    @Test
-    @DisplayName("역직렬화 불가 행 하나가 뒤따르는 정상 이벤트를 막지 않는다")
-    void 독성_행이_뒤_이벤트를_막지_않는다() {
-        for (int tick = 0; tick < TICKS; tick++) {
-            relay.publishPending();
-        }
+        runRelayTicks();
 
         assertThat(outboxRepository.countByStatus(OutboxStatus.PUBLISHED))
                 .as("브로커는 정상이다. 앞의 한 행이 깨졌다는 이유로 뒤의 %d건이 멈추면 안 된다", HEALTHY)
@@ -103,10 +98,11 @@ class OutboxPoisonEventIntegrationTest {
     @Test
     @DisplayName("재시도로 성공할 수 없는 행은 릴레이 후보에서 빠진다")
     void 독성_행은_무한_재시도되지_않는다() {
-        for (int tick = 0; tick < TICKS; tick++) {
-            relay.publishPending();
-        }
+        UUID poisonId = appendPoison(ORDER_BASE - 1);
 
+        runRelayTicks();
+
+        // 본질 계약은 "더 이상 릴레이 후보가 아니다"이다 — 몇 번 시도했는지가 아니라.
         List<OutboxEvent> candidates =
                 outboxRepository.findByStatusOrderByCreatedAtAsc(OutboxStatus.PENDING, PageRequest.of(0, 100));
         assertThat(candidates)
@@ -115,24 +111,68 @@ class OutboxPoisonEventIntegrationTest {
                 .doesNotContain(poisonId);
 
         OutboxEvent poison = outboxRepository.findById(poisonId).orElseThrow();
+        assertThat(poison.getStatus())
+                .as("격리 상태로 남아야 운영자가 원인을 보고 판단할 수 있다(삭제하지 않는다)")
+                .isEqualTo(OutboxStatus.DEAD);
+        // 부가 검증 — 시도 횟수 자체는 구현에 따라 달라질 수 있다(결정적 실패는 1회로 판정 가능).
         assertThat(poison.getAttempts())
                 .as("시도 횟수에 상한이 없으면 운영자가 개입할 때까지 무한히 증가한다")
                 .isLessThan(TICKS);
+        assertThat(poison.getLastError())
+                .as("격리 근거가 없으면 운영자가 폐기/복구를 판단할 수 없다")
+                .isNotBlank();
+    }
+
+    /**
+     * ⚠️ <b>이 테스트는 현재 결함의 재현이 아니다.</b> 지금 프로덕션에서 아웃박스에 이벤트를 넣는
+     * 경로는 {@code PaymentService.appendOutbox("order.paid", ...)} 하나뿐이고(환불은 SSE로만 나간다),
+     * 한 주문에서 아웃박스 이벤트가 연속으로 만들어지는 시나리오는 존재하지 않는다.
+     *
+     * <p>그럼에도 고정하는 이유: 릴레이는 aggregateId를 Kafka 파티션 키로 써 <b>같은 aggregate의
+     * 순서를 보존하도록 설계돼 있다.</b> 이번 수정이 head-of-line 차단을 없애면서 그 성질을 실수로
+     * 깨뜨리기 쉬운데(전부 건너뛰면 되니까), 이벤트 종류가 늘어난 뒤에는 깨진 것을 알아채기 어렵다.
+     */
+    @Test
+    @DisplayName("격리된 이벤트와 같은 주문의 후속 이벤트는 추월하지 않는다")
+    void 같은_aggregate_후속_이벤트는_보류된다() {
+        long blockedOrder = ORDER_BASE + 100;
+        long otherOrder = ORDER_BASE + 200;
+
+        appendPoison(blockedOrder);
+        sleepPastTimestampResolution();
+        UUID followerId = appendHealthy(blockedOrder); // 같은 주문의 후속 — 앞이 못 나갔으니 보류
+        UUID otherId = appendHealthy(otherOrder);      // 다른 주문 — 영향받을 이유가 없다
+
+        runRelayTicks();
+
+        assertThat(outboxRepository.findById(otherId).orElseThrow().getStatus())
+                .as("다른 aggregate까지 막으면 전역 정지 문제를 그대로 남기는 것이다")
+                .isEqualTo(OutboxStatus.PUBLISHED);
+        assertThat(outboxRepository.findById(followerId).orElseThrow().getStatus())
+                .as("앞 이벤트가 영영 안 나간 채 뒤 이벤트만 나가면 소비자가 인과를 거꾸로 본다")
+                .isEqualTo(OutboxStatus.PENDING);
+    }
+
+    private void runRelayTicks() {
+        for (int tick = 0; tick < TICKS; tick++) {
+            relay.publishPending();
+        }
     }
 
     /** {@code OrderEvent}로 역직렬화할 수 없는 payload. 예: 스키마 변경·손상·구버전 형식. */
-    private UUID appendPoison() {
+    private UUID appendPoison(long orderId) {
         UUID id = UUID.randomUUID();
         outboxRepository.save(
-                new OutboxEvent(id, "order", ORDER_BASE - 1, "order.paid", "{\"broken\": "));
+                new OutboxEvent(id, "order", orderId, "order.paid", "{\"broken\": "));
         return id;
     }
 
-    private void appendHealthy(long orderId) {
+    private UUID appendHealthy(long orderId) {
         UUID eventId = UUID.randomUUID();
         try {
             String payload = mapper.writeValueAsString(new OrderEvent("order.paid", orderId, eventId));
             outboxRepository.save(new OutboxEvent(eventId, "order", orderId, "order.paid", payload));
+            return eventId;
         } catch (Exception e) {
             throw new IllegalStateException("아웃박스 적재 실패", e);
         }

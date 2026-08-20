@@ -107,6 +107,44 @@ public class OutboxEvent {
         this.lastError = truncate(reason);
     }
 
+    /**
+     * 운영자 판단 — 다시 발행 대상으로 되돌린다(DEAD → PENDING).
+     *
+     * <p>payload를 고치는 기능은 <b>일부러 제공하지 않는다</b>. 운영자가 이벤트 내용을 편집할 수
+     * 있으면 그것은 복구가 아니라 위조다. 이 경로가 유효한 실제 상황은 <b>소비할 쪽이 배포로
+     * 고쳐진 경우</b>다 — 스키마가 맞춰졌으면 같은 payload가 이제 해석된다.
+     *
+     * <p>되돌린 뒤에도 정렬 키(createdAt)는 그대로라 원래 순서 자리로 돌아간다.
+     */
+    public void requeue() {
+        requireDead("재발행");
+        this.status = OutboxStatus.PENDING;
+        this.lastError = null;
+    }
+
+    /**
+     * 운영자 판단 — 이 이벤트의 발행을 포기한다(DEAD → DISCARDED).
+     *
+     * <p><b>같은 aggregate의 후속 이벤트가 다시 흐른다.</b> 릴레이는 DEAD만 차단 사유로 보므로,
+     * 폐기는 "이 이벤트는 영영 안 나간다는 것을 받아들인다"는 선언이기도 하다. 행은 지우지 않는다 —
+     * 무엇을 포기했는지가 남아야 나중에 추적할 수 있다.
+     */
+    public void discard() {
+        requireDead("폐기");
+        this.status = OutboxStatus.DISCARDED;
+    }
+
+    /**
+     * PENDING 행에는 두 전이를 허용하지 않는다. 브로커 장애로 밀려 있을 뿐 언젠가 나갈 이벤트라,
+     * 운영자가 개입할 대상이 아니다 — 개입해야 하는 것은 <b>릴레이가 스스로 못 푸는</b> DEAD뿐이다.
+     */
+    private void requireDead(String action) {
+        if (this.status != OutboxStatus.DEAD) {
+            throw new IllegalStateException(
+                    action + " 대상이 아니다: id=" + id + " status=" + status + " (DEAD만 허용)");
+        }
+    }
+
     /** 스택트레이스가 통째로 들어와 로그·조회를 뭉개지 않게 자른다. 판단에 필요한 건 앞부분이다. */
     private static String truncate(String reason) {
         if (reason == null) {

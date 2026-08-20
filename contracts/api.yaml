@@ -56,6 +56,9 @@ endpoints:
   - { method: GET,    path: "/admin/dlq",                slice: S07 }
   - { method: POST,   path: "/admin/dlq/{id}/retry",     slice: S07 }
   - { method: POST,   path: "/admin/dlq/{id}/discard",   slice: S07 }
+  - { method: GET,    path: "/admin/outbox",             slice: S08 }
+  - { method: POST,   path: "/admin/outbox/{id}/requeue", slice: S08 }
+  - { method: POST,   path: "/admin/outbox/{id}/discard", slice: S08 }
   - { method: GET,    path: "/admin/alerts",             slice: S07 }
   - { method: PUT,    path: "/admin/alerts",             slice: S07 }
 

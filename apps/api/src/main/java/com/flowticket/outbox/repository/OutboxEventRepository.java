@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -31,6 +32,12 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
      */
     @Query("select concat(o.aggregateType, ':', o.aggregateId) from OutboxEvent o where o.status = :dead")
     Set<String> findBlockedAggregateKeys(@Param("dead") OutboxStatus dead);
+
+    /** 운영 조회 — 최신순 페이징. */
+    Page<OutboxEvent> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    /** 운영 조회 — 상태 필터, 최신순. 기본 관심사는 DEAD다. */
+    Page<OutboxEvent> findByStatusOrderByCreatedAtDesc(OutboxStatus status, Pageable pageable);
 
     /**
      * purge 스윕 — 발행 완료 후 보존기간이 지난 행만 삭제.

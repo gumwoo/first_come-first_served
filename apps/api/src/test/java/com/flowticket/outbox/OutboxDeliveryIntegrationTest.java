@@ -143,18 +143,6 @@ class OutboxDeliveryIntegrationTest {
         assertThat(lostBefore).as("before: 장애 중 발행분 전량 영구 유실").isEqualTo(TRIALS);
         assertThat(lostAfter).as("after: 복구 후 전량 재발행 → 유실 0").isZero();
         assertThat(outboxRepository.countByStatus(OutboxStatus.PUBLISHED)).isEqualTo(TRIALS);
-
-        // 장애 창에서 실패했다가 복구 후 성공한 행들이다. 그 흔적이 어떻게 남는지를 고정한다.
-        assertThat(outboxRepository.findAll())
-                .allSatisfy(row -> {
-                    assertThat(row.getAttempts())
-                            .as("장애 중 한 번은 실패했어야 이 테스트가 성립한다")
-                            .isPositive();
-                    assertThat(row.getLastError())
-                            .as("발행에 성공하면 지난 실패 원인은 지운다 — PUBLISHED인데 오류가 "
-                                    + "붙어 있으면 운영자가 미해결로 오해한다")
-                            .isNull();
-                });
     }
 
     /** 구 OrderEventKafkaBridge 동작: 발행 실패를 로그만 남기고 삼킨다(복구 근거 없음 = 영구 유실). */

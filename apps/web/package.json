@@ -12,6 +12,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "harness": "node ../../harness/frontend/check.mjs"
   },
   "dependencies": {
@@ -31,14 +32,17 @@
     "zustand": "4.5.5"
   },
   "devDependencies": {
+    "@testing-library/react": "16.3.2",
     "@types/node": "20.16.11",
     "@types/react": "18.3.11",
     "@types/react-dom": "18.3.0",
     "autoprefixer": "10.4.20",
     "eslint": "8.57.1",
     "eslint-config-next": "14.2.15",
+    "jsdom": "26.1.0",
     "postcss": "8.4.47",
     "tailwindcss": "3.4.13",
-    "typescript": "5.5.4"
+    "typescript": "5.5.4",
+    "vitest": "4.1.11"
   }
 }

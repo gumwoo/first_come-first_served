@@ -89,6 +89,11 @@ public class JwtProvider {
      * 특정 주문 구독에만 유효한 티켓. 대상 주문을 클레임에 박아, 티켓이 새더라도 <b>그 주문
      * 하나만</b> 열린다. TTL은 짧게 둔다({@code jwt.sse-ticket-ttl}, 기본 300초) — URL에 실리는
      * 자격증명이라 노출 창을 줄이는 것이 목적이고, 만료 후에는 프론트가 새로 발급받는다.
+     *
+     * <p>⚠️ <b>TTL은 "새 연결을 시작할 수 있는 기간"이지, 이미 성립한 스트림의 수명이 아니다.</b>
+     * 검증은 구독 성립 시점에만 돌고, 만료가 기존 연결을 끊지 않는다. 성립한 스트림의 수명은
+     * {@code seat.sse-timeout-ms}(기본 30분)가 정한다 — 티켓 TTL의 6배다. 그러므로 이 값을
+     * "노출 상한"으로 읽으면 안 된다.
      */
     public String createSseTicket(Long userId, Long orderId) {
         Date now = new Date();

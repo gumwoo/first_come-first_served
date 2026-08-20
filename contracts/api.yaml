@@ -36,6 +36,7 @@ endpoints:
   # S05 주문·결제
   - { method: POST,   path: "/orders",                   slice: S05 }
   - { method: GET,    path: "/orders/{id}",              slice: S05 }
+  - { method: POST,   path: "/orders/{id}/sse-ticket",  slice: S05 }  # SSE 구독 티켓(소유자만)
   - { method: POST,   path: "/orders/{id}/payments",     slice: S05 }
   - { method: POST,   path: "/orders/{id}/payments/confirm", slice: S05 }  # 결제창(Toss) 인증 확정
   - { method: POST,   path: "/webhooks/payments",         slice: S05 }   # PG 웹훅 수신(서명검증)

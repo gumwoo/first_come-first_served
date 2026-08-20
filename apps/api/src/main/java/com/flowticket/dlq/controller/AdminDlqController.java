@@ -3,8 +3,11 @@ package com.flowticket.dlq.controller;
 import com.flowticket.dlq.dto.DlqMessageSummary;
 import com.flowticket.dlq.service.AdminDlqService;
 import com.flowticket.global.common.ApiResponse;
+import com.flowticket.global.common.PageQuery;
 import com.flowticket.global.common.PageResponse;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -23,9 +26,8 @@ public class AdminDlqController {
     @GetMapping("/admin/dlq")
     public ApiResponse<PageResponse<DlqMessageSummary>> list(
             @RequestParam(required = false) String status,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.ok(adminDlqService.list(status, page, size));
+            @Valid @ModelAttribute PageQuery pageQuery) {
+        return ApiResponse.ok(adminDlqService.list(status, pageQuery.page(), pageQuery.size()));
     }
 
     @PostMapping("/admin/dlq/{id}/retry")

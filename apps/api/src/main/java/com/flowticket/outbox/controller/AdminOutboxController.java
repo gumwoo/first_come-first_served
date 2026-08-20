@@ -1,11 +1,14 @@
 package com.flowticket.outbox.controller;
 
 import com.flowticket.global.common.ApiResponse;
+import com.flowticket.global.common.PageQuery;
 import com.flowticket.global.common.PageResponse;
+import jakarta.validation.Valid;
 import com.flowticket.outbox.dto.OutboxEventSummary;
 import com.flowticket.outbox.service.AdminOutboxService;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,9 +27,8 @@ public class AdminOutboxController {
     @GetMapping("/admin/outbox")
     public ApiResponse<PageResponse<OutboxEventSummary>> list(
             @RequestParam(required = false) String status,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.ok(adminOutboxService.list(status, page, size));
+            @Valid @ModelAttribute PageQuery pageQuery) {
+        return ApiResponse.ok(adminOutboxService.list(status, pageQuery.page(), pageQuery.size()));
     }
 
     @PostMapping("/admin/outbox/{id}/requeue")

@@ -5,13 +5,16 @@ import com.flowticket.event.dto.EventSummaryResponse;
 import com.flowticket.event.service.EventService;
 import com.flowticket.event.service.RankingService;
 import com.flowticket.global.common.ApiResponse;
+import com.flowticket.global.common.PageQuery;
 import com.flowticket.global.common.PageResponse;
+import jakarta.validation.Valid;
 import com.flowticket.global.web.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,14 +38,13 @@ public class EventController {
 
     @GetMapping("/events")
     public ApiResponse<PageResponse<EventSummaryResponse>> list(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @Valid @ModelAttribute PageQuery pageQuery,
             @RequestParam(required = false) String genre,
             @RequestParam(required = false) String region,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return ApiResponse.ok(eventService.list(genre, region, status, from, to, page, size));
+        return ApiResponse.ok(eventService.list(genre, region, status, from, to, pageQuery.page(), pageQuery.size()));
     }
 
     @GetMapping("/events/popular")
@@ -68,9 +70,8 @@ public class EventController {
             @RequestParam(required = false) String genre,
             @RequestParam(required = false) String region,
             @RequestParam(required = false) String status,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.ok(eventService.searchByKeyword(q, genre, region, status, page, size));
+            @Valid @ModelAttribute PageQuery pageQuery) {
+        return ApiResponse.ok(eventService.searchByKeyword(q, genre, region, status, pageQuery.page(), pageQuery.size()));
     }
 
     @GetMapping("/search/popular-keywords")

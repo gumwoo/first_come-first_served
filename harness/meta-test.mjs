@@ -20,6 +20,7 @@ const cases = [
   { name: "be-jwt-no-type",      script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-jwt-no-type" } },
   { name: "be-actuator-open",    script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-actuator-open" } },
   { name: "be-naive-datetime",   script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-naive-datetime" } },
+  { name: "be-unvalidated-paging", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-unvalidated-paging" } },
   { name: "be-db-conn-ceiling",  script: "backend/check.mjs", expect: "DB 커넥션 상한 초과:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-db-conn-ceiling" } },
   { name: "be-db-conn-surge",    script: "backend/check.mjs", expect: "maxSurge 5", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/be-db-conn-surge" } },
   { name: "be-enum-ordinal",     script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-enum-ordinal" } },

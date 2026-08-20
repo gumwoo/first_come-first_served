@@ -592,4 +592,30 @@ function normalize(p) {
   return p.replace(/\{[^}]+\}/g, "{id}").replace(/\/+$/, "") || "/";
 }
 
+// ---------- 19. 페이징 입력은 경계에서 검증한다 ----------
+//
+// `@RequestParam(defaultValue = "0") int page` 는 검증이 없다. `?page=-1` 이면 값이 그대로
+// PageRequest.of() 까지 내려가 IllegalArgumentException이 나는데, 이 저장소에는 그 전용
+// 핸들러가 없어 fallback이 잡는다 — **클라이언트 입력 오류가 500 + ERROR 로그**가 된다.
+// size는 상한이 없어 대량 행과 TEXT payload를 한 요청에서 직렬화할 수 있다.
+//
+// 같은 모양이 컨트롤러 6곳에 복사돼 있었다. 한 곳을 고쳐도 다음 목록 API가 또 같은 줄을
+// 복사하므로, 공통 값 객체(PageQuery)를 쓰도록 정적으로 못박는다.
+//
+// ⚠️ IllegalArgumentException 전체를 400으로 매핑하는 방식은 일부러 택하지 않았다 —
+// 그 예외는 서버 내부 프로그래밍 오류에도 흔히 쓰여, 진짜 버그가 클라이언트 오류로 숨는다.
+const PAGING_PARAM_RE =
+  /@RequestParam[^)]*\)?\s*(?:final\s+)?(?:int|Integer|long|Long)\s+(page|size)\b/;
+
+for (const f of javaFiles) {
+  if (!f.includes("controller")) continue;
+  const m = read(f).match(PAGING_PARAM_RE);
+  if (m) {
+    r.fail(
+      `페이징 파라미터를 검증 없이 받는다: ${path.relative(REPO_ROOT, f)} — "${m[1]}". ` +
+        `@Valid @ModelAttribute PageQuery 로 받을 것(음수 page가 500이 된다)`
+    );
+  }
+}
+
 r.done();

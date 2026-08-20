@@ -42,7 +42,13 @@ export function useOrder(orderId: number, token: string | null) {
     let retry: ReturnType<typeof setTimeout> | null = null;
 
     const connect = async () => {
-      if (closed) return;
+      // 토큰이 없으면 티켓 발급은 **반드시 401이다.** 그런데 apiClient는 401을 만나면 자동으로
+      // silent refresh를 돌린다 — 즉 보내봐야 실패하는 요청이 RTR 회전을 하나 더 유발한다.
+      // 마운트 직후에는 위 refresh()도 같은 이유로 401을 받을 수 있어, 둘이 동시에 회전을
+      // 요청하면 한쪽이 REFRESH_TOKEN_REUSED를 받고 세션이 초기화될 수 있다. 그러면 토큰이
+      // null이 되어 이 효과가 다시 돌고, 그 사이 error가 토글되며 화면이 로딩↔에러로 왕복한다.
+      // 토큰이 채워지면 이 효과가 다시 실행되므로(deps에 token), 여기서는 그냥 기다린다.
+      if (closed || !token) return;
       let ticket: string;
       try {
         // 구독 자격은 티켓으로 받는다 — EventSource는 Authorization 헤더를 붙이지 못한다.

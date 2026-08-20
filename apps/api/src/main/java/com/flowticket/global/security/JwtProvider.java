@@ -20,15 +20,18 @@ public class JwtProvider {
     private final String secret;
     private final long accessTtlSeconds;
     private final long refreshTtlSeconds;
+    private final long sseTicketTtlSeconds;
     private SecretKey key;
 
     public JwtProvider(
             @Value("${jwt.secret}") String secret,
             @Value("${jwt.access-token-ttl}") long accessTtlSeconds,
-            @Value("${jwt.refresh-token-ttl}") long refreshTtlSeconds) {
+            @Value("${jwt.refresh-token-ttl}") long refreshTtlSeconds,
+            @Value("${jwt.sse-ticket-ttl:300}") long sseTicketTtlSeconds) {
         this.secret = secret;
         this.accessTtlSeconds = accessTtlSeconds;
         this.refreshTtlSeconds = refreshTtlSeconds;
+        this.sseTicketTtlSeconds = sseTicketTtlSeconds;
     }
 
     @PostConstruct
@@ -38,6 +41,13 @@ public class JwtProvider {
 
     public static final String TYPE_ACCESS = "access";
     public static final String TYPE_REFRESH = "refresh";
+    /**
+     * SSE 구독 전용 티켓. {@code EventSource}는 요청 헤더를 붙일 수 없어 자격증명을 URL로 실어야
+     * 하는데, access token을 그대로 URL에 두면 접근 로그·리퍼러에 <b>전체 권한 자격증명</b>이 남는다.
+     * 그래서 <b>단일 주문 구독에만 쓸 수 있는</b> 별도 타입을 만든다 — {@link #isValid}가 type을
+     * 대조하므로 이 티켓으로는 API를 호출할 수 없고, access token으로는 구독할 수 없다.
+     */
+    public static final String TYPE_SSE = "sse";
 
     public String createAccessToken(User user) {
         Date now = new Date();
@@ -73,6 +83,23 @@ public class JwtProvider {
     public boolean isRemember(String refreshToken) {
         Boolean v = parse(refreshToken).get("remember", Boolean.class);
         return Boolean.TRUE.equals(v);
+    }
+
+    /**
+     * 특정 주문 구독에만 유효한 티켓. 대상 주문을 클레임에 박아, 티켓이 새더라도 <b>그 주문
+     * 하나만</b> 열린다. TTL은 짧게 둔다({@code jwt.sse-ticket-ttl}, 기본 300초) — URL에 실리는
+     * 자격증명이라 노출 창을 줄이는 것이 목적이고, 만료 후에는 프론트가 새로 발급받는다.
+     */
+    public String createSseTicket(Long userId, Long orderId) {
+        Date now = new Date();
+        return Jwts.builder()
+                .subject(String.valueOf(userId))
+                .claim("type", TYPE_SSE)
+                .claim("orderId", orderId)
+                .issuedAt(now)
+                .expiration(new Date(now.getTime() + sseTicketTtlSeconds * 1000))
+                .signWith(key)
+                .compact();
     }
 
     public Claims parse(String token) {

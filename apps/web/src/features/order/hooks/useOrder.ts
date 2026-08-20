@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as orderApi from "@/features/order/api/order";
 
+/** 티켓 만료로 브라우저가 재연결을 포기한 뒤 다시 붙기까지의 대기. */
+const SSE_RETRY_DELAY_MS = 2000;
+
 /** 주문 조회 + SSE(order.paid / payment.vbank.deposited / order.failed 시 재조회). */
 export function useOrder(orderId: number, token: string | null) {
   const [order, setOrder] = useState<orderApi.Order | null>(null);
@@ -33,26 +36,61 @@ export function useOrder(orderId: number, token: string | null) {
   useEffect(() => {
     if (!Number.isFinite(orderId)) return;
     refresh();
-    const es = new EventSource(orderApi.orderSseUrl(orderId));
-    es.addEventListener("order.paid", () => refresh());
-    es.addEventListener("payment.vbank.deposited", () => refresh());
-    es.addEventListener("order.failed", () => refresh());
 
-    // SSE 이벤트는 재전송되지 않는다. 구독하지 않은 구간에 order.paid 가 지나가면
-    // 화면이 "결제 대기"에 머문 채 영영 갱신되지 않는다 — 종료 상태라 후속 이벤트가 없다.
-    // 구독 공백은 두 군데에서 생긴다:
-    //   ① 위 refresh() 응답 ~ 구독 성립 사이 (특히 PG 리다이렉트 직후 마운트될 때 위험)
-    //   ② 연결이 끊겼다 브라우저가 자동 재연결하기까지
-    // 둘 다 "구독이 성립한 시점"에 다시 읽으면 닫힌다. 그래서 최초/재연결을 구분하지 않고
-    // 모든 onopen에서 재조회한다 — 마운트 시 GET이 한 번 중복되지만 그 대가가 더 싸다.
-    // (위 refresh()는 SSE가 아예 열리지 않는 경우의 폴백이라 없앨 수 없다.)
-    // SSE는 트리거이고 진실원은 서버다(ADR-008).
-    es.onopen = () => refresh();
-    // onerror에서 할 일은 없다. EventSource가 스스로 재연결하고, 복구는 onopen이 한다.
-    es.onerror = () => {};
+    let es: EventSource | null = null;
+    let closed = false;
+    let retry: ReturnType<typeof setTimeout> | null = null;
 
-    return () => es.close();
-  }, [orderId, refresh]);
+    const connect = async () => {
+      if (closed) return;
+      let ticket: string;
+      try {
+        // 구독 자격은 티켓으로 받는다 — EventSource는 Authorization 헤더를 붙이지 못한다.
+        ({ ticket } = await orderApi.issueSseTicket(orderId, token));
+      } catch {
+        // 티켓을 못 받으면 푸시는 포기한다. 화면은 위 refresh()가 이미 채웠고,
+        // 진실원은 서버라 SSE가 없다고 값이 틀리지는 않는다(ADR-008).
+        return;
+      }
+      if (closed) return;
+
+      es = new EventSource(orderApi.orderSseUrl(orderId, ticket));
+      es.addEventListener("order.paid", () => refresh());
+      es.addEventListener("payment.vbank.deposited", () => refresh());
+      es.addEventListener("order.failed", () => refresh());
+
+      // SSE 이벤트는 재전송되지 않는다. 구독하지 않은 구간에 order.paid 가 지나가면
+      // 화면이 "결제 대기"에 머문 채 영영 갱신되지 않는다 — 종료 상태라 후속 이벤트가 없다.
+      // 구독 공백은 두 군데에서 생긴다:
+      //   ① 위 refresh() 응답 ~ 구독 성립 사이 (특히 PG 리다이렉트 직후 마운트될 때 위험)
+      //   ② 연결이 끊겼다 재연결이 성립하기까지
+      // 둘 다 "구독이 성립한 시점"에 다시 읽으면 닫힌다. 그래서 최초/재연결을 구분하지 않고
+      // 모든 onopen에서 재조회한다 — 마운트 시 GET이 한 번 중복되지만 그 대가가 더 싸다.
+      // SSE는 트리거이고 진실원은 서버다(ADR-008).
+      es.onopen = () => refresh();
+
+      // **브라우저가 재연결을 포기했을 때만 개입한다.**
+      // 일시적 단절(ALB idle timeout 등)에서는 readyState가 CONNECTING이고 브라우저가 알아서
+      // 다시 붙는다 — 그 경로는 그대로 둔다. 반면 티켓이 만료되면 서버가 401을 주고,
+      // EventSource는 2xx가 아닌 응답에 재연결을 포기하며 CLOSED가 된다. 그때는 우리가
+      // 새 티켓을 받아 다시 열어야 한다. 이 구분이 없으면 둘 중 하나가 깨진다 —
+      // 항상 개입하면 60초마다 티켓을 새로 받고, 전혀 개입하지 않으면 만료 후 영영 끊긴다.
+      es.onerror = () => {
+        if (es?.readyState !== EventSource.CLOSED || closed) return;
+        es.close();
+        es = null;
+        retry = setTimeout(connect, SSE_RETRY_DELAY_MS);
+      };
+    };
+
+    void connect();
+
+    return () => {
+      closed = true;
+      if (retry) clearTimeout(retry);
+      es?.close();
+    };
+  }, [orderId, token, refresh]);
 
   return { order, loading, error, refresh };
 }

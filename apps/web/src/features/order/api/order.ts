@@ -51,8 +51,16 @@ export const confirmPayment = (orderId: number, paymentKey: string, token: strin
 export const confirmVbankDeposit = (orderId: number, token: string | null) =>
   api<PaymentResult>(`/dev/vbank/${orderId}/deposit`, { method: "POST", token });
 
+/**
+ * 주문 SSE 구독 티켓 발급(소유자만). EventSource는 Authorization 헤더를 붙이지 못해
+ * 자격증명을 URL로 실어야 하는데, access token을 그대로 싣지 않기 위한 단명 전용 티켓이다.
+ */
+export const issueSseTicket = (orderId: number, token: string | null) =>
+  api<{ ticket: string }>(`/orders/${orderId}/sse-ticket`, { method: "POST", token });
+
 /** 주문 실시간 SSE. order.paid / payment.vbank.deposited / order.failed. */
-export const orderSseUrl = (orderId: number) => `/api/sse/orders/${orderId}`;
+export const orderSseUrl = (orderId: number, ticket: string) =>
+  `/api/sse/orders/${orderId}?ticket=${encodeURIComponent(ticket)}`;
 
 // --- 마이페이지(S06) ---
 export type Page<T> = { items: T[]; page: number; size: number; total: number };

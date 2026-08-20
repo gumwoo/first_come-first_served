@@ -54,6 +54,13 @@ public class OutboxEvent {
     private LocalDateTime publishedAt;
 
     /**
+     * <b>마지막 시도의 실패 원인.</b> 성공하면 비운다 — 남겨두면 PUBLISHED인데 오류가 붙어 있는
+     * 모순된 상태가 되어 운영자가 "발행됐는데 아직 문제가 있나"로 읽는다.
+     */
+    @Column(name = "last_error", columnDefinition = "text")
+    private String lastError;
+
+    /**
      * id를 호출자가 정한다 — 같은 UUID를 payload 안(eventId)에도 넣어 <b>행 PK == 소비자 멱등 키</b>를
      * 맞추기 위함. 릴레이는 payload를 그대로 발행하므로 재발행돼도 소비자가 동일 키로 중복을 흡수한다.
      */
@@ -72,10 +79,39 @@ public class OutboxEvent {
     public void markPublished() {
         this.status = OutboxStatus.PUBLISHED;
         this.publishedAt = LocalDateTime.now();
+        // 앞선 틱의 일시적 실패 기록을 지운다. attempts는 남겨 "몇 번 만에 나갔는지"를 보존한다.
+        this.lastError = null;
     }
 
-    /** 발행 실패 — PENDING을 유지해 다음 틱에 재시도. 시도 횟수는 운영 가시성용. */
-    public void markAttemptFailed() {
+    /**
+     * <b>일시적</b> 발행 실패 — PENDING을 유지해 다음 틱에 재시도. 시도 횟수는 운영 가시성용.
+     * 브로커·네트워크 장애가 여기 해당하며, 시도 횟수만으로 DEAD로 넘기지 않는다.
+     *
+     * <p>여기서 남긴 원인은 <b>다음 시도가 성공하면 지워진다</b>({@link #markPublished()}).
+     */
+    public void markAttemptFailed(String reason) {
         this.attempts++;
+        this.lastError = truncate(reason);
+    }
+
+    /**
+     * <b>결정적</b> 실패 — 재시도해도 결과가 같으므로 릴레이 후보에서 뺀다. payload를 해석할 수
+     * 없어 애초에 Kafka로 보낼 객체를 만들지 못하는 경우다.
+     *
+     * <p>시도 횟수도 함께 올린다. "0회 시도인데 DEAD"로 보이면 운영자가 원인을 오해한다 —
+     * 실제로는 한 번 시도했고 그 결과가 결정적이었다.
+     */
+    public void markDead(String reason) {
+        this.attempts++;
+        this.status = OutboxStatus.DEAD;
+        this.lastError = truncate(reason);
+    }
+
+    /** 스택트레이스가 통째로 들어와 로그·조회를 뭉개지 않게 자른다. 판단에 필요한 건 앞부분이다. */
+    private static String truncate(String reason) {
+        if (reason == null) {
+            return null;
+        }
+        return reason.length() <= 500 ? reason : reason.substring(0, 500);
     }
 }

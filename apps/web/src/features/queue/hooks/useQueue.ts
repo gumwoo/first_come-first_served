@@ -8,19 +8,30 @@ import * as queueApi from "@/features/queue/api/queue";
 export type QueuePhase = "loading" | "waiting" | "admitted" | "expired" | "error";
 
 /**
- * 대기열 상태 폴링 주기(ms). **환경별로 조정 가능한 운영 파라미터**다 —
- * SSE가 아예 열리지 않는 환경(일부 프록시)을 위한 최종 안전망이라 완전히 없앨 수는 없고,
- * 얼마나 자주 돌지는 부하와 반응성의 트레이드오프라 환경마다 다를 수 있다([[ADR-015]] ③).
- *
- * <p>현재 기본값 2000ms는 **운영에서 아직 바꾸지 않았다.** ③의 최종 주기는
- * `/queue/status`의 요청당 비용과 사용자 반응성을 재고 나서 정한다.
+ * 대기열 상태 폴링의 **최소** 주기(ms). SSE가 아예 열리지 않는 환경(일부 프록시)에서는 이것이
+ * 유일한 채널이므로 완전히 없앨 수는 없다([[ADR-015]] ③).
  *
  * <p>⚠️ E2E는 이 값을 600000(10분)으로 준다. **그 값은 운영 후보가 아니다** —
  * `admit-ttl`(300초)보다도 길어 운영에서는 성립하지 않는다. 폴링을 테스트 시간 밖으로
  * 밀어내 <b>재연결 시 onopen 재조회만으로 복구되는지를 격리 검증</b>하기 위한 값이다.
  * 폴링이 살아 있으면 그게 먼저 복구해버려 onopen 경로를 증명할 수 없다.
  */
-const POLL_INTERVAL_MS = Number(process.env.NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS) || 2000;
+const POLL_MIN_MS = Number(process.env.NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS) || 2000;
+
+/**
+ * SSE가 건강할 때 폴링이 늘어날 수 있는 **상한**(ms).
+ *
+ * <p>대기 인원이 늘면 폴링 부하가 그대로 따라 늘어난다 — 2초 고정이면 대기 1만 명이
+ * 초당 5,000건이다. 선착순에서는 부하가 몰릴수록 대기자도 많아지므로, **부하가 스스로를
+ * 키우는 되먹임**이 된다.
+ *
+ * <p>{@code POLL_MIN_MS}와의 최댓값을 취하는 이유: E2E가 최소 주기를 10분으로 밀어 놓았을 때
+ * 상한이 그보다 작으면 백오프가 오히려 주기를 **줄여** 폴링을 테스트 창 안으로 되돌린다.
+ */
+const POLL_MAX_MS = Math.max(
+  POLL_MIN_MS,
+  Number(process.env.NEXT_PUBLIC_QUEUE_POLL_MAX_MS) || 15000
+);
 
 /**
  * 대기열 진입 + 실시간(SSE) + 폴링 폴백. 상태를 phase로 노출.
@@ -39,7 +50,10 @@ export function useQueue(eventId: number) {
   useEffect(() => {
     if (!Number.isFinite(eventId)) return;
     let es: EventSource | null = null;
-    let poll: ReturnType<typeof setInterval> | null = null;
+    let poll: ReturnType<typeof setTimeout> | null = null;
+    // SSE 구독이 성립해 있는가. 폴링을 늘려도 되는지를 이 값 하나로 판단한다.
+    let sseHealthy = false;
+    let pollDelay = POLL_MIN_MS;
     let cancelled = false;
 
     // admitted·expired는 되돌아가지 않는 종료 상태다. 확정되면 진행 중인 폴링 응답을
@@ -51,7 +65,7 @@ export function useQueue(eventId: number) {
     const settle = (next: "admitted" | "expired") => {
       terminal = true;
       if (poll) {
-        clearInterval(poll);
+        clearTimeout(poll);
         poll = null;
       }
       if (!cancelled) setPhase(next);
@@ -112,14 +126,38 @@ export function useQueue(eventId: number) {
         // 현재는 2초 폴링이 /queue/status를 다시 읽어 이 공백을 복구한다.
         // onopen 재조회는 이 복구를 SSE 재연결 경로에도 만들어,
         // 이후 폴링 주기를 늘릴 수 있게 하는 선행 조건이다([[ADR-015]]).
-        es.onopen = () => refresh();
-        // onerror에서 할 일은 없다. EventSource가 스스로 재연결하고, 복구는 onopen이 한다.
-        es.onerror = () => {};
+        es.onopen = () => {
+          sseHealthy = true;
+          refresh();
+        };
+        // 재연결은 여전히 브라우저가 하고 복구는 onopen이 한다 — 그 설계는 그대로다.
+        // 여기서 하는 일은 **폴링을 다시 촘촘하게 되돌리는 것**뿐이다. 연결이 끊긴 구간이
+        // 정확히 이벤트를 놓치는 구간이므로, 그동안에는 안전망이 촘촘해야 한다.
+        es.onerror = () => {
+          sseHealthy = false;
+          pollDelay = POLL_MIN_MS;
+        };
 
-        // 최종 안전망 — SSE가 아예 열리지 않는 환경(일부 프록시)에서는 이것만 남는다.
-        // 주기는 위 POLL_INTERVAL_MS 참고(운영 기본 2000ms, ADR-015 ③에서 측정 후 조정).
+        // 최종 안전망. setInterval이 아니라 매번 다시 예약하는 이유는 **주기가 변하기 때문**이다.
+        //
+        // SSE가 성립해 있는 동안에는 주기를 배로 늘린다(상한 POLL_MAX_MS). 재연결 공백은
+        // onopen 재조회가 닫으므로(#238), 그 구간의 복구를 폴링에 의존하지 않아도 된다.
+        // SSE가 한 번도 열리지 않았거나 끊긴 동안에는 최소 주기를 유지한다 — 그때는 폴링이
+        // 유일한 복구 경로다.
+        //
+        // ⚠️ 대가: SSE가 **열려 있는데도** 이벤트가 유실되는 경우의 복구가 최대 POLL_MAX_MS까지
+        // 늦어진다. 연결이 살아 있으면 서버가 그 연결로 보내므로(QueueSseRegistry.deliverLocal)
+        // 흔한 경우는 아니지만, 0은 아니다.
+        const schedulePoll = () => {
+          if (terminal || cancelled) return;
+          poll = setTimeout(async () => {
+            await refresh();
+            if (sseHealthy) pollDelay = Math.min(pollDelay * 2, POLL_MAX_MS);
+            schedulePoll();
+          }, pollDelay);
+        };
         if (!terminal) {
-          poll = setInterval(refresh, POLL_INTERVAL_MS);
+          schedulePoll();
         }
       } catch {
         if (!cancelled) setPhase("error");
@@ -129,7 +167,7 @@ export function useQueue(eventId: number) {
     return () => {
       cancelled = true;
       es?.close();
-      if (poll) clearInterval(poll);
+      if (poll) clearTimeout(poll);
     };
   }, [eventId, accessToken]);
 

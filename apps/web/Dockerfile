@@ -51,6 +51,12 @@ ENV NEXT_PUBLIC_TOSS_CLIENT_KEY=$NEXT_PUBLIC_TOSS_CLIENT_KEY
 ARG NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS=
 ENV NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS=$NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS
 
+# 폴링 백오프 상한. 위와 같은 이유로 여기서 받는다. 비어도 안전하다(useQueue가 `|| 15000`).
+# ⚠️ useQueue는 max(MIN, MAX)를 쓴다 — E2E처럼 MIN을 10분으로 밀어 놓은 빌드에서 상한이
+# 그보다 작으면 백오프가 오히려 주기를 **줄여** 폴링을 테스트 창 안으로 되돌리기 때문이다.
+ARG NEXT_PUBLIC_QUEUE_POLL_MAX_MS=
+ENV NEXT_PUBLIC_QUEUE_POLL_MAX_MS=$NEXT_PUBLIC_QUEUE_POLL_MAX_MS
+
 # standalone은 로컬(Windows) 빌드를 심볼릭 링크 권한 문제로 깨뜨리므로 이미지 빌드에서만 켠다.
 ENV NEXT_OUTPUT_STANDALONE=true
 ENV NEXT_TELEMETRY_DISABLED=1

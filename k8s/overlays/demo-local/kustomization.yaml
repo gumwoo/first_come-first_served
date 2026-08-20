@@ -17,10 +17,10 @@ resources:
 images:
   - name: flowticket-api
     newName: 891612580915.dkr.ecr.ap-northeast-2.amazonaws.com/flowticket-api
-    newTag: 11c29b7ead088a88867e7626cac1575c610da77d
+    newTag: 8a4047c0b1bb4e9c55cd20aa88bb7fc80b6379d6
   - name: flowticket-web
     newName: 891612580915.dkr.ecr.ap-northeast-2.amazonaws.com/flowticket-web
-    newTag: 11c29b7ead088a88867e7626cac1575c610da77d
+    newTag: 8a4047c0b1bb4e9c55cd20aa88bb7fc80b6379d6
 
 # ── ConfigMap: 데이터 엔드포인트 ──────────────────────────────────
 # DB_HOST에는 **포트를 붙이지 않는다** — 모듈이 aws_db_instance.address(호스트만)를 반환하고

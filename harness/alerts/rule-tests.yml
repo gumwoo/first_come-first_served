@@ -4,6 +4,13 @@
 # ⚠️ 이 테스트가 잡지 못하는 것: **지표 이름 오타.** 규칙과 테스트에 같은 이름을 쓰면 둘 다
 # 통과한다. 그쪽은 렌더링된 스크랩 출력과 대조하는 백엔드 테스트가 맡는다
 # (apps/api/src/test/java/com/flowticket/global/metrics/OperationalMetricsTest.java).
+#
+# ⚠️ **음성 케이스(`exp_alerts: []`)만 두면 공허하게 통과한다** — alertname에 오타가 있으면
+# 규칙을 못 찾아 알림이 0건이 되고, 그게 기대값과 일치해 버린다. 그래서 음성 케이스가 있는
+# alertname마다 **같은 이름을 쓰는 양성 케이스를 짝지었다.** 이름이 틀리면 양성 쪽이 깨진다.
+#
+# ⚠️ 남은 공백: FlowticketDlqBacklog · FlowticketConsumerLag · FlowticketBlacklistCheckFailing은
+# `check rules`(문법·표현식)만 거치고 발화 판정 테스트가 없다.
 rule_files:
   - rules.yml
 
@@ -65,3 +72,40 @@ tests:
                 재시도로 성공할 수 없어 DEAD로 격리된 행이다. 같은 aggregate의 후속 이벤트가 보류된다.
                 /admin/outbox 에서 payload와 lastError를 보고 재발행 또는 폐기를 판단한다.
               runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-032-outbox-poison-row-head-of-line.md"
+
+  # ── 트래픽이 충분하면 같은 규칙이 울린다(위 음성 케이스와 짝) ──
+  # 5xx 0.5/s, 전체 5/s → 비율 10%. 절대 건수 조건도 넘는다.
+  - interval: 1m
+    name: "트래픽이 충분하고 5xx 비율이 5%를 넘으면 울린다"
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="flowticket-api",outcome="SERVER_ERROR"}'
+        values: "0+30x15"
+      - series: 'http_server_requests_seconds_count{job="flowticket-api",outcome="SUCCESS"}'
+        values: "0+270x15"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FlowticketHighServerErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "API 5xx 비율이 5%를 넘었다"
+              description: "5분 평균 5xx 비율 10%. 사용자가 이미 실패를 보고 있다."
+              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/deployment/aws-eks-deploy-plan.md"
+
+  # ── 적체가 지속되면 울린다(위 스파이크 음성 케이스와 짝) ────────
+  - interval: 1m
+    name: "아웃박스 적체가 10분 넘게 지속되면 울린다"
+    input_series:
+      - series: 'flowticket_outbox_events{job="flowticket-api",status="PENDING"}'
+        values: "600x20"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: FlowticketOutboxBacklog
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "아웃박스 미발행 적체가 10분째 500건을 넘는다 (현재 600)"
+              description: "브로커 장애가 지속되고 있을 가능성이 높다. Kafka 상태와 릴레이 로그를 본다."
+              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/improvements/IMP-011-outbox-delivery.md"

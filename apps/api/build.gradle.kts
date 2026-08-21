@@ -55,6 +55,9 @@ dependencies {
     // monitoring — actuator만으로는 /actuator/prometheus가 뜨지 않는다(레지스트리 필요).
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
+    // 지표 이름은 알림 규칙이 문자열로 참조하는 계약이다 — 렌더링된 스크랩 출력과 대조하려면
+    // 테스트 클래스패스에도 있어야 한다(OperationalMetricsTest).
+    testImplementation("io.micrometer:micrometer-registry-prometheus")
     // test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")

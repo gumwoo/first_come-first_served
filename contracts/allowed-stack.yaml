@@ -33,6 +33,9 @@ backend:
     - org.testcontainers:postgresql
     - org.testcontainers:kafka
     - com.redis:testcontainers-redis
+    # 알림 규칙이 참조하는 지표 **이름**을 실제 스크랩 출력으로 대조하기 위해(2026-08-20 추가).
+    # 런타임에는 이미 쓰고 있으나(runtimeOnly) 테스트 클래스패스에는 없었다.
+    - io.micrometer:micrometer-registry-prometheus
 
 frontend:
   allowed:

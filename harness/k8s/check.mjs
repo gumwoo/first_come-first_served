@@ -253,4 +253,40 @@ for (const { doc, file } of docs) {
   );
 }
 
+// ---------- ⑨ ExternalSecret이 실제 적용 경로에 연결돼 있는가 ----------
+//
+// ArgoCD Application은 `k8s/overlays/demo-local` 하나만 동기화한다. 그래서
+// `k8s/external-secrets/`는 **GitOps 대상이 아니고**, 오직 bootstrap.sh가 손으로 적용한다.
+// 매니페스트를 새로 만들고 스크립트에 추가하지 않으면 **파일은 저장소에 있는데 클러스터에는
+// 영영 들어가지 않는다.**
+//
+// 증상이 고약하다: 적용 안 된 ExternalSecret은 오류를 내지 않는다. 그냥 Secret이 안 생기고,
+// 그걸 마운트하는 파드가 ContainerCreating에서 멈춘다 — 원인에서 한 칸 떨어진 곳에서 터진다.
+// 실제로 Alertmanager용 ExternalSecret을 추가하면서 이 연결을 빠뜨렸고, CI는 GREEN이었다
+// (문법·규칙·지표 이름은 봤지만 "배포 경로에 있는가"는 아무도 보지 않았다).
+const ES_DIR = path.join(REPO_ROOT, K8S, "external-secrets");
+if (fs.existsSync(ES_DIR)) {
+  const bootstrapPath = path.join(ES_DIR, "bootstrap.sh");
+  if (!fs.existsSync(bootstrapPath)) {
+    r.fail(
+      `ExternalSecret 적용 경로 없음: ${K8S}/external-secrets/bootstrap.sh 가 없다 — ` +
+        `이 디렉터리는 ArgoCD 대상이 아니라 스크립트로만 적용된다`
+    );
+  } else {
+    const bootstrap = read(bootstrapPath);
+    for (const name of fs.readdirSync(ES_DIR)) {
+      if (!/\.(ya?ml)$/.test(name)) continue;
+      const src = read(path.join(ES_DIR, name));
+      if (!/^\s*kind:\s*ExternalSecret\s*$/m.test(src)) continue;
+      if (!bootstrap.includes(name)) {
+        r.fail(
+          `ExternalSecret이 적용되지 않는다: ${K8S}/external-secrets/${name} — ` +
+            `bootstrap.sh가 이 파일을 apply하지 않는다. ArgoCD는 overlays만 보므로 ` +
+            `여기 없으면 클러스터에 영영 들어가지 않는다(Secret 없음 → 마운트하는 파드가 기동 실패)`
+        );
+      }
+    }
+  }
+}
+
 r.done();

@@ -13,3 +13,4 @@ resources:
   - podmonitor-kafka.yaml
   - dashboard-flowticket.yaml
   - dashboard-kafka.yaml
+  - prometheusrule-flowticket.yaml

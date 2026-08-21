@@ -1,0 +1,108 @@
+# 알림 규칙(S09 관측). **6개로 시작한다** — 도입 실패의 가장 흔한 원인이 "처음에 다 켜서 소음이
+# 되는 것"이고, 이 저장소는 이미 "알림이 없다"를 세 문서에 한계로 적었다(TS-032·ADR-008·ADR-016).
+# 반대로 소음을 만들면 결과가 같다: 아무도 안 본다.
+#
+# 채택 기준은 하나다 — **"이 알림을 받으면 사람이 지금 무엇을 하는가?"에 답이 있는가.**
+# 답이 "나중에 본다"면 그건 알림이 아니라 대시보드다. 그래서 뺀 것:
+#   * p99 지연 급증  — 5xx와 겹쳐 울린다. 필요해지면 억제 규칙과 함께 넣는다
+#   * HPA max 도달   — 용량 신호지 사건이 아니다. 대시보드가 맞다
+#
+# 모든 규칙에 `for:`와 `runbook_url`을 단다. 전자는 플래핑을 막고, 후자가 없으면 받는 사람이
+# 무엇을 해야 할지 모른다. 이 저장소는 TS/ADR 문서가 그대로 runbook 역할을 한다.
+#
+# ⚠️ 스크랩 간격은 15초다(servicemonitor-api.yaml). `for:`는 그보다 충분히 커야 한 번의
+# 스크랩 실패로 울리지 않는다.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: flowticket-alerts
+  namespace: monitoring
+  labels:
+    # kube-prometheus-stack의 ruleSelector가 이 라벨로 규칙을 고른다.
+    # 빠지면 파일이 적용돼도 Prometheus가 로드하지 않는다 — 조용히 아무 일도 안 일어난다.
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: flowticket.symptoms
+      # 사용자에게 이미 영향이 간 것들.
+      rules:
+        - alert: FlowticketHighServerErrorRate
+          # outcome 라벨은 Spring Boot가 붙인다(SERVER_ERROR = 5xx).
+          # 분모에 요청이 거의 없을 때 비율이 튀는 것을 막으려 절대 건수 조건을 함께 건다.
+          expr: |
+            (
+              sum(rate(http_server_requests_seconds_count{job="flowticket-api",outcome="SERVER_ERROR"}[5m]))
+              /
+              sum(rate(http_server_requests_seconds_count{job="flowticket-api"}[5m]))
+            ) > 0.05
+            and
+            sum(rate(http_server_requests_seconds_count{job="flowticket-api",outcome="SERVER_ERROR"}[5m])) > 0.1
+          for: 2m
+          labels: { severity: critical }
+          annotations:
+            summary: "API 5xx 비율이 5%를 넘었다"
+            description: "5분 평균 5xx 비율 {{ $value | humanizePercentage }}. 사용자가 이미 실패를 보고 있다."
+            runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/deployment/aws-eks-deploy-plan.md"
+
+    - name: flowticket.backlog
+      # **사용자 요청은 전부 성공하는데 뒤에서만 쌓이는** 것들. 에러율·지연에 나타나지 않아
+      # 세어서 내보내지 않으면 알아챌 방법이 없다.
+      rules:
+        - alert: FlowticketOutboxDeadRows
+          # 재시도로 풀리지 않는다고 코드가 판정한 상태다. 자동 복구가 없으므로 1건이면 충분하다.
+          expr: max(flowticket_outbox_events{job="flowticket-api",status="DEAD"}) > 0
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "아웃박스에 격리된 이벤트가 있다 ({{ $value }}건)"
+            description: >-
+              재시도로 성공할 수 없어 DEAD로 격리된 행이다. 같은 aggregate의 후속 이벤트가 보류된다.
+              /admin/outbox 에서 payload와 lastError를 보고 재발행 또는 폐기를 판단한다.
+            runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-032-outbox-poison-row-head-of-line.md"
+
+        - alert: FlowticketOutboxBacklog
+          # 브로커 장애의 직접 신호다. **복구되면 스스로 줄어들므로** for를 길게 잡는다 —
+          # 짧으면 정상적인 순간 적체에도 울린다.
+          expr: max(flowticket_outbox_events{job="flowticket-api",status="PENDING"}) > 500
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "아웃박스 미발행 적체가 10분째 500건을 넘는다 (현재 {{ $value }})"
+            description: "브로커 장애가 지속되고 있을 가능성이 높다. Kafka 상태와 릴레이 로그를 본다."
+            runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/improvements/IMP-011-outbox-delivery.md"
+
+        - alert: FlowticketDlqBacklog
+          # 소비 실패로 남은 메시지. 판단(재시도/폐기)은 사람이 한다(ADR-008).
+          expr: max(flowticket_dlq_messages{job="flowticket-api",status="PENDING"}) > 10
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "DLQ 미처리 메시지가 10건을 넘는다 (현재 {{ $value }})"
+            description: "/admin/dlq 에서 원본 payload와 오류를 보고 재처리 또는 폐기를 판단한다."
+            runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-020-kafka-poison-pill-infinite-retry.md"
+
+        - alert: FlowticketConsumerLag
+          # 클라이언트(api)가 내보내는 lag을 쓴다 — kafka-exporter 배선에 의존하지 않는다.
+          expr: max(kafka_consumer_fetch_manager_records_lag{job="flowticket-api"}) > 1000
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "Kafka consumer lag이 5분째 1000을 넘는다 (현재 {{ $value }})"
+            description: "소비가 발행을 못 따라간다. 컨슈머 오류율과 파드 수를 본다."
+            runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-023-multipod-failover-verification.md"
+
+    - name: flowticket.silent-degradation
+      # 사용자에게 **보이지 않는** 실패. 원칙적으로 알림은 증상에 걸지만, 이건 증상이 없다.
+      rules:
+        - alert: FlowticketBlacklistCheckFailing
+          # Redis 장애 중 로그아웃된 토큰이 남은 TTL 동안 통과한다(ADR-016의 의도된 트레이드오프).
+          # 요청은 전부 200이라 에러율에 나타나지 않는다 — 이 지표만이 유일한 신호다.
+          expr: sum(rate(auth_blacklist_check_failures_total{job="flowticket-api"}[5m])) > 0
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "토큰 블랙리스트 조회가 5분째 실패하고 있다"
+            description: >-
+              Redis를 읽지 못해 fail-open으로 통과시키는 중이다. 이 구간에는 로그아웃된 access token이
+              남은 TTL(최대 30분) 동안 유효하다. Redis 상태를 확인한다.
+            runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/decisions/ADR-016-redis-outage-auth-fail-open.md"

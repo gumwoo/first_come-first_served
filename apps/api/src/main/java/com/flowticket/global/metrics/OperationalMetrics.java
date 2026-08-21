@@ -22,7 +22,8 @@ import org.springframework.stereotype.Component;
  * 콘솔 값은 운영 중 바꿀 수 있고 Prometheus 규칙은 Git에 고정돼, 하나로 묶으면 어느 쪽이
  * 진실인지 모호해진다.
  *
- * <p>⚠️ 게이지는 <b>스크랩 시점에</b> 평가된다 — 스크랩 주기(30초)마다 COUNT 질의가 한 번씩 돈다.
+ * <p>⚠️ 게이지는 <b>스크랩 시점에</b> 평가된다 — 스크랩 주기(15초, servicemonitor-api.yaml)마다
+ * COUNT 질의가 한 번씩 돈다.
  * 대상은 부분 인덱스가 걸린 상태 컬럼이라 싸지만, 공짜는 아니다.
  */
 @Slf4j

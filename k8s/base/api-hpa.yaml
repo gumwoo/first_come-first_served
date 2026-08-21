@@ -13,6 +13,9 @@ spec:
   # api를 9까지 늘릴 여유를 web에 넘긴다(노드 allocatable 5,790m 안에서 둘 다 최대로 갈 수 없다).
   #
   # 부수 효과로 TS-021의 커넥션 상한이 더 안전해진다: 9×5=45 → 7×5=35.
+  #
+  # **7은 성능상 충분하다고 판단한 값이 아니라 예산에 들어가는 최대값이다** —
+  # api 7×300 + web 4×300 + 기타 1,650 = 4,950m / allocatable 5,790m (식은 web-hpa.yaml).
   maxReplicas: 7
   metrics:
     - type: Resource

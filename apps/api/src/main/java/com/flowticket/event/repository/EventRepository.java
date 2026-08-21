@@ -60,6 +60,9 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
                and (e.detailSyncedAt is null or e.detailSyncedAt < :staleBefore)
              order by e.detailSyncedAt asc nulls first
             """)
+    List<Long> findIdsNeedingDetail(@Param("staleBefore") LocalDateTime staleBefore,
+                                    Pageable pageable);
+
     /**
      * 상세를 <b>한 번도 못 받은</b> 공연 수.
      *
@@ -75,7 +78,4 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
 
     /** KOPIS에서 온 공연 수(분모). */
     long countByKopisIdIsNotNull();
-
-    List<Long> findIdsNeedingDetail(@Param("staleBefore") LocalDateTime staleBefore,
-                                    Pageable pageable);
 }

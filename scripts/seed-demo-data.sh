@@ -28,30 +28,20 @@ ssm() { MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "$1" --with-decryption -
 jqr() { jq -r "$@" | tr -d '\r'; }
 
 # ── 상세 데이터 진행 상황 관측 ──────────────────────────────────
-# runningTime은 KOPIS **상세**에서만 오는 값이라, 비어 있으면 상세 미수집이다.
-# (목록에서 오는 posterUrl로는 구분할 수 없다.)
-count_missing_detail() {
-  local ids
-  ids="$(all_event_ids)"
-  [ -z "$ids" ] && { echo 0; return; }
-  # 건별 조회라 순차로 하면 느리다 — 병렬로 던지고 MISSING만 센다.
-  printf '%s\n' "$ids" | xargs -P 10 -I{} sh -c \
-    "curl -sS '$API/events/{}' --max-time 20 | jq -r 'if ((.data.runningTime // \"\") == \"\") then 1 else 0 end'" 2>/dev/null \
-    | tr -d '\r' | awk '{n+=$1} END{print n+0}'
+#
+# ⚠️ 개별 필드로 대신 세면 안 된다. 초안은 `/events/{id}`의 runningTime이 비었는지로 셌는데
+# **그 대리값은 틀렸다** — Event.updateDetail()은 상세 응답에 그 필드가 없어도
+# detailSyncedAt을 찍는다. 즉 "상세는 받았는데 runningTime만 없는 공연"이 정상적으로 존재하고,
+# 그것들은 다음 회차 대상에서 빠지므로 대리값 카운터는 **영원히 0에 도달하지 못한다**.
+# (실기동에서 53건이 그 상태로 남아 루프가 헛돌았다.)
+#
+# 그래서 도메인 값을 그대로 내려주는 읽기 전용 엔드포인트를 쓴다.
+missing_detail() {
+  curl -sS "$API/admin/sync/kopis/status" -H "Authorization: Bearer $TOKEN" --max-time 25     | jqr '.data.detailMissing // 0'
 }
 
-# ON_SALE만이 아니라 **전체**를 본다 — 상세 배치 대상이 상태를 가리지 않기 때문이다
-# (findIdsNeedingDetail은 kopisId만 보고 고른다). ON_SALE만 세면 진행을 오판한다.
-all_event_ids() {
-  local page=0 out="" chunk
-  while [ "$page" -lt 30 ]; do
-    chunk="$(curl -sS "$API/events?size=100&page=$page" --max-time 25 | jqr '.data.items[].id')"
-    [ -z "$chunk" ] && break
-    out="$out$chunk
-"
-    page=$((page+1))
-  done
-  printf '%s' "$out" | grep -v '^$' || true
+total_events() {
+  curl -sS "$API/admin/sync/kopis/status" -H "Authorization: Bearer $TOKEN" --max-time 25     | jqr '.data.totalEvents // 0'
 }
 
 # 동기화 트리거. 504(ALB 60초 < 동기화)와 409(ShedLock 중복 차단)는 정상 경로다.
@@ -131,12 +121,12 @@ if [ "$ROUNDS" -gt 0 ]; then
   echo "==> 상세 데이터 채우기 (회차당 300건 상한, 최대 ${ROUNDS}회)"
   prev=-1
   for r in $(seq 1 "$ROUNDS"); do
-    missing="$(count_missing_detail)"
-    echo "    [$r/$ROUNDS] 상세 없음 ${missing}건"
+    missing="$(missing_detail)"
+    echo "    [$r/$ROUNDS] 상세 미수집 ${missing}건 / 전체 $(total_events)건"
     [ "$missing" -eq 0 ] && break
     # 진행이 멈췄으면 더 돌려도 같다 — KOPIS가 그 공연들의 상세를 주지 않는 경우다.
     if [ "$missing" -eq "$prev" ]; then
-      echo "    진행이 멈췄다(${missing}건 그대로) — KOPIS가 상세를 주지 않는 공연으로 보고 중단한다"
+      echo "    진행이 멈췄다(${missing}건 그대로) — 상세 조회가 반복 실패하는 공연으로 보고 중단한다"
       break
     fi
     prev="$missing"
@@ -146,11 +136,11 @@ if [ "$ROUNDS" -gt 0 ]; then
     echo "        동기화 대기 (약 3분)"
     sleep 190
   done
-  final="$(count_missing_detail)"
+  final="$(missing_detail)"
   if [ "$final" -eq 0 ]; then
     echo "    ✓ 상세 전량 확보"
   else
-    echo "    ⚠️ 상세 없음 ${final}건 남음 — KOPIS 원본에 상세가 없는 공연일 수 있다" >&2
+    echo "    ⚠️ 상세 미수집 ${final}건 남음 — KOPIS 상세 조회가 실패하는 공연이다" >&2
   fi
 fi
 

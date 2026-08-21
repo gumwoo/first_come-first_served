@@ -21,6 +21,7 @@ endpoints:
   - { method: GET,    path: "/search",                   slice: S02 }
   - { method: GET,    path: "/search/popular-keywords",  slice: S02 }
   - { method: POST,   path: "/admin/sync/kopis",         slice: S02 }
+  - { method: GET,    path: "/admin/sync/kopis/status",  slice: S02 }  # 상세 동기화 진행 상황(기동 스크립트)
 
   # S03 대기열
   - { method: POST,   path: "/events/{id}/queue/token",  slice: S03 }

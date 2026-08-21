@@ -60,6 +60,22 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
                and (e.detailSyncedAt is null or e.detailSyncedAt < :staleBefore)
              order by e.detailSyncedAt asc nulls first
             """)
+    /**
+     * 상세를 <b>한 번도 못 받은</b> 공연 수.
+     *
+     * <p>{@code findIdsNeedingDetail}과 조건이 일부러 다르다 — 그쪽은 "오래된 것"도 대상에
+     * 넣어 순환 갱신하므로 <b>0이 될 수 없다</b>(7일이 지나면 다시 대상이 된다).
+     * 이 값은 "초기 수집이 끝났는가"를 묻는 것이라 NULL만 센다.
+     *
+     * <p>⚠️ {@code runningTime} 같은 개별 필드로 대신 판정하면 안 된다.
+     * {@code Event.updateDetail()}은 상세 응답에 그 필드가 없어도 {@code detailSyncedAt}을
+     * 찍는다 — 즉 <b>상세는 받았는데 runningTime만 비어 있는 공연</b>이 정상적으로 존재한다.
+     */
+    long countByKopisIdIsNotNullAndDetailSyncedAtIsNull();
+
+    /** KOPIS에서 온 공연 수(분모). */
+    long countByKopisIdIsNotNull();
+
     List<Long> findIdsNeedingDetail(@Param("staleBefore") LocalDateTime staleBefore,
                                     Pageable pageable);
 }

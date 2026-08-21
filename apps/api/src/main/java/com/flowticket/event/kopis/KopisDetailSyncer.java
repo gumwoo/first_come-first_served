@@ -44,6 +44,21 @@ public class KopisDetailSyncer {
     }
 
     /**
+     * 상세를 <b>한 번도 못 받은</b> 공연 수. 0이면 초기 수집이 끝났다는 뜻이다.
+     *
+     * <p>{@link #syncMissingDetails()}의 대상 조건과 일부러 다르다 — 그쪽은 "오래된 것"도 넣어
+     * 순환 갱신하므로 <b>0이 될 수 없다</b>. 이 값은 "초기 수집 완료"를 묻는다.
+     */
+    public long missingDetailCount() {
+        return eventRepository.countByKopisIdIsNotNullAndDetailSyncedAtIsNull();
+    }
+
+    /** KOPIS에서 온 공연 수(분모). */
+    public long totalKopisEvents() {
+        return eventRepository.countByKopisIdIsNotNull();
+    }
+
+    /**
      * 상세를 <b>채우고 갱신</b>한다. 미수집(NULL)과 오래된 것(stale)을 함께 대상으로 삼되,
      * 한 번에 {@code detail-batch-limit}건까지만 처리한다.
      *

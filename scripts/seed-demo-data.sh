@@ -9,8 +9,8 @@
 #
 # ⚠️ **"전부 채운다"가 아니라 "부하 측정이 성립할 만큼 채운다"이다.** 세 층이 모두 부분적이다.
 #   목록: 오늘~+90일, 31일 청크, 최대 10페이지 (kopis.sync.days / max-pages)
-#   상세: 1회에 끝나지 않는다 — best-effort이고 남은 건 detailSyncedAt이 NULL로 남아
-#         **다음 회차가 이어받는다.** 상세를 다 채우려면 이 스크립트를 여러 번 돌려야 한다.
+#   상세: **회차당 300건 상한**이라 1회로 안 끝난다(kopis.sync.detail-batch-limit).
+#         이 스크립트는 남은 건이 0이 될 때까지 **반복 호출**한다(아래 SEED_DETAIL_ROUNDS).
 #   좌석: 동기화가 seedSellable()로 자동 시딩하고, 아래 확인은 **앞 20건만** 본다.
 #         20이 임의값이 아니다 — k6의 discoverEvent()가 `size=20`에서 좌석 있는 공연을
 #         고르므로(infra/k6/lib.js), 부하 측정이 보는 범위와 정확히 같다.
@@ -26,6 +26,29 @@ ssm() { MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "$1" --with-decryption -
 # ⚠️ Git Bash의 jq는 출력 끝에 CR을 붙인다. 그대로 URL에 넣으면 경로 중간에 CR이 들어가
 # curl이 "Malformed input to a URL function"으로 죽는다(2026-08-21에 실제로 걸렸다).
 jqr() { jq -r "$@" | tr -d '\r'; }
+
+# ── 상세 데이터 진행 상황 관측 ──────────────────────────────────
+#
+# ⚠️ 개별 필드로 대신 세면 안 된다. 초안은 `/events/{id}`의 runningTime이 비었는지로 셌는데
+# **그 대리값은 틀렸다** — Event.updateDetail()은 상세 응답에 그 필드가 없어도
+# detailSyncedAt을 찍는다. 즉 "상세는 받았는데 runningTime만 없는 공연"이 정상적으로 존재하고,
+# 그것들은 다음 회차 대상에서 빠지므로 대리값 카운터는 **영원히 0에 도달하지 못한다**.
+# (실기동에서 53건이 그 상태로 남아 루프가 헛돌았다.)
+#
+# 그래서 도메인 값을 그대로 내려주는 읽기 전용 엔드포인트를 쓴다.
+missing_detail() {
+  curl -sS "$API/admin/sync/kopis/status" -H "Authorization: Bearer $TOKEN" --max-time 25     | jqr '.data.detailMissing // 0'
+}
+
+total_events() {
+  curl -sS "$API/admin/sync/kopis/status" -H "Authorization: Bearer $TOKEN" --max-time 25     | jqr '.data.totalEvents // 0'
+}
+
+# 동기화 트리거. 504(ALB 60초 < 동기화)와 409(ShedLock 중복 차단)는 정상 경로다.
+trigger_sync() {
+  curl -sS -o /dev/null -w '' -X POST "$API/admin/sync/kopis" \
+    -H "Authorization: Bearer $TOKEN" --max-time 70 >/dev/null 2>&1 || true
+}
 
 echo "==> 1/4 관리자 자격증명 조회(SSM)"
 ADMIN_EMAIL="$(ssm /flowticket/ADMIN_EMAIL)"
@@ -82,6 +105,45 @@ for id in $IDS; do
   fi
 done
 echo "    좌석 있음 ${already}건 / 보조 시딩 ${seeded}건"
+# ── 상세 데이터 채우기 ────────────────────────────────────────────
+#
+# ⚠️ **이건 운영 기본 동작과 다르다.** 앱은 일부러 회차당 300건만 처리한다 —
+# "오래된 순으로 300건씩 순환시켜 전체가 약 5일에 한 바퀴, KOPIS 호출량은 하루 300건으로 일정"
+# 이 설계 의도다(EventRepository.findIdsNeedingDetail javadoc).
+#
+# 여기서 반복하는 이유는 **갓 만든 클러스터는 전부 비어 있어서**다. 며칠을 기다릴 수 없다.
+# 속도 제한은 지킨다(앱의 KopisRateLimiter 5회/초, KOPIS 허용은 IP당 10회/초 — IMP-018).
+# 일일 총량 제한은 확인된 바 없다.
+#
+# 끄려면: SEED_DETAIL_ROUNDS=0 bash scripts/seed-demo-data.sh
+ROUNDS="${SEED_DETAIL_ROUNDS:-10}"
+if [ "$ROUNDS" -gt 0 ]; then
+  echo "==> 상세 데이터 채우기 (회차당 300건 상한, 최대 ${ROUNDS}회)"
+  prev=-1
+  for r in $(seq 1 "$ROUNDS"); do
+    missing="$(missing_detail)"
+    echo "    [$r/$ROUNDS] 상세 미수집 ${missing}건 / 전체 $(total_events)건"
+    [ "$missing" -eq 0 ] && break
+    # 진행이 멈췄으면 더 돌려도 같다 — KOPIS가 그 공연들의 상세를 주지 않는 경우다.
+    if [ "$missing" -eq "$prev" ]; then
+      echo "    진행이 멈췄다(${missing}건 그대로) — 상세 조회가 반복 실패하는 공연으로 보고 중단한다"
+      break
+    fi
+    prev="$missing"
+    trigger_sync
+    # 동기화 1회는 약 3분 45초다(TS-031). 로그상 상세 배치는 목록 upsert 뒤 약 1분에 끝난다.
+    # 바쁜지 확인하려고 POST를 다시 쏘면 **그게 새 동기화를 시작해버리므로**, 시간으로 기다린다.
+    echo "        동기화 대기 (약 3분)"
+    sleep 190
+  done
+  final="$(missing_detail)"
+  if [ "$final" -eq 0 ]; then
+    echo "    ✓ 상세 전량 확보"
+  else
+    echo "    ⚠️ 상세 미수집 ${final}건 남음 — KOPIS 상세 조회가 실패하는 공연이다" >&2
+  fi
+fi
+
 unset TOKEN
 
 echo

@@ -1,5 +1,6 @@
 package com.flowticket.event.kopis;
 
+import com.flowticket.event.dto.KopisSyncStatusResponse;
 import com.flowticket.seat.service.SeatSeeder;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -11,6 +12,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * KOPIS 동기화 오케스트레이션: 외부 호출(KopisClient, 트랜잭션 밖) → DB upsert(KopisUpserter, 트랜잭션).
@@ -46,6 +48,21 @@ public class KopisSyncService {
         this.rows = rows;
         this.maxPages = maxPages;
         this.self = self;
+    }
+
+    /**
+     * 상세 동기화 진행 상황. 기동 스크립트가 "초기 수집이 끝났는가"를 판단하는 데 쓴다.
+     *
+     * <p>왜 필요한가: 상세는 회차당 상한(300)만큼만 처리되므로 갓 만든 클러스터에서는 여러 번
+     * 돌려야 한다. 그런데 {@code detailSyncedAt}이 어떤 API로도 나가지 않아, 밖에서는
+     * 개별 필드({@code runningTime})가 비었는지로 대신 셀 수밖에 없었다 — <b>그 대리값은 틀리다.</b>
+     * {@code Event.updateDetail()}은 그 필드가 없어도 {@code detailSyncedAt}을 찍기 때문이다.
+     */
+    @Transactional(readOnly = true)
+    public KopisSyncStatusResponse status() {
+        return new KopisSyncStatusResponse(
+                detailSyncer.totalKopisEvents(),
+                detailSyncer.missingDetailCount());
     }
 
     /**

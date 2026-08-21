@@ -123,6 +123,15 @@ for i in $(seq 1 20); do
   sleep 15
 done
 echo "    https://$DOMAIN → $CODE"
+# ⚠️ 여기서 반드시 실패시켜야 한다. 이 스크립트가 주장하는 것은 "기동 절차"가 아니라
+# **"기동 절차 + 확인"**이고, 종료 코드 0은 그 확인까지 통과했다는 뜻이어야 한다.
+# 그러지 않으면 --no-seed 경로에서 5분 내내 502가 나도 0으로 끝난다(뒤에 시딩이 없으므로
+# 아무도 눈치채지 못한다).
+if [ "$CODE" != "200" ]; then
+  echo "기동 확인 실패: https://$DOMAIN → HTTP $CODE (5분 대기 후에도 200이 아니다)" >&2
+  echo "  확인할 것: kubectl get pods -n flowticket / ALB 타깃 헬스 / Route53 전파" >&2
+  exit 1
+fi
 
 if [ "$SEED" -eq 1 ]; then
   echo

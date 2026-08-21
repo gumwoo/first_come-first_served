@@ -7,6 +7,14 @@
 #
 # 자격증명은 **SSM에서 읽고 출력하지 않는다.** 저장소·로그·셸 히스토리에 남기지 않는다.
 #
+# ⚠️ **"전부 채운다"가 아니라 "부하 측정이 성립할 만큼 채운다"이다.** 세 층이 모두 부분적이다.
+#   목록: 오늘~+90일, 31일 청크, 최대 10페이지 (kopis.sync.days / max-pages)
+#   상세: 1회에 끝나지 않는다 — best-effort이고 남은 건 detailSyncedAt이 NULL로 남아
+#         **다음 회차가 이어받는다.** 상세를 다 채우려면 이 스크립트를 여러 번 돌려야 한다.
+#   좌석: 동기화가 seedSellable()로 자동 시딩하고, 아래 확인은 **앞 20건만** 본다.
+#         20이 임의값이 아니다 — k6의 discoverEvent()가 `size=20`에서 좌석 있는 공연을
+#         고르므로(infra/k6/lib.js), 부하 측정이 보는 범위와 정확히 같다.
+#
 # 전제: kubeconfig 설정됨, 앱이 https://<도메인> 으로 응답함.
 set -euo pipefail
 
@@ -60,7 +68,8 @@ echo
 echo "    ON_SALE 공연 $ON_SALE건"
 
 # 좌석은 동기화가 자동 시딩한다(SeatSeeder). 누락분만 보조로 채운다 — 엔드포인트가 멱등이다.
-echo "==> 좌석 확인 및 누락분 시딩"
+# 범위는 k6가 보는 앞 20건과 같다(위 주석 참고).
+echo "==> 좌석 확인 및 누락분 시딩 (k6가 보는 앞 20건)"
 IDS="$(curl -sS "$API/events?status=ON_SALE&size=20" --max-time 20 | jqr '.data.items[].id')"
 seeded=0; already=0
 for id in $IDS; do

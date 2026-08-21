@@ -59,6 +59,28 @@ alertmanager:
               {{ if .Annotations.runbook_url }}<{{ .Annotations.runbook_url }}|runbook>{{ end }}
               {{ end }}
 
+# EKS는 컨트롤플레인이 **관리형**이라 scheduler·controller-manager를 스크랩할 수 없다.
+# 차트 기본값은 그것들이 자체 관리된다고 보고 규칙을 켜므로, 지표가 영영 없는 상태에서
+# KubeSchedulerDown·KubeControllerManagerDown이 **상시 발화**한다.
+#
+# 2026-08-21 기동에서 실제로 우리 Slack 채널로 샜다. 오탐이 섞이면 알림 전체가 무시되므로
+# ("또 그거네") 규칙 6개를 신중히 고른 의미가 사라진다.
+#
+# 스크랩(enabled)과 규칙(defaultRules)을 **둘 다** 꺼야 한다 — 앞의 것만 끄면 타깃은 사라져도
+# 규칙은 남아 계속 울린다.
+#
+# ⚠️ kubeProxy·kubeEtcd는 건드리지 않는다. kube-proxy는 노드 DaemonSet이라 스크랩되고,
+# etcd 규칙은 지표가 없어 inactive로 남는다(실측 확인). 지금 새는 것만 막는다.
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+defaultRules:
+  rules:
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeControllerManager: false
+
 grafana:
   # 데모 클러스터는 수시로 내렸다 올린다. 대시보드는 차트가 기본 제공하는 것을 쓰고,
   # PVC를 잡지 않아 재설치 비용을 0으로 둔다(직접 만든 대시보드는 여기 남지 않는다).

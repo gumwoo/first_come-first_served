@@ -111,6 +111,15 @@ jobs:
         run: npm ci
       - name: backend harness check
         run: node harness/backend/check.mjs
+      # 알림 규칙 검증. **규칙을 썼다**가 아니라 **규칙이 실제로 발화한다**를 확인한다.
+      # promtool은 PrometheusRule(CR)을 모르므로 규칙 본문만 떼어 평문 규칙 파일로 변환한 뒤 넣는다.
+      # 러너에 Docker가 있으므로 promtool을 따로 설치하지 않는다(버전 고정 = 결정론).
+      - name: alert rules (promtool)
+        run: |
+          node harness/alerts/extract-rules.mjs             k8s/monitoring/prometheusrule-flowticket.yaml build/alerts/rules.yml
+          cp harness/alerts/rule-tests.yml build/alerts/
+          docker run --rm -v "$PWD/build/alerts:/w" -w /w prom/prometheus:v2.53.0             promtool check rules rules.yml
+          docker run --rm -v "$PWD/build/alerts:/w" -w /w prom/prometheus:v2.53.0             promtool test rules rule-tests.yml
       # 매니페스트가 앱 코드와 어긋나는지 — apply 전에는 무증상이라 여기서만 잡을 수 있다.
       - name: k8s harness check
         run: node harness/k8s/check.mjs

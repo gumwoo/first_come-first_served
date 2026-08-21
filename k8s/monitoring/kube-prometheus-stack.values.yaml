@@ -4,9 +4,60 @@
 #   helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
 #     -n monitoring --create-namespace -f k8s/monitoring/kube-prometheus-stack.values.yaml
 
-# 알림 수신처가 없어 Alertmanager는 뜨기만 하고 하는 일이 없다 — 노드 자원만 먹어서 끈다.
+# 알림 수신처(Slack)를 붙이면서 켰다. 이전에는 "수신처가 없어 뜨기만 하고 하는 일이 없다"는
+# 이유로 꺼 두었고, 그 결과 **DEAD 행·DLQ 적체·블랙리스트 fail-open이 모두 "누가 대시보드를
+# 봐야 안다"로 끝났다**(TS-032 §7, ADR-008, ADR-016 §관측). 그 공백을 닫는다.
 alertmanager:
-  enabled: false
+  enabled: true
+  alertmanagerSpec:
+    # webhook URL을 파일로 마운트한다. values.yaml에 적으면 공개 저장소에 비밀이 박힌다.
+    # Secret은 ExternalSecret이 SSM에서 만든다(k8s/external-secrets/externalsecret-alertmanager.yaml).
+    #   마운트 경로: /etc/alertmanager/secrets/<시크릿 이름>/<키 이름>
+    secrets: [flowticket-alert-slack]
+    resources:
+      requests: { cpu: 10m, memory: 64Mi }
+      limits: { memory: 128Mi }
+  config:
+    global:
+      # 해소 알림을 보내기까지 기다리는 시간. 스크랩 15초 기준 넉넉하다.
+      resolve_timeout: 5m
+    route:
+      # 같은 알림·네임스페이스는 한 묶음으로 보낸다 — 장애 하나에 메시지 10개가 오지 않게.
+      group_by: [alertname, namespace]
+      group_wait: 30s      # 첫 알림 대기(연쇄를 한 번에 묶는다)
+      group_interval: 5m   # 그룹에 새 알림이 붙었을 때 재발송 간격
+      # ⚠️ 기본값 4h는 이 프로젝트에 맞지 않는다 — 데모 클러스터는 몇 시간만 떠 있어
+      # 사실상 "한 번만 알림"이 되어 재알림 개념이 죽는다.
+      repeat_interval: 1h
+      receiver: slack
+      routes:
+        # Watchdog은 **항상 발화하는** 알림이다. 용도는 하나 — 알림이 안 오는 것이
+        # "평화로워서"인지 "파이프라인이 죽어서"인지 구분하는 것(Dead Man's Switch).
+        # 그래서 Slack으로 보내면 안 된다(계속 울린다).
+        # ⚠️ 운영이라면 healthchecks.io / Dead Man's Snitch 같은 **외부** 감시로 보내야
+        # 의미가 있다. 여기서 버리는 것은 그 감시를 붙이지 않았다는 뜻이고, 그만큼
+        # "알림 파이프라인 자체의 죽음"은 여전히 감지되지 않는다.
+        - matchers: ['alertname="Watchdog"']
+          receiver: "null"
+    inhibit_rules:
+      # 같은 대상에 critical이 울리는 동안 warning을 겹쳐 보내지 않는다.
+      - source_matchers: ['severity="critical"']
+        target_matchers: ['severity="warning"']
+        equal: [alertname, namespace]
+    receivers:
+      - name: "null"
+      - name: slack
+        slack_configs:
+          - api_url_file: /etc/alertmanager/secrets/flowticket-alert-slack/webhook-url
+            # webhook URL 하나 = 채널 하나다. 채널을 나누려면 webhook(=비밀)이 하나 더 필요하다.
+            # 규칙이 6개뿐이라 지금은 한 채널로 받고, severity는 제목으로 구분한다.
+            send_resolved: true
+            title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.severity }} — {{ .CommonLabels.alertname }}'
+            text: >-
+              {{ range .Alerts }}*{{ .Annotations.summary }}*
+              {{ .Annotations.description }}
+              {{ if .Annotations.runbook_url }}<{{ .Annotations.runbook_url }}|runbook>{{ end }}
+              {{ end }}
 
 grafana:
   # 데모 클러스터는 수시로 내렸다 올린다. 대시보드는 차트가 기본 제공하는 것을 쓰고,
@@ -32,6 +83,10 @@ prometheus:
     # k8s/monitoring/servicemonitor-api.yaml이 **조용히 무시된다**.
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
+    # PrometheusRule도 같은 이유로 넓힌다. 규칙 파일에 release 라벨을 달아 두었지만,
+    # helm release 이름을 다르게 설치하면 셀렉터가 어긋나 **규칙이 조용히 로드되지 않는다**
+    # — 실패가 오류가 아니라 "알림이 안 옴"으로 나타나 알아채기 어렵다.
+    ruleSelectorNilUsesHelmValues: false
     # k6가 부하 결과를 직접 밀어 넣을 수 있게 remote write 수신을 연다.
     #   k6 run -o experimental-prometheus-rw ...
     #

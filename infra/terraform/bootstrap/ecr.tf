@@ -42,16 +42,37 @@ resource "aws_ecr_lifecycle_policy" "this" {
   for_each = local.ecr_repositories
 
   repository = aws_ecr_repository.this[each.key].name
+
+  # 규칙 순서가 의미를 만든다. untagged를 **먼저** 걷어내지 않으면, 태그 없는 이미지가
+  # 보관 한도(${var.ecr_keep_last_images}개) 안의 자리를 차지해 **롤백 가능한 태그 이미지가
+  # 그만큼 줄어든다.** 2026-08-22 기준 71개 중 45개가 태그 없는 것이었다.
+  #
+  # 태그 없는 이미지는 같은 SHA를 다시 push할 때 생긴다(image.yml workflow_dispatch 재실행).
+  # 태그로 참조할 수 없으므로 롤백에 쓸 수 없다 — 남겨 둘 이유가 없다.
   policy = jsonencode({
-    rules = [{
-      rulePriority = 1
-      description  = "최근 ${var.ecr_keep_last_images}개만 보관"
-      selection = {
-        tagStatus   = "any"
-        countType   = "imageCountMoreThan"
-        countNumber = var.ecr_keep_last_images
-      }
-      action = { type = "expire" }
-    }]
+    rules = concat(
+      var.ecr_untagged_expire_days > 0 ? [{
+        rulePriority = 1
+        description  = "태그 없는 이미지는 ${var.ecr_untagged_expire_days}일 뒤 정리"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = var.ecr_untagged_expire_days
+        }
+        action = { type = "expire" }
+      }] : [],
+      [{
+        # 우선순위는 위 규칙보다 뒤여야 한다(작은 수가 먼저 평가된다).
+        rulePriority = 2
+        description  = "최근 ${var.ecr_keep_last_images}개만 보관"
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = var.ecr_keep_last_images
+        }
+        action = { type = "expire" }
+      }]
+    )
   })
 }

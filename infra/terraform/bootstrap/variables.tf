@@ -19,6 +19,16 @@ variable "ecr_keep_last_images" {
   default     = 20
 }
 
+variable "ecr_untagged_expire_days" {
+  description = <<-EOT
+    태그 없는 이미지를 며칠 뒤 정리할지. 같은 SHA로 재푸시하면(workflow_dispatch 재실행)
+    이전 이미지가 태그를 잃고 남는다 — 그것들은 태그로 참조할 수 없어 롤백에 쓸 수 없다.
+    0으로 두면 이 규칙을 끈다.
+  EOT
+  type        = number
+  default     = 1
+}
+
 variable "ecr_image_tag_mutability" {
   description = <<-EOT
     MUTABLE 기본. workflow_dispatch로 재실행하면 같은 SHA 태그를 다시 push하므로

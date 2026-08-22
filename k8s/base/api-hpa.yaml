@@ -1,5 +1,6 @@
-# HPA는 **API 티어만** 건다. Kafka 컨슈머 랙으로 오토스케일하는 것은 이 프로젝트에서 억지다 —
-# 컨슈머 작업이 가벼워 랙이 CPU를 따라가지 않는다(aws-eks-deploy-plan.md §0).
+# HPA는 **CPU만** 기준으로 삼는다. Kafka 컨슈머 랙으로 오토스케일하는 것은 이 프로젝트에서
+# 억지다 — 컨슈머 작업이 가벼워 랙이 CPU를 따라가지 않는다(aws-eks-deploy-plan.md §0).
+# api·web 두 티어 모두 HPA 대상이다(web은 2026-08-11 실측에서 첫 실패 지점이었다 → web-hpa.yaml).
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:

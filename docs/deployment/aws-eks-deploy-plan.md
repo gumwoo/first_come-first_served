@@ -23,7 +23,7 @@
 | Kafka | **Strimzi 오퍼레이터로 in-cluster 멀티브로커(RF 3)** | "전부 K8s에서 도는 분산 시스템" 서사. 복제·파티션·페일오버를 **실증**(단일 브로커면 Kafka HA 의미 없음). |
 | DB/Redis | **RDS PostgreSQL · ElastiCache Redis (매니지드, 클러스터 밖)** | 스테이트풀 DB는 매니지드가 실무 정석. Kafka만 in-cluster로 시연 대상. |
 | 앱 구조 | **모듈러 모놀리스 유지**(api·web 2 Deployment) | 억지 마이크로서비스 금지. 파드 replica가 같은 컨슈머 그룹 공유로 확장. |
-| 스케일 | **api HPA(HTTP CPU) + Kafka 파티션 병렬 + 브로커 페일오버** | 정직: 컨슈머 작업이 가벼워 "컨슈머 랙 오토스케일"은 억지. 스케일은 API 티어, Kafka는 HA·파티션·관측으로 나눠 실증. |
+| 스케일 | **api·web HPA(CPU) + Kafka 파티션 병렬 + 브로커 페일오버** | 정직: 컨슈머 작업이 가벼워 "컨슈머 랙 오토스케일"은 억지. 스케일은 CPU 기준 HTTP 티어(api·web — web은 2026-08-11 실측 첫 실패 지점), Kafka는 HA·파티션·관측으로 나눠 실증. |
 | IaC | **Terraform**(EKS·VPC·RDS·ElastiCache·IRSA) + **Helm**(앱·Strimzi·관측) | 신호 + 재현성. |
 | CI (빌드·테스트·이미지) | **GitHub Actions → ECR**(OIDC) + 배포 매니페스트 이미지 태그 갱신(Git commit) | 장기 키 없이 OIDC 롤. push 배포 대신 "이미지 push + Git 갱신"까지만. |
 | CD (배포·동기화) | **ArgoCD**(GitOps, pull 기반) — Git 매니페스트를 클러스터에 지속 동기화 | 선언적 desired-state·드리프트 감지·self-heal·원클릭 롤백. **Terraform=인프라 / ArgoCD=앱** 분업. 상세 [ADR-009](../decisions/ADR-009-gitops-cd-argocd.md). |

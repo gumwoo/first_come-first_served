@@ -184,7 +184,7 @@ server p95 = API 애플리케이션 처리시간
 
 ```
 ① 3파드 고정   + 동일 arrival rate  → RPS, 서버 p95
-② HPA 3~9 허용 + 동일 arrival rate  → RPS, 서버 p95
+② HPA 3~7 허용 + 동일 arrival rate  → RPS, 서버 p95
 ```
 
 ⚠️ **반드시 동일 arrival rate로 비교한다.** VU 고정으로 비교하면 느린 쪽이 알아서 부하를 덜 넣어

@@ -104,5 +104,7 @@ destroy 후 잔여 점검: **ALB · NAT · Elastic IP · EBS · 스냅샷**.
 ## 이 스택이 만들지 않는 것
 
 **ArgoCD가 관리한다**(ADR-009): Strimzi Operator, Kafka CR, 앱(api/web), 관측 스택.
-**부트스트랩 Helm으로 별도 설치**: AWS Load Balancer Controller, Cluster Autoscaler, ArgoCD 자신.
+**부트스트랩 Helm으로 별도 설치**: AWS Load Balancer Controller, Strimzi, kube-prometheus-stack, ArgoCD 자신
+(`scripts/bring-up.sh` 3~4단계). ⚠️ **Cluster Autoscaler는 설치하지 않는다** — IRSA 역할만
+만들고 컨트롤러는 배포하지 않는다(ADR-012 §4, IMP-017 §6).
 IRSA 역할 ARN은 `terraform output irsa_role_arns`로 얻어 서비스 어카운트에 annotate한다.

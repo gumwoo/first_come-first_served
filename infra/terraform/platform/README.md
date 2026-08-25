@@ -103,6 +103,19 @@ destroy 후 잔여 점검: **ALB · NAT · Elastic IP · EBS · 스냅샷**.
 
 ## 이 스택이 만들지 않는 것
 
-**ArgoCD가 관리한다**(ADR-009): Strimzi Operator, Kafka CR, 앱(api/web), 관측 스택.
-**부트스트랩 Helm으로 별도 설치**: AWS Load Balancer Controller, Cluster Autoscaler, ArgoCD 자신.
+클러스터 안의 것은 `scripts/bring-up.sh`가 **세 갈래로** 만든다. ArgoCD가 전부 관리하지 않는다.
+
+| 갈래 | 대상 | 어디서 |
+|---|---|---|
+| **Helm** | AWS Load Balancer Controller, Strimzi **Operator**, kube-prometheus-stack, ArgoCD 자신 | `bring-up.sh` 3~4단계 |
+| **kubectl/kustomize** | Kafka CR(`k8s/kafka`), 관측 리소스(`k8s/monitoring` — ServiceMonitor·PodMonitor·대시보드·PrometheusRule), ArgoCD `Application` 자체 | `bring-up.sh` 6단계 |
+| **ArgoCD**(ADR-009) | `k8s/overlays/demo-local` → `k8s/base` — namespace·configmap·api/web Deployment·HPA·PDB·Ingress | 이후 지속 동기화 |
+
+⚠️ **ArgoCD의 추적 범위는 `k8s/base`뿐이다.** `Application`의 `path`가 오버레이 하나를 가리키고
+그 오버레이는 `../../base`만 포함한다. Strimzi Operator·Kafka CR·관측 스택은 **추적 밖**이라
+`prune`으로 지워지지도, 드리프트가 self-heal 되지도 않는다.
+
+⚠️ **Cluster Autoscaler는 설치하지 않는다** — IRSA 역할만 만들고 컨트롤러는 배포하지 않는다
+(ADR-012 §4, IMP-017 §6).
+
 IRSA 역할 ARN은 `terraform output irsa_role_arns`로 얻어 서비스 어카운트에 annotate한다.

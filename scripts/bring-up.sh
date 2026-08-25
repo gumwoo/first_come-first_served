@@ -93,10 +93,9 @@ echo "==> 4/7 cluster-autoscaler / strimzi / kube-prometheus-stack / argocd"
 # (CA v1.35 → k8s 1.35). 버전을 박기만 하고 클러스터와 어긋나면 조용히 오작동한다.
 # 그래서 아래에서 차트의 appVersion과 API 서버 마이너를 대조하고, 다르면 **중단**한다.
 #
-# 클러스터 버전을 올릴 때 이 값도 함께 올린다:
+# 버전은 스크립트 상단에서 한곳에 모아 선언한다($CA_CHART_VERSION).
+# 클러스터 버전을 올릴 때 그 값도 함께 올린다:
 #   helm search repo autoscaler/cluster-autoscaler --versions | grep ' 1\.<마이너>\.'
-CA_CHART_VERSION="${CA_CHART_VERSION:-9.59.0}"   # appVersion 1.35.0
-
 CA_APP="$(helm show chart autoscaler/cluster-autoscaler --version "$CA_CHART_VERSION" 2>/dev/null \
   | awk '/^appVersion:/{print $2}' | tr -d '"' || true)"
 [ -n "$CA_APP" ] || {

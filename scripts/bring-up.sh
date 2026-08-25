@@ -70,14 +70,72 @@ echo "    ok"
 echo "==> 4/7 cluster-autoscaler / strimzi / kube-prometheus-stack / argocd"
 # Cluster Autoscaler. Terraform이 IRSA 역할·ASG 태그·ignore_changes까지 준비해 두었고
 # 빠져 있던 것은 이 설치뿐이었다(ADR-012 §4, 2026-08-25 도입).
+#
+# ⚠️ 차트 버전을 **반드시 고정한다.** floating으로 두면 같은 커밋의 bring-up.sh가
+# 시점에 따라 다른 것을 설치한다 — 이 스크립트의 존재 이유(절차를 코드로 고정)와 어긋난다.
+#
+# ⚠️ 더 중요한 것: Cluster Autoscaler는 **Kubernetes 마이너 버전과 짝을 맞춰야 한다**
+# (CA v1.35 → k8s 1.35). 버전을 박기만 하고 클러스터와 어긋나면 조용히 오작동한다.
+# 그래서 아래에서 차트의 appVersion과 API 서버 마이너를 대조하고, 다르면 **중단**한다.
+#
+# 클러스터 버전을 올릴 때 이 값도 함께 올린다:
+#   helm search repo autoscaler/cluster-autoscaler --versions | grep ' 1\.<마이너>\.'
+CA_CHART_VERSION="${CA_CHART_VERSION:-9.59.0}"   # appVersion 1.35.0
+
+CA_APP="$(helm show chart autoscaler/cluster-autoscaler --version "$CA_CHART_VERSION" 2>/dev/null \
+  | awk '/^appVersion:/{print $2}' | tr -d '"' || true)"
+[ -n "$CA_APP" ] || {
+  echo "cluster-autoscaler 차트 $CA_CHART_VERSION 을 찾지 못했다 — 사용 가능한 버전:" >&2
+  helm search repo autoscaler/cluster-autoscaler --versions 2>/dev/null | head -5 >&2
+  exit 1; }
+K8S_MINOR="$(kubectl version -o json 2>/dev/null | jq -r '.serverVersion.minor // empty' | tr -d '+' || true)"
+CA_MINOR="$(echo "$CA_APP" | cut -d. -f2)"
+# ⚠️ 못 읽었을 때 통과시키면 검사가 공허해진다 — 대조할 수 없다는 것 자체가 실패다.
+[ -n "$K8S_MINOR" ] || {
+  echo "API 서버의 Kubernetes 마이너 버전을 읽지 못해 CA 호환성을 대조할 수 없다 — 중단한다." >&2
+  echo "  확인: kubectl version -o json" >&2
+  exit 1; }
+if [ "$K8S_MINOR" != "$CA_MINOR" ]; then
+  echo "Cluster Autoscaler 버전이 클러스터와 어긋난다 — 중단한다." >&2
+  echo "  클러스터 k8s 1.$K8S_MINOR / CA 앱 $CA_APP (차트 $CA_CHART_VERSION)" >&2
+  echo "  맞는 차트를 고른 뒤 CA_CHART_VERSION 을 갱신하라:" >&2
+  echo "    helm search repo autoscaler/cluster-autoscaler --versions | grep ' 1\\.$K8S_MINOR\\.'" >&2
+  exit 1
+fi
+echo "    cluster-autoscaler 차트 $CA_CHART_VERSION (앱 $CA_APP) ↔ k8s 1.${K8S_MINOR:-?}"
+
 # ⚠️ SA 이름(cluster-autoscaler)이 IRSA 신뢰 정책과 어긋나면 권한 오류가 아니라
 # "노드가 조용히 안 늘어나는" 형태로 나타난다 — LB Controller와 같은 함정이다.
 helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
+  --version "$CA_CHART_VERSION" \
   -n kube-system \
   -f "$ROOT/k8s/cluster-autoscaler/values.yaml" \
   --set autoDiscovery.clusterName="$CLUSTER" \
   --set-string "rbac.serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$CA_ROLE" \
   --wait --timeout 6m >/dev/null
+# ⚠️ 여기서 **경고가 아니라 실패**시킨다. 이 PR부터 CA는 선택이 아니라 기본 구성이다.
+# 경고만 하면 exit 0인데 노드 오토스케일링이 죽어 있는 클러스터가 만들어지고, 그 상태로
+# 다른 측정을 먼저 하면 조건이 조용히 오염된다(TS-034가 그렇게 나왔다).
+CA_POD="$(kubectl -n kube-system get pod -l app.kubernetes.io/name=aws-cluster-autoscaler \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+[ -n "$CA_POD" ] || {
+  echo "cluster-autoscaler 파드를 찾지 못했다 — helm 설치가 --wait로 끝났는데도 없다면 라벨을 확인하라:" >&2
+  echo "  kubectl -n kube-system get pods -l app.kubernetes.io/name=aws-cluster-autoscaler --show-labels" >&2
+  exit 1; }
+# 노드그룹 인식은 로그로만 확인할 수 있고 기동 직후엔 아직 안 찍혀 있다 — 잠시 기다린다.
+NG_SEEN=0
+for i in $(seq 1 12); do
+  NG_SEEN="$(kubectl -n kube-system logs "$CA_POD" --tail=500 2>/dev/null | grep -c "Registering Node Group" || true)"
+  [ "${NG_SEEN:-0}" -gt 0 ] && break
+  sleep 10
+done
+[ "${NG_SEEN:-0}" -gt 0 ] || {
+  echo "cluster-autoscaler가 노드그룹을 하나도 인식하지 못했다 — 중단한다." >&2
+  echo "  IRSA 권한이나 ASG 태그(k8s.io/cluster-autoscaler/{enabled,owned}) 문제다." >&2
+  echo "  확인: kubectl -n kube-system logs $CA_POD --tail=50" >&2
+  exit 1; }
+echo "    cluster-autoscaler: $CA_POD (노드그룹 ${NG_SEEN}개 인식)"
+
 kubectl create namespace kafka --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 helm upgrade --install strimzi strimzi/strimzi-kafka-operator -n kafka --wait --timeout 6m >/dev/null
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
@@ -129,15 +187,6 @@ fi
 
 echo
 echo "==> 확인"
-# CA가 노드그룹을 실제로 인식했는지. 로그에 노드그룹이 안 보이면 ASG 태그가 안 붙은 것이다.
-CA_POD="$(kubectl -n kube-system get pod -l app.kubernetes.io/name=aws-cluster-autoscaler -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
-if [ -n "$CA_POD" ]; then
-  NG_SEEN="$(kubectl -n kube-system logs "$CA_POD" --tail=200 2>/dev/null | grep -c "Registering Node Group" || true)"
-  echo "    cluster-autoscaler: $CA_POD (인식한 노드그룹 ${NG_SEEN:-0}개)"
-  [ "${NG_SEEN:-0}" -eq 0 ] && echo "    ⚠️ 노드그룹을 하나도 못 찾았다 — ASG 태그(k8s.io/cluster-autoscaler/*)를 확인하라"
-else
-  echo "    ⚠️ cluster-autoscaler 파드를 찾지 못했다"
-fi
 kubectl get pods -A --no-headers | awk '{print $4}' | sort | uniq -c | sed 's/^/    /'
 for i in $(seq 1 20); do
   CODE="$(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN" --max-time 20 || true)"

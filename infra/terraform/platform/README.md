@@ -10,8 +10,10 @@
 
 - [x] 서비스 쿼터 — vCPU 32(필요 12), EIP 5(필요 3) 확인 완료
 - [x] Budgets 4단계 + Cost Anomaly Detection 설정 완료
-- [ ] `state-bootstrap`으로 state용 S3 버킷 생성 → `versions.tf`의 backend 주석 해제
-- [ ] `bootstrap` apply(ACM·ECR·IAM) — **이 스택과 별개이며 아직 미작성**
+- [x] `state-bootstrap`으로 state용 S3 버킷 생성 → `versions.tf`의 backend 주석 해제
+      (버킷 `flowticket-tfstate-891612580915`, `environments/demo/versions.tf`의 `backend "s3"` 활성)
+- [x] `bootstrap` apply(ACM·ECR·IAM) — **이 스택과 별개다.** 작성·apply 모두 완료
+      (`infra/terraform/bootstrap/`, state 15개. 가장 최근 apply는 2026-08-25 ECR 라이프사이클)
 - [x] LB Controller IAM 정책 — 저장소에 커밋됨
       ([policies/README.md](modules/eks/policies/README.md))
 

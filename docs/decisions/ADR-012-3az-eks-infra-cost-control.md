@@ -179,8 +179,11 @@ HPA 수평 확장, Kafka 브로커 장애 복구, ArgoCD self-heal, 다중 Pod S
 
 ## 결과 / 한계 (정직)
 
-- **아직 Proposed다.** Terraform 코드는 작성됐고(`infra/terraform/`, CI에서 `fmt`·`validate` 통과)
-  **`plan`·`apply`는 미실행**이다. 실제 기동하고 실증 시나리오를 촬영한 뒤 Accepted로 승격한다.
+- ~~**아직 Proposed다.** `plan`·`apply`는 미실행이다.~~ → **Accepted (2026-08-10 승격).**
+  `apply`/`destroy`를 반복 수행했다. 가장 최근은 2026-08-25로, `apply` 74개 생성 →
+  측정 6회 → `destroy` 74개 전량 삭제(잔여 점검 11항목 모두 0)였다.
+  비용 통제 운용(`apply`/`destroy` 왕복)이 문서상의 계획이 아니라 **실제 절차**임을
+  `scripts/bring-up.sh`·`scripts/tear-down.sh`가 뒷받침한다.
 - **AZ 장애는 실증하지 않는다.** NAT 3개·3 AZ는 위 분류의 **B**에 해당한다. AZ 전체 장애 주입은
   실증 범위 밖이며, 이 문서가 근거를 남기는 것으로 대신한다.
 - **Cluster Autoscaler의 노드 기동 지연**(EC2 부팅 + 클러스터 조인, 통상 분 단위)은 HPA 반응

@@ -36,6 +36,7 @@ if [ "$(tf state list 2>/dev/null | wc -l)" -eq 0 ]; then
   exit 1
 fi
 LBC_ROLE="$(tf output -json irsa_role_arns | jq -r '.load_balancer_controller')"
+CA_ROLE="$(tf output -json irsa_role_arns | jq -r '.cluster_autoscaler')"
 ZONE_ID="$(tf output -raw hosted_zone_id)"
 DOMAIN="$(tf output -raw domain_name)"
 echo "    cluster=$CLUSTER zone=$ZONE_ID domain=$DOMAIN"
@@ -50,6 +51,7 @@ helm repo add eks https://aws.github.io/eks-charts >/dev/null 2>&1 || true
 helm repo add strimzi https://strimzi.io/charts/ >/dev/null 2>&1 || true
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null 2>&1 || true
 helm repo add argo https://argoproj.github.io/argo-helm >/dev/null 2>&1 || true
+helm repo add autoscaler https://kubernetes.github.io/autoscaler >/dev/null 2>&1 || true
 helm repo update >/dev/null
 
 echo "==> 3/7 aws-load-balancer-controller"
@@ -65,7 +67,17 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
   --wait --timeout 6m >/dev/null
 echo "    ok"
 
-echo "==> 4/7 strimzi / kube-prometheus-stack / argocd"
+echo "==> 4/7 cluster-autoscaler / strimzi / kube-prometheus-stack / argocd"
+# Cluster Autoscaler. Terraform이 IRSA 역할·ASG 태그·ignore_changes까지 준비해 두었고
+# 빠져 있던 것은 이 설치뿐이었다(ADR-012 §4, 2026-08-25 도입).
+# ⚠️ SA 이름(cluster-autoscaler)이 IRSA 신뢰 정책과 어긋나면 권한 오류가 아니라
+# "노드가 조용히 안 늘어나는" 형태로 나타난다 — LB Controller와 같은 함정이다.
+helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
+  -n kube-system \
+  -f "$ROOT/k8s/cluster-autoscaler/values.yaml" \
+  --set autoDiscovery.clusterName="$CLUSTER" \
+  --set-string "rbac.serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$CA_ROLE" \
+  --wait --timeout 6m >/dev/null
 kubectl create namespace kafka --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 helm upgrade --install strimzi strimzi/strimzi-kafka-operator -n kafka --wait --timeout 6m >/dev/null
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
@@ -117,6 +129,15 @@ fi
 
 echo
 echo "==> 확인"
+# CA가 노드그룹을 실제로 인식했는지. 로그에 노드그룹이 안 보이면 ASG 태그가 안 붙은 것이다.
+CA_POD="$(kubectl -n kube-system get pod -l app.kubernetes.io/name=aws-cluster-autoscaler -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+if [ -n "$CA_POD" ]; then
+  NG_SEEN="$(kubectl -n kube-system logs "$CA_POD" --tail=200 2>/dev/null | grep -c "Registering Node Group" || true)"
+  echo "    cluster-autoscaler: $CA_POD (인식한 노드그룹 ${NG_SEEN:-0}개)"
+  [ "${NG_SEEN:-0}" -eq 0 ] && echo "    ⚠️ 노드그룹을 하나도 못 찾았다 — ASG 태그(k8s.io/cluster-autoscaler/*)를 확인하라"
+else
+  echo "    ⚠️ cluster-autoscaler 파드를 찾지 못했다"
+fi
 kubectl get pods -A --no-headers | awk '{print $4}' | sort | uniq -c | sed 's/^/    /'
 for i in $(seq 1 20); do
   CODE="$(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN" --max-time 20 || true)"

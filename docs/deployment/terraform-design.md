@@ -179,8 +179,11 @@ ADR-012 §5 참조. **부하 측정 시 반드시 비버스터블로 바꾼 뒤 
 | **EBS CSI Driver** | EKS 애드온 + IRSA | StorageClass의 전제 |
 | **AWS Load Balancer Controller** | Helm(부트스트랩) + IRSA | Ingress → ALB |
 | ~~**Cluster Autoscaler**~~ ⚠️ **미도입** | IRSA 역할만 생성 · **컨트롤러 미배포** | ADR-012 §4에서 뒤집었다. `bring-up.sh`에 설치 단계가 없다 |
-| ArgoCD | Helm(1회 부트스트랩) | 이후 앱은 ArgoCD가 관리 — ADR-009 |
-| Strimzi Operator, 앱, 관측 | **ArgoCD** | Terraform이 아님 |
+| ArgoCD | Helm(1회 부트스트랩) | 이후 **앱만** ArgoCD가 관리 — ADR-009 |
+| **Strimzi Operator** | **Helm**(부트스트랩) | ⚠️ ArgoCD가 아니다 — `bring-up.sh` 4단계 |
+| **kube-prometheus-stack** | **Helm**(부트스트랩) | ⚠️ 위와 같다 |
+| Kafka CR, 관측 리소스(ServiceMonitor·대시보드·PrometheusRule) | **kubectl/kustomize** | `k8s/kafka`·`k8s/monitoring`, `bring-up.sh` 6단계. **ArgoCD 추적 밖** |
+| 앱(api/web)·HPA·PDB·Ingress·ConfigMap | **ArgoCD** | `k8s/overlays/demo-local` → `k8s/base`가 전부다 |
 
 > 경계 규칙(ADR-009): **인프라 = Terraform / 앱 = ArgoCD.**
 > ArgoCD 자신의 설치만 부트스트랩으로 예외 처리한다.
@@ -277,9 +280,11 @@ template:
 1. state-bootstrap   S3 버킷 (+ 필요 시 잠금 테이블)
 2. bootstrap         Route53 Zone data 참조 → ACM 요청 → DNS 검증 대기 → ECR·IAM
 3. platform          VPC → 엔드포인트 → EKS → 노드그룹 → 애드온 → RDS → ElastiCache
-4. 부트스트랩 Helm    LB Controller → Strimzi → 관측 → ArgoCD   (CA는 미도입 — ADR-012 §4)
-5. ArgoCD            Strimzi Operator → Kafka CR → 앱(api/web) → 관측
-6. 검증              Ingress ALB 생성 확인 → HTTPS → /actuator/health/readiness
+4. 부트스트랩 Helm    LB Controller → Strimzi Operator → kube-prometheus-stack → ArgoCD
+                     (CA는 미도입 — ADR-012 §4)
+5. kubectl/kustomize Kafka CR(k8s/kafka) → 관측 리소스(k8s/monitoring) → ArgoCD Application
+6. ArgoCD            k8s/overlays/demo-local → k8s/base — 앱(api/web)·HPA·PDB·Ingress만
+7. 검증              Ingress ALB 생성 확인 → HTTPS → /actuator/health/readiness
 ```
 
 `terraform plan` 결과를 반드시 검토한 뒤 `apply`한다. **2단계의 ACM DNS 검증은 대기 시간이 있다.**

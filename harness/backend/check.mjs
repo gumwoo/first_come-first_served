@@ -631,6 +631,16 @@ for (const f of javaFiles) {
 const wrapperProps = path.join(REPO_ROOT, API, "gradle/wrapper/gradle-wrapper.properties");
 if (fs.existsSync(wrapperProps)) {
   const distUrl = read(wrapperProps).match(/distributionUrl=.*?gradle-([0-9][^-]*)-(?:bin|all)\.zip/);
+  // ⚠️ CI 쪽과 **같은 방어**가 여기에도 있어야 한다. properties가 존재하는데 버전을 못 읽으면
+  // 아래 비교가 통째로 건너뛰어지고, 규칙은 검사하는 척만 하며 통과한다.
+  // (초판에 이 방어가 CI 쪽에만 있었다. distributionUrl 형식을 바꿔 실행하면 exit 0이었다.)
+  if (!distUrl) {
+    r.fail(
+      `gradle-wrapper.properties에서 Gradle 버전을 읽지 못했다: ${path.relative(REPO_ROOT, wrapperProps)} — ` +
+        `distributionUrl 형식이 바뀌었다면 harness/backend/check.mjs의 20번 규칙도 함께 고칠 것 ` +
+        `(지금 상태로는 버전 드리프트를 못 잡는다)`
+    );
+  }
   const ciPath = path.join(REPO_ROOT, ".github/workflows/ci.yml");
   if (distUrl && fs.existsSync(ciPath)) {
     const wrapperVer = distUrl[1];

@@ -114,7 +114,8 @@ Secrets Manager에 만든다. Deployment는 `secretRef: flowticket-api-secrets`�
 |---|---|---|
 | `maxUnavailable: 0` ↔ readiness | — | 1이면 새 Pod가 뜨기 전에 용량이 줄어 부하 중 에러 |
 | `SHUTDOWN_TIMEOUT(30s)` ↔ `terminationGracePeriodSeconds(45)` | 앱 < Pod | 뒤집히면 진행 중 요청 중 SIGKILL |
-| `preStop sleep 5` ↔ ALB `deregistration_delay 10` | — | 없으면 등록 해제가 시작되기도 전에 내려가 502 (충분한지는 실측 대상) |
+| web `preStop sleep 25` ↔ 등록 해제 **전파** 시간 | preStop > 전파 | 짧으면 컨테이너가 먼저 죽고, ALB가 아직 정상으로 아는 IP로 보내 502/504 — 2026-08-25 실측 13건([TS-035](../docs/troubleshooting/TS-035-rolling-deregistration-race.md)). `deregistration_delay`와 짝짓는 값이 **아니다**(그건 deregistering 이후의 드레이닝) |
+| web `preStop(25s)` ↔ `terminationGracePeriodSeconds(60)` | preStop < Pod | 뒤집히면 preStop 도중 SIGKILL — 고치려던 것보다 나빠진다 |
 | probe 경로 ↔ `application.yml`의 health group | — | readiness에 Kafka가 끼면 브로커 하나에 API 전체가 빠짐 |
 | `API_ORIGIN`(**build-arg**) ↔ `next.config.mjs` rewrites | `http://flowticket-api` | 이름·포트가 틀리면 프록시가 엉뚱한 곳으로 간다 |
 | `REDIS_SSL_ENABLED=true` ↔ ElastiCache TLS | 둘 다 켜짐 | 하나만 켜지면 **Pod가 영원히 Ready 안 됨** |

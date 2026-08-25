@@ -40,6 +40,9 @@ spec:
             - { name: RUN_FOR, value: "4m" }
             # 오케스트레이터가 미리 이벤트를 찾아 넣는다. 비우면 k6가 setup()에서 탐색한다.
             - { name: EVENT_ID, value: "" }
+            # 부하 모델 — open(기본) / closed. closed는 IMP-015 §3의 6워커 재현용 대조군이다.
+            - { name: MODEL, value: "open" }
+            - { name: VUS, value: "6" }
           resources:
             # 25 rps × 단일 GET이면 넉넉하다. k6가 스스로 병목이 되면 도착률을 못 채워
             # "무중단이었다"는 잘못된 결론이 나온다 — 부족한 쪽이 훨씬 위험하다.

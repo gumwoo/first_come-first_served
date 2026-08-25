@@ -23,23 +23,34 @@ const BASE = __ENV.BASE_URL || "https://flow-ticket.com/api";
 const RATE = __ENV.RATE ? parseInt(__ENV.RATE, 10) : 25;
 const RUN_FOR = __ENV.RUN_FOR || "4m";
 const EVENT_ID = __ENV.EVENT_ID || "";
+// 부하 모델. 기본은 open(도착률 고정). closed는 IMP-015 §3의 "병렬 6워커"를 재현하기 위한 것으로,
+// **두 모델이 같은 장애를 다르게 보는지**를 확인하는 대조군 전용이다.
+const MODEL = __ENV.MODEL || "open";
+const VUS = __ENV.VUS ? parseInt(__ENV.VUS, 10) : 6;
 
 const non2xx = new Counter("non2xx_total");
 
+// ⚠️ 두 모델은 같은 장애를 다르게 본다. closed는 응답이 늦어지면 그 VU가 묶여 **부하가 스스로
+// 줄어들고**(read-load-rate.js 헤더 참조), 연결이 10초 매달리는 구간에서는 VU 수만큼만 실패할 수
+// 있다. open은 응답이 늦어도 초당 도착 수를 유지하므로 그 창을 정면으로 때린다.
+// 그래서 closed의 "0건"은 무중단의 증거가 아니라 **측정기가 못 본 것**일 수 있다.
+const scenario =
+  MODEL === "closed"
+    ? { executor: "constant-vus", vus: VUS, duration: RUN_FOR, gracefulStop: "30s" }
+    : {
+        executor: "constant-arrival-rate",
+        rate: RATE,
+        timeUnit: "1s",
+        duration: RUN_FOR,
+        preAllocatedVUs: Math.max(20, RATE),
+        maxVUs: Math.max(100, RATE * 8),
+        // 롤링 중 한 요청이 오래 걸려도 그 자리에서 끊지 않는다. 여기서 잘라내면
+        // 우리가 찾는 사건(느려짐 → 실패)을 측정기가 먼저 지워버린다.
+        gracefulStop: "30s",
+      };
+
 export const options = {
-  scenarios: {
-    rolling: {
-      executor: "constant-arrival-rate",
-      rate: RATE,
-      timeUnit: "1s",
-      duration: RUN_FOR,
-      preAllocatedVUs: Math.max(20, RATE),
-      maxVUs: Math.max(100, RATE * 8),
-      // 롤링 중 한 요청이 오래 걸려도 그 자리에서 끊지 않는다. 여기서 잘라내면
-      // 우리가 찾는 사건(느려짐 → 실패)을 측정기가 먼저 지워버린다.
-      gracefulStop: "30s",
-    },
-  },
+  scenarios: { rolling: scenario },
   // 임계로 실행을 멈추지 않는다. 판정은 오케스트레이터가 5xx 개수로 한다.
   thresholds: {},
   summaryTrendStats: ["avg", "p(95)", "p(99)", "max"],
@@ -88,7 +99,9 @@ export function handleSummary(data) {
       p95: Math.round(dur["p(95)"] || 0),
       p99: Math.round(dur["p(99)"] || 0),
       max: Math.round(dur.max || 0),
-      rate: RATE,
+      model: MODEL,
+      rate: MODEL === "closed" ? null : RATE,
+      vus: MODEL === "closed" ? VUS : null,
       duration: RUN_FOR,
     });
   return { stdout: `\n${line}\n` };

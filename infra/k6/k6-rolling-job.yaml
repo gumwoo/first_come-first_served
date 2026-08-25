@@ -1,0 +1,52 @@
+# 롤링 배포 가용성 측정 Job — rolling-availability.js 전용.
+#
+# k6-job.yaml과 나눈 이유가 두 가지다.
+#  1) 타깃이 다르다. 저쪽은 Service(http://flowticket-api), 이쪽은 **공인 ALB**다.
+#     검증 대상(deregistration_delay·타깃 등록 해제)이 ALB 동작이라 우회하면 안 된다.
+#  2) 배치 제약이 다르다. 아래 참조.
+#
+# ⚠️ 생성기를 측정 대상과 같은 노드에 두면 CPU를 잠식한다(TS-034: 생성기+타깃이 5.41/5.79 core
+# = 93%를 먹어 측정이 오염됐다). 25 rps에서는 무시할 수준이라고 **추정**하지만 검증하지 않았다.
+# 그래서 requests/limits를 명시해 스케줄러가 예산에 넣게 하고, 오케스트레이터가 실행 중
+# 생성기 CPU를 기록한다 — 나중에 "생성기 탓 아니냐"는 반박에 답할 수 있어야 한다.
+#
+# 사용법: scripts/rolling-deploy-test.sh가 ConfigMap 생성부터 정리까지 한다. 직접 쓸 때는
+#   kubectl create configmap k6-rolling -n flowticket \
+#     --from-file=rolling-availability.js=infra/k6/rolling-availability.js \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -f infra/k6/k6-rolling-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-rolling
+  namespace: flowticket
+spec:
+  backoffLimit: 0
+  # 측정이 끝난 Job이 남아 다음 실행의 create를 막지 않도록. 로그는 오케스트레이터가
+  # 삭제 전에 회수한다.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: { app: k6-rolling }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6
+          image: grafana/k6:0.54.0
+          args: ["run", "/scripts/rolling-availability.js"]
+          env:
+            - { name: BASE_URL, value: "https://flow-ticket.com/api" }
+            - { name: RATE, value: "25" }
+            - { name: RUN_FOR, value: "4m" }
+            # 오케스트레이터가 미리 이벤트를 찾아 넣는다. 비우면 k6가 setup()에서 탐색한다.
+            - { name: EVENT_ID, value: "" }
+          resources:
+            # 25 rps × 단일 GET이면 넉넉하다. k6가 스스로 병목이 되면 도착률을 못 채워
+            # "무중단이었다"는 잘못된 결론이 나온다 — 부족한 쪽이 훨씬 위험하다.
+            requests: { cpu: "200m", memory: "256Mi" }
+            limits: { cpu: "1", memory: "512Mi" }
+          volumeMounts:
+            - { name: scripts, mountPath: /scripts }
+      volumes:
+        - name: scripts
+          configMap: { name: k6-rolling }

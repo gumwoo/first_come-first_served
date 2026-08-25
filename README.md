@@ -73,11 +73,20 @@ flowchart TB
     API --> Kafka["Kafka KRaft / Strimzi"]
     API --> KOPIS["KOPIS OpenAPI"]
 
-    Terraform["Terraform"] --> EKS["AWS EKS"]
-    Argo["Argo CD"] --> EKS
-    CI["GitHub Actions"] --> Registry["Container Registry"]
-    Registry --> EKS
+    Terraform["Terraform"] -. 인프라 .-> EKS["AWS EKS"]
+
+    Dev["git push"] --> CI["GitHub Actions"]
+    CI -->|이미지 build/push| ECR["ECR"]
+    CI -->|매니페스트 newTag 커밋| Git["Git (k8s/overlays)"]
+    Git -->|pull 기반 동기화·selfHeal| Argo["Argo CD"]
+    Argo -->|앱| EKS
+    ECR -. image pull .-> EKS
 ```
+
+배포는 **push가 아니라 pull**이다. CI는 이미지를 ECR에 올리고 매니페스트의 태그를 Git에
+커밋하는 데서 멈추며(`.github/workflows/image.yml`), 클러스터에 적용하는 것은 Argo CD다.
+`Terraform=인프라 / Argo CD=앱`으로 소유를 나눈다 — 근거는
+[ADR-009](docs/decisions/ADR-009-gitops-cd-argocd.md).
 
 - 로컬 개발·통합 환경은 Docker Compose로 PostgreSQL, Redis, Kafka, API를 구성합니다.
 - 클러스터 구성은 Kubernetes manifests와 Terraform을 사용하며, API는 health probe, graceful shutdown, HPA/PDB 설정을 가집니다.

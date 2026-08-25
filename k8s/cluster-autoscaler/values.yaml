@@ -1,0 +1,56 @@
+# Cluster Autoscaler — helm values.
+#
+# 도입 경위: ADR-012 §4가 원래 "CA를 함께 둔다"고 결정했으나 컨트롤러는 배포되지 않은 채
+# 남아 있었고, 2026-08-25에 그 사실을 확인해 일단 **미도입으로 확정**했다(#275).
+# 그 직후 "설치만 하고 검증하지 않으면 오히려 나쁘다"는 기준 아래, **측정까지 함께 하는
+# 조건으로** 도입을 결정했다. 하루 만에 결정을 두 번 뒤집은 것이므로 그 흐름을 남긴다.
+#
+# Terraform은 처음부터 준비돼 있었다 — IRSA 역할·autoscaling 정책, ASG 태그
+# (k8s.io/cluster-autoscaler/{enabled,owned}), 그리고 노드그룹의
+# `ignore_changes = [scaling_config[0].desired_size]`. 빠진 것은 이 helm 설치뿐이었다.
+
+# ASG 태그로 노드그룹을 스스로 찾는다. 노드그룹 이름을 여기 박으면 AZ가 늘 때마다 고쳐야 한다.
+autoDiscovery:
+  # clusterName은 bring-up.sh가 --set으로 넘긴다(Terraform의 cluster_name과 일치해야 한다).
+  clusterName: ""
+
+awsRegion: ap-northeast-2
+
+rbac:
+  serviceAccount:
+    create: true
+    # ⚠️ 이 이름은 IRSA 신뢰 정책과 **정확히** 일치해야 한다
+    # (modules/eks/irsa.tf: system:serviceaccount:kube-system:cluster-autoscaler).
+    # 어긋나면 권한 오류가 아니라 "CA가 조용히 아무 노드도 못 붙이는" 형태로 나타난다.
+    name: cluster-autoscaler
+    # 역할 ARN은 bring-up.sh가 terraform output에서 읽어 --set으로 넣는다.
+
+extraArgs:
+  # AZ별로 노드그룹이 나뉘어 있으므로(EBS의 AZ 종속 때문), 비슷한 그룹 간 균형을 맞춘다.
+  # 없으면 한 AZ에만 노드가 몰려 3AZ 분산이라는 전제가 깨진다.
+  balance-similar-node-groups: true
+  # kube-system 파드가 있는 노드도 축소 대상으로 본다. 데모 클러스터라 노드 수가 적어
+  # 이걸 끄면 사실상 축소가 일어나지 않는다.
+  skip-nodes-with-system-pods: false
+  # ⚠️ 로컬 스토리지를 쓰는 파드가 있는 노드는 기본적으로 축소하지 않는다.
+  # Kafka 브로커는 EBS(PVC)를 쓰므로 여기에 해당하지 않지만, emptyDir을 쓰는 파드가
+  # 생기면 축소가 막힌다. 측정에서 축소가 안 일어나면 이 값을 먼저 의심할 것.
+  skip-nodes-with-local-storage: false
+  # 기본 10분. 측정 세션에서 축소를 관찰하려면 10분을 기다려야 한다.
+  # ⚠️ 이 값을 줄이면 "기본 동작"이 아닌 것을 재게 된다. 기본값을 유지하고 기다린다.
+  scale-down-unneeded-time: 10m
+
+# CA 자신이 축출되면 스케일 판단이 끊긴다. 축소 대상에서 제외한다.
+podAnnotations:
+  cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+
+resources:
+  requests: { cpu: 100m, memory: 300Mi }
+  limits: { memory: 500Mi }
+
+# 이미지 태그를 여기서 직접 고정하지 않는다. **고정된 차트가 고른 이미지**를 그대로 쓴다
+# — 차트 버전(bring-up.sh의 $CA_CHART_VERSION)이 박혀 있으므로 이미지도 함께 결정된다.
+#
+# ⚠️ 자동으로 맞춰지는 것이 아니다. 클러스터 버전을 올리면 차트 버전을 **사람이** 올려야 한다.
+# 잊으면 CA 앱 버전과 k8s 마이너가 어긋나는데, bring-up.sh가 설치 전에 그 둘을 대조해
+# 중단하므로 조용히 지나가지는 않는다.

@@ -618,4 +618,54 @@ for (const f of javaFiles) {
   }
 }
 
+// ---------- 20. Gradle 버전은 한 곳에서만 바뀔 수 없다 ----------
+//
+// 이 저장소는 Gradle 버전을 **두 군데에 따로** 적는다.
+//   - apps/api/gradle/wrapper/gradle-wrapper.properties  → distributionUrl (로컬 ./gradlew)
+//   - .github/workflows/ci.yml                           → setup-gradle의 gradle-version (CI)
+// CI가 wrapper를 쓰지 않고 gradle을 직접 부르기 때문에 생긴 구조다.
+//
+// 문제는 **한쪽만 올려도 아무 일도 일어나지 않는다**는 것이다. CI는 계속 통과하고,
+// 로컬에서만 다른 Gradle이 돌아 "내 PC에서는 되는데"가 만들어진다. 빌드 재현성이
+// 조용히 깨지는 전형적인 경로라 정적으로 묶는다.
+const wrapperProps = path.join(REPO_ROOT, API, "gradle/wrapper/gradle-wrapper.properties");
+if (fs.existsSync(wrapperProps)) {
+  const distUrl = read(wrapperProps).match(/distributionUrl=.*?gradle-([0-9][^-]*)-(?:bin|all)\.zip/);
+  // ⚠️ CI 쪽과 **같은 방어**가 여기에도 있어야 한다. properties가 존재하는데 버전을 못 읽으면
+  // 아래 비교가 통째로 건너뛰어지고, 규칙은 검사하는 척만 하며 통과한다.
+  // (초판에 이 방어가 CI 쪽에만 있었다. distributionUrl 형식을 바꿔 실행하면 exit 0이었다.)
+  if (!distUrl) {
+    r.fail(
+      `gradle-wrapper.properties에서 Gradle 버전을 읽지 못했다: ${path.relative(REPO_ROOT, wrapperProps)} — ` +
+        `distributionUrl 형식이 바뀌었다면 harness/backend/check.mjs의 20번 규칙도 함께 고칠 것 ` +
+        `(지금 상태로는 버전 드리프트를 못 잡는다)`
+    );
+  }
+  const ciPath = path.join(REPO_ROOT, ".github/workflows/ci.yml");
+  if (distUrl && fs.existsSync(ciPath)) {
+    const wrapperVer = distUrl[1];
+    // 여러 잡이 각각 선언하므로 전부 모은다. 잡끼리 어긋나는 것도 같은 종류의 사고다.
+    const ci = read(ciPath);
+    const ciVers = [...ci.matchAll(/gradle-version:\s*["']?([0-9][\w.]*)["']?/g)].map((m) => m[1]);
+    // ⚠️ 공허한 통과 방지. setup-gradle은 쓰는데 버전을 하나도 못 읽었다면 형식이 바뀐 것이고,
+    // 그대로 두면 이 규칙은 영원히 통과한다(검사하는 척만 한다). 못 읽은 것 자체를 실패로 만든다.
+    // setup-gradle이 아예 없으면 CI가 wrapper를 쓰도록 바뀐 것이므로 대조할 대상이 없다 — 건너뛴다.
+    if (ci.includes("setup-gradle") && ciVers.length === 0) {
+      r.fail(
+        `ci.yml에서 setup-gradle의 gradle-version을 읽지 못했다 — 형식이 바뀌었다면 ` +
+          `harness/backend/check.mjs의 20번 규칙도 함께 고칠 것(지금 상태로는 버전 드리프트를 못 잡는다)`
+      );
+    }
+    for (const v of new Set(ciVers)) {
+      if (v !== wrapperVer) {
+        r.fail(
+          `Gradle 버전이 어긋난다: wrapper=${wrapperVer} / ci.yml setup-gradle=${v} — ` +
+            `gradle-wrapper.properties와 .github/workflows/ci.yml을 **함께** 올릴 것. ` +
+            `한쪽만 바꾸면 CI는 통과하는데 로컬 ./gradlew만 다른 버전으로 돈다`
+        );
+      }
+    }
+  }
+}
+
 r.done();

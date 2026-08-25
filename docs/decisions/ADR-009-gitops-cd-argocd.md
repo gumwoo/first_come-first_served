@@ -38,8 +38,12 @@ ArgoCD가 Git과 diff**. 제약: 단일 앱(모듈러 모놀리스, api/web 2 De
 - **App-of-Apps/멀티 레포/멀티 환경**: 단일 앱·단일 데모 환경엔 과함 → 기각(스코프 관리).
 
 ## 결과 / 한계 (정직)
-- **아직 Proposed**: 코드/매니페스트 미작성. S09 Phase 6에서 ArgoCD 설치 + `Application` 구성 시 Accepted로
-  승격하고, "Synced/Healthy + 수동 드리프트 self-heal 복구"를 캡처해 증거로 남긴다.
+- ~~**아직 Proposed**: 코드/매니페스트 미작성.~~ → **Accepted (2026-08-10 승격).**
+  `k8s/argocd/`에 values·`Application`이 있고, `scripts/bring-up.sh` 4/7단계가 설치한다.
+  자동 동기화(`selfHeal`·`prune`)가 실제로 동작하는 것을 확인했다 — 2026-08-25 롤링 측정에서
+  `automated`를 잠시 제거하지 않으면 `kubectl set image`를 즉시 되돌려, 측정 구간에 두 번째
+  롤링이 겹쳐 들어왔다([[TS-035]] §5). **되돌리는 힘이 실제로 있다는 증거**다.
+  구현 중 나온 사건은 [[TS-022]].
 - **컴포넌트 증가**: ArgoCD 자체가 클러스터 리소스를 먹고 관리 포인트가 하나 는다. 데모용이면 그만큼 과금 →
   Application 최소화로 상쇄.
 - **Terraform과의 경계 흐림 주의**: "인프라=Terraform, 앱=ArgoCD"를 지키지 않으면 무엇이 무엇을 관리하는지

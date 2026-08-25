@@ -24,6 +24,20 @@ CLUSTER="flowticket"
 SEED=1
 [ "${1:-}" = "--no-seed" ] && SEED=0
 
+# ── helm 차트 버전 고정 ──────────────────────────────────────────────
+# ⚠️ 하나도 빠짐없이 박는다. 하나라도 floating이면 **같은 커밋의 이 스크립트가 시점에 따라
+# 다른 클러스터를 만든다** — "절차를 코드로 고정한다"는 이 스크립트의 전제가 무너진다.
+# 2026-08-25까지 다섯 개 모두 버전이 없었고, 그래서 지금까지의 기동 결과는 엄밀히 말해
+# "그때 최신이던 것들"의 조합이었다.
+#
+# 올릴 때: helm search repo <차트> --versions | head -5 로 확인하고 여기만 고친다.
+# 환경변수로 임시 override 할 수 있다(예: CA_CHART_VERSION=9.58.0 bash scripts/bring-up.sh).
+CA_CHART_VERSION="${CA_CHART_VERSION:-9.59.0}"          # cluster-autoscaler   app 1.35.0
+LBC_CHART_VERSION="${LBC_CHART_VERSION:-3.5.0}"         # aws-load-balancer-controller app v3.5.0
+STRIMZI_CHART_VERSION="${STRIMZI_CHART_VERSION:-1.2.0}" # strimzi-kafka-operator app 1.2.0
+KPS_CHART_VERSION="${KPS_CHART_VERSION:-88.5.4}"        # kube-prometheus-stack app v0.93.1
+ARGOCD_CHART_VERSION="${ARGOCD_CHART_VERSION:-10.4.0}"  # argo-cd             app v3.5.1
+
 tf() { terraform -chdir="$TFDIR" "$@"; }
 
 echo "==> 0/7 전제 확인"
@@ -58,6 +72,7 @@ echo "==> 3/7 aws-load-balancer-controller"
 # ServiceAccount 이름은 IRSA 신뢰 정책과 정확히 일치해야 한다. 어긋나면 권한 오류가 아니라
 # "Ingress가 영영 ADDRESS를 못 받는" 형태로 나타난다.
 helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  --version "$LBC_CHART_VERSION" \
   -n kube-system \
   --set clusterName="$CLUSTER" \
   --set serviceAccount.create=true \
@@ -137,12 +152,17 @@ done
 echo "    cluster-autoscaler: $CA_POD (노드그룹 ${NG_SEEN}개 인식)"
 
 kubectl create namespace kafka --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-helm upgrade --install strimzi strimzi/strimzi-kafka-operator -n kafka --wait --timeout 6m >/dev/null
+helm upgrade --install strimzi strimzi/strimzi-kafka-operator \
+  --version "$STRIMZI_CHART_VERSION" \
+  -n kafka --wait --timeout 6m >/dev/null
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  --version "$KPS_CHART_VERSION" \
   -n monitoring --create-namespace \
   -f "$ROOT/k8s/monitoring/kube-prometheus-stack.values.yaml" --wait --timeout 12m >/dev/null
 # ⚠️ 2026-08-21에 이걸 빠뜨렸다. Application을 apply할 때 CRD가 없어서야 드러났다.
-helm upgrade --install argocd argo/argo-cd -n argocd --create-namespace \
+helm upgrade --install argocd argo/argo-cd \
+  --version "$ARGOCD_CHART_VERSION" \
+  -n argocd --create-namespace \
   -f "$ROOT/k8s/argocd/values.yaml" --wait --timeout 10m >/dev/null
 echo "    ok"
 

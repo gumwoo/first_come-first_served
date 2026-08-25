@@ -29,7 +29,7 @@ naive → 측정 → 개선 → 재측정 순서로 수치를 **커밋으로 박
 | [IMP-012](IMP-012-kopis-upsert-batch.md) | KOPIS 건별 존재 확인 — 배치 조회 | S02 | 조회 200→1 | 완료 |
 | [IMP-013](IMP-013-ci-shared-testcontainers.md) | CI 백엔드 잡 — 통합테스트 컨테이너·컨텍스트 공유 | 인프라 | 23.5→9.35분(-60%) | 완료 |
 | [IMP-014](IMP-014-image-build-layer-cache.md) | 이미지 빌드 레이어 캐시(buildx + GHA) | 인프라 | 소스만 변경 98.5→**78초 중앙값(-21%)** — 다만 편차(63~103)가 개선 폭보다 큼, n=4 | 부분 |
-| [IMP-015](IMP-015-rolling-zero-downtime.md) | 롤링 배포 무중단 실측(EKS) | 인프라 | 3,600건 중 5xx **0건**(web 롤링·25 req/s) — 미검증 조건 §5 | 조건부 |
+| [IMP-015](IMP-015-rolling-zero-downtime.md) | 롤링 배포 무중단 실측(EKS) | 인프라 | 롤링 중 6,001건 5xx **0건**(preStop 수정 후, §9) — 원인 규명 [TS-035](../troubleshooting/TS-035-rolling-deregistration-race.md) | 완료 |
 | [IMP-016](IMP-016-kafka-broker-failover.md) | Kafka 브로커 1대 장애 실증 | 인프라 | ISR 3→2, 리더 자동 선출, acks=all 쓰기 지속 — 앱 경로는 미검증 | 부분 |
 | [IMP-017](IMP-017-pdb-node-drain.md) | 노드 드레인 중 무중단(PDB) | 인프라 | 2,400건 5xx **0건** — 파드 5개 여유 조건 | 완료 |
 | [IMP-018](IMP-018-kopis-detail-hotpath-removal.md) | 사용자 요청이 외부 API 호출을 증폭시키던 구조 제거 | S02/S09 | 부하 중 외부 호출 **약 22,000→0건**(제한 34배 초과 해소) · 응답시간은 측정 환경 변동으로 미주장 | 완료 |

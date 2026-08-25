@@ -15,7 +15,9 @@ spec:
     metadata:
       labels: { app: flowticket-web }
     spec:
-      terminationGracePeriodSeconds: 30
+      # preStop(25s) + Next.js 종료 시간보다 커야 SIGKILL이 앞지르지 않는다. 30이면
+      # preStop 도중에 강제 종료돼 오히려 더 나빠진다.
+      terminationGracePeriodSeconds: 60
       containers:
         - name: web
           image: flowticket-web:REPLACE_TAG
@@ -39,8 +41,23 @@ spec:
             periodSeconds: 15
             failureThreshold: 3
           lifecycle:
+            # ⚠️ 이 값이 롤링 중 5xx를 만든 원인이었다(2026-08-25 실측, IMP-015 §8).
+            #
+            # ALB는 target-type: ip라 **파드 IP를 직접 등록**한다. 파드가 종료되면
+            #   파드 삭제 → 컨트롤러가 타깃 등록 해제 → deregistration_delay(10s) 드레이닝
+            # 순서인데, preStop이 5초면 **파드가 먼저 응답을 멈춘다.** 그 사이 ALB는 아직
+            # 그 IP로 보내고, 없는 대상에 TCP 연결을 시도하다 10초 만에 포기한다.
+            # 그래서 502/504가 나면서도 Target_5XX는 0이었다 — 앱은 아무 잘못이 없다.
+            #
+            # 실측(25 rps, web 단독 rollout restart, 6,001건):
+            #   preStop 5s  → 13건 실패 (504 6 / 502 7, TargetConnectionError 7)
+            #   preStop 25s → **0건**
+            # 실제 배포 경로(이미지 변경 + web·api 동시)에서도 6,001건 0건이었다.
+            #
+            # 25s는 deregistration_delay(10s)에 컨트롤러 반응·전파 여유를 더한 값이다.
+            # **최소 필요값은 재지 않았다** — 10s나 15s로도 되는지는 확인하지 않았다.
             preStop:
-              exec: { command: ["sh", "-c", "sleep 5"] }
+              exec: { command: ["sh", "-c", "sleep 25"] }
           resources:
             # 100m은 현재 부하·오토스케일 기준에 비해 과소 예약이었다. 2026-08-11 실측에서
             # 파드당 0.16~0.59 core를 썼으므로 스케줄러가 배치를 실제보다 가볍게 보고 있었고,

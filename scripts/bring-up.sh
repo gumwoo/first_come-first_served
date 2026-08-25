@@ -103,14 +103,15 @@ CUR="$(aws route53 list-resource-record-sets --hosted-zone-id "$ZONE_ID" \
 if [ "${CUR%.}" = "$ALB" ]; then
   echo "    이미 최신($ALB)"
 else
-  TMP="$(mktemp)"
-  cat > "$TMP" <<JSON
-{"Changes":[{"Action":"UPSERT","ResourceRecordSet":{
-  "Name":"$DOMAIN","Type":"A",
-  "AliasTarget":{"HostedZoneId":"$ALB_ZONE","DNSName":"$ALB","EvaluateTargetHealth":true}}}]}
-JSON
-  aws route53 change-resource-record-sets --hosted-zone-id "$ZONE_ID" --change-batch "file://$TMP" >/dev/null
-  rm -f "$TMP"
+  # ⚠️ file://로 넘기지 않는다. Git Bash의 /tmp는 실제로 %LOCALAPPDATA%\Temp인데 aws는
+  # Windows 바이너리라 file:///tmp/... 를 Windows 경로 그대로 해석해 파일을 찾지 못한다.
+  # 2026-08-25 기동에서 정확히 이 이유로 7/7이 실패했고, **도메인이 파괴된 옛 ALB를 가리킨
+  # 채 남았다** — 바로 위 주석이 경고하던 그 상태다.
+  # jq로 만들어 인자로 직접 넘기면 경로 해석도, 손수 이스케이프할 일도 없다.
+  CHANGE_BATCH="$(jq -nc --arg n "$DOMAIN" --arg z "$ALB_ZONE" --arg d "$ALB" \
+    '{Changes:[{Action:"UPSERT",ResourceRecordSet:{Name:$n,Type:"A",
+      AliasTarget:{HostedZoneId:$z,DNSName:$d,EvaluateTargetHealth:true}}}]}')"
+  aws route53 change-resource-record-sets --hosted-zone-id "$ZONE_ID" --change-batch "$CHANGE_BATCH" >/dev/null
   echo "    갱신됨 → $ALB"
 fi
 

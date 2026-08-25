@@ -35,6 +35,9 @@ DURATION=4m
 WARMUP=45
 SCOPE=both
 TAG=""
+RESTART=0
+MODEL=open
+VUS=6
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,6 +46,13 @@ while [ $# -gt 0 ]; do
     --duration) DURATION="$2"; shift 2;;
     --warmup)   WARMUP="$2"; shift 2;;
     --scope)    SCOPE="$2"; shift 2;;
+    # 이미지를 바꾸지 않고 파드만 교체한다(IMP-015 §3이 쓴 rollout restart와 같은 조건).
+    # 요인 분리용 — "이미지 변경"과 "동시 롤링" 중 어느 쪽이 502를 만드는지 가른다.
+    --restart)  RESTART=1; shift;;
+    # IMP-015 §3의 "병렬 6워커"를 재현한다. closed의 0건은 무중단의 증거가 아니라
+    # 측정기가 못 본 것일 수 있다 — 두 모델을 대조하기 위한 플래그다.
+    --closed)   MODEL=closed; shift;;
+    --vus)      VUS="$2"; shift 2;;
     -h|--help)  sed -n '2,22p' "$0"; exit 0;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2;;
   esac
@@ -92,7 +102,12 @@ DOMAIN="$(kubectl -n "$NS" get ingress flowticket -o jsonpath='{.spec.rules[0].h
 # 측정 전 상태가 이미 깨져 있으면 롤링 탓으로 오독하게 된다. 여기서 막는다.
 CODE="$(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN" --max-time 20 || true)"
 [ "$CODE" = "200" ] || { echo "측정 전 상태가 정상이 아니다: https://$DOMAIN → $CODE" >&2; exit 1; }
-echo "    domain=$DOMAIN scope=$SCOPE rate=$RATE duration=$DURATION warmup=${WARMUP}s"
+if [ "$MODEL" = "closed" ]; then
+  echo "    domain=$DOMAIN scope=$SCOPE model=closed vus=$VUS duration=$DURATION warmup=${WARMUP}s"
+  echo "    ⚠️ closed model은 응답이 늦으면 부하가 스스로 줄어든다 — 0건이 나와도 무중단의 증거가 아니다"
+else
+  echo "    domain=$DOMAIN scope=$SCOPE model=open rate=$RATE duration=$DURATION warmup=${WARMUP}s"
+fi
 
 # ── 1. 롤링에 쓸 이미지 결정 ────────────────────────────────────────
 say "1/8 이미지 태그 결정"
@@ -104,7 +119,12 @@ CUR_API="$(cur_tag api)"
 CUR_WEB="$(cur_tag web)"
 echo "    현재 api=$CUR_API web=$CUR_WEB"
 
-if [ -z "$TAG" ]; then
+if [ "$RESTART" -eq 1 ]; then
+  # 이미지를 그대로 두고 파드만 교체하므로 태그 선택도 다이제스트 비교도 의미가 없다.
+  TAG="(restart)"
+  DIGEST_NOTE="이미지 동일(rollout restart)"
+  echo "    이미지 변경 없음 — rollout restart로 파드만 교체한다"
+elif [ -z "$TAG" ]; then
   # 두 리포에 **모두** 있는 태그 중, 현재 돌고 있는 두 태그가 **아닌** 가장 최근 것.
   #
   # ⚠️ 여기서 두 가지를 반드시 지켜야 한다. 어기면 스크립트가 검증하려는 조건 자체가 깨진다.
@@ -130,7 +150,7 @@ if [ -z "$TAG" ]; then
       | if . == null then "" else .tag end
     ' "$WORK/api.json" 2>/dev/null || true)"
 fi
-if [ -z "$TAG" ]; then
+if [ "$RESTART" -eq 0 ] && [ -z "$TAG" ]; then
   echo "롤링에 쓸 다른 이미지를 찾지 못했다. --tag <sha40>으로 지정하라." >&2
   echo "  두 리포에 공통으로 있으면서 현재 api($CUR_API)·web($CUR_WEB)과 다른 태그가 필요하다." >&2
   exit 1
@@ -138,6 +158,7 @@ fi
 # --tag로 직접 준 경우에도 같은 조건을 강제한다. 여기서 통과시키면 "롤링했는데 아무것도
 # 안 바뀐" 상태로 측정이 돌아가고, 그 결과는 무중단의 증거가 되지 못한다.
 for t in $TARGETS; do
+  [ "$RESTART" -eq 1 ] && break
   case "$t" in api) c="$CUR_API";; web) c="$CUR_WEB";; esac
   if [ "$TAG" = "$c" ]; then
     echo "지정한 태그가 현재 $t 태그와 같다($TAG) — $t는 롤링되지 않는다." >&2
@@ -157,6 +178,7 @@ digest_of() {
   aws ecr describe-images --repository-name "flowticket-$1" --region "$REGION" \
     --image-ids imageTag="$2" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || echo "?"
 }
+if [ "$RESTART" -eq 0 ]; then
 DIGEST_NOTE=""
 for t in $TARGETS; do
   case "$t" in api) c="$CUR_API";; web) c="$CUR_WEB";; esac
@@ -169,6 +191,7 @@ for t in $TARGETS; do
   fi
 done
 DIGEST_NOTE="${DIGEST_NOTE# }"
+fi
 
 # ── 2. ArgoCD 자동 동기화 일시 중지 ─────────────────────────────────
 say "2/8 ArgoCD 자동 동기화 일시 중지"
@@ -200,9 +223,9 @@ kubectl -n "$NS" create configmap "$CM" \
 # 매니페스트의 env를 인자로 덮어써서 적용한다. 매니페스트를 직접 고치면 다음 실행이
 # 이전 실행의 값을 물려받아 "같은 조건으로 다시 돌린다"는 전제가 깨진다.
 python - "$ROOT/infra/k6/k6-rolling-job.yaml" "$WORK/job.yaml" \
-  "https://$DOMAIN/api" "$RATE" "$DURATION" "$EVENT_ID" <<'PYEOF'
+  "https://$DOMAIN/api" "$RATE" "$DURATION" "$EVENT_ID" "$MODEL" "$VUS" <<'PYEOF'
 import io, re, sys
-src, dst, base, rate, dur, ev = sys.argv[1:7]
+src, dst, base, rate, dur, ev, model, vus = sys.argv[1:9]
 s = io.open(src, encoding="utf-8").read()
 
 def setenv(name, val):
@@ -217,6 +240,8 @@ setenv("BASE_URL", base)
 setenv("RATE", rate)
 setenv("RUN_FOR", dur)
 setenv("EVENT_ID", ev)
+setenv("MODEL", model)
+setenv("VUS", vus)
 io.open(dst, "w", encoding="utf-8", newline="").write(s)
 PYEOF
 
@@ -242,7 +267,11 @@ T0="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ECR_PREFIX="$(kubectl -n "$NS" get deploy flowticket-api \
   -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's#/flowticket-api:.*##')"
 for t in $TARGETS; do
-  kubectl -n "$NS" set image "deploy/flowticket-$t" "$t=$ECR_PREFIX/flowticket-$t:$TAG" >/dev/null
+  if [ "$RESTART" -eq 1 ]; then
+    kubectl -n "$NS" rollout restart "deploy/flowticket-$t" >/dev/null
+  else
+    kubectl -n "$NS" set image "deploy/flowticket-$t" "$t=$ECR_PREFIX/flowticket-$t:$TAG" >/dev/null
+  fi
 done
 echo "    T0=$T0  교체 대상: $TARGETS"
 
@@ -281,7 +310,7 @@ OUT="$ROOT/rolling-test-$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$OUT"
 cp "$WORK/k6.log" "$WORK/replicasets.txt" "$OUT/" 2>/dev/null || true
 {
-  echo "scope=$SCOPE rate=$RATE duration=$DURATION warmup=${WARMUP}s"
+  echo "scope=$SCOPE model=$MODEL rate=$RATE vus=$VUS duration=$DURATION warmup=${WARMUP}s"
   echo "tag: api $CUR_API / web $CUR_WEB -> $TAG (다이제스트 $DIGEST_NOTE)"
   echo "rollout: $T0 -> $T1"
   echo "baseline_non2xx(롤링 전): $BASELINE_BAD"

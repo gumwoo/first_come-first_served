@@ -14,6 +14,7 @@
 #   bash scripts/resilience-test.sh --scenario failover   # 브로커 1대 강제 종료
 #   bash scripts/resilience-test.sh --scenario drain      # 노드 1대 드레인
 #   bash scripts/resilience-test.sh --scenario drain --rate 25 --duration 4m
+#   bash scripts/resilience-test.sh --scenario drain --expect-no-ca   # CA 없는 기준선
 #
 # 종료 코드: 부하 중 5xx가 1건이라도 나면 non-zero. "실험을 돌렸다"가 아니라
 # "장애 중에도 요청이 떨어지지 않았다"가 이 스크립트의 주장이다.
@@ -30,6 +31,7 @@ SCENARIO=""
 RATE=25
 DURATION=4m
 WARMUP=45
+EXPECT_NO_CA=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -37,6 +39,8 @@ while [ $# -gt 0 ]; do
     --rate)     RATE="$2"; shift 2;;
     --duration) DURATION="$2"; shift 2;;
     --warmup)   WARMUP="$2"; shift 2;;
+    # CA 없는 기준선을 **일부러** 잴 때만. 기본은 CA가 없으면 중단한다.
+    --expect-no-ca) EXPECT_NO_CA=1; shift;;
     -h|--help)  sed -n '2,20p' "$0"; exit 0;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2;;
   esac
@@ -74,12 +78,31 @@ DOMAIN="$(kubectl -n "$NS" get ingress flowticket -o jsonpath='{.spec.rules[0].h
 CODE="$(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN" --max-time 20 || true)"
 [ "$CODE" = "200" ] || { echo "측정 전 상태가 정상이 아니다: https://$DOMAIN → $CODE" >&2; exit 1; }
 
-CA_ON="없음"
-kubectl -n kube-system get deploy -l app.kubernetes.io/name=aws-cluster-autoscaler \
-  --no-headers 2>/dev/null | grep -q . && CA_ON="있음"
+# ⚠️ CA 유무는 이 측정의 **조건 그 자체**다. 기록만 하고 통과시키면, CA 없이 돌린 결과가
+# "CA 도입 후 재측정"으로 잘못 채택된다 — 그건 IMP-016·017을 한 번 더 잰 것일 뿐이다.
+# 그래서 어느 조건을 재는지 **반드시 선언**하게 하고, 실제와 다르면 중단한다.
+# 기본은 "CA 있음"이고, CA 없는 기준선을 일부러 잴 때만 --expect-no-ca 를 준다.
+CA_AVAIL="$(kubectl -n kube-system get deploy -l app.kubernetes.io/name=aws-cluster-autoscaler \
+  -o jsonpath='{.items[0].status.availableReplicas}' 2>/dev/null || true)"
+if [ "${CA_AVAIL:-0}" -gt 0 ] 2>/dev/null; then CA_ON="있음"; else CA_ON="없음"; fi
+
+if [ "$EXPECT_NO_CA" -eq 1 ]; then
+  [ "$CA_ON" = "없음" ] || {
+    echo "--expect-no-ca 로 실행했는데 Cluster Autoscaler가 동작 중이다(available=$CA_AVAIL) — 중단한다." >&2
+    echo "  CA 없는 기준선을 재려는 것이라면 먼저 내려야 한다." >&2
+    exit 1; }
+  echo "    ⚠️ CA 없는 기준선을 잰다(--expect-no-ca). 이 결과는 CA 도입 후의 근거가 아니다"
+else
+  [ "$CA_ON" = "있음" ] || {
+    echo "Cluster Autoscaler가 동작하지 않는다 — 중단한다." >&2
+    echo "  이 스크립트의 목적은 **CA 도입 후** IMP-016·017 재측정이다. 지금 돌리면" >&2
+    echo "  기존 값을 한 번 더 재는 것이고, 결과가 'CA 도입 후 근거'로 잘못 채택된다." >&2
+    echo "  확인: kubectl -n kube-system get deploy -l app.kubernetes.io/name=aws-cluster-autoscaler" >&2
+    echo "  CA 없는 기준선을 일부러 재려면: --expect-no-ca" >&2
+    exit 1; }
+fi
 NODE_TYPE="$(kubectl get nodes -o jsonpath='{.items[0].metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "?")"
 echo "    노드 $(kubectl get nodes --no-headers | wc -l | tr -d ' ')대 / $NODE_TYPE, Cluster Autoscaler $CA_ON"
-# 이 한 줄이 이 측정의 조건을 규정한다 — IMP-016·017은 'CA 없음'에서 잰 값이다.
 
 # 시나리오별 대상 확정
 if [ "$SCENARIO" = "failover" ]; then

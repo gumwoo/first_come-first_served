@@ -96,6 +96,10 @@ jobs:
     if: needs.changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v4
+      # gradle-wrapper.jar는 저장소에 커밋되는 **바이너리**다. 리뷰어가 내용을 읽고 검증할 수
+      # 없으므로, Gradle이 공식 배포한 jar의 체크섬과 대조해 CI가 대신 판정한다.
+      # (바꿔치기된 wrapper jar는 실제로 알려진 공급망 공격 경로다.)
+      - uses: gradle/actions/wrapper-validation@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20

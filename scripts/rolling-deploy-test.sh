@@ -104,39 +104,71 @@ CUR_API="$(cur_tag api)"
 CUR_WEB="$(cur_tag web)"
 echo "    현재 api=$CUR_API web=$CUR_WEB"
 
-latest_tags() {
-  aws ecr describe-images --repository-name "$1" --region "$REGION" \
-    --query 'sort_by(imageDetails,&imagePushedAt)[*].imageTags[]' --output text 2>/dev/null \
-    | tr '\t' '\n' | tr -d '\r' | grep -E '^[0-9a-f]{40}$' || true
-}
 if [ -z "$TAG" ]; then
-  # 두 리포에 **모두** 있는 태그 중 현재가 아닌 가장 최근 것.
-  # 한쪽에만 있는 태그를 고르면 나머지 Deployment가 ImagePullBackOff로 죽는다.
-  latest_tags flowticket-api | sort -u > "$WORK/api.tags"
-  latest_tags flowticket-web | sort -u > "$WORK/web.tags"
-  TAG="$(comm -12 "$WORK/api.tags" "$WORK/web.tags" | grep -v "^$CUR_API\$" | tail -1 || true)"
+  # 두 리포에 **모두** 있는 태그 중, 현재 돌고 있는 두 태그가 **아닌** 가장 최근 것.
+  #
+  # ⚠️ 여기서 두 가지를 반드시 지켜야 한다. 어기면 스크립트가 검증하려는 조건 자체가 깨진다.
+  #
+  # 1) 정렬은 imagePushedAt으로만 한다. 태그가 커밋 SHA라 **사전순은 시간순과 무관하다.**
+  #    (이전 구현이 sort_by(imagePushedAt)으로 뽑아 놓고 sort -u로 그 순서를 날렸다.)
+  # 2) CUR_API와 CUR_WEB을 **둘 다** 제외한다. CUR_API만 걸러내면 CUR_WEB이 선택될 수 있고,
+  #    그러면 --scope both에서 api는 롤링되지만 web은 "같은 태그로 교체"라 아무 일도 안 난다.
+  #    즉 **"이미지 변경 + web·api 동시 롤링"이 아닌 조건으로 측정이 진행된다.**
+  aws ecr describe-images --repository-name flowticket-api --region "$REGION" \
+    --query 'imageDetails[].{pushed:imagePushedAt,tags:imageTags}' --output json > "$WORK/api.json" 2>/dev/null || echo '[]' > "$WORK/api.json"
+  aws ecr describe-images --repository-name flowticket-web --region "$REGION" \
+    --query 'imageDetails[].imageTags[]' --output json > "$WORK/web.json" 2>/dev/null || echo '[]' > "$WORK/web.json"
+  # pushed는 ISO8601이고 같은 계정·리전이라 오프셋이 동일하므로 문자열 정렬로 시간순이 된다.
+  TAG="$(jq -r --slurpfile web "$WORK/web.json" --arg cura "$CUR_API" --arg curw "$CUR_WEB" '
+      ($web[0] // []) as $w
+      | [ .[] | select(.tags != null) | . as $i | .tags[] | {tag: ., pushed: $i.pushed} ]
+      | map(select(.tag | test("^[0-9a-f]{40}$")))
+      | map(select(.tag != $cura and .tag != $curw))
+      | map(select(.tag as $t | $w | index($t)))
+      | sort_by(.pushed)
+      | last
+      | if . == null then "" else .tag end
+    ' "$WORK/api.json" 2>/dev/null || true)"
 fi
 if [ -z "$TAG" ]; then
   echo "롤링에 쓸 다른 이미지를 찾지 못했다. --tag <sha40>으로 지정하라." >&2
-  echo "  ECR에 이미지가 하나뿐이면 '이미지 변경' 조건 자체를 만들 수 없다." >&2
+  echo "  두 리포에 공통으로 있으면서 현재 api($CUR_API)·web($CUR_WEB)과 다른 태그가 필요하다." >&2
   exit 1
 fi
+# --tag로 직접 준 경우에도 같은 조건을 강제한다. 여기서 통과시키면 "롤링했는데 아무것도
+# 안 바뀐" 상태로 측정이 돌아가고, 그 결과는 무중단의 증거가 되지 못한다.
+for t in $TARGETS; do
+  case "$t" in api) c="$CUR_API";; web) c="$CUR_WEB";; esac
+  if [ "$TAG" = "$c" ]; then
+    echo "지정한 태그가 현재 $t 태그와 같다($TAG) — $t는 롤링되지 않는다." >&2
+    echo "  --scope $SCOPE의 조건을 만족하지 못하므로 중단한다." >&2
+    exit 1
+  fi
+done
 echo "    롤링 대상 태그=$TAG"
 
 # ⚠️ 정직하게 기록한다. 이 태그가 현재와 **다른 다이제스트**여야 이미지 pull이 실제로 일어난다.
 # 같은 내용에 다른 태그만 단 것이면 레이어가 캐시돼 pull이 즉시 끝나고, 우리가 의심하는
 # "pull 지연 → Ready 지연" 경로를 재현하지 못한다. 그 경우 결과는 조건 미달로 읽어야 한다.
+#
+# **롤링 대상 전부**를 확인한다. api만 보면, api는 새 이미지인데 web은 같은 다이제스트인
+# 경우를 놓친다 — web 쪽에서는 pull 지연 가설이 재현되지 않는데도 "확인함"으로 남는다.
 digest_of() {
   aws ecr describe-images --repository-name "flowticket-$1" --region "$REGION" \
     --image-ids imageTag="$2" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || echo "?"
 }
-if [ "$(digest_of api "$CUR_API")" = "$(digest_of api "$TAG")" ]; then
-  DIGEST_NOTE="동일 — 레이어 캐시로 pull 지연을 재현하지 못한다"
-  echo "    ⚠️ 다이제스트 $DIGEST_NOTE"
-else
-  DIGEST_NOTE="상이 — 실제 pull이 일어난다"
-  echo "    다이제스트 $DIGEST_NOTE"
-fi
+DIGEST_NOTE=""
+for t in $TARGETS; do
+  case "$t" in api) c="$CUR_API";; web) c="$CUR_WEB";; esac
+  if [ "$(digest_of "$t" "$c")" = "$(digest_of "$t" "$TAG")" ]; then
+    DIGEST_NOTE="$DIGEST_NOTE $t=동일"
+    echo "    ⚠️ $t 다이제스트 동일 — 레이어 캐시로 pull 지연을 재현하지 못한다"
+  else
+    DIGEST_NOTE="$DIGEST_NOTE $t=상이"
+    echo "    $t 다이제스트 상이 — 실제 pull이 일어난다"
+  fi
+done
+DIGEST_NOTE="${DIGEST_NOTE# }"
 
 # ── 2. ArgoCD 자동 동기화 일시 중지 ─────────────────────────────────
 say "2/8 ArgoCD 자동 동기화 일시 중지"
@@ -250,7 +282,7 @@ mkdir -p "$OUT"
 cp "$WORK/k6.log" "$WORK/replicasets.txt" "$OUT/" 2>/dev/null || true
 {
   echo "scope=$SCOPE rate=$RATE duration=$DURATION warmup=${WARMUP}s"
-  echo "tag: $CUR_API -> $TAG (다이제스트 $DIGEST_NOTE)"
+  echo "tag: api $CUR_API / web $CUR_WEB -> $TAG (다이제스트 $DIGEST_NOTE)"
   echo "rollout: $T0 -> $T1"
   echo "baseline_non2xx(롤링 전): $BASELINE_BAD"
 } > "$OUT/conditions.txt"
@@ -267,7 +299,7 @@ echo
 echo "    총 요청   $TOTAL"
 echo "    non-2xx   $BAD"
 echo "    p95/p99   $(echo "$SUMMARY" | jq -r .p95)ms / $(echo "$SUMMARY" | jq -r .p99)ms"
-echo "    롤링      $T0 → $T1  (대상: $TARGETS, 태그 $CUR_API → $TAG)"
+echo "    롤링      $T0 → $T1  (대상: $TARGETS → $TAG, 다이제스트 $DIGEST_NOTE)"
 echo "    조건·로그 $OUT/"
 echo
 
@@ -288,5 +320,5 @@ fi
 echo "결과: 무중단 — $TOTAL건 전량 2xx."
 # IMP-015 §8의 판정 기준을 여기서도 되풀이한다. 결과를 부풀리는 것은 보통
 # 문서가 아니라 "성공했다"는 한 줄에서 시작한다.
-echo "  ⚠️ 이것은 이 조건(scope=$SCOPE, $RATE rps, $CUR_API→$TAG) 한 번의 결과다."
+echo "  ⚠️ 이것은 이 조건(scope=$SCOPE, $RATE rps, →$TAG, $DIGEST_NOTE) 한 번의 결과다."
 echo "     IMP-015 §8의 판정 기준대로, 0건이 나왔다고 502의 원인이 규명된 것은 아니다."

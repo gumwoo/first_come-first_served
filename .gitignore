@@ -48,6 +48,11 @@ crash.log
 tfplan
 *.tfplan
 !*.tfvars.example
+# 예외: 부하·오토스케일 측정 프로파일. 담는 값이 node_instance_type과 node_max_size
+# 둘뿐이라 비밀도, 토폴로지(CIDR·허용 IP)도 없다. ADR-012 §5의 "목적별 인스턴스 전환"을
+# 코드로 고정하려면 커밋돼야 한다 — 문서의 명령어 목록으로 두면 매번 손으로 채우게 된다.
+# ⚠️ 이 파일에 값을 추가할 때는 위 43행의 이유(public 저장소)를 먼저 읽을 것.
+!**/loadtest.tfvars
 
 # backend 설정은 계정 ID를 담으므로 커밋하지 않는다(.example만 커밋).
 backend.hcl

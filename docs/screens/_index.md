@@ -14,7 +14,7 @@ status: `todo | doing | done | blocked`
 | S05 | 주문·결제(결제/완료/실패/입금대기) | S04 | done | 주문 생성·Mock 결제 승인+조건부 전이·가상계좌·결제 만료 sweep + 멱등(IMP-008) + 결제 FE/QR + E2E(해피+예외) + Toss 실 PG 연동(카드 결제창·confirm) + 가상계좌 입금 웹훅(secret 대조·멱등) + TS-009/TS-010 |
 | S06 | 마이페이지·취소/환불 | S05 | done | 마이페이지 목록(탭·페이징)·상세 + 취소/환불(상태 3분리 CANCELLED/REFUNDED)·기간별 수수료 + 멱등(IMP-009) + 마이페이지 리디자인 + 환불 E2E |
 | S07 | 운영(대시보드/내역/이벤트/DLQ/알림) | S05 | done | 관리자 인증(ADR-007)·대시보드·주문 조회·공연 CRUD·Kafka 이벤트 백본+DLQ(ADR-008)·알림 임계치·admin E2E. 계약 100% 충족 |
-| S08 | 정합성 보강 — 아웃박스(1단계) + PG 정산·보상(2단계) | S07 | done | **우선순위 1**. 설계 [ADR-010](../decisions/ADR-010-transactional-outbox.md). **1단계 아웃박스**: `order.paid`가 AFTER_COMMIT best-effort라 "커밋 직후·발행 전 크래시" 시 유실 가능(ADR-008·TS-011 §한계) → 같은 tx에 이벤트 적재→폴링 릴레이(ShedLock) 발행→Redis SETNX 멱등으로 **exactly-once**. 유실 **10→0**([IMP-011](../improvements/IMP-011-outbox-delivery.md), PR #138·#139·#140). **2단계 정산**([ADR-011](../decisions/ADR-011-payment-reconciliation.md)): PG 승인 후 크래시로 롤백돼 DB에 흔적이 없는 미아 승인(아웃박스로 못 닫는 클래스)을 주문 기준 후보→PG 조회→취소(void)로 회수. 감사 테이블은 범위 밖(로그). |
+| S08 | 정합성 보강 — 아웃박스(1단계) + PG 정산·보상(2단계) | S07 | done | **우선순위 1**. 설계 [ADR-010](../decisions/ADR-010-transactional-outbox.md). **1단계 아웃박스**: `order.paid`가 AFTER_COMMIT best-effort라 "커밋 직후·발행 전 크래시" 시 유실 가능(ADR-008·TS-011 §한계) → 같은 tx에 이벤트 적재→폴링 릴레이(ShedLock) 발행→Redis SETNX 소비자 멱등. 발행은 **at-least-once**이고 중복은 소비자가 흡수한다(exactly-once가 아니다). 유실 **10→0**([IMP-011](../improvements/IMP-011-outbox-delivery.md), PR #138·#139·#140). **2단계 정산**([ADR-011](../decisions/ADR-011-payment-reconciliation.md)): PG 승인 후 크래시로 롤백돼 DB에 흔적이 없는 미아 승인(아웃박스로 못 닫는 클래스)을 주문 기준 후보→PG 조회→취소(void)로 회수. 감사 테이블은 범위 밖(로그). |
 | S09 | 배포·운영 준비(컨테이너화·EKS·Strimzi·멀티팟·ArgoCD) | S07 | **done (DoD 9/9)** | (구 S08) 멀티팟 준비 **코드 선반영 완료**(①SSE Redis pub/sub 팬아웃·②ShedLock·③PG 보상·④정확한 알림). 2026-08-10 기준 **컨테이너화·ECR/CI·Terraform(EKS)·Strimzi 멀티브로커·ArgoCD(GitOps, 자동 동기화)·관측(Prometheus/Grafana + Kafka)·①② cross-Pod 실증·브로커 페일오버까지 완료**([[TS-022]], [[TS-023]]). **DoD 9개 전부 충족**(2026-08-11). 마지막 항목인 정량 부하는 k6를 클러스터 밖에서 돌려 측정 환경 문제를 피했고, capacity knee 600~650 rps와 포화 징후(노드 CPU·Hikari pending 동시)까지 특정했다. External Secrets도 완료(#213). 남은 부하 시나리오(좌석 경합·대기열 스파이크·Stress·Soak)는 S10이다. 상세: [docs/deployment/](../deployment/_index.md) |
 | S10 | 부하테스트·모니터링 | S09 | todo | 배포 위 k6 실측·HPA 수평확장·브로커 페일오버·Consumer Lag. IMP 재측정(아웃박스 유실 0 포함) |
 
@@ -48,7 +48,7 @@ status: `todo | doing | done | blocked`
 - [event-detail.md](operator/event-detail.md) · [dlq.md](operator/dlq.md) · [alerts.md](operator/alerts.md)
 
 ### S08 아웃박스 + 정산(정합성 보강)
-- 사용자 화면 없음(백엔드 트랙). 1단계 아웃박스(exactly-once 발행) / 2단계 PG 정산·보상. 설계: [ADR-010](../decisions/ADR-010-transactional-outbox.md). 실측은 IMP-011 + 통합테스트.
+- 사용자 화면 없음(백엔드 트랙). 1단계 아웃박스(at-least-once 발행 + 소비자 멱등) / 2단계 PG 정산·보상. 설계: [ADR-010](../decisions/ADR-010-transactional-outbox.md). 실측은 IMP-011 + 통합테스트.
 
 ### S09 배포·운영 준비
 - 사용자 화면 없음(인프라 트랙). 상세: [docs/deployment/_index.md](../deployment/_index.md)

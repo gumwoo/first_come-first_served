@@ -1,0 +1,3 @@
+db=flowticket multiaz=True az: ap-northeast-2b -> ap-northeast-2b
+rate=25 duration=6m baseline_non2xx=0
+failover: 2026-08-26T13:31:22Z -> available by 2026-08-26T13:32:38Z

@@ -94,8 +94,21 @@ echo "    node-group=$NG 현재 primary=${PRIMARY0:-?}"
 # TestFailoverNotAvailableFault를 낸다. 2026-08-26에 워밍업 45초를 태우고 나서
 # 두 번 막혔다 — 부하를 걸기 **전에** 확인한다.
 for i in $(seq 1 30); do
-  REC="$(aws elasticache describe-events --region "$REGION" --duration 5 \n    --query "Events[?contains(Message,'Recovering cache nodes')].Date" --output text 2>/dev/null || true)"
-  [ -z "$REC" ] && break
+  # ⚠️ `2>/dev/null || true`로 감싸면 CLI 실패가 REC=""이 되어 "재동기화 없음"으로 오판한다.
+  # 초판이 그랬고, 게다가 줄바꿈이 리터럴 `\n`으로 들어가 `n`이 잘못된 위치 인자로 전달돼
+  # AWS CLI가 항상 exit 252로 죽었다 — 이 체크는 한 번도 동작한 적이 없다(실측 확인).
+  # 그래서 종료코드를 값과 분리해서 본다.
+  if REC="$(aws elasticache describe-events \
+    --region "$REGION" \
+    --duration 5 \
+    --query "Events[?contains(Message,'Recovering cache nodes')].Date" \
+    --output text 2>&1)"; then
+    if [ -z "$REC" ] || [ "$REC" = "None" ]; then REC=""; break; fi
+  else
+    echo "    ⚠️ describe-events 실패 — 재동기화 여부를 확인하지 못했다:"
+    printf '      %s\n' "$(printf '%s' "$REC" | head -c 160)"
+    REC=""; break
+  fi
   echo "    최근 5분 내 재동기화 이벤트가 있다 — 대기($((i*20))s)"
   sleep 20
 done

@@ -132,19 +132,36 @@ HIKARI_OK="$(kubectl -n "$NS" exec deploy/flowticket-api -c api -- \
   echo "HikariCP 지표를 읽지 못한다 — 커넥션 풀 관찰 없이는 이 실험의 절반이 빈다. 중단한다." >&2
   echo "  확인: kubectl -n $NS exec deploy/flowticket-api -c api -- wget -qO- localhost:8080/actuator/prometheus | grep hikaricp" >&2
   exit 1; }
+# ⚠️ `exec deploy/...` 로 읽으면 안 된다. 매번 **여러 파드 중 하나에 임의로** 붙기 때문에,
+# 1초마다 다른 파드를 읽고도 같은 파드의 시계열처럼 보인다.
+#
+# 2026-08-26 초판이 정확히 그랬다 — `timeout_total 57 → 0`을 "고갈됐다가 회복됐다"로 읽었다.
+# 그런데 이 지표는 **counter**(단조 증가)이고 파드 재시작도 0이었다. 같은 프로세스에서
+# 줄어들 수 없으므로 **다른 파드를 읽은 것**이다. 실제 파드별 값은 57 / 40 / 0이었다.
+# 잘못된 인과를 만든 것이 아니라, **애초에 인과를 볼 수 없는 수집 방식**이었다.
+#
+# 파드 이름을 고정해 각각 따로 기록한다.
+API_PODS="$(kubectl -n "$NS" get pods -l app=flowticket-api \
+  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}')"
+[ -n "$API_PODS" ] || { echo "api 파드를 찾지 못했다" >&2; exit 1; }
+echo "    감시 대상 파드: $(echo "$API_PODS" | wc -w)개"
 (
-  prev=""
+  declare -A PREV=()
   while :; do
-    v="$(kubectl -n "$NS" exec deploy/flowticket-api -c api -- \
-      sh -c 'wget -qO- localhost:8080/actuator/prometheus 2>/dev/null \
-             | awk "/^hikaricp_connections_(active|idle|pending|timeout_total)/ {print \$1\"=\"\$2}" \
-             | sed "s/{[^}]*}//" | tr "\n" " "' 2>/dev/null || true)"
-    [ -n "$v" ] && [ "$v" != "$prev" ] && { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$v"; prev="$v"; }
+    TS="$(date -u +%H:%M:%SZ)"
+    for p in $API_PODS; do
+      v="$(kubectl -n "$NS" exec "$p" -c api -- \
+        sh -c 'wget -qO- localhost:8080/actuator/prometheus 2>/dev/null \
+               | awk "/^hikaricp_connections_(active|idle|pending|timeout_total)/ {print \$1\"=\"\$2}" \
+               | sed "s/{[^}]*}//;s/hikaricp_connections_//" | tr "\n" " "' 2>/dev/null || true)"
+      [ -n "$v" ] && [ "$v" != "${PREV[$p]:-}" ] && {
+        printf '%s  pod=%s  %s\n' "$TS" "${p##*-}" "$v"; PREV[$p]="$v"; }
+    done
     sleep 1
   done
 ) > "$WORK/hikari.log" 2>&1 &
 WATCH_PID=$!
-echo "    hikaricp 지표 확인됨(prometheus 엔드포인트)"
+echo "    hikaricp 지표 확인됨(prometheus 엔드포인트, 파드별 수집)"
 
 say "3/6 워밍업 ${WARMUP}s (장애 전 기준선)"
 sleep "$WARMUP"

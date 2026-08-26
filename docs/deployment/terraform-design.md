@@ -178,7 +178,7 @@ ADR-012 §5 참조. **부하 측정 시 반드시 비버스터블로 바꾼 뒤 
 | VPC CNI, CoreDNS, kube-proxy | EKS 애드온(Terraform) | |
 | **EBS CSI Driver** | EKS 애드온 + IRSA | StorageClass의 전제 |
 | **AWS Load Balancer Controller** | Helm(부트스트랩) + IRSA | Ingress → ALB |
-| ~~**Cluster Autoscaler**~~ ⚠️ **미도입** | IRSA 역할만 생성 · **컨트롤러 미배포** | ADR-012 §4에서 뒤집었다. `bring-up.sh`에 설치 단계가 없다 |
+| **Cluster Autoscaler** | **Helm**(부트스트랩) + IRSA | 2026-08-26 도입·실증([[IMP-021]]). 차트 버전을 고정하고 **k8s 마이너와 대조해 어긋나면 기동 중단** |
 | ArgoCD | Helm(1회 부트스트랩) | 이후 **앱만** ArgoCD가 관리 — ADR-009 |
 | **Strimzi Operator** | **Helm**(부트스트랩) | ⚠️ ArgoCD가 아니다 — `bring-up.sh` 4단계 |
 | **kube-prometheus-stack** | **Helm**(부트스트랩) | ⚠️ 위와 같다 |
@@ -222,7 +222,7 @@ AZ별 노드그룹          → 노드가 죽어도 대체 노드가 같은 AZ�
 | ArgoCD (전체) | – | 250m | 512Mi | 1Gi |
 | Strimzi Operator | 1 | 100m | 256Mi | 512Mi |
 | AWS LB Controller | 1 | 50m | 128Mi | 256Mi |
-| EBS CSI (CA는 미배포) | – | 100m | 256Mi | 512Mi |
+| EBS CSI / Cluster Autoscaler | – | 100m | 256Mi | 512Mi |
 | CoreDNS ×2 + DaemonSet | – | 250m | 340Mi | – |
 | **평시 합계(requests)** | | **약 3.4 vCPU** | **약 7.6 GiB** | |
 | **HPA 최대(API 6 Pod)** | | **약 5.4 vCPU** | **약 9.9 GiB** | |
@@ -262,10 +262,11 @@ template:
 **rack awareness만으로는 브로커 Pod가 AZ에 균등 분산되지 않는다** — 둘은 역할이 다르다(ADR-012 §6).
 설정 문법은 작성 시점의 Strimzi 공식 문서로 확인한 뒤 반영한다.
 
-### CA와 상태 저장 워크로드 — ⚠️ **CA 미도입이라 현재는 해당 없음**
+### CA와 상태 저장 워크로드
 
-아래는 **CA를 도입할 때 반드시 다시 볼 항목**이다. 지우지 않는 이유는, 도입하는 순간
-기존 실측([[IMP-016]] 브로커 페일오버)이 **CA 없는 상태에서 잰 값**이 되기 때문이다.
+⚠️ 2026-08-26에 CA를 도입하며 [[IMP-016]]·[[IMP-017]]을 CA 조건으로 **다시 쟀다**
+(각 §7). 축소가 브로커를 옮기는 현상은 그 측정에서 발생하지 않았으나,
+**축소와 부하를 동시에 건 조건은 재지 않았다.** 아래는 계속 확인해야 할 항목이다.
 
 - Strimzi가 만드는 **PodDisruptionBudget** 확인 — 한 번에 브로커 1개만 내려가야 한다.
 - 브로커 Pod에 `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` 적용을 검토한다.
@@ -280,8 +281,8 @@ template:
 1. state-bootstrap   S3 버킷 (+ 필요 시 잠금 테이블)
 2. bootstrap         Route53 Zone data 참조 → ACM 요청 → DNS 검증 대기 → ECR·IAM
 3. platform          VPC → 엔드포인트 → EKS → 노드그룹 → 애드온 → RDS → ElastiCache
-4. 부트스트랩 Helm    LB Controller → Strimzi Operator → kube-prometheus-stack → ArgoCD
-                     (CA는 미도입 — ADR-012 §4)
+4. 부트스트랩 Helm    LB Controller → Cluster Autoscaler → Strimzi Operator
+                     → kube-prometheus-stack → ArgoCD  (모두 차트 버전 고정)
 5. kubectl/kustomize Kafka CR(k8s/kafka) → 관측 리소스(k8s/monitoring) → ArgoCD Application
 6. ArgoCD            k8s/overlays/demo-local → k8s/base — 앱(api/web)·HPA·PDB·Ingress만
 7. 검증              Ingress ALB 생성 확인 → HTTPS → /actuator/health/readiness

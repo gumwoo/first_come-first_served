@@ -68,14 +68,32 @@ variable "kubernetes_version" {
     나타난다).
 
     2026-08-06 실측 (표준 지원 종료일):
-        1.36 → 2027-08-02   ← 현재 값
-        1.35 → 2027-03-27
+        1.36 → 2027-08-02
+        1.35 → 2027-03-27   ← 현재 값
         1.34 → 2026-12-02   (약 4개월 남아 가장 임박)
         1.33 → 2026-07-29   (이미 만료, 연장 지원 구간)
     같은 날 애드온 4종(vpc-cni·coredns·kube-proxy·aws-ebs-csi-driver) 모두 1.36 지원 확인.
+
+    ⚠️ 2026-08-25: 1.36 → 1.35로 **내렸다.** 지원 창이 더 긴 쪽을 고르던 원칙을 뒤집은
+    것이므로 이유를 남긴다.
+
+    Cluster Autoscaler를 기본 구성으로 도입했는데(ADR-012 §4 재도입), CA는 Kubernetes
+    마이너와 버전을 맞춰야 한다(CA v1.35 → k8s 1.35). 그런데 **CA는 아직 1.36용이 없다** —
+    helm 저장소 최신이 appVersion 1.35.0이다(2026-08-25 확인).
+
+        helm search repo autoscaler/cluster-autoscaler --versions | awk '{print $3}' | sort -uV | tail -1
+        → 1.35.0
+
+    즉 1.36을 유지하면 bring-up.sh의 CA 호환성 검사에 걸려 기동 자체가 멈춘다.
+    검사를 완화해 CA 1.35를 1.36에 얹는 선택지도 있었으나, 그건 CA 공식 정책 밖이라
+    **"권장 조합이 아닌 상태에서 잰 값"**이 된다. 측정의 신뢰도가 목적이므로 클러스터를
+    맞췄다. 1.35의 표준 지원은 2027-03-27까지로 아직 1년 이상 남았다.
+
+    **CA 1.36이 나오면 되돌린다** — 위 명령으로 확인하고, 이 값과
+    bring-up.sh의 CA_CHART_VERSION을 함께 올린다.
   EOT
   type        = string
-  default     = "1.36"
+  default     = "1.35"
 }
 
 variable "cluster_public_access_cidrs" {

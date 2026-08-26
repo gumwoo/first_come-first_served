@@ -107,7 +107,7 @@ destroy 후 잔여 점검: **ALB · NAT · Elastic IP · EBS · 스냅샷**.
 
 | 갈래 | 대상 | 어디서 |
 |---|---|---|
-| **Helm** | AWS Load Balancer Controller, Strimzi **Operator**, kube-prometheus-stack, ArgoCD 자신 | `bring-up.sh` 3~4단계 |
+| **Helm** | AWS Load Balancer Controller, **Cluster Autoscaler**, Strimzi **Operator**, kube-prometheus-stack, ArgoCD 자신 | `bring-up.sh` 3~4단계. 다섯 개 모두 **차트 버전 고정** |
 | **kubectl/kustomize** | Kafka CR(`k8s/kafka`), 관측 리소스(`k8s/monitoring` — ServiceMonitor·PodMonitor·대시보드·PrometheusRule), ArgoCD `Application` 자체 | `bring-up.sh` 6단계 |
 | **ArgoCD**(ADR-009) | `k8s/overlays/demo-local` → `k8s/base` — namespace·configmap·api/web Deployment·HPA·PDB·Ingress | 이후 지속 동기화 |
 
@@ -115,7 +115,8 @@ destroy 후 잔여 점검: **ALB · NAT · Elastic IP · EBS · 스냅샷**.
 그 오버레이는 `../../base`만 포함한다. Strimzi Operator·Kafka CR·관측 스택은 **추적 밖**이라
 `prune`으로 지워지지도, 드리프트가 self-heal 되지도 않는다.
 
-⚠️ **Cluster Autoscaler는 설치하지 않는다** — IRSA 역할만 만들고 컨트롤러는 배포하지 않는다
-(ADR-012 §4, IMP-017 §6).
+⚠️ **Cluster Autoscaler는 Kubernetes 마이너와 버전을 맞춰야 한다**(CA v1.35 → k8s 1.35).
+`bring-up.sh`가 설치 전에 차트 appVersion과 API 서버 마이너를 대조하고 **어긋나면 중단한다.**
+클러스터 버전을 올리면 `CA_CHART_VERSION`도 함께 올려야 한다(ADR-012 §4, [IMP-021](../../../docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md)).
 
 IRSA 역할 ARN은 `terraform output irsa_role_arns`로 얻어 서비스 어카운트에 annotate한다.

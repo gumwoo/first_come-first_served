@@ -35,6 +35,7 @@ naive → 측정 → 개선 → 재측정 순서로 수치를 **커밋으로 박
 | [IMP-018](IMP-018-kopis-detail-hotpath-removal.md) | 사용자 요청이 외부 API 호출을 증폭시키던 구조 제거 | S02/S09 | 부하 중 외부 호출 **약 22,000→0건**(제한 34배 초과 해소) · 응답시간은 측정 환경 변동으로 미주장 | 완료 |
 | [IMP-019](IMP-019-ci-backend-context-boot.md) | CI 백엔드 느림 — 컨텍스트 부트를 붙잡던 KafkaAdmin 토픽 생성 | 전반(CI) | backend 잡 9m46s→3m08s (-68%) | 완료 |
 | [IMP-020](IMP-020-seat-map-cache.md) | 좌석맵 조회 캐시 — 그리고 캐시만으로는 커넥션이 줄지 않았다 | S04·S10 | api CPU 2.55→1.56 ms/req(1.63배), node 5.39→3.89(1.38배), 서버 p99 24.5→9.7ms, 커넥션/요청 1.005→0.025 | 측정 완료 · **운영 미적용**(무효화 미구현) |
+| [IMP-021](IMP-021-cluster-autoscaler-node-scaling.md) | Cluster Autoscaler 실증(노드 확장·축소) | 인프라 | Pending 4개 → 노드 **3→4(110초)** → 해소, 부하 제거 후 **4→3(739초)**. ⚠️ HPA 상한을 일부러 올린 조건 | 완료 |
 
 ## 누적 지표 보드
 프로젝트 전체에서 모은 정량 성과 요약: [METRICS.md](METRICS.md)

@@ -93,6 +93,12 @@ echo "    node-group=$NG 현재 primary=${PRIMARY0:-?}"
 # 옛 primary가 재동기화("Recovering cache nodes") 중이면 AWS가
 # TestFailoverNotAvailableFault를 낸다. 2026-08-26에 워밍업 45초를 태우고 나서
 # 두 번 막혔다 — 부하를 걸기 **전에** 확인한다.
+#
+# ⚠️ **fail-closed다.** 이 체크의 목적이 "워밍업까지 태우고 나서 AWS에 거절당하는 것을
+# 막는 것"이므로, 재동기화가 끝났다고 **확인하지 못하면 시작하지 않는다.**
+#   - 조회 자체가 실패     → 중단 (확인할 수 없음 ≠ 없음)
+#   - 10분을 넘겨도 계속됨 → 중단
+# 초판은 두 경우 모두 경고만 찍고 진행했다(fail-open). 그러면 막으려던 상황으로 그대로 간다.
 for i in $(seq 1 30); do
   # ⚠️ `2>/dev/null || true`로 감싸면 CLI 실패가 REC=""이 되어 "재동기화 없음"으로 오판한다.
   # 초판이 그랬고, 게다가 줄바꿈이 리터럴 `\n`으로 들어가 `n`이 잘못된 위치 인자로 전달돼
@@ -105,14 +111,18 @@ for i in $(seq 1 30); do
     --output text 2>&1)"; then
     if [ -z "$REC" ] || [ "$REC" = "None" ]; then REC=""; break; fi
   else
-    echo "    ⚠️ describe-events 실패 — 재동기화 여부를 확인하지 못했다:"
-    printf '      %s\n' "$(printf '%s' "$REC" | head -c 160)"
-    REC=""; break
+    echo "describe-events 실패 — 재동기화 상태를 확인할 수 없어 중단한다" >&2
+    printf '  %s\n' "$(printf '%s' "$REC" | head -c 160)" >&2
+    exit 1
   fi
   echo "    최근 5분 내 재동기화 이벤트가 있다 — 대기($((i*20))s)"
   sleep 20
 done
-[ -z "${REC:-}" ] || echo "    ⚠️ 재동기화가 계속된다 — test-failover가 거부될 수 있다"
+[ -z "${REC:-}" ] || {
+  echo "재동기화가 10분 넘게 계속된다 — test-failover가 거부되므로 실행하지 않는다" >&2
+  echo "  마지막 이벤트: $REC" >&2
+  exit 1
+}
 
 DOMAIN="$(kubectl -n "$NS" get ingress flowticket -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)"
 [ -n "$DOMAIN" ] || { echo "Ingress에서 도메인을 읽지 못했다" >&2; exit 1; }

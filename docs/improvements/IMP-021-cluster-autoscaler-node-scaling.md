@@ -78,23 +78,39 @@ T1+739s  노드 3     ← 축소
 ADR-012 §한계가 경고한 것은 *"CA scale-down이 Kafka 브로커를 옮길 수 있다"*였다.
 축소 후 브로커 3대가 모두 `Running`이었고 PDB(`flowticket-kafka minAvailable=2`)도 살아 있었다.
 
-⚠️ 다만 `flowticket-dual-role-0`에 **재시작 1회**가 있었다. 시각을 대조해 원인을 갈랐다.
+⚠️ 다만 `flowticket-dual-role-0`에 **재시작 1회**가 있었다. 두 가지를 나눠 적는다 —
+**확인한 것**과 **확인하지 못한 것**이다.
+
+**확인한 것 ① — CA 축소가 원인이 아니다.**
 
 ```
-브로커 종료   10:15:33Z   (reason=Completed, exitCode=0)
+liveness 실패  10:15:04Z
+컨테이너 종료  10:15:33Z   (reason=Completed, exitCode=0)
 CA 확장       10:14:43Z
 CA 축소 삭제  10:26:37Z   ← 11분 뒤
 ```
 
-**축소보다 11분 먼저 일어났다.** 이벤트가 원인을 가리킨다.
+**재시작이 축소보다 11분 먼저 일어났다.** 시간축만으로 충분히 강하게 말할 수 있다.
+ADR-012 §한계가 경고한 *"CA scale-down이 브로커를 옮긴다"* 경로는 **이번 측정에서
+발생하지 않았다.**
+
+**확인한 것 ② — 재시작의 직접 원인은 liveness 프로브다.**
 
 ```
-Readiness probe failed: command timed out: "/opt/kafka/kafka_readiness.sh" timed out after 5s
+10:15:04Z  Warning  Unhealthy  Liveness probe failed: command timed out:
+                               "/opt/kafka/kafka_liveness.sh" timed out after 5s
+10:15:04Z  Normal   Killing    Container kafka failed liveness probe, will be restarted
 ```
 
-즉 **부하 중(api 12파드) 노드 CPU 경합으로 readiness 프로브가 타임아웃**해 컨테이너가
-재시작된 것이고, CA scale-down과는 다른 현상이다. ADR-012가 경고한 그 경로는
-**이번 측정에서 발생하지 않았다.**
+kubelet이 명시적으로 `will be restarted`를 남겼다.
+
+⚠️ **확인하지 못한 것 — 왜 프로브가 5초 안에 끝나지 못했는가.**
+같은 시각 api가 12파드까지 늘어 있었으므로 노드 자원 경합을 의심하지만,
+**그 시점의 노드 CPU를 재지 않았다.** 이건 추론이다.
+
+> ⚠️ 초판은 이 대목을 *"readiness 프로브 타임아웃으로 재시작됐다"*고 적었다.
+> **성립하지 않는 인과다** — readiness 실패는 파드를 Unready로 만들 뿐 컨테이너를
+> 재시작시키지 않는다. 이벤트를 훑을 때 readiness 줄만 보고 **liveness 줄을 놓쳤다.**
 
 ## 5. ⚠️ 이 결과의 조건
 
@@ -129,6 +145,10 @@ drain T0    10:31:47Z
 - **반복 측정** — 확장·축소 각 1회다.
 - **AZ 편중** — `balance-similar-node-groups`가 왜 한쪽으로 몰았는지.
 - **노드 증가 시간의 분산** — 110초와 30초의 차이.
+- **브로커 liveness 타임아웃의 원인** — 프로브가 5초 안에 끝나지 못한 이유. 그 시점의
+  노드 CPU·디스크 IO를 함께 기록하면 자원 경합 여부를 가를 수 있다.
+  ⚠️ 부하 중 브로커가 재시작된다는 것 자체가 별개의 결함 후보다 — 이번엔 사용자 요청에
+  영향이 없었으나(같은 세션 [[IMP-016]] §7에서 6,000건 0 실패) 조건이 달라지면 다를 수 있다.
 - **오버프로비저닝** — ADR-012 §한계가 개선 항목으로 둔 낮은 priority pause Pod.
   노드 기동 110초 동안 Pending이 유지되는 구간을 줄이는 방법이다.
 - **knee 재측정([[TS-034]])** — ⚠️ CA와 전제가 충돌한다. knee는 "고정 용량의 한계"를 재는데

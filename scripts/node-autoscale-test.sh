@@ -82,6 +82,9 @@ pending() { kubectl -n "$NS" get pods --field-selector=status.phase=Pending --no
 apipods() { kubectl -n "$NS" get pods -l app=flowticket-api --no-headers 2>/dev/null | wc -l | tr -d ' '; }
 
 # ── 0. 전제 ──────────────────────────────────────────────────────────
+# 로컬 네트워크에 의존하지 않는 HTTP 헬퍼(로컬 실패 시 클러스터 안에서 재시도)
+. "$ROOT/scripts/lib/cluster-http.sh"
+
 say "0/6 전제 확인"
 for c in kubectl aws jq; do command -v "$c" >/dev/null || { echo "$c 가 없다" >&2; exit 1; }; done
 kubectl get ns "$NS" >/dev/null 2>&1 || { echo "$NS 네임스페이스가 없다 — bring-up.sh 먼저" >&2; exit 1; }
@@ -120,7 +123,7 @@ esac
 
 DOMAIN="$(kubectl -n "$NS" get ingress flowticket -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)"
 [ -n "$DOMAIN" ] || { echo "Ingress에서 도메인을 읽지 못했다" >&2; exit 1; }
-CODE="$(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN" --max-time 20 || true)"
+CODE="$(http_code "https://$DOMAIN")"
 [ "$CODE" = "200" ] || { echo "측정 전 상태가 정상이 아니다: https://$DOMAIN → $CODE" >&2; exit 1; }
 
 # ── 1. ArgoCD 자동 동기화 중지 ──────────────────────────────────────
@@ -146,7 +149,7 @@ echo "    ⚠️ 이 값은 노드 예산을 일부러 넘긴다. 종료 시 $OR
 
 # ── 3. 부하 ─────────────────────────────────────────────────────────
 say "3/6 부하 투입 (${RATE} rps, $RUN_FOR)"
-EVENT_ID="$(curl -s "https://$DOMAIN/api/events?status=ON_SALE&size=20" --max-time 20 \
+EVENT_ID="$(http_body "https://$DOMAIN/api/events?status=ON_SALE&size=20" \
   | jq -r '.data.items[0].id // empty' | tr -d '\r' || true)"
 kubectl -n "$NS" delete job k6-nodescale --ignore-not-found >/dev/null
 kubectl -n "$NS" create configmap k6-nodescale \

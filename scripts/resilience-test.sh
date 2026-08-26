@@ -71,11 +71,14 @@ trap cleanup EXIT
 say() { echo "==> $*"; }
 
 # ── 0. 전제 ──────────────────────────────────────────────────────────
+# 로컬 네트워크에 의존하지 않는 HTTP 헬퍼(로컬 실패 시 클러스터 안에서 재시도)
+. "$ROOT/scripts/lib/cluster-http.sh"
+
 say "0/6 전제 확인 (scenario=$SCENARIO)"
 for c in kubectl jq; do command -v "$c" >/dev/null || { echo "$c 가 없다" >&2; exit 1; }; done
 DOMAIN="$(kubectl -n "$NS" get ingress flowticket -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)"
 [ -n "$DOMAIN" ] || { echo "Ingress에서 도메인을 읽지 못했다" >&2; exit 1; }
-CODE="$(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN" --max-time 20 || true)"
+CODE="$(http_code "https://$DOMAIN")"
 [ "$CODE" = "200" ] || { echo "측정 전 상태가 정상이 아니다: https://$DOMAIN → $CODE" >&2; exit 1; }
 
 # ⚠️ CA 유무는 이 측정의 **조건 그 자체**다. 기록만 하고 통과시키면, CA 없이 돌린 결과가
@@ -136,7 +139,7 @@ fi
 
 # ── 1. 부하 기동 ────────────────────────────────────────────────────
 say "1/6 부하 기동 (${RATE} rps)"
-EVENT_ID="$(curl -s "https://$DOMAIN/api/events?status=ON_SALE&size=20" --max-time 20 \
+EVENT_ID="$(http_body "https://$DOMAIN/api/events?status=ON_SALE&size=20" \
   | jq -r '.data.items[0].id // empty' | tr -d '\r' || true)"
 kubectl -n "$NS" delete job "$JOB" --ignore-not-found >/dev/null
 kubectl -n "$NS" create configmap "$CM" \

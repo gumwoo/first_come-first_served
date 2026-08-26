@@ -24,11 +24,18 @@ _incluster_curl() {
 }
 
 # HTTP 상태코드만. 실패하면 000.
+#
+# ⚠️ `curl ... || echo 000` 으로 쓰지 않는다. curl은 DNS 실패에서도 -w 때문에 "000"을
+# **출력하면서** non-zero로 끝난다. 그래서 `|| echo 000`이 덧붙어 "000000"이 되고,
+# `[ "$c" != "000" ]`가 참이 되어 **폴백이 영영 실행되지 않는다.**
+# 초판이 정확히 그랬다(2026-08-26, exit=6 / stdout='000' 재현 확인).
+# 종료 코드와 HTTP 코드를 분리해서 본다.
 http_code() {
   url="$1"; i=1
   while [ "$i" -le "$LOCAL_TRIES" ]; do
-    c="$(curl -s -o /dev/null -w '%{http_code}' "$url" --max-time 15 2>/dev/null || echo 000)"
-    [ "$c" != "000" ] && { printf '%s' "$c"; return 0; }
+    if c="$(curl -s -o /dev/null -w '%{http_code}' "$url" --max-time 15 2>/dev/null)"; then
+      [ -n "$c" ] && [ "$c" != "000" ] && { printf '%s' "$c"; return 0; }
+    fi
     i=$((i + 1)); sleep 2
   done
   # 로컬이 안 되면 클러스터 안에서. 여기까지 왔다는 것은 로컬 문제일 가능성이 높다.

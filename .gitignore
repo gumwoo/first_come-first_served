@@ -70,3 +70,5 @@ backend.hcl
 /rolling-test-*/
 /nodescale-test-*/
 /resilience-*/
+/rds-failover-*/
+/redis-failover-*/

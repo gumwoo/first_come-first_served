@@ -136,19 +136,36 @@ CA_POD="$(kubectl -n kube-system get pod -l app.kubernetes.io/name=aws-cluster-a
   echo "cluster-autoscaler 파드를 찾지 못했다 — helm 설치가 --wait로 끝났는데도 없다면 라벨을 확인하라:" >&2
   echo "  kubectl -n kube-system get pods -l app.kubernetes.io/name=aws-cluster-autoscaler --show-labels" >&2
   exit 1; }
-# 노드그룹 인식은 로그로만 확인할 수 있고 기동 직후엔 아직 안 찍혀 있다 — 잠시 기다린다.
+# ⚠️ 로그 문자열로 판정하지 않는다. 초판이 "Registering Node Group"을 찾았는데 CA 1.35에는
+# 그 문구가 없어, **정상 동작 중인 CA를 실패로 판정했다**(2026-08-26 실측). 로그 메시지는
+# 버전마다 바뀌므로 판정 근거가 될 수 없다.
+#
+# 대신 CA가 스스로 발행하는 상태 ConfigMap을 읽는다. 이건 CA의 공개 인터페이스다.
+#   autoscalerStatus: Running
+#   nodeGroups: 아래에 그룹별 항목(name/health/...)
+# 기동 직후엔 아직 없으므로 최대 2분 기다린다.
 NG_SEEN=0
 for i in $(seq 1 12); do
-  NG_SEEN="$(kubectl -n kube-system logs "$CA_POD" --tail=500 2>/dev/null | grep -c "Registering Node Group" || true)"
-  [ "${NG_SEEN:-0}" -gt 0 ] && break
+  CA_STATUS="$(kubectl -n kube-system get cm cluster-autoscaler-status \
+    -o jsonpath='{.data.status}' 2>/dev/null || true)"
+  if [ -n "$CA_STATUS" ]; then
+    NG_SEEN="$(printf '%s\n' "$CA_STATUS" | grep -cE '^  name: ' || true)"
+    [ "${NG_SEEN:-0}" -gt 0 ] && break
+  fi
   sleep 10
 done
+CA_RUNNING="$(printf '%s\n' "${CA_STATUS:-}" | awk '/^autoscalerStatus:/{print $2; exit}')"
+[ "$CA_RUNNING" = "Running" ] || {
+  echo "cluster-autoscaler 상태가 Running이 아니다(=${CA_RUNNING:-읽지 못함}) — 중단한다." >&2
+  echo "  확인: kubectl -n kube-system get cm cluster-autoscaler-status -o jsonpath='{.data.status}'" >&2
+  exit 1; }
 [ "${NG_SEEN:-0}" -gt 0 ] || {
   echo "cluster-autoscaler가 노드그룹을 하나도 인식하지 못했다 — 중단한다." >&2
   echo "  IRSA 권한이나 ASG 태그(k8s.io/cluster-autoscaler/{enabled,owned}) 문제다." >&2
-  echo "  확인: kubectl -n kube-system logs $CA_POD --tail=50" >&2
+  echo "  확인: kubectl -n kube-system get cm cluster-autoscaler-status -o jsonpath='{.data.status}'" >&2
+  echo "        kubectl -n kube-system logs $CA_POD --tail=50" >&2
   exit 1; }
-echo "    cluster-autoscaler: $CA_POD (노드그룹 ${NG_SEEN}개 인식)"
+echo "    cluster-autoscaler: $CA_POD ($CA_RUNNING, 노드그룹 ${NG_SEEN}개)"
 
 kubectl create namespace kafka --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 helm upgrade --install strimzi strimzi/strimzi-kafka-operator \

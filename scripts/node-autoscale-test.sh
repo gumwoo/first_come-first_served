@@ -82,6 +82,9 @@ pending() { kubectl -n "$NS" get pods --field-selector=status.phase=Pending --no
 apipods() { kubectl -n "$NS" get pods -l app=flowticket-api --no-headers 2>/dev/null | wc -l | tr -d ' '; }
 
 # ── 0. 전제 ──────────────────────────────────────────────────────────
+# 로컬 네트워크에 의존하지 않는 HTTP 헬퍼(로컬 실패 시 클러스터 안에서 재시도)
+. "$ROOT/scripts/lib/cluster-http.sh"
+
 say "0/6 전제 확인"
 for c in kubectl aws jq; do command -v "$c" >/dev/null || { echo "$c 가 없다" >&2; exit 1; }; done
 kubectl get ns "$NS" >/dev/null 2>&1 || { echo "$NS 네임스페이스가 없다 — bring-up.sh 먼저" >&2; exit 1; }
@@ -94,14 +97,25 @@ if [ -z "$CA_POD" ]; then
   exit 1
 fi
 # CA가 노드그룹을 인식하지 못하면 Pending이 나도 노드가 안 붙는다 — 결함이 아니라 설정 문제다.
-NG="$(kubectl -n kube-system logs "$CA_POD" --tail=500 2>/dev/null | grep -c "Registering Node Group" || true)"
+#
+# ⚠️ 로그 문자열로 판정하지 않는다. 초판이 "Registering Node Group"을 찾았는데 CA 1.35에는
+# 그 문구가 없어 정상 CA를 실패로 판정했다(2026-08-26). CA가 스스로 발행하는 상태
+# ConfigMap을 읽는다 — bring-up.sh와 같은 방식이어야 두 곳이 어긋나지 않는다.
+CA_STATUS="$(kubectl -n kube-system get cm cluster-autoscaler-status \
+  -o jsonpath='{.data.status}' 2>/dev/null || true)"
+CA_RUNNING="$(printf '%s\n' "$CA_STATUS" | awk '/^autoscalerStatus:/{print $2; exit}')"
+NG="$(printf '%s\n' "$CA_STATUS" | grep -cE '^  name: ' || true)"
+[ "$CA_RUNNING" = "Running" ] || {
+  echo "CA 상태가 Running이 아니다(=${CA_RUNNING:-읽지 못함}) — 중단한다." >&2
+  echo "  확인: kubectl -n kube-system get cm cluster-autoscaler-status -o jsonpath='{.data.status}'" >&2
+  exit 1; }
 [ "${NG:-0}" -gt 0 ] || {
   echo "CA가 노드그룹을 하나도 인식하지 못했다 — ASG 태그(k8s.io/cluster-autoscaler/*)를 확인하라" >&2
   exit 1; }
 
 NODE_TYPE="$(kubectl get nodes -o jsonpath='{.items[0].metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "?")"
 N0="$(nodes)"
-echo "    CA=$CA_POD (노드그룹 $NG개)  노드 ${N0}대 / $NODE_TYPE"
+echo "    CA=$CA_POD ($CA_RUNNING, 노드그룹 ${NG}개)  노드 ${N0}대 / $NODE_TYPE"
 # ⚠️ t3는 버스터블이라 지속 부하에서 CPU 크레딧이 개입한다(ADR-012 §5, TS-034).
 case "$NODE_TYPE" in
   t3.*|t4g.*) echo "    ⚠️ 버스터블 인스턴스다 — 결과에 CPU 크레딧이 섞인다. loadtest.tfvars로 apply할 것";;
@@ -109,7 +123,7 @@ esac
 
 DOMAIN="$(kubectl -n "$NS" get ingress flowticket -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)"
 [ -n "$DOMAIN" ] || { echo "Ingress에서 도메인을 읽지 못했다" >&2; exit 1; }
-CODE="$(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN" --max-time 20 || true)"
+CODE="$(http_code "https://$DOMAIN")"
 [ "$CODE" = "200" ] || { echo "측정 전 상태가 정상이 아니다: https://$DOMAIN → $CODE" >&2; exit 1; }
 
 # ── 1. ArgoCD 자동 동기화 중지 ──────────────────────────────────────
@@ -135,7 +149,7 @@ echo "    ⚠️ 이 값은 노드 예산을 일부러 넘긴다. 종료 시 $OR
 
 # ── 3. 부하 ─────────────────────────────────────────────────────────
 say "3/6 부하 투입 (${RATE} rps, $RUN_FOR)"
-EVENT_ID="$(curl -s "https://$DOMAIN/api/events?status=ON_SALE&size=20" --max-time 20 \
+EVENT_ID="$(http_body "https://$DOMAIN/api/events?status=ON_SALE&size=20" \
   | jq -r '.data.items[0].id // empty' | tr -d '\r' || true)"
 kubectl -n "$NS" delete job k6-nodescale --ignore-not-found >/dev/null
 kubectl -n "$NS" create configmap k6-nodescale \

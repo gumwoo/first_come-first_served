@@ -1,0 +1,3 @@
+flowticket-api-5f67f4bc45-gz5s8   0     true
+flowticket-api-5f67f4bc45-jlksr   0     true
+flowticket-api-5f67f4bc45-tlmjw   0     true

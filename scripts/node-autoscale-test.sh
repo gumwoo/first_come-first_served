@@ -94,14 +94,25 @@ if [ -z "$CA_POD" ]; then
   exit 1
 fi
 # CA가 노드그룹을 인식하지 못하면 Pending이 나도 노드가 안 붙는다 — 결함이 아니라 설정 문제다.
-NG="$(kubectl -n kube-system logs "$CA_POD" --tail=500 2>/dev/null | grep -c "Registering Node Group" || true)"
+#
+# ⚠️ 로그 문자열로 판정하지 않는다. 초판이 "Registering Node Group"을 찾았는데 CA 1.35에는
+# 그 문구가 없어 정상 CA를 실패로 판정했다(2026-08-26). CA가 스스로 발행하는 상태
+# ConfigMap을 읽는다 — bring-up.sh와 같은 방식이어야 두 곳이 어긋나지 않는다.
+CA_STATUS="$(kubectl -n kube-system get cm cluster-autoscaler-status \
+  -o jsonpath='{.data.status}' 2>/dev/null || true)"
+CA_RUNNING="$(printf '%s\n' "$CA_STATUS" | awk '/^autoscalerStatus:/{print $2; exit}')"
+NG="$(printf '%s\n' "$CA_STATUS" | grep -cE '^  name: ' || true)"
+[ "$CA_RUNNING" = "Running" ] || {
+  echo "CA 상태가 Running이 아니다(=${CA_RUNNING:-읽지 못함}) — 중단한다." >&2
+  echo "  확인: kubectl -n kube-system get cm cluster-autoscaler-status -o jsonpath='{.data.status}'" >&2
+  exit 1; }
 [ "${NG:-0}" -gt 0 ] || {
   echo "CA가 노드그룹을 하나도 인식하지 못했다 — ASG 태그(k8s.io/cluster-autoscaler/*)를 확인하라" >&2
   exit 1; }
 
 NODE_TYPE="$(kubectl get nodes -o jsonpath='{.items[0].metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "?")"
 N0="$(nodes)"
-echo "    CA=$CA_POD (노드그룹 $NG개)  노드 ${N0}대 / $NODE_TYPE"
+echo "    CA=$CA_POD ($CA_RUNNING, 노드그룹 ${NG}개)  노드 ${N0}대 / $NODE_TYPE"
 # ⚠️ t3는 버스터블이라 지속 부하에서 CPU 크레딧이 개입한다(ADR-012 §5, TS-034).
 case "$NODE_TYPE" in
   t3.*|t4g.*) echo "    ⚠️ 버스터블 인스턴스다 — 결과에 CPU 크레딧이 섞인다. loadtest.tfvars로 apply할 것";;

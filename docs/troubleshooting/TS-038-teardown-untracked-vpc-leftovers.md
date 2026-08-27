@@ -103,7 +103,28 @@ Project=flowticket VPC를 찾지 못했다 — 아무것도 지우지 않는다
 return=1
 ```
 
-`default` 보안그룹은 건드리지 않는다 — VPC와 함께 사라진다.
+보안그룹은 **이름 접두사로 한 번 더 좁혔다.**
+
+```
+삭제  eks-cluster-sg-flowticket-*     ← EKS가 만든 것
+보고  그 밖의 non-default SG          ← 지우지 않는다
+제외  default                         ← VPC와 함께 사라진다
+```
+
+⚠️ 초판은 `GroupName != 'default'`로 잡았는데, 그러면 이 VPC의 non-default SG를 **전부**
+지운다 — **terraform이 만든 것까지 포함해서**. 최종 목표가 VPC destroy라 결과적으로 다
+사라질 자원이긴 하지만, 이 단계가 내세운 원칙은 *"terraform 밖에서 생긴 잔여만,
+소유를 증명한 것만"*이다. **구현이 원칙보다 넓으면 안 된다** — 파괴 자동화에서는 더 그렇다.
+
+접두사 판별을 쓰는 이유는 이 시점에 **클러스터가 이미 지워져** `describe-cluster`로 SG ID를
+물을 수 없기 때문이다. 픽스처로 확인했다.
+
+```
+default                              → 제외
+eks-cluster-sg-flowticket-133708...  → 삭제
+flowticket-rds-sg                    → 보고만 (terraform 소유)
+eks-cluster-sg-otherproject-99       → 보고만 (다른 클러스터)
+```
 
 ## 5. 최종 확인 — 두 겹으로 봤다
 

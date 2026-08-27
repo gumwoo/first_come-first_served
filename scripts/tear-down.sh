@@ -168,19 +168,36 @@ clean_untracked() {
   done
   [ "$n" -eq 0 ] && echo "    고아 ENI 없음"
 
-  # ② EKS가 만든 클러스터 보안그룹(eks-cluster-sg-*). terraform이 만들지 않았으므로
-  #    destroy 대상에 없고, 그대로 두면 VPC가 영원히 지워지지 않는다.
-  #    default는 VPC와 함께 사라지므로 건드리지 않는다.
+  # ② EKS가 만든 클러스터 보안그룹. terraform이 만들지 않았으므로 destroy 대상에 없고,
+  #    그대로 두면 VPC가 영원히 지워지지 않는다.
+  #
+  # ⚠️ **이름 접두사로 좁힌다.** 초판은 `GroupName != 'default'`로 잡았는데, 그러면 이 VPC의
+  # non-default SG를 **전부** 지운다 — terraform이 만든 것까지 포함해서. 최종 목표가 VPC
+  # destroy라 결과적으로 다 사라질 자원이긴 하지만, 이 단계의 원칙은
+  # **"terraform 밖에서 생긴 잔여만, 소유를 증명한 것만"**이다. 구현이 원칙보다 넓으면 안 된다.
+  #
+  # EKS는 `eks-cluster-sg-<클러스터명>-<난수>` 형태로 만든다. 이 시점엔 클러스터가 이미
+  # 지워져 `describe-cluster`로 ID를 물을 수 없으므로 이름으로 판별한다.
   local m=0 s
   for s in $(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$vpc" \
-      --query "SecurityGroups[?GroupName!='default'].GroupId" --output text 2>/dev/null | tr -d '\r'); do
+      --query "SecurityGroups[?starts_with(GroupName,'eks-cluster-sg-${CLUSTER}-')].GroupId" \
+      --output text 2>/dev/null | tr -d '\r'); do
     if aws ec2 delete-security-group --group-id "$s" >/dev/null 2>&1; then
-      echo "    SG 삭제 $s"; m=$((m+1))
+      echo "    SG 삭제 $s (eks-cluster-sg-${CLUSTER}-*)"; m=$((m+1))
     else
       echo "    ⚠️ SG 삭제 실패 $s (다른 SG가 참조 중일 수 있다)" >&2
     fi
   done
-  [ "$m" -eq 0 ] && echo "    terraform 밖 보안그룹 없음"
+  [ "$m" -eq 0 ] && echo "    EKS 생성 보안그룹 없음"
+
+  # 그 밖의 non-default SG는 **지우지 않고 보고만 한다.** destroy가 또 막히면 사람이 본다.
+  local other
+  other="$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$vpc" \
+    --query "SecurityGroups[?GroupName!='default' && !starts_with(GroupName,'eks-cluster-sg-${CLUSTER}-')].[GroupId,GroupName]" \
+    --output text 2>/dev/null | tr -d '\r')"
+  [ -n "$other" ] && {
+    echo "    ℹ️ 아래 보안그룹은 이 단계의 대상이 아니다(terraform destroy가 처리해야 한다):"
+    echo "$other" | sed 's/^/      /'; }
   return 0
 }
 

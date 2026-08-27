@@ -1,33 +1,55 @@
 # FlowTicket
 
-동시 접속 상황의 정합성을 중심으로 설계한 선착순 공연 예매 시스템입니다. 공연 탐색부터 대기열, 좌석 선점, 주문·결제, 환불과 운영 모니터링까지 하나의 수직 슬라이스로 다룹니다.
+선착순 공연 예매 시스템입니다. 대기열·좌석 선점·주문·결제·환불을 하나의 수직 슬라이스로 다룹니다.
 
-선착순 예매는 **틀려도 조용히 틀린다**는 점이 어렵습니다. 좌석이 두 번 팔리거나 대기열 순번이 뒤집혀도 화면은 멀쩡해 보입니다. 그래서 이 저장소는 "만들었다"에서 멈추지 않고 **정말 그렇게 동작하는지 확인하는 방법**을 함께 남깁니다.
+---
+
+롤링 배포 중에 502가 났습니다. 흔한 처방은 `deregistration_delay`를 늘리는 것인데, 로그를 보니 **그 값은 이 문제와 아무 관계가 없었습니다.**
+
+실패한 요청의 지연은 정확히 `10,000ms`에 몰렸고 `Target_5XX = 0` — **애플리케이션은 5xx를 낸 적이 없습니다.** 전부 ALB가 만든 응답이었습니다.
 
 ```
-동시성 정합성   →  Redis Lua · 조건부 UPDATE · Outbox 로 코드에서 막는다
-구조 드리프트   →  계약 + 하네스 정적 검사로 CI에서 막는다
-운영 중 장애    →  실제로 주입하고 측정한다
+deregistration_delay  타깃이 deregistering 이 된 "뒤"의 드레이닝 시간
+                      이 동안 ALB는 그 타깃으로 새 요청을 보내지 않는다
+
+당시 문제 구간        deregistering 이 "되기 전"
+                      파드는 이미 죽었는데 ALB는 아직 정상 타깃으로 알고 있다
+                      → 연결 시도 → 10초 타임아웃 → 502 / 504
 ```
 
-### 눌러 보고 잰 것들
+**그 재현 조건에서 결과를 가른 것은 드레이닝이 아니라 종료 유예(`preStop`)였습니다.**
 
-설정을 켜 두는 것과 그것이 동작함을 아는 것은 다릅니다. 아래는 전부 클러스터를 띄우고 실제로 장애를 넣어 측정한 기록입니다.
+```
+preStop  5s → 실패
+preStop 25s → 6,001건 중 5xx 0건
+```
 
-| 무엇을 | 어떻게 확인했나 |
-|---|---|
-| 롤링 배포 무중단 | 배포 중 부하를 걸어 5xx를 셌다 — **수정 전 4/4 실행에서 5xx 발생, 수정 후 2/2 실행 무결**(각 6,001건 중 0건) ([IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md), 원인 [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md)) |
-| 노드 오토스케일 | HPA 상한을 넘겨 Pending을 만들었다 — **Pending 4개 → 노드 3→4, 110초** ([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md)) |
-| DB·캐시 페일오버 | RDS·Redis를 강제 전환했다 — 파드 재시작 0, 그러나 **30초 대기 후 500이라는 결함**을 발견 ([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md)) |
-| 그 결함의 개선 | 타임아웃을 바꿔 같은 장애를 재측정 — 대기 시간 총합 −70%, **대신 실패 건수 +121%** ([IMP-022](docs/improvements/IMP-022-rds-connection-timeout.md)) |
+다만 다음날 **다른 클러스터 조건에서는 `preStop 5s`에서도 실패가 재현되지 않았습니다.** 그래서 25초를 환경 불변의 최소값으로 보지 않습니다 — `preStop`이 끝나도 SIGTERM 후 실제 종료까지 3~6초가 더 걸리므로, 그 값만으로 컨테이너가 언제 응답을 멈추는지 계산할 수 없기 때문입니다. ([TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md))
 
-마지막 줄이 이 저장소의 태도를 잘 보여줍니다. **수치가 좋아진 쪽만 적지 않습니다.** IMP-022는 "개선"이 아니라 트레이드오프로 기록했고, 한 번만 측정한 값으로는 채택하지 않았습니다.
+**이 저장소는 이런 기록을 남기는 방식에 관한 것입니다.** 무엇을 만들었는지보다, 그것이 정말 그렇게 동작하는지 어떻게 알았는지를 남깁니다.
 
-### 확인하지 못한 것도 적습니다
+## 세 층으로 막습니다
 
-측정 기록에는 *"이건 재지 않았다"*, *"이건 추론이다"*가 함께 남습니다. 실제로 이 저장소에는 **잘못 쟀다가 정정한 기록**([TS-036](docs/troubleshooting/TS-036-measurement-tooling-false-failures.md)), **측정 도구가 조용히 틀려서 결론이 뒤집힐 뻔한 기록**, 스스로 만든 회귀를 되돌린 기록이 그대로 남아 있습니다. 결론보다 **그 결론을 어디까지 믿을 수 있는지**가 더 중요하다고 보기 때문입니다.
+선착순 예매는 **틀려도 조용히 틀립니다.** 좌석이 두 번 팔리거나 대기열 순번이 뒤집혀도 화면은 멀쩡해 보입니다. 그래서 층을 나눴습니다.
 
-설계 근거와 대안은 [ADR 16편](docs/decisions/_index.md), 측정 기반 개선은 [IMP 22편](docs/improvements/_index.md), 장애·회고는 [TS 38편](docs/troubleshooting/_index.md)에 있습니다.
+| 층 | 무엇을 막나 | 어떻게 |
+|---|---|---|
+| **코드** | 동시성 정합성 | Redis Lua로 대기열 승격을 원자화, 좌석·주문은 조건부 `UPDATE` + 영향 행 수 검증, 이벤트는 Transactional Outbox |
+| **CI** | 구조 드리프트 | 계약(enum·API·이벤트·계층)을 파일로 두고 정적 검사. **일부러 만든 위반 fixture 44개로 "규칙이 실제로 잡는지"를 메타테스트가 판정**합니다 — 규칙을 믿지 않고 규칙을 시험합니다 |
+| **실측** | 운영 중 장애 | 클러스터를 띄우고 장애를 **주입**합니다. 롤링 배포·노드 오토스케일([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md))·RDS/Redis 페일오버([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md)) |
+
+⚠️ **실측의 한계를 먼저 적습니다.** 위 측정의 부하는 25~400 rps이고, **선착순 피크와는 거리가 있습니다.** 용량 한계(knee)는 [TS-034](docs/troubleshooting/TS-034-loadtest-path-generator-node-contention.md)에서 **아직 미해결**입니다.
+
+**좋아진 수치만 싣지 않습니다.** RDS 페일오버에서 찾은 결함(30초를 다 기다린 뒤 500)을 고쳐 같은 장애를 다시 쟀습니다. 결과는 이렇습니다.
+
+```
+실패 요청의 대기 시간 총합   4,514초 → 1,341초   (−70%)
+실패 건수                      181 → 400건       (+121%)
+```
+
+**개선이 아니라 트레이드오프였습니다.** 그렇게 기록했고, 한 번 잰 값으로는 채택하지 않았습니다([IMP-022](docs/improvements/IMP-022-rds-connection-timeout.md)). 측정 도구가 조용히 틀려 결론이 뒤집힐 뻔한 일도 있었고, 그것도 남겼습니다([TS-036](docs/troubleshooting/TS-036-measurement-tooling-false-failures.md)).
+
+설계 근거와 대안은 [ADR](docs/decisions/_index.md), 측정 기반 개선은 [IMP](docs/improvements/_index.md), 장애·회고는 [TS](docs/troubleshooting/_index.md)에 있습니다.
 
 ## 서비스 흐름
 

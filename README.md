@@ -2,54 +2,9 @@
 
 선착순 공연 예매 시스템입니다. 대기열·좌석 선점·주문·결제·환불을 하나의 수직 슬라이스로 다룹니다.
 
----
-
-롤링 배포 중에 502가 났습니다. 흔한 처방은 `deregistration_delay`를 늘리는 것인데, 로그를 보니 **그 값은 이 문제와 아무 관계가 없었습니다.**
-
-실패한 요청의 지연은 정확히 `10,000ms`에 몰렸고 `Target_5XX = 0` — **애플리케이션은 5xx를 낸 적이 없습니다.** 전부 ALB가 만든 응답이었습니다.
-
-```
-deregistration_delay  타깃이 deregistering 이 된 "뒤"의 드레이닝 시간
-                      이 동안 ALB는 그 타깃으로 새 요청을 보내지 않는다
-
-당시 문제 구간        deregistering 이 "되기 전"
-                      파드는 이미 죽었는데 ALB는 아직 정상 타깃으로 알고 있다
-                      → 연결 시도 → 10초 타임아웃 → 502 / 504
-```
-
-**그 재현 조건에서 결과를 가른 것은 드레이닝이 아니라 종료 유예(`preStop`)였습니다.**
-
-```
-preStop  5s → 실패
-preStop 25s → 6,001건 중 5xx 0건
-```
-
-다만 다음날 **다른 클러스터 조건에서는 `preStop 5s`에서도 실패가 재현되지 않았습니다.** 그래서 25초를 환경 불변의 최소값으로 보지 않습니다 — `preStop`이 끝나도 SIGTERM 후 실제 종료까지 3~6초가 더 걸리므로, 그 값만으로 컨테이너가 언제 응답을 멈추는지 계산할 수 없기 때문입니다. ([TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md))
-
-**이 저장소는 이런 기록을 남기는 방식에 관한 것입니다.** 무엇을 만들었는지보다, 그것이 정말 그렇게 동작하는지 어떻게 알았는지를 남깁니다.
-
-## 세 층으로 막습니다
-
-선착순 예매는 **틀려도 조용히 틀립니다.** 좌석이 두 번 팔리거나 대기열 순번이 뒤집혀도 화면은 멀쩡해 보입니다. 그래서 층을 나눴습니다.
-
-| 층 | 무엇을 막나 | 어떻게 |
-|---|---|---|
-| **코드** | 동시성 정합성 | Redis Lua로 대기열 승격을 원자화, 좌석·주문은 조건부 `UPDATE` + 영향 행 수 검증, 이벤트는 Transactional Outbox |
-| **CI** | 구조 드리프트 | 계약(enum·API·이벤트·계층)을 파일로 두고 정적 검사. **일부러 만든 위반 fixture 44개로 "규칙이 실제로 잡는지"를 메타테스트가 판정**합니다 — 규칙을 믿지 않고 규칙을 시험합니다 |
-| **실측** | 운영 중 장애 | 클러스터를 띄우고 장애를 **주입**합니다. 롤링 배포·노드 오토스케일([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md))·RDS/Redis 페일오버([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md)) |
-
-⚠️ **실측의 한계를 먼저 적습니다.** 위 측정의 부하는 25~400 rps이고, **선착순 피크와는 거리가 있습니다.** 용량 한계(knee)는 [TS-034](docs/troubleshooting/TS-034-loadtest-path-generator-node-contention.md)에서 **아직 미해결**입니다.
-
-**좋아진 수치만 싣지 않습니다.** RDS 페일오버에서 찾은 결함(30초를 다 기다린 뒤 500)을 고쳐 같은 장애를 다시 쟀습니다. 결과는 이렇습니다.
-
-```
-실패 요청의 대기 시간 총합   4,514초 → 1,341초   (−70%)
-실패 건수                      181 → 400건       (+121%)
-```
-
-**개선이 아니라 트레이드오프였습니다.** 그렇게 기록했고, 한 번 잰 값으로는 채택하지 않았습니다([IMP-022](docs/improvements/IMP-022-rds-connection-timeout.md)). 측정 도구가 조용히 틀려 결론이 뒤집힐 뻔한 일도 있었고, 그것도 남겼습니다([TS-036](docs/troubleshooting/TS-036-measurement-tooling-false-failures.md)).
-
-설계 근거와 대안은 [ADR](docs/decisions/_index.md), 측정 기반 개선은 [IMP](docs/improvements/_index.md), 장애·회고는 [TS](docs/troubleshooting/_index.md)에 있습니다.
+- **동시성 정합성** — 대기열·좌석·결제를 Redis Lua·조건부 `UPDATE`·멱등성 키로 원자화합니다.
+- **GitOps 배포** — Terraform(인프라)과 Argo CD(앱)로 소유를 나눠 AWS EKS에 올립니다.
+- **장애 주입 실증** — 배포·노드·DB·캐시에 실제로 장애를 넣고 앱의 거동을 측정합니다.
 
 ## 서비스 흐름
 
@@ -137,6 +92,42 @@ flowchart TB
 - 클러스터 구성은 Kubernetes manifests와 Terraform을 사용하며, API는 health probe, graceful shutdown, HPA/PDB 설정을 가집니다.
 - 비밀값은 환경변수와 External Secrets 경로로 주입하며 코드에 저장하지 않습니다.
 - 배포·운영 문서는 [docs/deployment](docs/deployment/_index.md)와 [infra](infra)에서 관리합니다.
+
+## 실증 — 눌러 보고 잽니다
+
+선착순 예매는 **틀려도 조용히 틀립니다.** 좌석이 두 번 팔리거나 대기열 순번이 뒤집혀도 화면은 멀쩡해 보입니다. 그래서 막는 층을 나누고, 마지막 층은 **실제로 눌러 봅니다.**
+
+### 롤링 배포 중 502 — 흔한 처방이 원인이 아니었다
+
+통상 `deregistration_delay`를 늘리지만 **지표는 그 값과 무관함을 보여줬습니다.** 실패 지연이 정확히 `10,000ms`에 몰렸고 `Target_5XX = 0` — 애플리케이션은 5xx를 낸 적이 없었습니다. 문제 구간은 타깃이 `deregistering`이 되기 **전**, 파드는 이미 응답을 멈췄는데 ALB는 아직 정상 타깃으로 아는 구간이었습니다.
+
+늘려야 할 것은 드레이닝이 아니라 **컨테이너가 살아 있는 시간**(`preStop`)이었습니다.
+
+| 조건 | 요청 | 5xx |
+|---|---|---|
+| `preStop` 5s | 6,001 | 실패 |
+| `preStop` 25s | 6,001 | **0** |
+
+*다른 클러스터 조건에서는 `preStop 5s`에서도 재현되지 않아, 25초를 환경 불변의 최소값으로 보지는 않습니다. ([TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md))*
+
+### 세 층으로 막습니다
+
+| 층 | 무엇을 막나 | 어떻게 |
+|---|---|---|
+| **코드** | 동시성 정합성 | Redis Lua로 대기열 승격을 원자화, 좌석·주문은 조건부 `UPDATE` + 영향 행 수 검증, 이벤트는 Transactional Outbox |
+| **CI** | 구조 드리프트 | 계약(enum·API·이벤트·계층)을 파일로 두고 정적 검사. **일부러 만든 위반 fixture 44개로 "규칙이 실제로 잡는지"를 메타테스트가 판정**합니다 — 규칙을 믿지 않고 규칙을 시험합니다 |
+| **실측** | 운영 중 장애 | 클러스터를 띄우고 장애를 **주입**합니다. 롤링 배포·노드 오토스케일([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md))·RDS/Redis 페일오버([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md)) |
+
+⚠️ **실측의 한계를 먼저 적습니다.** 위 측정의 부하는 25~400 rps이고, **선착순 피크와는 거리가 있습니다.** 용량 한계(knee)는 [TS-034](docs/troubleshooting/TS-034-loadtest-path-generator-node-contention.md)에서 **아직 미해결**입니다.
+
+**좋아진 수치만 싣지 않습니다.** RDS 페일오버에서 찾은 결함(30초를 다 기다린 뒤 500)을 고쳐 같은 장애를 다시 쟀습니다. 결과는 이렇습니다.
+
+```
+실패 요청의 대기 시간 총합   4,514초 → 1,341초   (−70%)
+실패 건수                      181 → 400건       (+121%)
+```
+
+**개선이 아니라 트레이드오프였습니다.** 그렇게 기록했고, 한 번 잰 값으로는 채택하지 않았습니다([IMP-022](docs/improvements/IMP-022-rds-connection-timeout.md)). 측정 도구가 조용히 틀려 결론이 뒤집힐 뻔한 일도 있었고, 그것도 남겼습니다([TS-036](docs/troubleshooting/TS-036-measurement-tooling-false-failures.md)).
 
 ## 기술 스택
 

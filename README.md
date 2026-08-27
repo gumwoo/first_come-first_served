@@ -12,12 +12,19 @@
 deregistration_delay  타깃이 deregistering 이 된 "뒤"의 드레이닝 시간
                       이 동안 ALB는 그 타깃으로 새 요청을 보내지 않는다
 
-실제 문제 구간        deregistering 이 "되기 전"
+당시 문제 구간        deregistering 이 "되기 전"
                       파드는 이미 죽었는데 ALB는 아직 정상 타깃으로 알고 있다
                       → 연결 시도 → 10초 타임아웃 → 502 / 504
 ```
 
-늘려야 했던 것은 드레이닝이 아니라 **컨테이너가 살아 있는 시간**이었습니다. `preStop`을 5초에서 25초로 바꾸자 같은 조건에서 **6,001건 중 5xx 0건**이 됐습니다. ([TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md))
+**그 재현 조건에서 결과를 가른 것은 드레이닝이 아니라 종료 유예(`preStop`)였습니다.**
+
+```
+preStop  5s → 실패
+preStop 25s → 6,001건 중 5xx 0건
+```
+
+다만 다음날 **다른 클러스터 조건에서는 `preStop 5s`에서도 실패가 재현되지 않았습니다.** 그래서 25초를 환경 불변의 최소값으로 보지 않습니다 — `preStop`이 끝나도 SIGTERM 후 실제 종료까지 3~6초가 더 걸리므로, 그 값만으로 컨테이너가 언제 응답을 멈추는지 계산할 수 없기 때문입니다. ([TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md))
 
 **이 저장소는 이런 기록을 남기는 방식에 관한 것입니다.** 무엇을 만들었는지보다, 그것이 정말 그렇게 동작하는지 어떻게 알았는지를 남깁니다.
 

@@ -2,7 +2,32 @@
 
 동시 접속 상황의 정합성을 중심으로 설계한 선착순 공연 예매 시스템입니다. 공연 탐색부터 대기열, 좌석 선점, 주문·결제, 환불과 운영 모니터링까지 하나의 수직 슬라이스로 다룹니다.
 
-FlowTicket은 화면을 먼저 연결하는 데서 멈추지 않고, **대기열 순서·좌석 재고·주문 상태 전이·이벤트 발행**이 경쟁 상황에서도 일관되게 유지되는지를 계약, 테스트, 정적 검사로 확인하는 데 초점을 둡니다.
+선착순 예매는 **틀려도 조용히 틀린다**는 점이 어렵습니다. 좌석이 두 번 팔리거나 대기열 순번이 뒤집혀도 화면은 멀쩡해 보입니다. 그래서 이 저장소는 "만들었다"에서 멈추지 않고 **정말 그렇게 동작하는지 확인하는 방법**을 함께 남깁니다.
+
+```
+동시성 정합성   →  Redis Lua · 조건부 UPDATE · Outbox 로 코드에서 막는다
+구조 드리프트   →  계약 + 하네스 정적 검사로 CI에서 막는다
+운영 중 장애    →  실제로 주입하고 측정한다
+```
+
+### 눌러 보고 잰 것들
+
+설정을 켜 두는 것과 그것이 동작함을 아는 것은 다릅니다. 아래는 전부 클러스터를 띄우고 실제로 장애를 넣어 측정한 기록입니다.
+
+| 무엇을 | 어떻게 확인했나 |
+|---|---|
+| 롤링 배포 무중단 | 배포 중 부하를 걸어 5xx를 셌다 — **수정 전 4/4 실행에서 5xx 발생, 수정 후 2/2 실행 무결**(각 6,001건 중 0건) ([IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md), 원인 [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md)) |
+| 노드 오토스케일 | HPA 상한을 넘겨 Pending을 만들었다 — **Pending 4개 → 노드 3→4, 110초** ([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md)) |
+| DB·캐시 페일오버 | RDS·Redis를 강제 전환했다 — 파드 재시작 0, 그러나 **30초 대기 후 500이라는 결함**을 발견 ([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md)) |
+| 그 결함의 개선 | 타임아웃을 바꿔 같은 장애를 재측정 — 대기 시간 총합 −70%, **대신 실패 건수 +121%** ([IMP-022](docs/improvements/IMP-022-rds-connection-timeout.md)) |
+
+마지막 줄이 이 저장소의 태도를 잘 보여줍니다. **수치가 좋아진 쪽만 적지 않습니다.** IMP-022는 "개선"이 아니라 트레이드오프로 기록했고, 한 번만 측정한 값으로는 채택하지 않았습니다.
+
+### 확인하지 못한 것도 적습니다
+
+측정 기록에는 *"이건 재지 않았다"*, *"이건 추론이다"*가 함께 남습니다. 실제로 이 저장소에는 **잘못 쟀다가 정정한 기록**([TS-036](docs/troubleshooting/TS-036-measurement-tooling-false-failures.md)), **측정 도구가 조용히 틀려서 결론이 뒤집힐 뻔한 기록**, 스스로 만든 회귀를 되돌린 기록이 그대로 남아 있습니다. 결론보다 **그 결론을 어디까지 믿을 수 있는지**가 더 중요하다고 보기 때문입니다.
+
+설계 근거와 대안은 [ADR 16편](docs/decisions/_index.md), 측정 기반 개선은 [IMP 22편](docs/improvements/_index.md), 장애·회고는 [TS 38편](docs/troubleshooting/_index.md)에 있습니다.
 
 ## 서비스 흐름
 
@@ -20,8 +45,6 @@ FlowTicket은 화면을 먼저 연결하는 데서 멈추지 않고, **대기열
 - **이벤트 전달**: 비즈니스 트랜잭션과 Outbox 기록을 함께 저장하고 Kafka 발행·DLQ 처리를 분리합니다.
 - **실시간 반영**: 대기열·좌석·주문 상태는 SSE와 재조회 보정으로 사용자 화면에 반영합니다.
 - **외부 데이터 분리**: KOPIS 호출은 요청 경로가 아닌 배치 동기화 경로에서 처리합니다.
-
-설계 선택의 근거와 트레이드오프는 [ADR 문서](docs/decisions/_index.md), 실제 개선 측정은 [IMP 문서](docs/improvements/_index.md)에서 확인할 수 있습니다.
 
 ## 백엔드 아키텍처
 
@@ -55,7 +78,7 @@ flowchart LR
 |---|---|---|
 | 인증 | 회원가입·로그인·토큰 재발급·소셜 로그인 | JWT Access/Refresh, Redis rotation, Kakao/Naver OAuth2 |
 | 공연 | KOPIS 동기화·검색·상세·인기 지표 | 스케줄 기반 동기화 작업, PostgreSQL |
-| 대기열 | 발급·순번 조회·입장 승격·만료 | Redis 7.4, Lua, SSE |
+| 대기열 | 발급·순번 조회·입장 승격·만료 | Redis, Lua, SSE |
 | 예매 | 좌석 hold·주문·결제·환불 | JPA, QueryDSL, 조건부 UPDATE, 멱등성 |
 | 이벤트 | 주문 완료 이벤트와 실패 격리 | Transactional Outbox, Kafka, DLQ |
 | 운영 | 공연·주문·DLQ·알림 관리 | Spring Security RBAC, 관리자 API |
@@ -69,7 +92,7 @@ flowchart TB
     Web --> API["Spring Boot API Pods"]
 
     API --> RDS["PostgreSQL 16\nPrivate RDS"]
-    API --> Redis["Redis 7.4"]
+    API --> Redis["ElastiCache Redis 7.1"]
     API --> Kafka["Kafka KRaft / Strimzi"]
     API --> KOPIS["KOPIS OpenAPI"]
 
@@ -98,7 +121,7 @@ flowchart TB
 | 영역 | 기술 |
 |---|---|
 | Backend | Java 17 (Temurin), Spring Boot 3.3.x, Gradle 8, Spring Web, Spring Security, Spring Data JPA, QueryDSL 5 (Jakarta) |
-| Data & Messaging | PostgreSQL 16, Flyway, Redis 7.4 (Lettuce), Kafka KRaft, DLQ |
+| Data & Messaging | PostgreSQL 16, Flyway, Redis (Lettuce) — 로컬·CI `7.4` / ElastiCache `7.1`, Kafka KRaft, DLQ |
 | Authentication | JWT Access/Refresh, OAuth2 Client, Kakao·Naver |
 | Frontend | Node.js 20 LTS, pnpm 9, Next.js 14.2 App Router, TypeScript 5.5 |
 | Frontend State & UI | Tailwind CSS 3.4, shadcn/ui, TanStack Query 5, Zustand 4, React Hook Form 7, Zod 3 |

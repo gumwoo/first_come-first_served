@@ -103,21 +103,31 @@ Project=flowticket VPC를 찾지 못했다 — 아무것도 지우지 않는다
 return=1
 ```
 
-보안그룹은 **이름 접두사로 한 번 더 좁혔다.**
+**ENI와 보안그룹 모두 한 번 더 좁혔다.** "이 VPC 안에 있다"는 것만으로는 *"terraform 밖에서
+생긴 잔여"*의 증명이 못 된다.
 
 ```
-삭제  eks-cluster-sg-flowticket-*     ← EKS가 만든 것
-보고  그 밖의 non-default SG          ← 지우지 않는다
-제외  default                         ← VPC와 함께 사라진다
+ENI  삭제  description 이 aws-K8S-*        ← VPC CNI가 적는 형태
+     보고  그 밖의 available ENI
+
+SG   삭제  eks-cluster-sg-flowticket-*     ← EKS가 만든 것
+     보고  그 밖의 non-default SG
+     제외  default                         ← VPC와 함께 사라진다
 ```
 
-⚠️ 초판은 `GroupName != 'default'`로 잡았는데, 그러면 이 VPC의 non-default SG를 **전부**
-지운다 — **terraform이 만든 것까지 포함해서**. 최종 목표가 VPC destroy라 결과적으로 다
-사라질 자원이긴 하지만, 이 단계가 내세운 원칙은 *"terraform 밖에서 생긴 잔여만,
-소유를 증명한 것만"*이다. **구현이 원칙보다 넓으면 안 된다** — 파괴 자동화에서는 더 그렇다.
+`aws-K8S-`는 2026-08-26에 실제로 본 값에서 왔다(`aws-K8S-i-0b200e0fc5d95d6c3`).
 
-접두사 판별을 쓰는 이유는 이 시점에 **클러스터가 이미 지워져** `describe-cluster`로 SG ID를
-물을 수 없기 때문이다. 픽스처와 실제 AWS 조회로 확인했다.
+⚠️ 초판은 둘 다 넓었다 — ENI는 *"이 VPC의 available 전부"*, 보안그룹은
+`GroupName != 'default'`. 그러면 **terraform이 만든 것까지 삭제 대상에 들어간다.**
+최종 목표가 VPC destroy라 결과적으로 다 사라질 자원이긴 하지만, 이 단계가 내세운 원칙은
+*"terraform 밖에서 생긴 잔여만, 소유를 증명한 것만"*이다.
+**구현이 원칙보다 넓으면 안 된다** — 파괴 자동화에서는 더 그렇다.
+
+SG를 이름으로 판별하는 이유는 이 시점에 **클러스터가 이미 지워져** `describe-cluster`로
+SG ID를 물을 수 없기 때문이다.
+
+대상이 아닌 것은 **지우지 않고 목록만 남긴다** — destroy가 또 막히면 그 목록이 다음 단서가
+된다. 조용히 지우는 것보다 낫다. 픽스처와 실제 AWS 조회로 확인했다.
 
 ```
 default                              → 제외

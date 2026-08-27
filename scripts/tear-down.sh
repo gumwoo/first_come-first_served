@@ -153,17 +153,33 @@ clean_untracked() {
   echo "    대상 VPC: $vpc"
 
   # ① VPC CNI가 남긴 고아 ENI. detach는 됐는데 회수되지 않아 서브넷 삭제를 막는다.
+  #
+  # ⚠️ **description으로 좁힌다.** "이 VPC 안의 available ENI"만으로는 그것이 VPC CNI가
+  # 남긴 것이라는 증명이 안 된다 — SG를 접두사로 좁힌 것과 같은 이유다.
+  # VPC CNI는 `aws-K8S-<인스턴스ID>` 형태로 적는다(2026-08-26에 실제로 본 값:
+  # `aws-K8S-i-0b200e0fc5d95d6c3`).
   local n=0 e
   for e in $(aws ec2 describe-network-interfaces \
       --filters "Name=vpc-id,Values=$vpc" Name=status,Values=available \
+                Name=description,Values='aws-K8S-*' \
       --query 'NetworkInterfaces[].NetworkInterfaceId' --output text 2>/dev/null | tr -d '\r'); do
     if aws ec2 delete-network-interface --network-interface-id "$e" >/dev/null 2>&1; then
-      echo "    ENI 삭제 $e"; n=$((n+1))
+      echo "    ENI 삭제 $e (aws-K8S-*)"; n=$((n+1))
     else
       echo "    ⚠️ ENI 삭제 실패 $e" >&2
     fi
   done
-  [ "$n" -eq 0 ] && echo "    고아 ENI 없음"
+  [ "$n" -eq 0 ] && echo "    VPC CNI 고아 ENI 없음"
+
+  # 그 밖의 available ENI는 **지우지 않고 보고만 한다.** destroy가 또 막히면 사람이 본다.
+  local otherE
+  otherE="$(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$vpc" \
+    Name=status,Values=available \
+    --query "NetworkInterfaces[?!starts_with(Description,'aws-K8S-')].[NetworkInterfaceId,Description]" \
+    --output text 2>/dev/null | tr -d '\r')"
+  [ -n "$otherE" ] && {
+    echo "    ℹ️ 아래 ENI는 이 단계의 대상이 아니다(사람이 확인하라):"
+    echo "$otherE" | sed 's/^/      /'; }
 
   # ② EKS가 만든 클러스터 보안그룹. terraform이 만들지 않았으므로 destroy 대상에 없고,
   #    그대로 두면 VPC가 영원히 지워지지 않는다.

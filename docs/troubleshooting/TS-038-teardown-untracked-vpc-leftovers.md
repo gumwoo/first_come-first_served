@@ -94,14 +94,37 @@ Background command "Run full teardown" completed (exit code 0)
 
 ### 소유 증명
 
-4단계 EBS와 같은 원칙을 지켰다 — **`Project=flowticket` 태그가 붙은 VPC 안에 있는 것만**
-지운다. 그 VPC를 못 찾으면 아무것도 지우지 않고 종료한다.
+4단계 EBS와 같은 원칙을 지켰다 — **소유를 증명하지 못하면 지우지 않는다.**
+이 함수는 곧바로 `delete-network-interface`·`delete-security-group`을 호출하므로
+**대상 선택이 애매하면 멈춘다.**
 
 ```
-$ clean_untracked          # 소유 VPC가 없는 상태에서
-Project=flowticket VPC를 찾지 못했다 — 아무것도 지우지 않는다
-return=1
+1순위  terraform state의 aws_vpc  ← 지금 destroy가 막혀 있는 바로 그 VPC
+2순위  Project=flowticket 태그    ← 단, 후보가 정확히 1개일 때만
+그 외  중단
 ```
+
+⚠️ 초판은 `Vpcs[0]`로 **첫 번째를 임의로 골랐다.** 이전 철거가 실패해 flowticket VPC가
+둘 남아 있으면 어느 쪽인지 코드상 보장이 없다.
+
+```
+vpc-old   Project=flowticket
+vpc-new   Project=flowticket   ← 지금 destroy 중인 것
+
+→ 우연히 vpc-old를 골라 그쪽 ENI/SG를 지우고, vpc-new는 그대로 남을 수 있다
+```
+
+일반 조회라면 사소하지만 **삭제 대상 선택이라 위험도가 다르다.** terraform state를 1순위로
+둔 이유가 이것이다 — 그건 *"지금 막혀 있는 그 VPC"*라서 태그보다 강한 증명이다.
+
+네 갈래를 스텁으로 검증했다.
+
+| 조건 | 결과 |
+|---|---|
+| state에 VPC 있음 | `vpc-FROMSTATE` 선택, `return=0` |
+| state 비었고 태그 1개 | `vpc-ONLYONE` 선택, `return=0` |
+| state 비었고 태그 **2개** | **중단**, 후보 나열, `return=1` |
+| state 비었고 태그 0개 | **중단**, `return=1` |
 
 **ENI와 보안그룹 모두 한 번 더 좁혔다.** "이 VPC 안에 있다"는 것만으로는 *"terraform 밖에서
 생긴 잔여"*의 증명이 못 된다.

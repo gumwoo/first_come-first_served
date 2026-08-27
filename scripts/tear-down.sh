@@ -143,14 +143,33 @@ fi
 # 소유 증명은 **Project=flowticket 태그가 붙은 VPC 안에 있는가**로 한다. 4단계 EBS와 같은
 # 원칙이다 — 소유를 증명하지 못하면 지우지 않는다.
 clean_untracked() {
-  local vpc
-  vpc="$(aws ec2 describe-vpcs --filters Name=tag:Project,Values=flowticket \
-    --query 'Vpcs[0].VpcId' --output text 2>/dev/null | tr -d '\r')"
-  if [ -z "$vpc" ] || [ "$vpc" = "None" ]; then
-    echo "    Project=flowticket VPC를 찾지 못했다 — 아무것도 지우지 않는다" >&2
-    return 1
+  local vpc="" addr vpcs count
+  # ⚠️ **대상 VPC를 임의로 고르지 않는다.** 이 함수는 곧바로 delete-network-interface·
+  # delete-security-group을 호출한다. 대상 선택이 애매하면 지우는 것이 아니라 멈춘다.
+  #
+  # (가) 1순위는 terraform state다 — 지금 destroy가 막혀 있는 **바로 그 VPC**이므로 태그보다
+  #    강한 증명이다(destroy가 실패한 뒤 부르므로 state에 아직 남아 있다).
+  addr="$(tf state list 2>/dev/null | grep -E 'aws_vpc\.' | head -1 | tr -d '\r')"
+  if [ -n "$addr" ]; then
+    vpc="$(tf state show -no-color "$addr" 2>/dev/null \
+      | awk -F'"' '/^[[:space:]]*id[[:space:]]*=/{print $2; exit}' | tr -d '\r')"
+    [ -n "$vpc" ] && echo "    대상 VPC: $vpc (terraform state: $addr)"
   fi
-  echo "    대상 VPC: $vpc"
+
+  # (나) state에서 못 얻으면 태그로 찾되, **정확히 1개일 때만** 진행한다.
+  #    이전 철거가 실패해 flowticket VPC가 둘 남아 있으면 어느 쪽인지 코드상 보장이 없다.
+  if [ -z "$vpc" ]; then
+    vpcs="$(aws ec2 describe-vpcs --filters Name=tag:Project,Values=flowticket \
+      --query 'Vpcs[].VpcId' --output text 2>/dev/null | tr -d '\r')"
+    count="$(echo $vpcs | wc -w)"
+    if [ "$count" -ne 1 ]; then
+      echo "Project=flowticket VPC가 ${count}개다 — 삭제 대상을 확정할 수 없어 중단한다" >&2
+      [ "$count" -gt 1 ] && echo "  후보: $vpcs" >&2
+      return 1
+    fi
+    vpc="$vpcs"
+    echo "    대상 VPC: $vpc (Project=flowticket, 후보 1개)"
+  fi
 
   # ① VPC CNI가 남긴 고아 ENI. detach는 됐는데 회수되지 않아 서브넷 삭제를 막는다.
   #

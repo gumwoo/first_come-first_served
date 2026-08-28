@@ -118,7 +118,7 @@ flowchart TB
 | **CI** | 구조 드리프트 | 계약(enum·API·이벤트·계층)을 파일로 두고 정적 검사. **일부러 만든 위반 fixture 44개로 "규칙이 실제로 잡는지"를 메타테스트가 판정**합니다 — 규칙을 믿지 않고 규칙을 시험합니다 |
 | **실측** | 운영 중 장애 | 클러스터를 띄우고 장애를 **주입**합니다. 롤링 배포·노드 오토스케일([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md))·RDS/Redis 페일오버([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md)) |
 
-⚠️ **실측의 한계를 먼저 적습니다.** 위 측정의 부하는 25~400 rps이고, **선착순 피크와는 거리가 있습니다.** 용량 한계(knee)는 [TS-034](docs/troubleshooting/TS-034-loadtest-path-generator-node-contention.md)에서 **아직 미해결**입니다.
+⚠️ **측정 조건을 함께 적습니다.** 위 장애 주입 측정의 부하는 25~400 rps로, 용량 한계를 재는 값이 아닙니다. 용량 한계(knee)는 2026-08-11에 **600~650 rps**로 실측했고, 이후 개선(외부 호출 제거·캐시)을 반영한 **재측정은 진행 중**입니다([TS-034](docs/troubleshooting/TS-034-loadtest-path-generator-node-contention.md)).
 
 **좋아진 수치만 싣지 않습니다.** RDS 페일오버에서 찾은 결함(30초를 다 기다린 뒤 500)을 고쳐 같은 장애를 다시 쟀습니다. 결과는 이렇습니다.
 

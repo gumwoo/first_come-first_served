@@ -6,6 +6,10 @@
 - **GitOps 배포** — Terraform(인프라)과 Argo CD(앱)로 소유를 나눠 AWS EKS에 올립니다.
 - **장애 주입 실증** — 배포·노드·DB·캐시에 실제로 장애를 넣고 앱의 거동을 측정합니다.
 
+## 포트폴리오
+
+[강건우 포트폴리오 PDF 열기](docs/portfolio/kang-gunwoo-portfolio.pdf) · [PDF 다운로드](docs/portfolio/kang-gunwoo-portfolio.pdf?download=1)
+
 ## 서비스 흐름
 
 ```text

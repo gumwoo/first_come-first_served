@@ -35,22 +35,22 @@ resource "aws_iam_role_policy_attachment" "cluster" {
 # 클러스터
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-# 봉투 암호화(Kubernetes API 데이터) — 고객 관리형 KMS 키를 **일부러 쓰지 않는다**
+# 봉투 암호화(Kubernetes API 데이터) — 고객 관리형 KMS 키를 일부러 쓰지 않는다
 #
-# EKS는 Kubernetes 1.28 이상에서 **모든 API 데이터를 AWS 소유 KMS 키로 기본 봉투 암호화**한다.
+# EKS는 Kubernetes 1.28 이상에서 모든 API 데이터를 AWS 소유 KMS 키로 기본 봉투 암호화한다.
 # 별도 설정도, 권한도, 추가 비용도 없다. 즉 "암호화가 꺼져 있다"는 전제는 성립하지 않는다.
 #   https://docs.aws.amazon.com/eks/latest/userguide/envelope-encryption.html
 #
-# 고객 관리형 키(CMK)를 얹으면 얻는 것은 암호화 자체가 아니라 **키 정책·감사·폐기 통제권**이다.
+# 고객 관리형 키(CMK)를 얹으면 얻는 것은 암호화 자체가 아니라 키 정책·감사·폐기 통제권이다.
 # 이 프로젝트에는 그걸 요구하는 근거(규정 준수, 키 관리자와 클러스터 관리자 분리 등)가 없다.
 #
 # 반면 비용은 분명하다:
-#   - 키가 비활성화되면 클러스터가 즉시 degraded, **삭제되면 복구 불가**(AWS 문서 명시).
+#   - 키가 비활성화되면 클러스터가 즉시 degraded, 삭제되면 복구 불가(AWS 문서 명시).
 #     이 스택은 데모마다 만들고 지우므로 그 사고 확률이 오히려 높다.
 #   - 월 $1 + 요청 요금, 키 정책 설계, destroy 순서 의존.
 #
 # 필요해지면 나중에 붙일 수 있다 — 기존 클러스터에도 AssociateEncryptionConfig로 연결된다.
-# 다만 **한번 연결하면 해제하거나 다른 키로 바꿀 수 없다**는 점이 진짜 비가역성이다.
+# 다만 한번 연결하면 해제하거나 다른 키로 바꿀 수 없다는 점이 진짜 비가역성이다.
 #   https://docs.aws.amazon.com/eks/latest/userguide/enable-kms.html
 #
 # 참고: CMK를 쓸 때 kms:DescribeKey·kms:CreateGrant가 필요한 주체는 **CreateCluster를 호출하는
@@ -58,7 +58,7 @@ resource "aws_iam_role_policy_attachment" "cluster" {
 # 역할에 붙였는데, 위치가 틀린 설계였다.
 # ---------------------------------------------------------------------------
 
-# 로그 그룹을 먼저 만들어 **보존 기간을 못 박는다.** EKS가 알아서 만들게 두면 보존이
+# 로그 그룹을 먼저 만들어 보존 기간을 못 박는다. EKS가 알아서 만들게 두면 보존이
 # "만료 없음"이라, 클러스터를 지운 뒤에도 로그 저장 요금이 계속 남는다(데모 전제와 어긋난다).
 resource "aws_cloudwatch_log_group" "cluster" {
   count = length(var.cluster_log_types) > 0 ? 1 : 0
@@ -73,7 +73,7 @@ resource "aws_eks_cluster" "this" {
   role_arn = aws_iam_role.cluster.arn
   version  = var.kubernetes_version
 
-  # ② 컨트롤플레인 로그 — 롤링 무중단 실증의 **증거**다.
+  # 2) 컨트롤플레인 로그 — 롤링 무중단 실증의 증거다.
   # api/audit이 없으면 "무중단이었다"를 애플리케이션 로그로만 주장하게 된다. scheduler·
   # controllerManager는 파드 재배치가 왜 그렇게 일어났는지를 설명한다.
   # CloudWatch Logs 수집·보존 요금이 붙지만 데모 기간(수 시간)에는 미미하다.
@@ -180,7 +180,7 @@ resource "aws_eks_node_group" "this" {
 
   tags = merge(var.tags, {
     # Cluster Autoscaler가 ASG를 자동 탐색하는 데 쓰는 태그.
-    # ⚠️ 관리형 노드그룹의 tags가 하위 ASG까지 전파되는지는 프로바이더 버전에 따라 다르다.
+    # 관리형 노드그룹의 tags가 하위 ASG까지 전파되는지는 프로바이더 버전에 따라 다르다.
     #    apply 후 ASG에 이 태그가 실제로 붙었는지 확인하고, 없으면 ASG에 직접 붙여야
     #    CA가 이 노드그룹을 인식하지 못한다.
     "k8s.io/cluster-autoscaler/enabled"             = "true"
@@ -200,19 +200,15 @@ resource "aws_eks_node_group" "this" {
 # 애드온
 # ---------------------------------------------------------------------------
 # metrics-server가 여기 있는 이유: HPA는 metrics-server 없이는 CPU를 못 읽어
-# `cpu: <unknown>` 상태로 **스케일 판단 자체를 못 한다**(TS-019). 그 사건을 한 번 겪고
-# 손으로 설치해 닫았는데, 설치가 IaC 밖에 있어서 **클러스터를 재생성하니 그대로 재발했다**
-# (2026-08-11). ArgoCD의 HPA health check가 ScalingActive=False를 Degraded로 잡아
-# 앱 전체가 Degraded로 표시됐고, 원인을 찾는 데 시간이 걸렸다.
+# `cpu: <unknown>` 상태로 스케일 판단 자체를 못 한다(TS-019). 손으로 설치하면 클러스터를
+# 재생성할 때 빠지므로 EKS Add-ons로 고정한다.
 #
-# "고쳤다"와 "재현 가능하게 고쳤다"는 다르다. 그래서 EKS Add-ons로 못박는다.
-#
-# ⚠️ metrics-server는 **community add-on**이다 — AWS가 만든 add-on(vpc-cni 등)과 달리
+# metrics-server는 community add-on이다 — AWS가 만든 add-on(vpc-cni 등)과 달리
 # AWS는 설치·업데이트·삭제 같은 lifecycle만 지원하고 기능 자체는 커뮤니티가 책임진다.
 # 다만 IAM 정책이나 IRSA가 필요 없어 아래 for_each 목록에 넣는 것으로 충분하다
 # (EBS CSI를 별도 리소스로 뺀 이유가 IRSA였다).
 #
-# addon_version을 지정하지 않으므로 **생성 시점의 Kubernetes 버전에 맞는 기본 호환 버전**이
+# addon_version을 지정하지 않으므로 생성 시점의 Kubernetes 버전에 맞는 기본 호환 버전이
 # 선택된다. 클러스터 버전을 올려도 기존 add-on이 자동으로 올라가지는 않으므로,
 # 갱신이 필요하면 별도로 수행해야 한다.
 resource "aws_eks_addon" "this" {

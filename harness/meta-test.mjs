@@ -49,7 +49,7 @@ const cases = [
   { name: "fe-layer-breach",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },
   { name: "fe-dead-api",         script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-dead-api" } },
   { name: "fe-sse-no-resync",    script: "frontend/check.mjs", expect: "SSE 복구 경로 없음:", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-sse-no-resync" } },
-  // ② 필수 이벤트 구독 누락 (계약/웹 둘 다 override해 단독 격리)
+  // 2) 필수 이벤트 구독 누락 (계약/웹 둘 다 override해 단독 격리)
   { name: "fe-missing-required-event", script: "frontend/check.mjs", env: {
     HARNESS_CONTRACTS_DIR: "harness/fixtures/violations/fe-missing-required-event",
     HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-required-event/web" } },
@@ -60,7 +60,7 @@ const cases = [
   { name: "docs-status-drift", script: "docs/check.mjs", expect: "문서 상태가 어긋난다:", env: {
     HARNESS_DOCS_DIR: "harness/fixtures/violations/docs-status-drift",
     HARNESS_DOCS_EXTRA: "harness/fixtures/violations/docs-status-drift" } },
-  // ③ 계약 스키마 위반 (깨진 api.yaml만 override, 나머지는 실제 폴백)
+  // 3) 계약 스키마 위반 (깨진 api.yaml만 override, 나머지는 실제 폴백)
   { name: "contract-bad-schema", script: "schema-check.mjs", env: {
     HARNESS_CONTRACTS_DIR: "harness/fixtures/violations/contract-bad-schema" } },
 ];
@@ -79,7 +79,6 @@ for (const c of cases) {
   }
   // exit 1만으로는 "의도한 규칙이 잡았는지"를 알 수 없다 — fixture가 엉뚱한 규칙에 걸려도
   // 통과한 것처럼 보인다. expect가 있는 케이스는 메시지까지 확인한다.
-  // (기존 케이스에는 아직 없다. 하나씩 붙여 나간다.)
   if (c.expect && !`${res.stdout ?? ""}${res.stderr ?? ""}`.includes(c.expect)) {
     failed++;
     console.error(`✗ meta: ${c.name} → 실패는 했으나 의도한 규칙이 아님 (기대 메시지: "${c.expect}")`);

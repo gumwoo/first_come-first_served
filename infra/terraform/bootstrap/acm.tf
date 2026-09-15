@@ -15,13 +15,13 @@ resource "aws_acm_certificate" "this" {
   }
 }
 
-# DNS 검증 레코드 — **실제 레코드 1개당 Terraform 리소스 1개**로 둔다.
+# DNS 검증 레코드 — 실제 레코드 1개당 Terraform 리소스 1개로 둔다.
 #
-# 루트(flow-ticket.com)와 와일드카드(*.flow-ticket.com)는 ACM이 **같은 검증 CNAME**을
+# 루트(flow-ticket.com)와 와일드카드(*.flow-ticket.com)는 ACM이 같은 검증 CNAME을
 # 반환한다. apply 실측에서 두 항목의 레코드 이름·값이 완전히 동일했다.
 #
 # 초안은 도메인별로 리소스를 하나씩 만들었다(AWS 공급자 문서 예제 형태). 그러면
-# **하나의 Route53 레코드를 두 주소가 동시에 소유**하게 되는데, 문서 예제라는 것이
+# 하나의 Route53 레코드를 두 주소가 동시에 소유하게 되는데, 문서 예제라는 것이
 # 괜찮다는 뜻은 아니다:
 #   - destroy 시 먼저 지운 쪽 다음에 두 번째가 없는 레코드를 지우려다 실패한다
 #   - 한쪽만 제거하는 리팩터링이 실제 DNS 레코드를 지워 버린다

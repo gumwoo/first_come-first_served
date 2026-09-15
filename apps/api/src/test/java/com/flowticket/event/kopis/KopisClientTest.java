@@ -147,7 +147,7 @@ class KopisClientTest {
 
     @Test
     void 외부호출_실패도_지표에_남는다() {
-        // KOPIS가 400을 주면 폴백이 정상 200 축약 응답을 내보내 **로그 말고는 흔적이 없었다**.
+        // KOPIS가 400을 주면 폴백이 정상 200 축약 응답을 내보내 로그 말고는 흔적이 없었다.
         // 지표가 있어야 "우리 p95 상승"과 "외부 실패율 상승"을 나란히 놓고 원인을 좁힐 수 있다.
         Fixture f = fixture();
         f.server().expect(requestTo(containsString("pblprfr")))

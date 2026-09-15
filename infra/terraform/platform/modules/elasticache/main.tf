@@ -44,7 +44,7 @@ resource "aws_elasticache_replication_group" "this" {
   subnet_group_name  = aws_elasticache_subnet_group.this.name
   security_group_ids = [aws_security_group.redis.id]
 
-  # ⚠️ 켜면 클라이언트가 TLS로 접속해야 한다 — 앱 설정(spring.data.redis.ssl.enabled=true)을
+  # 켜면 클라이언트가 TLS로 접속해야 한다 — 앱 설정(spring.data.redis.ssl.enabled=true)을
   # 반드시 함께 바꿔야 하고, 안 바꾸면 연결이 전부 실패한다(k8s 매니페스트 작업의 전제).
   #
   # 그럼에도 켜는 이유: 프라이빗 서브넷 + SG 제한은 "네트워크에 못 들어온다"는 방어이고,

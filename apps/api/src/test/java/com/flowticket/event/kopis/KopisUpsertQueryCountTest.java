@@ -18,7 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
- * IMP-012 측정: KOPIS 동기화의 <b>기존 여부 확인 쿼리 수</b>를 before/after로 센다.
+ * IMP-012 측정: KOPIS 동기화의 기존 여부 확인 쿼리 수를 before/after로 센다.
  * before(naive)는 항목마다 {@code findByKopisId} → N건에 SELECT N번,
  * after는 {@code findAllByKopisIdIn} 배치 조회 → 1번.
  *

@@ -138,7 +138,7 @@ class AuthIntegrationTest extends IntegrationTestSupport {
         assertThat(unexpected).isEmpty();
         assertThat(statuses).hasSize(threads);
         // 경합이 실제로 일어났는지는 타이밍에 달렸다. 그래서 "409가 나왔다"가 아니라
-        // **어떤 경우에도 성립해야 하는 것**을 단언한다: 정확히 하나만 가입되고, 500은 없다.
+        // 어떤 경우에도 성립해야 하는 것을 단언한다: 정확히 하나만 가입되고, 500은 없다.
         assertThat(statuses).as("중복 가입은 서버 오류가 아니다 — 500이 있으면 안 된다")
                 .doesNotContain(500);
         assertThat(statuses).filteredOn(c -> c == 200).hasSize(1);

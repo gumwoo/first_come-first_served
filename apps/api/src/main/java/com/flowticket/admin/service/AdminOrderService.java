@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
- * 운영 주문 조회(S07). 마이페이지와 달리 <b>전 사용자</b> 주문을 대상으로 하며, 상태 필터 + 페이징.
+ * 운영 주문 조회(S07). 마이페이지와 달리 전 사용자 주문을 대상으로 하며, 상태 필터 + 페이징.
  * 주문자(user)·공연(event) 정보는 배치 조회로 N+1을 피한다(MyOrderService와 동일 패턴).
  */
 @Service

@@ -24,10 +24,10 @@ public class QueueAdmissionService {
 
     // 여유 슬롯(capacity - admitted)만큼만 wait head를 pop → 원자적. 반환 {member,score,...}
     //
-    // ⚠️ 만료 등록(KEYS[3]=admitExp)까지 **이 스크립트 안에서** 한다. 예전에는 pop+INCRBY까지만
-    // 원자였고 admitExp 등록은 Java 루프였는데, 그 사이가 벌어져 두 가지가 샜다([[TS-024]]).
-    //   ① wait에서도 빠지고 입장 표시도 없는 창 → 상태 조회가 EXPIRED로 떨어진다
-    //   ② 그 창에서 Pod가 죽으면 admitcount만 오른 채 admitExp에 없어 **영구 누수**가 된다
+    // 만료 등록(KEYS[3]=admitExp)까지 이 스크립트 안에서 한다. admitExp 등록이 스크립트 밖에
+    // 있으면 그 사이가 벌어져 두 가지가 샌다(TS-024).
+    //   1) wait에서도 빠지고 입장 표시도 없는 창 → 상태 조회가 EXPIRED로 떨어진다
+    //   2) 그 창에서 Pod가 죽으면 admitcount만 오른 채 admitExp에 없어 영구 누수가 된다
     //      (카운트를 줄이는 경로는 RECLAIM/LEAVE뿐이고 둘 다 admitExp를 근거로 움직인다)
     // admitExp는 이벤트 단위 키라 KEYS로 넘길 수 있다 — Lua 안에서 키 이름을 만들지 않으므로
     // Redis Cluster 슬롯 제약(IMP-004 §8)을 새로 만들지 않는다.

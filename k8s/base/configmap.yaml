@@ -14,9 +14,8 @@ data:
   REDIS_HOST: "REPLACE_REDIS_HOST"
   REDIS_PORT: "6379"
 
-  # ⚠️ ElastiCache를 transit_encryption_enabled = true로 만들었다(PR #174).
-  # 이 값이 없거나 false면 Redis 연결이 전부 실패하고, readiness에 redis가 있어
-  # Pod가 영원히 Ready가 되지 않는다. C-7 체크리스트 2번이 바로 이 줄이다.
+  # ElastiCache는 transit_encryption_enabled = true다. 이 값이 없거나 false면 Redis 연결이
+  # 전부 실패하고, readiness에 redis가 있어 Pod가 영원히 Ready가 되지 않는다.
   REDIS_SSL_ENABLED: "true"
 
   # ── Kafka(Strimzi, in-cluster) ────────────────────────────────
@@ -29,20 +28,10 @@ data:
   # 한다 — 크면 앱이 끝나기 전에 SIGKILL이 온다(무중단 배포가 깨지는 흔한 지점).
   SHUTDOWN_TIMEOUT: "30s"
 
-  # ── 좌석맵 캐시 (⚠️ 실험 스위치) ───────────────────────────────
-  # 0단계 실측에서 /events/{id}/seats가 API CPU 비용의 약 57%를 차지해 캐시 후보 1순위였다
-  # (benchmarks/cache-experiment/). 개선 상한을 실제로 재기 위해 켠다.
-  #
-  # ⚠️ 성능 실험용이지 운영 최종 설계가 아니다. 좌석은 재고성 상태라 TTL 동안 이미 선점된
-  # 좌석이 AVAILABLE로 보인다 — 최종 선점은 조건부 UPDATE가 막지만(ADR-003) 사용자가 고른 뒤
-  # 거절당하는 충돌은 늘어난다. 운영으로 가려면 seat.held/released/expired 기반 무효화가 필요하고,
-  # 그 판단은 이 실험의 개선폭을 보고 한다.
-  #
-  # 측정 완료(2026-08-17, IMP-020) → **0으로 되돌렸다.**
-  # 결과: api CPU 2.55 → 1.56 ms/req(1.63배), node 5.39 → 3.89(1.38배), 서버 p99 24.5 → 9.7ms.
-  # ⚠️ 캐시 기능만 꺼진다 — #244의 트랜잭션 경계 변경(getSeats가 NOT_SUPPORTED)은 유지된다.
-  # 켜지 않는 이유는 성능이 아니라 **정확성**이다 — 이벤트 기반 무효화가 아직 없어 TTL 동안
-  # 이미 선점된 좌석이 AVAILABLE로 보인다. 운영으로 올리려면 그것부터 만든다(IMP-020 §다음).
+  # ── 좌석맵 캐시 (실험 스위치) ───────────────────────────────
+  # 성능 실험용 스위치다(IMP-020). 0 = 끔.
+  # 켜지 않는 이유는 성능이 아니라 정확성이다 — 이벤트 기반 무효화가 없어 TTL 동안 이미
+  # 선점된 좌석이 AVAILABLE로 보인다. 운영으로 올리려면 그것부터 만든다(IMP-020 §다음).
   SEAT_MAP_CACHE_TTL_MS: "0"
 
   # ── 운영 값 ───────────────────────────────────────────────────
@@ -50,6 +39,6 @@ data:
   PAYMENT_GATEWAY: "toss"
 
   # 소셜 로그인 성공/실패 후 브라우저가 돌아갈 곳. 기본값이 http://localhost:3000이라
-  # 주입하지 않으면 **인증에 성공하고도 localhost로 보내진다**(배포에서만 드러난다).
+  # 주입하지 않으면 인증에 성공하고도 localhost로 보내진다(배포에서만 드러난다).
   OAUTH_SUCCESS_REDIRECT: "https://flow-ticket.com"
   OAUTH_FAILURE_REDIRECT: "https://flow-ticket.com/login?error=oauth"

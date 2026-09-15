@@ -25,21 +25,21 @@ import org.springframework.web.client.RestClientResponseException;
 public class KopisClient {
 
     /**
-     * 사용자 요청 경로(GET /events/{id})에서 쓰는 클라이언트. <b>짧게</b> 끊는다.
+     * 사용자 요청 경로(GET /events/{id})에서 쓰는 클라이언트. 짧게 끊는다.
      * 상세 정보는 없어도 응답할 수 있으므로(폴백 존재), 기다리는 것보다 포기하는 편이 낫다.
      */
     private final RestClient detailClient;
     /**
      * 관리자 동기화 잡에서 쓰는 클라이언트. 사용자를 기다리게 하지 않으므로 더 너그럽게 준다.
      * 목록 조회는 rows=100까지 받아 상세 조회보다 오래 걸릴 수 있는데, 여기에 3초를 걸면
-     * <b>지금 잘 돌던 시딩이 깨진다</b>(1,446건을 이 경로로 수집했다).
+     * 지금 잘 돌던 시딩이 깨진다(1,446건을 이 경로로 수집했다).
      */
     private final RestClient syncClient;
     private final String serviceKey;
     private final XmlMapper xmlMapper;
     private final MeterRegistry meterRegistry;
     /**
-     * <b>동기화 경로에만</b> 적용한다. 사용자 요청 경로(fetchDetail)에 쓰면 요청 스레드를 재우게 되어,
+     * 동기화 경로에만 적용한다. 사용자 요청 경로(fetchDetail)에 쓰면 요청 스레드를 재우게 되어,
      * 외부 지연이 톰캣 스레드를 묶는 실패를 방어 장치로 재현하는 꼴이 된다({@link KopisRateLimiter}).
      */
     private final KopisRateLimiter rateLimiter;
@@ -67,7 +67,7 @@ public class KopisClient {
     }
 
     /**
-     * 외부 호출을 계측한다 — 실패해도 예외를 밖으로 내지 않는 구조라 <b>지표가 없으면 보이지 않는다.</b>
+     * 외부 호출을 계측한다 — 실패해도 예외를 밖으로 내지 않는 구조라 지표가 없으면 보이지 않는다.
      *
      * <p>실제로 그랬다: KOPIS가 모든 상세 조회에 400 Request Blocked를 돌려주고 있었는데,
      * 폴백이 정상 200으로 축약 응답을 내보내 사용자도 우리도 몰랐다. 발견한 경로는 대시보드에서
@@ -80,8 +80,8 @@ public class KopisClient {
      *   cause     : none | http_400 등 | timeout | io | parse | unknown
      * </pre>
      *
-     * <p>{@code cause}를 <b>실패 종류</b>로 잡은 것이 핵심이다. 처음에는 이 자리에 HTTP 상태
-     * 코드를 넣었는데, 그러면 <b>200을 정상 수신하고 XML 파싱에서 깨진 경우</b>가 "응답을 받지
+     * <p>{@code cause}를 실패 종류로 잡은 것이 핵심이다. 처음에는 이 자리에 HTTP 상태
+     * 코드를 넣었는데, 그러면 200을 정상 수신하고 XML 파싱에서 깨진 경우가 "응답을 받지
      * 못함"으로 잘못 분류된다. 실패 원인을 가르려고 만든 지표가 원인을 뭉개면 의미가 없다.
      * 실패 지점마다 던지는 예외 타입이 다르므로 호출 구조를 바꾸지 않고 그것으로 구분한다.
      */
@@ -153,8 +153,8 @@ public class KopisClient {
     /**
      * 공연목록 조회(기간/페이지). 실패 시 빈 목록 반환(동기화는 best-effort).
      *
-     * <p><b>동기화 배치 전용</b>이므로 호출 전에 레이트 리밋을 통과한다. 90일을 31일 청크로
-     * 나누면 청크 3개 × 최대 10페이지 = <b>최대 30회 연속 호출</b>이고, 간격 없이 쏘면
+     * <p>동기화 배치 전용이므로 호출 전에 레이트 리밋을 통과한다. 90일을 31일 청크로
+     * 나누면 청크 3개 × 최대 10페이지 = 최대 30회 연속 호출이고, 간격 없이 쏘면
      * KOPIS의 IP 제한(1초 10회)을 넘길 수 있다.
      */
     public List<KopisEvent> fetchList(String stdate, String eddate, int cpage, int rows) {
@@ -181,7 +181,7 @@ public class KopisClient {
         } catch (InterruptedException e) {
             // 플래그를 복구해 인터럽트를 삼키지 않는다 — 삼키면 종료 신호가 사라진다.
             //
-            // 다만 이것이 **배치 전체를 즉시 끝내지는 않는다.** 여기서 빈 목록을 돌려주면
+            // 다만 이것이 배치 전체를 즉시 끝내지는 않는다. 여기서 빈 목록을 돌려주면
             // fetchListAll의 페이지 루프만 끝나고, 상위 sync()는 다음 31일 청크로 넘어간다.
             // 플래그가 살아 있어 다음 acquire()에서 곧바로 다시 던지므로 실질적으로는 빠르게
             // 빠져나가지만, 구조적 보장은 아니다. upsert가 멱등이라 중간 종료가 데이터를
@@ -198,13 +198,10 @@ public class KopisClient {
     /**
      * 공연상세 조회(관람시간/연령/가격 등). 실패 시 empty.
      *
-     * <p><b>이제 호출자는 동기화 배치 하나다.</b> 예전에는 사용자 요청 경로에서 불렸고, 그때는
-     * 여기에 제한기를 걸 수 없었다 — 요청 스레드를 재우면 외부 지연이 톰캣 스레드를 묶어 API
-     * 전체가 멎는 실패를 방어 장치로 재현하는 꼴이기 때문이다. 사용자 경로에서 호출을 걷어낸
-     * 지금은 걸어야 한다. 걸지 않으면 상세 배치가 응답 속도만큼(약 80ms → 초당 12회) 나가
-     * IP 제한(1초 10회)을 다시 넘긴다.
+     * <p>호출자는 동기화 배치뿐이라 여기서 제한기를 건다(요청 스레드를 재울 일이 없다).
+     * 걸지 않으면 상세 배치가 응답 속도만큼(약 80ms → 초당 12회) 나가 IP 제한(1초 10회)을 넘긴다.
      *
-     * <p>목록과 <b>같은 제한기 인스턴스</b>를 쓰므로 list + detail 합산이 설정값 이하로 유지된다.
+     * <p>목록과 같은 제한기 인스턴스를 쓰므로 list + detail 합산이 설정값 이하로 유지된다.
      */
     public Optional<KopisEventDetail> fetchDetail(String kopisId) {
         try {

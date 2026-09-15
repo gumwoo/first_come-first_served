@@ -19,19 +19,19 @@ COPY apps/web/ ./
 # 런타임 환경변수로는 바뀌지 않는다(실제로 런타임 주입을 시도했더니 빌드 때 값인 localhost:8080으로
 # 프록시해 ECONNREFUSED가 났다). 그래서 build-arg로 받는다.
 #  - 로컬 compose: http://api:8080 (컨테이너 네트워크 서비스명)
-#  - K8s: http://flowticket-api (Service DNS). ALB는 web만 보고 /api·/oauth2는 **이 rewrite가**
+#  - K8s: http://flowticket-api (Service DNS). ALB는 web만 보고 /api·/oauth2는 이 rewrite가
 #    프록시한다 — Ingress가 API로 직결하면 ALB가 접두어를 안 떼어 Spring이 404를 낸다.
 #    포트를 붙이지 않는다: Service는 80을 열고 targetPort 8080으로 넘긴다.
 ARG API_ORIGIN=http://localhost:8080
 ENV API_ORIGIN=$API_ORIGIN
 
-# 토스 결제창(ADR-005의 Toss 테스트 어댑터)을 띄우는 **공개** 클라이언트 키.
+# 토스 결제창(ADR-005의 Toss 테스트 어댑터)을 띄우는 공개 클라이언트 키.
 # NEXT_PUBLIC_* 는 브라우저 번들에 문자열로 구워지므로 런타임 주입이 원리적으로 불가능하다 —
 # k8s Secret에 넣어도 아무 효과가 없다. 그래서 여기서 받는다.
 #
 # 비어 있으면 조용히 기능이 바뀐다: pay/page.tsx가 `TOSS_CLIENT_KEY`가 있을 때만 결제창
-# 인증 경로를 타고, 없으면 결제창 없이 confirm으로 빠진다 — 에러가 아니라 **다른 흐름**이라
-# 배포 후에도 눈치채기 어렵다. 하네스 규칙 ⑥이 ARG 누락을 막는다.
+# 인증 경로를 타고, 없으면 결제창 없이 confirm으로 빠진다 — 에러가 아니라 다른 흐름이라
+# 배포 후에도 눈치채기 어렵다. 하네스 규칙 6)이 ARG 누락을 막는다.
 #
 # 공개 키라 시크릿이 아니다(브라우저에 그대로 노출되는 것이 정상). GitHub Actions
 # repository variable로 주입한다.
@@ -39,21 +39,21 @@ ARG NEXT_PUBLIC_TOSS_CLIENT_KEY=
 ENV NEXT_PUBLIC_TOSS_CLIENT_KEY=$NEXT_PUBLIC_TOSS_CLIENT_KEY
 
 # 대기열 상태 폴링 주기(ms). SSE가 아예 열리지 않는 환경을 위한 최종 안전망이라
-# 환경별 조정이 필요할 수 있어 운영 파라미터로 둔다(ADR-015 ③).
+# 환경별 조정이 필요할 수 있어 운영 파라미터로 둔다(ADR-015 3)).
 #
 # 여기서 받는 이유는 위 토스 키와 같다 — NEXT_PUBLIC_* 는 번들에 구워져 런타임 주입이
-# 불가능하다. 다만 이 값은 **비어도 안전하다**: useQueue가 `|| 2000`으로 기본값을 쓴다.
+# 불가능하다. 다만 이 값은 비어도 안전하다: useQueue가 `|| 2000`으로 기본값을 쓴다.
 # 그래도 ARG를 두는 것은, 나중에 운영값을 바꿔야 할 때 이미지 재빌드 경로가 여기뿐이기
 # 때문이다(k8s Secret/ConfigMap으로는 못 바꾼다).
 #
-# ⚠️ E2E는 600000(10분)을 준다. 그건 **운영 후보값이 아니라** 폴링을 테스트 시간 밖으로
+# E2E는 600000(10분)을 준다. 그건 운영 후보값이 아니라 폴링을 테스트 시간 밖으로
 # 밀어내 SSE 재연결 복구(onopen)를 격리 검증하기 위한 값이다.
 ARG NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS=
 ENV NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS=$NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS
 
 # 폴링 백오프 상한. 위와 같은 이유로 여기서 받는다. 비어도 안전하다(useQueue가 `|| 15000`).
-# ⚠️ useQueue는 max(MIN, MAX)를 쓴다 — E2E처럼 MIN을 10분으로 밀어 놓은 빌드에서 상한이
-# 그보다 작으면 백오프가 오히려 주기를 **줄여** 폴링을 테스트 창 안으로 되돌리기 때문이다.
+# useQueue는 max(MIN, MAX)를 쓴다 — E2E처럼 MIN을 10분으로 밀어 놓은 빌드에서 상한이
+# 그보다 작으면 백오프가 오히려 주기를 줄여 폴링을 테스트 창 안으로 되돌리기 때문이다.
 ARG NEXT_PUBLIC_QUEUE_POLL_MAX_MS=
 ENV NEXT_PUBLIC_QUEUE_POLL_MAX_MS=$NEXT_PUBLIC_QUEUE_POLL_MAX_MS
 

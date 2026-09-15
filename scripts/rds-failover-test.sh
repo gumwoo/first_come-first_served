@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
-# RDS 강제 페일오버 중 **앱의 거동**을 측정한다.
+# RDS 강제 페일오버 중 앱의 거동을 측정한다.
 #
-# 왜 필요한가: ADR-012 §10이 Multi-AZ를 **A(실증) 범주**에 넣었다 — "켜 두기만 하는 것이
+# 왜 필요한가: ADR-012 §10이 Multi-AZ를 A(실증) 범주에 넣었다 — "켜 두기만 하는 것이
 # 아니라 눌러 보고 앱의 거동을 측정한다". terraform-design도 관찰 항목을 표로 지정해 두었다.
-# 그런데 2026-08-26 확인 결과 **설정은 켜져 있고(MultiAZ=True) 실증 문서가 없었다.**
-# CA와 같은 패턴이다 — 설계는 있고 측정이 빠졌다.
 #
-# ⚠️ 측정 대상은 "AWS가 페일오버에 성공했는가"가 아니다. 그건 AWS가 보장한다.
-# 재는 것은 **앱이 그 구간을 어떻게 통과하는가**다(terraform-design의 관찰 표).
+# 측정 대상은 "AWS가 페일오버에 성공했는가"가 아니다. 그건 AWS가 보장한다.
+# 재는 것은 앱이 그 구간을 어떻게 통과하는가다(terraform-design의 관찰 표).
 #   커넥션 풀 — HikariCP가 끊긴 커넥션을 버리고 재연결하는가, 고갈되는가
 #   오류 형태 — 5xx인가 타임아웃 누적인가
 #   중단 시간 — 쓰기 불가 구간의 실제 길이
 #   자동 복구 — 스스로 정상화되는가, Pod 재시작이 필요한가
 #
-# ⚠️ Redis 페일오버와 **같이 하지 않는다.** 원인이 섞인다. 각각 별도 실험이다.
+# Redis 페일오버와 같이 하지 않는다. 원인이 섞인다. 각각 별도 실험이다.
 #
 # 사용:
 #   bash scripts/rds-failover-test.sh                 # 25 rps × 6분
@@ -65,7 +63,7 @@ read -r MULTIAZ STATUS AZ <<<"$(aws rds describe-db-instances --region "$REGION"
   --db-instance-identifier "$DB" \
   --query 'DBInstances[0].[MultiAZ,DBInstanceStatus,AvailabilityZone]' --output text)"
 echo "    RDS=$DB MultiAZ=$MULTIAZ status=$STATUS az=$AZ"
-# ⚠️ Multi-AZ가 아니면 강제 페일오버는 그냥 재부팅이다 — 다른 것을 재게 된다.
+# Multi-AZ가 아니면 강제 페일오버는 그냥 재부팅이다 — 다른 것을 재게 된다.
 [ "$MULTIAZ" = "True" ] || { echo "MultiAZ가 아니다 — 이 실험은 Multi-AZ 전환을 재는 것이므로 중단한다" >&2; exit 1; }
 [ "$STATUS" = "available" ] || { echo "RDS 상태가 available이 아니다($STATUS)" >&2; exit 1; }
 
@@ -76,7 +74,7 @@ CODE="$(http_code "https://$DOMAIN")"
 
 # ── 1. 부하 (DB를 실제로 타는 경로) ─────────────────────────────────
 say "1/6 부하 기동 (${RATE} rps)"
-# ⚠️ 좌석 조회는 DB를 탄다(IMP-015 §3이 같은 이유로 이 엔드포인트를 골랐다).
+# 좌석 조회는 DB를 탄다(IMP-015 §3이 같은 이유로 이 엔드포인트를 골랐다).
 # 캐시가 걸리는 구간이 있으므로 "DB 장애가 곧 5xx"는 아니다 — 그것 자체가 관찰 대상이다.
 EVENT_ID="$(http_body "https://$DOMAIN/api/events?status=ON_SALE&size=20" \
   | jq -r '.data.items[0].id // empty' | tr -d '\r' || true)"
@@ -122,9 +120,7 @@ echo "    pod=$K6POD event=$EVENT_ID"
 # ── 2. Hikari 감시 시작 ─────────────────────────────────────────────
 # 커넥션 풀이 고갈되는지가 문서가 지정한 첫 관찰 항목이다.
 #
-# ⚠️ /actuator/metrics/{name} 은 이 앱에서 빈 응답을 준다(2026-08-26 확인). 그대로 두면
-# 로그가 텅 빈 채로 측정이 끝나고, 첫 관찰 항목을 잃는다 — 측정 전에 확인해서 잡았다.
-# /actuator/prometheus 에는 hikaricp_* 지표가 나온다. 그쪽을 읽는다.
+# /actuator/metrics/{name} 은 이 앱에서 빈 응답을 준다. /actuator/prometheus 에는 hikaricp_* 지표가 나온다. 그쪽을 읽는다.
 say "2/6 HikariCP 감시 시작 (1초 간격)"
 HIKARI_OK="$(kubectl -n "$NS" exec deploy/flowticket-api -c api -- \
   sh -c 'wget -qO- localhost:8080/actuator/prometheus 2>/dev/null | grep -c "^hikaricp_connections_active"' 2>/dev/null || echo 0)"
@@ -132,13 +128,9 @@ HIKARI_OK="$(kubectl -n "$NS" exec deploy/flowticket-api -c api -- \
   echo "HikariCP 지표를 읽지 못한다 — 커넥션 풀 관찰 없이는 이 실험의 절반이 빈다. 중단한다." >&2
   echo "  확인: kubectl -n $NS exec deploy/flowticket-api -c api -- wget -qO- localhost:8080/actuator/prometheus | grep hikaricp" >&2
   exit 1; }
-# ⚠️ `exec deploy/...` 로 읽으면 안 된다. 매번 **여러 파드 중 하나에 임의로** 붙기 때문에,
+# `exec deploy/...` 로 읽으면 안 된다. 매번 여러 파드 중 하나에 임의로 붙기 때문에,
 # 1초마다 다른 파드를 읽고도 같은 파드의 시계열처럼 보인다.
-#
-# 2026-08-26 초판이 정확히 그랬다 — `timeout_total 57 → 0`을 "고갈됐다가 회복됐다"로 읽었다.
-# 그런데 이 지표는 **counter**(단조 증가)이고 파드 재시작도 0이었다. 같은 프로세스에서
-# 줄어들 수 없으므로 **다른 파드를 읽은 것**이다. 실제 파드별 값은 57 / 40 / 0이었다.
-# 잘못된 인과를 만든 것이 아니라, **애초에 인과를 볼 수 없는 수집 방식**이었다.
+# (예: counter인 timeout_total이 57 → 0으로 "줄어든" 것처럼 보인다.)
 #
 # 파드 이름을 고정해 각각 따로 기록한다.
 API_PODS="$(kubectl -n "$NS" get pods -l app=flowticket-api \
@@ -181,10 +173,8 @@ for i in $(seq 1 60); do
   read -r ST CAZ <<<"$(aws rds describe-db-instances --region "$REGION" \
     --db-instance-identifier "$DB" --query 'DBInstances[0].[DBInstanceStatus,AvailabilityZone]' \
     --output text 2>/dev/null || echo "? ?")"
-  # ⚠️ DBInstanceStatus=available 만 보고 끝내지 않는다. 2026-08-26 실행에서 실제로
-  # 오판했다 — available이 된 시점(+70s)에는 AZ 필드가 아직 옛 값이었고 "전환 안 됨"으로
-  # 기록됐다. 실제로는 12:06:13에 failover completed 이벤트가 났고 AZ는 2b → 2c였다.
-  # 상태 하나만 보고 판정하면 정상 동작을 잘못 읽는다(TS-036과 같은 계열).
+  # DBInstanceStatus=available 만 보고 끝내지 않는다. available이 된 시점에도 AZ 필드가
+  # 아직 옛 값일 수 있어 "전환 안 됨"으로 오판한다 — failover completed 이벤트로 확인한다.
   EVT="$(aws rds describe-events --region "$REGION" --source-identifier "$DB" \
     --source-type db-instance --duration 30 \
     --query "Events[?contains(Message,'failover completed')].Date" --output text 2>/dev/null || true)"

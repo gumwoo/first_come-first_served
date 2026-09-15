@@ -18,13 +18,13 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * 상세 동기화 <b>대상 선정</b> 규칙을 고정한다.
+ * 상세 동기화 대상 선정 규칙을 고정한다.
  *
- * <p>초안은 {@code detailSyncedAt IS NULL}만 대상으로 삼아, 한 번 채운 공연은 <b>영원히 다시
- * 보지 않았다.</b> KOPIS에서 가격·출연진·공연시간이 바뀌어도 우리 값은 그대로 남는다. 문서에는
+ * <p>초안은 {@code detailSyncedAt IS NULL}만 대상으로 삼아, 한 번 채운 공연은 영원히 다시
+ * 보지 않았다. KOPIS에서 가격·출연진·공연시간이 바뀌어도 우리 값은 그대로 남는다. 문서에는
  * "최대 하루 낡는다"고 적혀 있었지만 실제로는 무한히 낡는 구조였다.
  *
- * <p>규칙은 둘이다 — <b>미수집(NULL)과 오래된 것을 함께</b> 고르고, <b>오래된 순(NULL 먼저)</b>으로
+ * <p>규칙은 둘이다 — 미수집(NULL)과 오래된 것을 함께 고르고, 오래된 순(NULL 먼저)으로
  * 정렬한다. 회차당 상한이 있으므로 정렬이 곧 우선순위다.
  */
 @SpringBootTest
@@ -86,13 +86,8 @@ class KopisDetailRefreshTest extends IntegrationTestSupport {
     /**
      * 목록 동기화가 상세 동기화의 결과를 지우면 안 된다.
      *
-     * <p>초안은 {@code updateFromSync(..., null, null, status)}로 {@code runningTime}·
-     * {@code ageLimit}에 null을 넘겼고 그 메서드가 무조건 덮어썼다. 그래서 상세가 채운 값을
-     * <b>다음날 목록 동기화가 지웠고</b>, {@code detailSyncedAt}은 그대로라 갱신 주기(7일)가
-     * 지나기 전엔 다시 채워지지도 않았다.
-     *
-     * <p>이 결함은 원래 있었지만 보이지 않았다 — 예전에는 상세를 요청마다 외부에서 받아
-     * DB 값을 덮어 썼기 때문이다. DB에서 읽기 시작하면서 드러났다.
+     * <p>목록 동기화가 {@code runningTime}·{@code ageLimit}을 null로 덮으면, {@code detailSyncedAt}은
+     * 그대로라 갱신 주기(7일)가 지나기 전엔 다시 채워지지도 않는다.
      */
     @Test
     void 목록_재동기화가_상세필드를_지우지_않는다() {

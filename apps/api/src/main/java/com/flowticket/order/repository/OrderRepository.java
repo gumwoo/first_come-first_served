@@ -67,7 +67,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     /**
      * 정산 후보(S08 2단계) — "결제로 확정되지 않은" 주문 중 결제 제한시각이 지난 지 유예시간이 넘은 것.
-     * PG 승인이 성공했는데 트랜잭션이 롤백되면 payments 행까지 사라지므로, 흔적이 남는 <b>주문</b>에서
+     * PG 승인이 성공했는데 트랜잭션이 롤백되면 payments 행까지 사라지므로, 흔적이 남는 주문에서
      * 후보를 만든다. 유예(before)는 진행 중 결제를 건드리지 않기 위한 것이고, 소급 한계(after)와
      * 페이지 상한으로 PG 조회 비용을 바운드한다.
      */

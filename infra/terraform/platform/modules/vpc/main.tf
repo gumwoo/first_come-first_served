@@ -76,7 +76,7 @@ resource "aws_subnet" "private_data" {
 # NAT — AZ별 1개
 # ---------------------------------------------------------------------------
 
-# ⚠️ EIP 쿼터는 5인데 여기서 3을 쓴다. destroy에서 EIP가 남으면 다음 apply가
+# EIP 쿼터는 5인데 여기서 3을 쓴다. destroy에서 EIP가 남으면 다음 apply가
 # 3+3 > 5로 실패한다(증상이 쿼터 에러라 원인이 헷갈린다). terraform-design §6 참조.
 resource "aws_eip" "nat" {
   for_each = local.az_index

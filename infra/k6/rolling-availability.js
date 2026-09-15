@@ -1,12 +1,12 @@
 // 롤링 배포 중 가용성 측정 — IMP-015 §8(미검증 조건 재현)용.
 //
 // read-load-rate.js와 목적이 다르다. 저쪽은 "이 시스템이 이 속도를 감당하는가"(포화점 탐색)를
-// 묻고, 이쪽은 **"배포 중에 요청이 떨어지는가"**를 묻는다. 그래서 부하는 일부러 낮게 두고
-// (기본 25 rps — IMP-015 §3과 같은 값) 대신 **실패한 요청 하나하나의 시각을 남긴다.**
+// 묻고, 이쪽은 "배포 중에 요청이 떨어지는가"를 묻는다. 그래서 부하는 일부러 낮게 두고
+// (기본 25 rps — IMP-015 §3과 같은 값) 대신 실패한 요청 하나하나의 시각을 남긴다.
 // 3,600건 중 1건짜리 사건을 찾는 측정이라 집계값(p95·에러율)만으로는 아무것도 못 본다.
 //
-// 왜 공인 도메인을 때리는가: k6-job.yaml은 Service로 직접 쏘지만, 여기서는 **ALB를 반드시
-// 경로에 넣어야 한다.** 검증 대상인 deregistration_delay·타깃 등록 해제가 ALB의 동작이기
+// 왜 공인 도메인을 때리는가: k6-job.yaml은 Service로 직접 쏘지만, 여기서는 ALB를 반드시
+// 경로에 넣어야 한다. 검증 대상인 deregistration_delay·타깃 등록 해제가 ALB의 동작이기
 // 때문이다. Service로 쏘면 측정하려는 그 구간을 건너뛴다.
 // 동시에 Job으로 클러스터 안에서 돌려 집 회선 변동은 배제한다(IMP-015 §6의 한계).
 //
@@ -14,8 +14,8 @@
 //   k6 run -e BASE_URL=https://flow-ticket.com/api -e RATE=25 -e RUN_FOR=4m \
 //          infra/k6/rolling-availability.js
 //
-// ⚠️ 옵션 이름에 K6_ 접두사를 쓰지 않는다(read-load-rate.js와 같은 이유 — K6_DURATION은
-// k6 자신의 환경변수 옵션이라 scenarios를 통째로 덮어쓴다. 2026-08-11에 측정이 그렇게 무효화됐다).
+// 옵션 이름에 K6_ 접두사를 쓰지 않는다(read-load-rate.js와 같은 이유 — K6_DURATION은
+// k6 자신의 환경변수 옵션이라 scenarios를 통째로 덮어쓴다).
 import http from "k6/http";
 import { Counter } from "k6/metrics";
 
@@ -24,16 +24,16 @@ const RATE = __ENV.RATE ? parseInt(__ENV.RATE, 10) : 25;
 const RUN_FOR = __ENV.RUN_FOR || "4m";
 const EVENT_ID = __ENV.EVENT_ID || "";
 // 부하 모델. 기본은 open(도착률 고정). closed는 IMP-015 §3의 "병렬 6워커"를 재현하기 위한 것으로,
-// **두 모델이 같은 장애를 다르게 보는지**를 확인하는 대조군 전용이다.
+// 두 모델이 같은 장애를 다르게 보는지를 확인하는 대조군 전용이다.
 const MODEL = __ENV.MODEL || "open";
 const VUS = __ENV.VUS ? parseInt(__ENV.VUS, 10) : 6;
 
 const non2xx = new Counter("non2xx_total");
 
-// ⚠️ 두 모델은 같은 장애를 다르게 본다. closed는 응답이 늦어지면 그 VU가 묶여 **부하가 스스로
-// 줄어들고**(read-load-rate.js 헤더 참조), 연결이 10초 매달리는 구간에서는 VU 수만큼만 실패할 수
+// 두 모델은 같은 장애를 다르게 본다. closed는 응답이 늦어지면 그 VU가 묶여 부하가 스스로
+// 줄어들고(read-load-rate.js 헤더 참조), 연결이 10초 매달리는 구간에서는 VU 수만큼만 실패할 수
 // 있다. open은 응답이 늦어도 초당 도착 수를 유지하므로 그 창을 정면으로 때린다.
-// 그래서 closed의 "0건"은 무중단의 증거가 아니라 **측정기가 못 본 것**일 수 있다.
+// 그래서 closed의 "0건"은 무중단의 증거가 아니라 측정기가 못 본 것일 수 있다.
 const scenario =
   MODEL === "closed"
     ? { executor: "constant-vus", vus: VUS, duration: RUN_FOR, gracefulStop: "30s" }

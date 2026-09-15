@@ -1,4 +1,4 @@
-# ECR — ⚠️ Phase 2에서 콘솔로 이미 만든 저장소다. apply 전에 import해야 한다.
+# ECR — Phase 2에서 콘솔로 이미 만든 저장소다. apply 전에 import해야 한다.
 #   terraform import 'aws_ecr_repository.this["api"]' flowticket-api
 #   terraform import 'aws_ecr_repository.this["web"]' flowticket-web
 # 절차: README.md
@@ -20,7 +20,7 @@ resource "aws_ecr_repository" "this" {
 
   # 기본값은 MUTABLE이다. image.yml을 workflow_dispatch로 재실행하면 같은 SHA 태그를
   # 다시 push하는데(실제로 ECR 저장소 리전 문제로 재실행한 적이 있다) IMMUTABLE이면 실패한다.
-  # 즉 재실행 시 **덮어쓰기가 실제로 일어난다** — 다만 서로 다른 커밋이 같은 태그를 쓰는
+  # 즉 재실행 시 덮어쓰기가 실제로 일어난다 — 다만 서로 다른 커밋이 같은 태그를 쓰는
   # 일은 없으므로(태그 = git SHA) 태그 재사용 위험은 제한적이다. 재실행 가능성을 택했다.
   image_tag_mutability = var.ecr_image_tag_mutability
 
@@ -43,9 +43,9 @@ resource "aws_ecr_lifecycle_policy" "this" {
 
   repository = aws_ecr_repository.this[each.key].name
 
-  # 규칙 순서가 의미를 만든다. untagged를 **먼저** 걷어내지 않으면, 태그 없는 이미지가
-  # 보관 한도(${var.ecr_keep_last_images}개) 안의 자리를 차지해 **롤백 가능한 태그 이미지가
-  # 그만큼 줄어든다.** 2026-08-22 기준 71개 중 45개가 태그 없는 것이었다.
+  # 규칙 순서가 의미를 만든다. untagged를 먼저 걷어내지 않으면, 태그 없는 이미지가
+  # 보관 한도(${var.ecr_keep_last_images}개) 안의 자리를 차지해 롤백 가능한 태그 이미지가
+  # 그만큼 줄어든다.
   #
   # 태그 없는 이미지는 같은 SHA를 다시 push할 때 생긴다(image.yml workflow_dispatch 재실행).
   # 태그로 참조할 수 없으므로 롤백에 쓸 수 없다 — 남겨 둘 이유가 없다.

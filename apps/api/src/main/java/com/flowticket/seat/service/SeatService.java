@@ -88,39 +88,36 @@ public class SeatService {
     /**
      * 좌석맵: 등급 요약(가격·잔여) + 개별 좌석.
      *
-     * <p><b>{@code seat.map-cache-ttl-ms}가 0보다 크면 짧은 TTL 캐시를 태운다. 기본값은 0(끔)이다.</b>
+     * <p>{@code seat.map-cache-ttl-ms}가 0보다 크면 짧은 TTL 캐시를 태운다. 기본값은 0(끔)이다.
      * 0단계 실측에서 이 경로가 API CPU 비용의 약 57%를 차지해(요청 비율은 50%) 캐시 후보 1순위였다
      * (`benchmarks/cache-experiment/`).
      *
-     * <p>⚠️ <b>이건 성능 상한을 확인하기 위한 실험용이지 운영 최종 설계가 아니다.</b>
-     * 좌석은 단순 조회 데이터가 아니라 <b>재고성 상태</b>라, TTL 동안 이미 선점된 좌석이
+     * <p>이건 성능 상한을 확인하기 위한 실험용이지 운영 최종 설계가 아니다.
+     * 좌석은 단순 조회 데이터가 아니라 재고성 상태라, TTL 동안 이미 선점된 좌석이
      * AVAILABLE로 보일 수 있다. 최종 선점은 조건부 UPDATE가 막지만(ADR-003) 사용자가 고른 뒤
      * 거절당하는 충돌은 늘어난다.
      *
      * <p>운영 설계로 가려면 이벤트 기반 무효화를 얹어야 한다 —
      * {@code seat.held/released/expired} 발생 시 해당 eventId 캐시를 지우고, 이벤트 유실에 대비해
-     * 짧은 TTL을 함께 둔다. 그 판단은 <b>이 실험의 개선폭을 보고</b> 한다.
+     * 짧은 TTL을 함께 둔다. 그 판단은 이 실험의 개선폭을 보고 한다.
      *
-     * <p>⚠️ <b>TTL 만료 시 동시 miss에 대한 single-flight/lock을 구현하지 않았다.</b>
+     * <p>TTL 만료 시 동시 miss에 대한 single-flight/lock을 구현하지 않았다.
      * 도착률이 높고 TTL이 짧으면 키가 만료되는 순간 여러 요청이 동시에 miss를 보고 전부
      * {@code loadSeatMap()}으로 들어간다(cache stampede). correctness 문제는 아니지만
-     * <b>측정에는 주기적인 만료 버스트 비용이 포함</b>되며, 그것을 단순 캐시의 실제 비용으로 읽는다.
+     * 측정에는 주기적인 만료 버스트 비용이 포함되며, 그것을 단순 캐시의 실제 비용으로 읽는다.
      *
-     * <p><b>{@code NOT_SUPPORTED}로 트랜잭션 밖에서 돈다.</b> 클래스 레벨
-     * {@code @Transactional(readOnly = true)}를 그대로 두면 <b>캐시 hit이어도 트랜잭션이 열리고
-     * 커넥션을 빌린다</b> — 2026-08-16 실측에서 요청 36,002건에 커넥션 획득 36,173회로
-     * <b>요청당 약 1회</b>가 그대로 나왔다. 캐시 hit이 좌석 조회 쿼리를 회피하더라도
-     * <b>트랜잭션·커넥션 경계 비용은 남아 있었다.</b>
-     * (⚠️ 쿼리 수를 직접 센 것은 아니다 — 잰 것은 커넥션 획득 횟수다.)
+     * <p>{@code NOT_SUPPORTED}로 트랜잭션 밖에서 돈다. 클래스 레벨
+     * {@code @Transactional(readOnly = true)}를 그대로 두면 캐시 hit이어도 트랜잭션이 열리고
+     * 커넥션을 빌린다 — 캐시 hit이 조회 쿼리를 피해도 트랜잭션·커넥션 경계 비용은 남는다.
      *
-     * <p>그래서 조회는 트랜잭션 밖에서 하고, <b>miss일 때만</b> 프록시를 거쳐
+     * <p>그래서 조회는 트랜잭션 밖에서 하고, miss일 때만 프록시를 거쳐
      * {@link #loadSeatMap(Long)}을 불러 트랜잭션을 연다. 자기 호출은 프록시를 타지 않으므로
      * {@code self}를 거친다(PaymentService와 같은 패턴).
      *
-     * <p>⚠️ {@code NOT_SUPPORTED}는 "트랜잭션을 새로 열지 않는다"가 아니라 <b>호출자가 이미
-     * 트랜잭션 안이면 그것을 일시 중단(suspend)한다.</b> 현재 호출처는
+     * <p>{@code NOT_SUPPORTED}는 "트랜잭션을 새로 열지 않는다"가 아니라 호출자가 이미
+     * 트랜잭션 안이면 그것을 일시 중단(suspend)한다. 현재 호출처는
      * {@code SeatController} 하나뿐이고 그쪽에 {@code @Transactional}이 없어 문제가 없다 —
-     * <b>트랜잭션 안에서 이 메서드를 부르는 코드가 생기면 그 의미를 다시 봐야 한다.</b>
+     * 트랜잭션 안에서 이 메서드를 부르는 코드가 생기면 그 의미를 다시 봐야 한다.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SeatMapResponse getSeats(Long eventId) {
@@ -175,10 +172,10 @@ public class SeatService {
         if (!queueService.isAdmitted(queueToken, eventId)) {
             throw new BusinessException(ErrorCode.QUEUE_NOT_ADMITTED);
         }
-        // 판매 상태 게이트. 대기열이 이미 같은 검사를 하지만 **여기서도 본다.**
-        //   ① 입장 토큰은 admit-ttl(기본 300초) 동안 살아 있어, 그 사이 운영자가 공연을
+        // 판매 상태 게이트. 대기열이 이미 같은 검사를 하지만 여기서도 본다.
+        //   1) 입장 토큰은 admit-ttl(기본 300초) 동안 살아 있어, 그 사이 운영자가 공연을
         //      PAUSED·CLOSED로 바꿔도 이미 발급된 토큰으로 계속 선점할 수 있다.
-        //   ② 대기열을 통과한 토큰만 여기 오지만, 그 토큰이 발급된 시점의 상태와
+        //   2) 대기열을 통과한 토큰만 여기 오지만, 그 토큰이 발급된 시점의 상태와
         //      지금 상태는 다를 수 있다 — 검사 시점이 다르면 다른 검사다.
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
@@ -189,7 +186,7 @@ public class SeatService {
         if (seatRepository.countByIdInAndEventId(seatIds, eventId) != seatIds.size()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
-        // 1인 구매 한도 — 좌석 초과판매와 달리 **집계 규칙**이라 조건부 UPDATE로 원자화할
+        // 1인 구매 한도 — 좌석 초과판매와 달리 집계 규칙이라 조건부 UPDATE로 원자화할
         // 대상 행이 없다. 읽기→검사→행위 사이에 다른 요청이 끼어들면 둘 다 통과하므로
         // (사용자, 공연) 단위로 직렬화한 뒤 단일 SQL로 센다. 근거는 SeatQuotaRepository 참조.
         // 좌석 총량을 늘리는 진입점이 이 메서드 하나라 여기만 잠그면 충분하다.
@@ -215,14 +212,12 @@ public class SeatService {
     }
 
     /**
-     * 선점 실패의 원인을 가른다 — <b>공연이 매진된 것</b>과 <b>내가 고른 좌석만 뺏긴 것</b>은 다르다.
+     * 선점 실패의 원인을 가른다 — 공연이 매진된 것과 내가 고른 좌석만 뺏긴 것은 다르다.
      *
-     * <p>예전에는 둘 다 {@code SOLD_OUT}이었다. 그래서 100석 중 1석을 남에게 뺏긴 사용자가
-     * 매진 화면으로 튕겨 나갔다 — 99석이 남아 있는데도 예매를 포기하게 만드는 최악의 오안내다.
-     * {@code docs/rules/domain/seat.md}는 원래 SOLD_OUT을 "잔여 0"으로 정의하고 있었고,
-     * 코드만 그 규칙과 어긋나 있었다.
+     * <p>둘 다 {@code SOLD_OUT}으로 답하면 1석만 뺏긴 사용자가 좌석이 남았는데도 매진 화면으로
+     * 간다. SOLD_OUT은 "잔여 0"일 때만 쓴다({@code docs/rules/domain/seat.md}).
      *
-     * <p><b>{@code held}를 더하는 것이 핵심이다.</b> 이 메서드는 롤백 <i>전</i>에 불린다.
+     * <p>{@code held}를 더하는 것이 핵심이다. 이 메서드는 롤백 <i>전</i>에 불린다.
      * 방금 조건부 UPDATE로 HELD가 된 {@code held}석은 예외로 트랜잭션이 되감기면 다시
      * AVAILABLE로 돌아온다. 더하지 않으면 "요청 좌석을 전부 잡았지만 다른 이유로 실패"한
      * 경우에 잔여를 0으로 잘못 읽어 매진이라고 답하게 된다.

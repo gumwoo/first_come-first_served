@@ -30,12 +30,12 @@ public class KopisUpserter {
     /**
      * KOPIS 수집분을 events에 반영한다(kopis_id 기준 멱등).
      *
-     * <p>존재 확인은 <b>배치 조회 1회</b>로 끝낸다(IMP-012). 예전엔 항목마다 {@code findByKopisId}를
+     * <p>존재 확인은 배치 조회 1회로 끝낸다(IMP-012). 예전엔 항목마다 {@code findByKopisId}를
      * 호출해 N건에 SELECT N번이 나갔다. 또한 KOPIS 응답에 같은 kopisId가 중복으로 들어오면 한 배치에서
-     * INSERT가 두 번 나가 UNIQUE 위반이 되므로, <b>배치 내 중복은 먼저 제거</b>한다(뒤 항목이 최신).
+     * INSERT가 두 번 나가 UNIQUE 위반이 되므로, 배치 내 중복은 먼저 제거한다(뒤 항목이 최신).
      *
      * @return 유효 항목(kopisId·title 보유) 중 신규/갱신으로 처리한 건수 —
-     *         "새로 추가된 공연 수"가 아니라 <b>처리한 항목 수</b>다.
+     *         "새로 추가된 공연 수"가 아니라 처리한 항목 수다.
      */
     @Transactional
     public int upsertAll(List<KopisEvent> items) {

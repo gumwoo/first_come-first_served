@@ -28,10 +28,10 @@ import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * 격리된(DEAD) 아웃박스 행의 <b>운영 창구</b>. 조회만이 아니라, 운영자 판단이 릴레이 동작에
+ * 격리된(DEAD) 아웃박스 행의 운영 창구. 조회만이 아니라, 운영자 판단이 릴레이 동작에
  * 실제로 반영되는지를 본다.
  *
- * <p>요점은 <b>폐기가 aggregate 차단을 푸는가</b>이다. 릴레이는 DEAD만 차단 사유로 보므로,
+ * <p>요점은 폐기가 aggregate 차단을 푸는가이다. 릴레이는 DEAD만 차단 사유로 보므로,
  * 폐기는 "이 이벤트는 영영 안 나간다는 것을 받아들인다"는 선언이면서 동시에 후속 이벤트의
  * 해방이다. 이 연결이 끊어져 있으면 창구가 있어도 막힌 aggregate를 풀 수 없다.
  */

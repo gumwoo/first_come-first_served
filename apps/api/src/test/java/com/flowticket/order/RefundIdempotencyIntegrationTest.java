@@ -108,7 +108,7 @@ class RefundIdempotencyIntegrationTest extends IntegrationTestSupport {
         // IMP-009 after: idempotency_key UNIQUE + 조건부 전이 + 충돌 시 기존 결과 반환
         //
         // 결제 쪽과 같은 구멍이 있었다 — `catch (Exception ignored)`로 삼키고 DB 최종 상태만 봐서,
-        // **1건만 성공하고 9건이 터져도 통과했다.** 환불은 금액이 실려 있어 더 나쁘다:
+        // 1건만 성공하고 9건이 터져도 통과했다. 환불은 금액이 실려 있어 더 나쁘다:
         // 더블클릭한 사용자가 에러를 보면 "환불이 안 됐다"고 판단해 다시 누르거나 문의한다.
         // 자세한 근거는 PaymentIdempotencyIntegrationTest의 같은 테스트 주석 참고.
         Ctx c = paidOrder(71L);

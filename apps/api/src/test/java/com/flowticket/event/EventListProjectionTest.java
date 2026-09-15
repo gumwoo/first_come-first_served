@@ -21,15 +21,15 @@ import org.springframework.test.context.TestPropertySource;
 import jakarta.persistence.EntityManagerFactory;
 
 /**
- * 목록 조회가 <b>엔티티를 로드하지 않는다</b>는 것을 회귀로 고정한다.
+ * 목록 조회가 엔티티를 로드하지 않는다는 것을 회귀로 고정한다.
  *
  * <p>목록이 쓰는 컬럼은 9개인데 {@code selectFrom(event)}는 엔티티의 모든 컬럼(20개)을 읽는다.
  * V16에서 KOPIS 상세 필드(TEXT 4개)가 붙으며 폭이 더 넓어졌다.
  *
- * <p>이 테스트는 <b>성능을 단언하지 않는다</b> — 읽는 컬럼 수만 고정한다. 목록 지연이 늘어난
+ * <p>이 테스트는 성능을 단언하지 않는다 — 읽는 컬럼 수만 고정한다. 목록 지연이 늘어난
  * 관측이 있었지만 EXPLAIN으로는 쿼리 형태별 차이가 0.1~0.2ms에 그쳐 원인으로 확인되지 않았다.
  *
- * <p>이 테스트는 Hibernate 통계의 <b>엔티티 로드 수</b>를 본다. 프로젝션이면 0이고,
+ * <p>이 테스트는 Hibernate 통계의 엔티티 로드 수를 본다. 프로젝션이면 0이고,
  * {@code selectFrom(event)}로 되돌리면 로드 수가 올라가 실패한다.
  */
 @SpringBootTest

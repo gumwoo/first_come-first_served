@@ -1,8 +1,8 @@
 # RDS PostgreSQL — 프라이빗 데이터 서브넷, 외부 노출 없음.
 #
-# 비밀번호는 **RDS가 직접 관리**한다(manage_master_user_password).
+# 비밀번호는 RDS가 직접 관리한다(manage_master_user_password).
 # 처음에는 Terraform이 random_password로 만들어 Secrets Manager에 넣었는데,
-# 그 방식은 생성한 값이 **state에 평문으로 남는다** — output으로 안 내보내도 마찬가지다.
+# 그 방식은 생성한 값이 state에 평문으로 남는다 — output으로 안 내보내도 마찬가지다.
 # RDS가 관리하면 Terraform은 비밀번호를 보지도 저장하지도 않고 시크릿 ARN만 참조한다.
 # (프로젝트 규칙: 비밀은 코드·설정·state·채팅 어디에도 남기지 않는다.)
 

@@ -15,7 +15,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Refresh Token Rotation (+ grace window).
- * 회전 판정(current 비교 → prev 저장 → 새 토큰 저장)을 **Redis Lua 스크립트로 원자 실행**해
+ * 회전 판정(current 비교 → prev 저장 → 새 토큰 저장)을 Redis Lua 스크립트로 원자 실행해
  * 동일 refresh로 동시에 들어온 요청도 직렬화한다(첫 요청만 회전, 나머지는 grace로 처리).
  */
 @Service

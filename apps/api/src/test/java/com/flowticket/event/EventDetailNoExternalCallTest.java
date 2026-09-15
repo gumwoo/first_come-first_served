@@ -17,15 +17,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 
 /**
- * <b>사용자 상세 조회가 외부 API를 호출하지 않는다</b>는 것을 회귀로 고정한다.
+ * 사용자 상세 조회가 외부 API를 호출하지 않는다는 것을 회귀로 고정한다.
  *
- * <p>예전에는 {@code GET /events/{id}}마다 KOPIS 상세를 동기 호출했다. 그 구조에서는 외부
- * 호출량이 우리 트래픽의 함수가 되어, 부하 시 초당 70회가 나가 KOPIS 이용 제한(IP당 1초 10회)을
- * 약 7배 초과했고 400 Request Blocked를 2,014건 맞았다. 응답시간도 외부 지연에 종속됐다
- * (이 경로만 p50 89ms, 다른 조회 18ms).
- *
- * <p>고친 뒤에도 누군가 "상세가 비어 있으니 없으면 그때 불러오자"는 식으로 되돌리기 쉽다.
- * 그건 lazy cache가 되어 트래픽 비례 구간이 다시 생긴다. 그래서 <b>호출이 0회임을 단언</b>한다.
+ * <p>"상세가 비어 있으면 그때 불러오자"는 lazy cache로 되돌리면 외부 호출량이 다시 트래픽에
+ * 비례하고 KOPIS 이용 제한(IP당 1초 10회)을 넘긴다. 그래서 호출이 0회임을 단언한다.
  */
 @SpringBootTest
 class EventDetailNoExternalCallTest extends IntegrationTestSupport {

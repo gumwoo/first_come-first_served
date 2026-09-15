@@ -84,18 +84,11 @@ public class EventService {
     }
 
     /**
-     * 상세 조회. <b>DB만 읽는다 — 외부 호출이 없다.</b>
+     * 상세 조회. DB만 읽는다 — 외부 호출이 없다.
      *
-     * <p>예전에는 여기서 KOPIS 상세를 lazy 호출했다. 그 구조의 대가가 컸다.
-     * <ul>
-     *   <li>외부 호출량이 <b>우리 트래픽의 함수</b>가 된다 — 부하 시 초당 70회가 나가 KOPIS
-     *       이용 제한(IP당 1초 10회)을 약 7배 초과했고 400 Request Blocked를 2,014건 맞았다</li>
-     *   <li>사용자 응답시간이 외부 지연에 직접 종속된다 — 이 경로만 p50 89ms, 다른 조회는 18ms</li>
-     *   <li>외부가 느려지면 요청 스레드가 묶인다 — 타임아웃이 없던 시절엔 API 전체가 멎을 수 있었다</li>
-     * </ul>
-     *
-     * <p>이제 동기화 배치가 미리 채운다. 아직 못 받은 공연은 해당 필드가 null인데, 이는 예전에
-     * 외부 호출이 실패했을 때 나가던 응답과 같은 모양이라 클라이언트 계약은 그대로다.
+     * <p>KOPIS 상세는 동기화 배치가 미리 채운다({@link com.flowticket.event.kopis.KopisDetailSyncer}).
+     * 요청마다 부르면 외부 호출량이 트래픽에 비례하고 응답시간이 외부 지연에 묶인다.
+     * 아직 못 받은 공연은 해당 필드가 null이다.
      */
     @Transactional(readOnly = true)
     public EventDetailResponse detail(Long id) {

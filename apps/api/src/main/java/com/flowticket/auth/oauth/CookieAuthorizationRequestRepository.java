@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * STATELESS 환경의 OAuth2 인가요청 저장소.
- * - 쿠키에는 state 값만 담고, 실제 OAuth2AuthorizationRequest는 **서버 Redis**에 저장.
+ * - 쿠키에는 state 값만 담고, 실제 OAuth2AuthorizationRequest는 서버 Redis에 저장.
  *   (클라 쿠키에 직렬화 객체를 담아 역직렬화하던 방식 제거 → 신뢰 경계 안전)
  * - 인가 시작 ~ 콜백 사이(짧은 TTL)만 보존.
  */

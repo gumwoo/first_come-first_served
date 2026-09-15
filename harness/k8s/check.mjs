@@ -1,4 +1,4 @@
-// k8s 하네스: 배포 매니페스트가 **애플리케이션 코드와 실제로 맞는지** 검사한다.
+// k8s 하네스: 배포 매니페스트가 애플리케이션 코드와 실제로 맞는지 검사한다.
 //
 // 왜 필요한가: 백엔드·프론트 하네스는 있는데 k8s/는 아무도 보지 않았다. 그래서 매니페스트
 // 초안이 두 가지를 틀린 채 리뷰까지 갔다.
@@ -45,7 +45,7 @@ for (const file of manifests) {
   const rel = path.relative(REPO_ROOT, file);
   const raw = read(file);
 
-  // ① ConfigMap data 키 / container env name 이 앱에 존재하는가
+  // 1) ConfigMap data 키 / container env name 이 앱에 존재하는가
   const injected = new Set();
   const isConfigMap = /\bkind:\s*ConfigMap\b/.test(raw);
   for (const m of raw.matchAll(/^\s*-?\s*name:\s*([A-Z][A-Z0-9_]{2,})\s*$/gm)) injected.add(m[1]);
@@ -61,15 +61,15 @@ for (const file of manifests) {
     );
   }
 
-  // ② 공개 Ingress가 API Service로 직결하는가
+  // 2) 공개 Ingress가 API Service로 직결하는가
   //
   // 앱은 Next가 /api·/oauth2를 프록시하는 구조다(next.config.mjs rewrites). ALB의 Prefix
   // 라우팅은 접두어를 제거하지 않으므로, ALB가 /api를 API로 직접 보내면 Spring이
   // "/api/auth/login"을 받고 그런 매핑이 없어 전부 404가 된다.
   //
-  // ⚠️ 파일 전체에서 "kind: Ingress"와 "name: flowticket-api"를 따로 찾으면 오탐이 난다 —
+  // 파일 전체에서 "kind: Ingress"와 "name: flowticket-api"를 따로 찾으면 오탐이 난다 —
   // 오버레이 kustomization은 patch target(kind: Ingress)과 images(name: flowticket-api)를
-  // 한 파일에 갖는다. 실제로 그렇게 걸렸다. **backend 블록 안에서** 함께 나올 때만 위반이다.
+  // 한 파일에 갖는다. 실제로 그렇게 걸렸다. backend 블록 안에서 함께 나올 때만 위반이다.
   const backendRe = /backend:\s*(?:\r?\n\s+|\{\s*)service:\s*(?:\r?\n\s+|\{\s*)name:\s*(\S+?)[\s,}]/g;
   if (/\bkind:\s*Ingress\b/.test(raw)) {
     for (const m of raw.matchAll(backendRe)) {
@@ -81,7 +81,7 @@ for (const file of manifests) {
     }
   }
 
-  // ③ 공개 Ingress에 /actuator 경로를 열지 않는다
+  // 3) 공개 Ingress에 /actuator 경로를 열지 않는다
   // exposure에 metrics·prometheus가 포함돼 있어 인터넷에 관측 데이터가 열린다.
   // ALB 헬스체크는 타깃그룹이 Pod IP로 직접 검사하므로 이 규칙은 애초에 필요 없다.
   if (/\bkind:\s*Ingress\b/.test(raw) && /^\s*-?\s*path:\s*\/actuator/m.test(raw)) {
@@ -89,11 +89,9 @@ for (const file of manifests) {
   }
 }
 
-// ---------- ④ 빌드 시점에 굳는 값을 런타임 env로 주입하지 않는가 ----------
-// Next의 rewrites()는 standalone 번들로 구워져 **런타임 env로 바뀌지 않는다.** 이 프로젝트가
-// 실제로 겪었다 — apps/web/Dockerfile 주석: "런타임 주입을 시도했더니 빌드 때 값인
-// localhost:8080으로 프록시해 ECONNREFUSED가 났다". 그래서 build-arg로 옮겼다.
-// 매니페스트에 다시 넣으면 "설정한 것처럼 보이지만 아무 효과가 없는" 죽은 값이 된다.
+// ---------- 4) 빌드 시점에 굳는 값을 런타임 env로 주입하지 않는가 ----------
+// Next의 rewrites()는 standalone 번들로 구워져 런타임 env로 바뀌지 않는다(apps/web/Dockerfile —
+// 그래서 build-arg로 정한다). 매니페스트에 다시 넣으면 "설정한 것처럼 보이지만 아무 효과가 없는" 죽은 값이 된다.
 const BUILD_TIME_ONLY = ["API_ORIGIN"];
 for (const file of manifests) {
   const raw = read(file);
@@ -110,7 +108,7 @@ for (const file of manifests) {
   }
 }
 
-// ---------- ⑤ 이미지 build-arg의 API 주소가 Service가 여는 포트와 맞는가 ----------
+// ---------- 5) 이미지 build-arg의 API 주소가 Service가 여는 포트와 맞는가 ----------
 // Service는 port(클라이언트가 붙는 포트)와 targetPort(Pod로 넘기는 포트)가 다르다.
 // targetPort를 URL에 적으면 Service가 열지 않은 포트라 연결이 거부된다 — 초안이 :8080이었다.
 const svcPorts = new Map();
@@ -151,12 +149,12 @@ if (fs.existsSync(imageWorkflow)) {
   }
 }
 
-// ---------- ⑥ 브라우저 번들에 구워지는 값(NEXT_PUBLIC_*)이 빌드 인자로 준비돼 있는가 ----------
-// 규칙 ④의 반대편이다. ④는 "빌드 시점 값을 런타임 env로 넣는 것"을 막고, ⑥은
-// **빌드 시점 값이 아예 빠진 것**을 막는다. 실제로 NEXT_PUBLIC_TOSS_CLIENT_KEY가 그랬다 —
+// ---------- 6) 브라우저 번들에 구워지는 값(NEXT_PUBLIC_*)이 빌드 인자로 준비돼 있는가 ----------
+// 규칙 4)의 반대편이다. 4)는 "빌드 시점 값을 런타임 env로 넣는 것"을 막고, 6)은
+// 빌드 시점 값이 아예 빠진 것을 막는다. 실제로 NEXT_PUBLIC_TOSS_CLIENT_KEY가 그랬다 —
 // 코드는 읽는데 Dockerfile에 ARG가 없어 이미지에 값이 안 들어갔다.
 //
-// 이 유형이 위험한 이유: **에러가 아니라 다른 흐름으로 빠진다.** 결제창이 안 뜨고 조용히
+// 이 유형이 위험한 이유: 에러가 아니라 다른 흐름으로 빠진다. 결제창이 안 뜨고 조용히
 // 다른 경로를 타므로 배포 후에도 눈치채기 어렵다.
 const webDockerfile = path.join(REPO_ROOT, WEB, "Dockerfile");
 if (fs.existsSync(webDockerfile)) {
@@ -174,11 +172,11 @@ if (fs.existsSync(webDockerfile)) {
   }
 }
 
-// ---------- ⑦ API 컨테이너의 타임존이 UTC로 고정돼 있는가 ----------
+// ---------- 7) API 컨테이너의 타임존이 UTC로 고정돼 있는가 ----------
 // 이 프로젝트의 시각 데이터는 "DB의 벽시계 = 컨테이너 존"을 전제로 한다. 엔티티가
 // LocalDateTime.now()(시스템 존)로 값을 만들고, 응답도 같은 존으로 오프셋을 붙인다(JacksonConfig).
 //
-// 그래서 컨테이너 존이 바뀌면 **이미 저장된 행의 절대 시각이 통째로 이동한다.** 지금 DB에는
+// 그래서 컨테이너 존이 바뀌면 이미 저장된 행의 절대 시각이 통째로 이동한다. 지금 DB에는
 // UTC 벽시계가 쌓여 있으므로 Asia/Seoul로 바꾸면 기존 예매의 결제 기한이 9시간 어긋난다.
 //
 // 배포 파일에 값을 적어두는 것만으로는 부족하다 — 지워져도 아무 증상이 없고, 그 다음 배포부터
@@ -193,7 +191,7 @@ if (!apiDeploy) {
 } else {
   const raw = read(apiDeploy);
   const rel = path.relative(REPO_ROOT, apiDeploy);
-  // `- name: TZ` 바로 뒤의 value를 본다(줄 단위 파싱 — 규칙 ①과 같은 방식).
+  // `- name: TZ` 바로 뒤의 value를 본다(줄 단위 파싱 — 규칙 1)과 같은 방식).
   const tz = raw.match(/^\s*-\s*name:\s*TZ\s*$\r?\n\s*value:\s*["']?([A-Za-z0-9_/+-]+)["']?/m);
   if (!tz) {
     r.fail(
@@ -210,11 +208,11 @@ if (!apiDeploy) {
   }
 }
 
-// ---------- ⑧ HPA가 소유하는 Deployment에 replicas를 두지 않는다 ----------
+// ---------- 8) HPA가 소유하는 Deployment에 replicas를 두지 않는다 ----------
 // ArgoCD가 붙으면서 실제로 터진 문제다. Git에 replicas가 있으면 sync가 돌 때마다 HPA가 정한
 // 파드 수를 Git 값으로 덮어쓴다. 부하 중 스케일아웃이 sync 한 번에 취소된다는 뜻이다.
 //
-// ignoreDifferences + RespectIgnoreDifferences=true 로 막으려 했으나 **실측에서 막지 못했다**
+// ignoreDifferences + RespectIgnoreDifferences=true 로 막으려 했으나 실측에서 막지 못했다
 // (HPA가 없는 flowticket-web으로 통제 실험: 4 → sync → 2. ServerSideApply를 빼도 동일).
 // 확실한 방어는 필드를 매니페스트에서 없애는 것이고, 없앤 상태를 유지하는 건 이 규칙이 한다.
 // 하한은 HPA의 minReplicas가 담당하므로 잃는 것이 없다.
@@ -253,12 +251,12 @@ for (const { doc, file } of docs) {
   );
 }
 
-// ---------- ⑨ ExternalSecret이 실제 적용 경로에 연결돼 있는가 ----------
+// ---------- 9) ExternalSecret이 실제 적용 경로에 연결돼 있는가 ----------
 //
 // ArgoCD Application은 `k8s/overlays/demo-local` 하나만 동기화한다. 그래서
-// `k8s/external-secrets/`는 **GitOps 대상이 아니고**, 오직 bootstrap.sh가 손으로 적용한다.
-// 매니페스트를 새로 만들고 스크립트에 추가하지 않으면 **파일은 저장소에 있는데 클러스터에는
-// 영영 들어가지 않는다.**
+// `k8s/external-secrets/`는 GitOps 대상이 아니고, 오직 bootstrap.sh가 손으로 적용한다.
+// 매니페스트를 새로 만들고 스크립트에 추가하지 않으면 파일은 저장소에 있는데 클러스터에는
+// 영영 들어가지 않는다.
 //
 // 증상이 고약하다: 적용 안 된 ExternalSecret은 오류를 내지 않는다. 그냥 Secret이 안 생기고,
 // 그걸 마운트하는 파드가 ContainerCreating에서 멈춘다 — 원인에서 한 칸 떨어진 곳에서 터진다.

@@ -6,7 +6,7 @@
 # 사람의 기억이 아니라 저장소에 남긴다.
 #
 # 왜 sed 렌더링인가: RDS 마스터 시크릿 이름은 `rds!db-<DBI resource id>` 형식이라
-# **RDS를 재생성하면 바뀐다.** 매니페스트에 박아두면 인프라 전체 재생성 시 조용히 깨진다.
+# RDS를 재생성하면 바뀐다. 매니페스트에 박아두면 인프라 전체 재생성 시 조용히 깨진다.
 # Terraform 출력에서 매번 읽어 채우면 사람이 이 파일을 고칠 일이 없다.
 #
 # 전제: terraform apply 완료(IRSA 역할 `<cluster>-external-secrets` 존재), kubeconfig 설정됨.
@@ -15,7 +15,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 TFDIR="$ROOT/infra/terraform/platform/environments/demo"
-# Slack webhook URL이 담긴 SSM 파라미터. **값이 아니라 경로만** 저장소에 남는다.
+# Slack webhook URL이 담긴 SSM 파라미터. 값이 아니라 경로만 저장소에 남는다.
 SLACK_PARAM="/flowticket/SLACK_ALERT_WEBHOOK_URL"
 
 echo "==> 1/5 RDS 마스터 시크릿 ARN 조회 (Terraform 출력)"
@@ -41,10 +41,10 @@ echo "==> 5/5 Alertmanager Slack webhook ExternalSecret 적용"
 # 파라미터가 없으면 여기서 멈춘다. 뒤로 미루면 증상이 "Alertmanager 파드가 ContainerCreating에서
 # 멈춤"으로 나타나 원인에서 한 칸 떨어진 곳에서 터진다 — 여기서 이름을 대고 죽는 편이 낫다.
 # 값은 읽지 않는다(--with-decryption 없이 이름만 조회).
-# ⚠️ MSYS_NO_PATHCONV는 **이 명령에만** 건다. Git Bash(Windows)는 `/`로 시작하는 인자를
+# MSYS_NO_PATHCONV는 이 명령에만 건다. Git Bash(Windows)는 `/`로 시작하는 인자를
 # Windows 경로로 바꾸는데, SSM 파라미터 이름이 정확히 그 모양이라 끄지 않으면
-# `/flowticket/X`가 `C:/Program Files/Git/flowticket/X`로 둔갑해 **파라미터가 있는데도
-# ParameterNotFound**가 난다(2026-08-21 실제 기동에서 걸렸다).
+# `/flowticket/X`가 `C:/Program Files/Git/flowticket/X`로 둔갑해 파라미터가 있는데도
+# ParameterNotFound가 난다.
 # 전역으로 끄면 안 된다 — 위 `terraform -chdir`이 Windows 경로를 받아야 하므로 함께 깨진다.
 if ! MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "$SLACK_PARAM" --query 'Parameter.Name' --output text >/dev/null 2>&1; then
   cat >&2 <<EOF
@@ -55,11 +55,10 @@ Alertmanager가 이 값을 파일로 마운트하므로, 없으면 파드가 뜨
 EOF
   exit 1
 fi
-# ⚠️ **존재만으로는 부족하다.** 2026-08-21 기동에서 값에 작은따옴표가 섞인 채 저장돼 있었고
-# (PowerShell은 홑따옴표를 인용부호로 벗기지 않는다), 이 스크립트는 그걸 통과시켰다.
-# 실패는 한참 뒤 Alertmanager 로그에서야 드러났다:
+# 존재만으로는 부족하다. 값에 작은따옴표가 섞여 저장되면(PowerShell은 홑따옴표를 벗기지
+# 않는다) 실패가 한참 뒤 Alertmanager 로그에서야 드러난다:
 #   err="parse ...: first path segment in URL cannot contain colon"
-# 값을 출력하지 않고 **모양만** 본다 — 셸 로그·CI 로그에 URL이 남으면 안 된다.
+# 값을 출력하지 않고 모양만 본다 — 셸 로그·CI 로그에 URL이 남으면 안 된다.
 SLACK_URL="$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "$SLACK_PARAM" --with-decryption   --query 'Parameter.Value' --output text)"
 case "$SLACK_URL" in
   https://hooks.slack.com/services/*) ;;

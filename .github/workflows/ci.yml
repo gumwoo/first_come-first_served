@@ -9,8 +9,8 @@ on:
 # 같은 브랜치에 새 커밋이 오면 이전 CI는 의미가 없다 — 즉시 취소해 러너 시간을 아낀다.
 # 리뷰 → 수정 → push 루프에서 낭비가 컸다.
 #
-# ⚠️ image.yml은 **일부러 다르게** 잡는다(cancel-in-progress: false). 배포는 중간에 죽이면
-# 이미지는 올라갔는데 태그 커밋은 안 된 상태가 남는다. 상세: [[TS-029]]
+# image.yml은 일부러 다르게 잡는다(cancel-in-progress: false). 배포는 중간에 죽이면
+# 이미지는 올라갔는데 태그 커밋은 안 된 상태가 남는다. 상세: TS-029
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -57,14 +57,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      # ⚠️ lockfile 실패에 fallback을 두지 않는다.
-      # 예전에는 `npm ci || npm install`(pnpm은 `--frozen-lockfile || pnpm install`)이었다.
-      # lockfile이 package.json과 어긋나면 `npm ci`는 실패해야 하는데, fallback이 그걸 받아
-      # **다른 의존성 트리로 초록불**을 만든다. 그러면 로컬과 CI가 서로 다른 트리를 검증한 것이라
-      # 하네스·테스트 결과의 근거가 통째로 흔들린다. 결정론을 내세우는 저장소에서 가장 아래
-      # 토대가 비결정적이었던 셈이다([[TS-027]]).
-      # 제거 시점 확인: harness·e2e `npm ci --dry-run`, apps/web `--frozen-lockfile` 모두 통과 —
-      # 즉 이 fallback은 당시 아무것도 덮고 있지 않았고, 앞으로 깨질 때만 조용히 덮었을 자리다.
+      # lockfile 실패에 fallback(`|| npm install`)을 두지 않는다.
+      # lockfile이 package.json과 어긋나면 fallback이 다른 의존성 트리로 초록불을 만들어,
+      # 로컬과 CI가 서로 다른 트리를 검증하게 된다(TS-027).
       - name: install harness deps
         working-directory: harness
         run: npm ci
@@ -74,7 +69,7 @@ jobs:
       - name: meta test (false-negative guard)
         working-directory: harness
         run: node meta-test.mjs
-      # 문서 드리프트 검사는 **이 잡에 둔다**(backend/frontend가 아니라).
+      # 문서 드리프트 검사는 이 잡에 둔다(backend/frontend가 아니라).
       # 이 규칙이 필요한 순간이 바로 "문서만 고친 PR"인데, 그런 PR은 변경 영역 필터에 걸려
       # backend·frontend가 전부 skip된다. 거기 두면 정작 필요할 때 돌지 않는다.
       # harness-meta는 needs·if 없이 항상 실행되고, 이 검사는 1초 미만이라 비용도 없다.
@@ -87,16 +82,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes, harness-meta]
     # 변경 영역에 해당할 때만 실행 — main push도 예외가 아니다.
-    # 예전에는 `|| github.event_name == 'push'`로 push에서 필터를 무력화했다("회귀 안전망").
-    # 실측(최근 main push 40건): 잡 785분 중 **356분(45%)이 필터에 걸렸을 실행**이었고
-    # 그중 243분이 백엔드다. squash merge라 main의 diff는 PR의 diff와 같아 **같은 검증을 두 번**
-    # 돌린 셈이다. 문서·infra만 바꾼 커밋 19건이 매번 14~28분을 태웠다.
-    # 진짜 위험인 머지 스큐(각자 통과했는데 합치면 깨짐)는 사후 전체 실행으로는 못 막는다 —
-    # 이미 깨진 main을 나중에 알려줄 뿐이다. 브랜치 보호의 "up to date 요구"가 그 자리다.
+    # squash merge라 main의 diff는 PR의 diff와 같아, push에서 전체를 다시 돌리면 같은 검증을
+    # 두 번 하게 된다. 머지 스큐는 사후 전체 실행이 아니라 브랜치 보호의 "up to date 요구"로 막는다.
     if: needs.changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v4
-      # gradle-wrapper.jar는 저장소에 커밋되는 **바이너리**다. 리뷰어가 내용을 읽고 검증할 수
+      # gradle-wrapper.jar는 저장소에 커밋되는 바이너리다. 리뷰어가 내용을 읽고 검증할 수
       # 없으므로, Gradle이 공식 배포한 jar의 체크섬과 대조해 CI가 대신 판정한다.
       # (바꿔치기된 wrapper jar는 실제로 알려진 공급망 공격 경로다.)
       - uses: gradle/actions/wrapper-validation@v4
@@ -115,13 +106,13 @@ jobs:
         run: npm ci
       - name: backend harness check
         run: node harness/backend/check.mjs
-      # 알림 규칙 검증. **규칙을 썼다**가 아니라 **규칙이 실제로 발화한다**를 확인한다.
+      # 알림 규칙 검증. 규칙을 썼다가 아니라 규칙이 실제로 발화한다를 확인한다.
       # promtool은 PrometheusRule(CR)을 모르므로 규칙 본문만 떼어 평문 규칙 파일로 변환한 뒤 넣는다.
       # 러너에 Docker가 있으므로 promtool을 따로 설치하지 않는다(버전 고정 = 결정론).
       # 이미지 ENTRYPOINT는 prometheus라 --entrypoint로 promtool을 직접 지목해야 한다.
       #
       # 규칙만 검증하면 절반이다 — 라우트를 잘못 쓰면 알림이 엉뚱한 리시버로 가거나 아무 데도
-      # 안 간다. amtool은 **webhook 없이** 라우팅을 판정하므로 비밀 없이 CI에서 돌릴 수 있다.
+      # 안 간다. amtool은 webhook 없이 라우팅을 판정하므로 비밀 없이 CI에서 돌릴 수 있다.
       - name: alert rules + routing (promtool / amtool)
         run: |
           node harness/alerts/extract-rules.mjs             k8s/monitoring/prometheusrule-flowticket.yaml build/alerts/rules.yml
@@ -139,12 +130,11 @@ jobs:
 
       # 실패 리포트를 남긴다. 콘솔에 FULL 출력을 켰어도(build.gradle.kts) 긴 진단 메시지는
       # 로그에서 찾기 어렵고, 간헐적 실패는 러너가 사라지면 다시 볼 방법이 없다.
-      # JUnit XML은 **성공해도** 남긴다. 클래스·메서드별 소요 시간이 여기에만 있고,
+      # JUnit XML은 성공해도 남긴다. 클래스·메서드별 소요 시간이 여기에만 있고,
       # 그게 없으면 "CI가 왜 느린가"를 추측으로만 말하게 된다.
-      # (실측: backend median 9m46s 중 `:test` 하나가 501s. 그 안의 구성은 아직 모른다.)
       #
-      # ⚠️ XML의 testcase 시간 합은 `:test` wall-clock과 같지 않다. Spring 컨텍스트 초기화·
-      # 컨테이너 기동·워커 오버헤드는 개별 testcase에 귀속되지 않아 **미귀속 시간**으로 남는다.
+      # XML의 testcase 시간 합은 `:test` wall-clock과 같지 않다. Spring 컨텍스트 초기화·
+      # 컨테이너 기동·워커 오버헤드는 개별 testcase에 귀속되지 않아 미귀속 시간으로 남는다.
       # 두 숫자의 차이가 곧 "테스트 코드 밖에서 쓰는 시간"이라 그 자체가 판단 근거다.
       #
       # HTML 리포트는 용량이 커서 실패 시에만 올린다 — 진단용이고 시간 분석엔 XML이면 된다.
@@ -274,11 +264,11 @@ jobs:
       - name: build & run web
         working-directory: apps/web
         env:
-          # 대기열 폴링을 테스트 시간 밖으로 밀어낸다(10분). **운영 후보값이 아니다** —
+          # 대기열 폴링을 테스트 시간 밖으로 밀어낸다(10분). 운영 후보값이 아니다 —
           # admit-ttl(300초)보다도 길어 운영에서는 성립하지 않는다. 폴링이 살아 있으면
           # SSE 재연결 복구(onopen)를 그것이 먼저 덮어버려 회귀 테스트가 성립하지 않는다.
           #
-          # ⚠️ NEXT_PUBLIC_*은 **빌드 시점에 번들로 박힌다.** 아래 pnpm start에만 주면 늦다.
+          # NEXT_PUBLIC_*은 빌드 시점에 번들로 박힌다. 아래 pnpm start에만 주면 늦다.
           # build와 start가 같은 스텝이라 이 env가 둘 다에 적용된다.
           NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS: "600000"
         run: |

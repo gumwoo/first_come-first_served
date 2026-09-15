@@ -4,10 +4,10 @@ metadata:
   name: flowticket-api
   namespace: flowticket
 spec:
-  # replicas를 **의도적으로 두지 않는다.** 이 Deployment는 HPA가 소유한다(api-hpa.yaml, min 3 / max 7).
+  # replicas를 의도적으로 두지 않는다. 이 Deployment는 HPA가 소유한다(api-hpa.yaml, min 3 / max 7).
   # 여기에 값을 두면 ArgoCD가 sync할 때마다 HPA가 정한 파드 수를 Git 값으로 덮어쓴다.
   #
-  # ignoreDifferences + RespectIgnoreDifferences=true 로 막으려 했으나 **실측에서 막지 못했다** —
+  # ignoreDifferences + RespectIgnoreDifferences=true 로 막으려 했으나 실측에서 막지 못했다 —
   # HPA가 없는 flowticket-web으로 통제 실험한 결과 4 → sync → 2로 되돌아갔고, ServerSideApply를
   # 빼도 동일했다. 필드 자체를 Git에서 없애는 쪽이 확실하다.
   #
@@ -17,7 +17,7 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      # 무중단의 핵심 두 줄. maxUnavailable=0이라 **새 Pod가 Ready가 된 뒤에만** 옛 Pod가 빠진다.
+      # 무중단의 핵심 두 줄. maxUnavailable=0이라 새 Pod가 Ready가 된 뒤에만 옛 Pod가 빠진다.
       # 1로 두면 롤링 도중 용량이 먼저 줄어 부하 중 배포에서 에러가 난다.
       maxUnavailable: 0
       maxSurge: 1
@@ -42,12 +42,12 @@ spec:
           image: flowticket-api:REPLACE_TAG # kustomization.yaml의 images:가 덮어쓴다
           ports:
             - containerPort: 8080
-          # ⚠️ 이 값을 바꾸면 **이미 저장된 시각 데이터의 의미가 통째로 이동한다.**
+          # 이 값을 바꾸면 이미 저장된 시각 데이터의 의미가 통째로 이동한다.
           # 엔티티는 LocalDateTime.now()(= 시스템 존의 벽시계)로 시각을 만들고, 응답 직렬화도
           # 같은 존으로 오프셋을 붙인다(JacksonConfig). 즉 "DB의 벽시계 = 컨테이너 존"이 전제다.
           # 지금 DB에는 UTC 벽시계가 쌓여 있으므로, Asia/Seoul로 바꾸면 기존 행 전부가 9시간
           # 어긋난다. 존을 정말 바꾸려면 Instant/timestamptz 전환을 Expand-Contract로 해야 한다.
-          # 하네스 k8s 규칙 ⑦이 이 줄의 존재와 값을 강제한다.
+          # 하네스 k8s 규칙 7)이 이 줄의 존재와 값을 강제한다.
           env:
             - name: TZ
               value: UTC
@@ -76,10 +76,10 @@ spec:
           lifecycle:
             preStop:
               exec:
-                # SIGTERM 직전에 잠깐 멈춘다. Pod 종료와 ALB 타깃 등록 해제는 **비동기**라,
+                # SIGTERM 직전에 잠깐 멈춘다. Pod 종료와 ALB 타깃 등록 해제는 비동기라,
                 # 바로 내려가면 아직 우리를 향해 오는 요청이 502가 된다.
-                # ⚠️ 5초가 그 창을 "덮는다"고 보장할 수는 없다 — 등록 해제가 ALB에 반영되는
-                # 시간은 우리가 정하는 값이 아니다. 이 유예는 **드레이닝이 시작될 시간을 버는 것**이고,
+                # 5초가 그 창을 "덮는다"고 보장할 수는 없다 — 등록 해제가 ALB에 반영되는
+                # 시간은 우리가 정하는 값이 아니다. 이 유예는 드레이닝이 시작될 시간을 버는 것이고,
                 # 실제로 충분한지는 롤링 중 무중단 실측(k6)으로 확인해야 한다.
                 command: ["sh", "-c", "sleep 5"]
 
@@ -100,13 +100,13 @@ kind: Service
 metadata:
   name: flowticket-api
   namespace: flowticket
-  # ServiceMonitor의 selector가 보는 건 **Service의 metadata.labels**다(아래 spec.selector가 아니다.
+  # ServiceMonitor의 selector가 보는 건 Service의 metadata.labels다(아래 spec.selector가 아니다.
   # 그건 Pod를 고르는 것). 없으면 매칭이 0건인데 에러가 아니라 그냥 타깃이 안 생긴다.
   labels: { app: flowticket-api }
 spec:
   selector: { app: flowticket-api }
   ports:
-    # ServiceMonitor는 포트를 **이름으로** 지정한다(spec.endpoints[].port = Service 포트 이름).
+    # ServiceMonitor는 포트를 이름으로 지정한다(spec.endpoints[].port = Service 포트 이름).
     # 이름이 없으면 매칭할 방법이 없어 타깃이 조용히 0개가 된다.
     - name: http
       port: 80

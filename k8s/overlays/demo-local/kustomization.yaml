@@ -23,7 +23,7 @@ images:
     newTag: 3dc49682139ff3e6a7f2dc9acb193442208f4545
 
 # ── ConfigMap: 데이터 엔드포인트 ──────────────────────────────────
-# DB_HOST에는 **포트를 붙이지 않는다** — 모듈이 aws_db_instance.address(호스트만)를 반환하고
+# DB_HOST에는 포트를 붙이지 않는다 — 모듈이 aws_db_instance.address(호스트만)를 반환하고
 # DB_PORT는 따로 있다. host:5432를 넣으면 주소가 host:5432:5432가 된다.
 patches:
   - target: { kind: ConfigMap, name: flowticket-api-config }

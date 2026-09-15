@@ -37,8 +37,7 @@ class QueueIntegrationTest extends IntegrationTestSupport {
     @Autowired EventRepository eventRepository;
 
     /**
-     * 예전에는 {@code 42L}이라는 <b>DB에 없는 id</b>를 썼다. 대기열이 Redis만 보던 시절엔 통했지만
-     * 발급 전 판매상태 게이트가 생기면서 실재하는 ON_SALE 이벤트가 필요해졌다.
+     * 발급 전 판매상태 게이트가 있으므로 실재하는 ON_SALE 이벤트가 필요하다.
      * (게이트 자체의 회귀는 {@link QueueSaleStateIntegrationTest}가 본다)
      */
     private Long EVENT;

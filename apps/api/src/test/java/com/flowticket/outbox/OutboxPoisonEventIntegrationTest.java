@@ -26,15 +26,15 @@ import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * 아웃박스 릴레이의 <b>독성 행(poison row)</b> 실패 모드 재현.
+ * 아웃박스 릴레이의 독성 행(poison row) 실패 모드 재현.
  *
  * <p>{@link OutboxRelay#publishPending()}은 한 건이라도 실패하면 남은 배치를 중단한다. 그 판단은
- * <b>일시적 실패</b>(브로커 다운)에는 옳다 — 순서를 지키고 다음 틱에 재시도하면 복구된다.
- * 그러나 <b>결정적 실패</b>(payload 역직렬화 불가)에는 성립하지 않는다. 다음 틱에도 같은 행이
+ * 일시적 실패(브로커 다운)에는 옳다 — 순서를 지키고 다음 틱에 재시도하면 복구된다.
+ * 그러나 결정적 실패(payload 역직렬화 불가)에는 성립하지 않는다. 다음 틱에도 같은 행이
  * {@code findByStatusOrderByCreatedAtAsc}의 맨 앞에 다시 오므로 영원히 같은 자리에서 멈춘다.
  *
  * <p>결정적 실패를 고른 이유: 브로커는 살아 있고 Kafka 발행 자체는 성공할 수 있는 상태에서
- * <b>행 하나의 내용</b>만으로 전체가 멈추는지를 분리해 보기 위함이다. 브로커를 죽이면
+ * 행 하나의 내용만으로 전체가 멈추는지를 분리해 보기 위함이다. 브로커를 죽이면
  * "당연히 안 나간다"가 되어 head-of-line 차단을 증명하지 못한다.
  *
  * <p>사용자 요청은 전부 성공하고 이벤트만 조용히 멈추므로, 이 결함은 에러율에 나타나지 않는다.
@@ -124,12 +124,12 @@ class OutboxPoisonEventIntegrationTest {
     }
 
     /**
-     * ⚠️ <b>이 테스트는 현재 결함의 재현이 아니다.</b> 지금 프로덕션에서 아웃박스에 이벤트를 넣는
+     * 이 테스트는 현재 결함의 재현이 아니다. 지금 프로덕션에서 아웃박스에 이벤트를 넣는
      * 경로는 {@code PaymentService.appendOutbox("order.paid", ...)} 하나뿐이고(환불은 SSE로만 나간다),
      * 한 주문에서 아웃박스 이벤트가 연속으로 만들어지는 시나리오는 존재하지 않는다.
      *
-     * <p>그럼에도 고정하는 이유: 릴레이는 aggregateId를 Kafka 파티션 키로 써 <b>같은 aggregate의
-     * 순서를 보존하도록 설계돼 있다.</b> 이번 수정이 head-of-line 차단을 없애면서 그 성질을 실수로
+     * <p>그럼에도 고정하는 이유: 릴레이는 aggregateId를 Kafka 파티션 키로 써 같은 aggregate의
+     * 순서를 보존하도록 설계돼 있다. 이번 수정이 head-of-line 차단을 없애면서 그 성질을 실수로
      * 깨뜨리기 쉬운데(전부 건너뛰면 되니까), 이벤트 종류가 늘어난 뒤에는 깨진 것을 알아채기 어렵다.
      */
     @Test

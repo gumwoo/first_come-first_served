@@ -118,7 +118,7 @@ resource "aws_iam_role_policy" "cluster_autoscaler" {
 # ---------------------------------------------------------------------------
 # AWS Load Balancer Controller
 # ---------------------------------------------------------------------------
-# ⚠️ 이 컨트롤러의 IAM 정책은 AWS 관리형 정책이 없고, 공식 저장소가 배포하는 JSON을
+# 이 컨트롤러의 IAM 정책은 AWS 관리형 정책이 없고, 공식 저장소가 배포하는 JSON을
 #    그대로 쓰는 것이 표준 절차다. 손으로 옮겨 적으면 누락·오타로 Ingress 생성이
 #    조용히 실패하므로, 파일을 내려받아 두고 여기서 읽는다.
 #    받는 법: modules/eks/policies/README.md
@@ -137,13 +137,12 @@ resource "aws_iam_role_policy" "load_balancer_controller" {
 # ---------------------------------------------------------------------------
 # External Secrets Operator
 # ---------------------------------------------------------------------------
-# 왜 필요한가: flowticket-api-secrets(키 11개)를 지금까지 **손으로** 만들었다. 클러스터를
-# 재생성할 때마다 사람이 값을 다시 넣어야 했고, 2026-08-11 재기동에서만 네 번 실패했다
-# (PowerShell 인코딩, 없는 길이 제약 오탐, RDS 비밀번호의 '>'가 플레이스홀더 검사에 걸림).
-# 매니페스트만으로 복구되지 않는 유일한 구멍이었다.
+# 왜 필요한가: flowticket-api-secrets(키 11개)를 손으로 넣으면 클러스터를 재생성할 때마다
+# 사람이 값을 다시 넣어야 하고, 인코딩·플레이스홀더 실수로 api 기동이 실패한다.
+# 매니페스트만으로 복구되지 않는 유일한 리소스라 ESO로 동기화한다.
 #
 # 저장소로 SSM Parameter Store를 쓴다(Secrets Manager 아님):
-#   - Standard 파라미터 + SecureString은 **저장 비용이 없다**. Secrets Manager는 시크릿당 과금
+#   - Standard 파라미터 + SecureString은 저장 비용이 없다. Secrets Manager는 시크릿당 과금
 #   - 로테이션이 필요 없는 값들이라 Secrets Manager의 이점이 없다
 #   - DB 자격증명만은 예외로 이미 Secrets Manager에 있다(RDS가 마스터 암호를 관리) — 그쪽은
 #     ExternalSecret이 별도 provider로 읽는다

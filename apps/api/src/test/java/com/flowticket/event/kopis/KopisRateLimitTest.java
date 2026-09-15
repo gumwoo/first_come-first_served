@@ -13,10 +13,10 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 /**
- * KOPIS 이용 제한(<b>IP당 1초 10회, 초과 시 서비스 중지</b>)을 지키는지 검증한다.
+ * KOPIS 이용 제한(IP당 1초 10회, 초과 시 서비스 중지)을 지키는지 검증한다.
  *
  * <p>이 제한을 몰라서 부하 테스트 중 상세 조회가 초당 70회 수준으로 나갔고 400 Request Blocked를
- * 2,014건 맞았다. 성능 문제이기 전에 <b>남의 서비스에 대한 문제</b>다.
+ * 2,014건 맞았다. 성능 문제이기 전에 남의 서비스에 대한 문제다.
  */
 class KopisRateLimitTest {
 
@@ -64,7 +64,7 @@ class KopisRateLimitTest {
 
     @Test
     void 상세조회도_같은_제한기를_통과한다() {
-        // ⚠️ 이 단언은 예전에 **정반대**였다. 상세 조회가 사용자 요청 경로에 있던 시절에는
+        // 이 단언은 예전에 정반대였다. 상세 조회가 사용자 요청 경로에 있던 시절에는
         // 여기에 제한기를 걸 수 없었다 — 요청 스레드를 재우면 외부 지연이 톰캣 스레드를 묶어
         // API 전체가 멎는 실패를 방어 장치로 재현하게 되기 때문이다.
         //

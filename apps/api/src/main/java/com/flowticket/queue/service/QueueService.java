@@ -116,17 +116,16 @@ public class QueueService {
     }
 
     /**
-     * 판매 중인 공연인지 확인한다. <b>대기열 진입의 첫 관문</b>이다.
+     * 판매 중인 공연인지 확인한다. 대기열 진입의 첫 관문이다.
      *
-     * <p>예전에는 이 검사가 없어 <b>이벤트를 조회조차 하지 않았다.</b> 그래서 직접 API를 치면
-     * DRAFT·PAUSED·CLOSED 공연은 물론 <b>존재하지도 않는 eventId</b>로도 토큰이 발급됐고,
-     * 거기서 좌석 선점·주문·결제까지 이어질 수 있었다.
+     * <p>이 검사가 없으면 API를 직접 쳐서 DRAFT·PAUSED·CLOSED 공연이나 존재하지 않는 eventId로도
+     * 토큰을 받고, 좌석 선점·주문·결제까지 이어갈 수 있다.
      *
      * <p>존재 검사가 특히 중요하다 — {@code ISSUE_LUA}가 {@code SADD queue:active-events}를 하고
-     * 승격 워커가 그 집합을 1.5초마다 순회하므로, 임의의 id로 발급을 반복하면 <b>Redis 키와
-     * 순회 대상이 무한히 쌓인다.</b>
+     * 승격 워커가 그 집합을 1.5초마다 순회하므로, 임의의 id로 발급을 반복하면 Redis 키와
+     * 순회 대상이 무한히 쌓인다.
      *
-     * <p>⚠️ 진입 경로에 DB 조회가 하나 늘어난다. PK 단건이라 싸지만 공짜는 아니다 —
+     * <p>진입 경로에 DB 조회가 하나 늘어난다. PK 단건이라 싸지만 공짜는 아니다 —
      * 스파이크(정원의 30배 도착)에서는 그만큼의 조회가 더 발생한다. 측정하지 않았다.
      */
     private void requireBookable(Long eventId) {
@@ -238,11 +237,11 @@ public class QueueService {
     }
 
     /**
-     * 입장 여부 판정의 단일 규칙. **admit 키가 빠른 경로이고 권위는 admitExp다.**
+     * 입장 여부 판정의 단일 규칙. admit 키가 빠른 경로이고 권위는 admitExp다.
      *
      * 승격은 pop·카운트·admitExp 등록까지 한 Lua로 확정되고, admit 키는 그 뒤에 붙는다.
      * 따라서 확정됐지만 admit 키가 아직 없는 순간이 존재하며, 그 창에서 admit 키만 보면
-     * "입장 안 했다"로 오판한다 — 예전에 진입 응답이 EXPIRED로 나가던 원인이다([[TS-024]]).
+     * "입장 안 했다"로 오판한다 — 예전에 진입 응답이 EXPIRED로 나가던 원인이다(TS-024).
      * admitExp는 이벤트 단위 ZSet이라 소속 이벤트 검사도 겸한다.
      */
     private boolean admittedNow(String token, Long eventId) {

@@ -26,10 +26,10 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * 주문 생성이 제약 위반을 <b>어디까지</b> 도메인 예외로 바꾸는지.
+ * 주문 생성이 제약 위반을 어디까지 도메인 예외로 바꾸는지.
  *
  * <p>동시 생성이 하나로 수렴하는지는 실제 DB가 필요해 통합 테스트가 맡는다.
- * 여기서는 그 반대편, <b>우리가 모르는 제약 위반이 조용히 삼켜지지 않는지</b>를 결정적으로 본다.
+ * 여기서는 그 반대편, 우리가 모르는 제약 위반이 조용히 삼켜지지 않는지를 결정적으로 본다.
  */
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {

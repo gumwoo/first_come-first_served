@@ -39,7 +39,7 @@ public class KafkaConfig {
     /**
      * 토픽 파라미터는 환경별로 다르다 — 로컬·CI는 단일 브로커라 1/1이어야 하고(RF가 브로커 수를 넘으면
      * 생성 실패), 운영(Strimzi 3브로커)은 파티션 N·RF 3으로 병렬성과 HA를 얻는다. 그래서 코드에 박지 않고
-     * 설정으로 뺀다. 파티션은 나중에 늘릴 수 있지만 <b>RF는 생성 후 이 방식으로 못 바꾼다</b> —
+     * 설정으로 뺀다. 파티션은 나중에 늘릴 수 있지만 RF는 생성 후 이 방식으로 못 바꾼다 —
      * 운영에서는 Strimzi {@code KafkaTopic} CR이 권위를 갖고 여기 값과 일치시킨다.
      */
     private final int partitions;
@@ -72,15 +72,15 @@ public class KafkaConfig {
     }
 
     /**
-     * DLT로 나가는 값은 <b>두 종류</b>다 — 이걸 한 직렬화기로 처리할 수 없다(TS-020).
+     * DLT로 나가는 값은 두 종류다 — 이걸 한 직렬화기로 처리할 수 없다(TS-020).
      *
      * <pre>
      *   리스너에서 실패    → 역직렬화는 성공했으므로 값이 OrderEvent → JsonSerializer
-     *   역직렬화에서 실패  → 값이 없다. Recoverer가 <b>원본 byte[]</b>를 그대로 싣는다 → ByteArraySerializer
+     *   역직렬화에서 실패  → 값이 없다. Recoverer가 원본 byte[]를 그대로 싣는다 → ByteArraySerializer
      * </pre>
      *
      * <p>JsonSerializer 하나로 두면 {@code byte[]}가 base64 JSON 문자열로 직렬화돼
-     * DLT 소비 쪽에서 다시 역직렬화에 실패한다. <b>독성 메시지가 DLT로 이사할 뿐</b>이고,
+     * DLT 소비 쪽에서 다시 역직렬화에 실패한다. 독성 메시지가 DLT로 이사할 뿐이고,
      * DLT에는 다시 보낼 곳이 없어 거기서 무한 재시도가 된다.
      *
      * <p>{@code assignable=true}라 {@code OrderEvent}가 {@code Object.class} 매핑에 걸린다.
@@ -98,11 +98,11 @@ public class KafkaConfig {
     }
 
     /**
-     * DLT 전용 리스너 컨테이너 — 값을 <b>해석하지 않고 바이트로</b> 받는다.
+     * DLT 전용 리스너 컨테이너 — 값을 해석하지 않고 바이트로 받는다.
      *
      * <p>DLT에는 정상 이벤트의 JSON도, 역직렬화에 실패한 원본 바이트도 들어온다. 후자를 타입으로
-     * 받으려 하면 DLT 소비가 또 실패하고, 그 실패는 갈 곳이 없다. 그래서 DLT는 <b>불투명한
-     * 바이트</b>로 취급하고 기록만 한다 — 판단은 사람이 admin API로 한다(ADR-008).
+     * 받으려 하면 DLT 소비가 또 실패하고, 그 실패는 갈 곳이 없다. 그래서 DLT는 불투명한
+     * 바이트로 취급하고 기록만 한다 — 판단은 사람이 admin API로 한다(ADR-008).
      */
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, byte[]> dltListenerContainerFactory(

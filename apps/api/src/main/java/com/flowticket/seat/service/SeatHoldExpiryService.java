@@ -50,7 +50,7 @@ public class SeatHoldExpiryService {
         int expiredCount = 0;
         for (SeatHold h : holds) {
             // 홀드를 조건부로 먼저 EXPIRED 전이. 결제가 경합에서 이겨 CONVERTED면 0행 → 스킵.
-            // 실제로 만료된 홀드의 좌석만 해제·알림 → SOLD 좌석에 유령 seat.hold.expired 방지(TS-011 ④).
+            // 실제로 만료된 홀드의 좌석만 해제·알림 → SOLD 좌석에 유령 seat.hold.expired 방지(TS-011 4)).
             if (holdRepository.expireHolds(List.of(h.getId())) != 1) {
                 continue;
             }

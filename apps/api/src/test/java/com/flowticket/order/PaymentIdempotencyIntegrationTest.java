@@ -105,12 +105,10 @@ class PaymentIdempotencyIntegrationTest extends IntegrationTestSupport {
     void 동시_더블클릭_같은키는_전부_같은_결제결과를_받는다() throws Exception {
         // IMP-008 after: idempotency_key UNIQUE + 조건부 전이 + 충돌 시 기존 결과 반환
         //
-        // ⚠️ 예전에는 호출을 `catch (Exception ignored)`로 감싸고 DB 최종 상태만 봤다.
-        // 주석에는 "멱등 처리로 예외 없어야 정상"이라고 적어 놓고 코드는 그걸 검증하지 않았다.
-        // **1개만 성공하고 9개가 터져도 통과한다** — 최종 상태는 똑같이 PAID/1건이기 때문이다.
-        // 멱등이 요구하는 것은 두 가지고, 그 테스트는 앞의 하나만 봤다.
-        //   ① 부수효과는 한 번만 일어난다 (결제 1건, 좌석 1회 SOLD)
-        //   ② 모든 호출이 같은 성공 결과를 돌려받는다 (더블클릭한 쪽이 에러를 보면 안 된다)
+        // DB 최종 상태만 보면 1개만 성공하고 9개가 터져도 통과한다(최종 상태는 똑같이 PAID/1건).
+        // 멱등이 요구하는 것은 두 가지다.
+        //   1) 부수효과는 한 번만 일어난다 (결제 1건, 좌석 1회 SOLD)
+        //   2) 모든 호출이 같은 성공 결과를 돌려받는다 (더블클릭한 쪽이 에러를 보면 안 된다)
         Ctx c = order(41L, 1);
         String key = "OK-conc-" + c.orderId;
         int threads = 10;
@@ -126,7 +124,7 @@ class PaymentIdempotencyIntegrationTest extends IntegrationTestSupport {
             return 0;
         });
 
-        // ② 삼키지 않고 드러낸다. 실패가 있으면 무엇이 터졌는지 메시지에 남는다.
+        // 2) 삼키지 않고 드러낸다. 실패가 있으면 무엇이 터졌는지 메시지에 남는다.
         assertThat(failures).as("같은 멱등키면 예외 없이 기존 결과를 돌려줘야 한다").isEmpty();
         assertThat(responses).hasSize(threads);
         assertThat(responses).extracting(PaymentResponse::paymentId)
@@ -136,10 +134,10 @@ class PaymentIdempotencyIntegrationTest extends IntegrationTestSupport {
 
         // 응답의 orderStatus는 일부러 단언하지 않는다. payTx의 중복 감지 경로는 이미 로드한
         // Order 엔티티(1차 캐시)의 상태를 그대로 쓰기 때문에, 먼저 커밋한 스레드의 PAID가
-        // 반영되기 전 값이 실릴 수 있다. 여기에 PAID를 강제하면 **테스트가 간헐 실패한다.**
+        // 반영되기 전 값이 실릴 수 있다. 여기에 PAID를 강제하면 테스트가 간헐 실패한다.
         // 실제 정합성은 아래 DB 최종 상태로 본다.
 
-        // ① 부수효과는 정확히 한 번
+        // 1) 부수효과는 정확히 한 번
         assertThat(orderRepository.findById(c.orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
         assertThat(paymentRepository.count()).isEqualTo(1);       // 결제 1건만
         assertThat(seatRepository.findById(c.seatId).orElseThrow().getStatus()).isEqualTo(SeatStatus.SOLD);

@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
-# 클러스터 기동 — terraform apply **이후**의 모든 절차를 한 번에.
+# 클러스터 기동 — terraform apply 이후의 모든 절차를 한 번에.
 #
-# 왜 스크립트인가: 이 절차는 지금까지 문서의 명령어 목록이었고, 2026-08-21 기동에서
-# 실제로 두 가지가 드러났다.
-#   1) helm 인자(IRSA ARN·VPC ID)가 문서에 없어 매번 출력값에서 손으로 채워야 했다
-#   2) **ArgoCD helm 설치를 통째로 빠뜨렸다** — Application을 apply할 때 CRD가 없어서야 알았다
-# 순서 의존도 사람 기억에 맡겨져 있었다(네임스페이스가 ESO보다 먼저여야 한다는 것 등).
+# 왜 스크립트인가: 문서의 명령어 목록으로는 helm 인자(IRSA ARN·VPC ID)를 손으로 채워야 하고,
+# 단계 누락(예: ArgoCD 설치)이나 순서 의존(네임스페이스가 ESO보다 먼저)을 사람 기억에 맡기게 된다.
 #
-# terraform apply는 **일부러 포함하지 않는다.** 비용이 발생하고 되돌리기 어려운 유일한
+# terraform apply는 일부러 포함하지 않는다. 비용이 발생하고 되돌리기 어려운 유일한
 # 단계라 의식적인 행위로 남긴다(ADR-012 비용 통제). state가 비어 있으면 여기서 멈춘다.
 #
 # 사용:
@@ -25,10 +22,8 @@ SEED=1
 [ "${1:-}" = "--no-seed" ] && SEED=0
 
 # ── helm 차트 버전 고정 ──────────────────────────────────────────────
-# ⚠️ 하나도 빠짐없이 박는다. 하나라도 floating이면 **같은 커밋의 이 스크립트가 시점에 따라
-# 다른 클러스터를 만든다** — "절차를 코드로 고정한다"는 이 스크립트의 전제가 무너진다.
-# 2026-08-25까지 다섯 개 모두 버전이 없었고, 그래서 지금까지의 기동 결과는 엄밀히 말해
-# "그때 최신이던 것들"의 조합이었다.
+# 하나도 빠짐없이 박는다. 하나라도 floating이면 같은 커밋의 이 스크립트가 시점에 따라
+# 다른 클러스터를 만든다 — "절차를 코드로 고정한다"는 이 스크립트의 전제가 무너진다.
 #
 # 올릴 때: helm search repo <차트> --versions | head -5 로 확인하고 여기만 고친다.
 # 환경변수로 임시 override 할 수 있다(예: CA_CHART_VERSION=9.58.0 bash scripts/bring-up.sh).
@@ -83,15 +78,14 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
 echo "    ok"
 
 echo "==> 4/7 cluster-autoscaler / strimzi / kube-prometheus-stack / argocd"
-# Cluster Autoscaler. Terraform이 IRSA 역할·ASG 태그·ignore_changes까지 준비해 두었고
-# 빠져 있던 것은 이 설치뿐이었다(ADR-012 §4, 2026-08-25 도입).
+# Cluster Autoscaler. IRSA 역할·ASG 태그·ignore_changes는 Terraform이 준비한다(ADR-012 §4).
 #
-# ⚠️ 차트 버전을 **반드시 고정한다.** floating으로 두면 같은 커밋의 bring-up.sh가
+# 차트 버전을 반드시 고정한다. floating으로 두면 같은 커밋의 bring-up.sh가
 # 시점에 따라 다른 것을 설치한다 — 이 스크립트의 존재 이유(절차를 코드로 고정)와 어긋난다.
 #
-# ⚠️ 더 중요한 것: Cluster Autoscaler는 **Kubernetes 마이너 버전과 짝을 맞춰야 한다**
+# 더 중요한 것: Cluster Autoscaler는 Kubernetes 마이너 버전과 짝을 맞춰야 한다
 # (CA v1.35 → k8s 1.35). 버전을 박기만 하고 클러스터와 어긋나면 조용히 오작동한다.
-# 그래서 아래에서 차트의 appVersion과 API 서버 마이너를 대조하고, 다르면 **중단**한다.
+# 그래서 아래에서 차트의 appVersion과 API 서버 마이너를 대조하고, 다르면 중단한다.
 #
 # 버전은 스크립트 상단에서 한곳에 모아 선언한다($CA_CHART_VERSION).
 # 클러스터 버전을 올릴 때 그 값도 함께 올린다:
@@ -104,7 +98,7 @@ CA_APP="$(helm show chart autoscaler/cluster-autoscaler --version "$CA_CHART_VER
   exit 1; }
 K8S_MINOR="$(kubectl version -o json 2>/dev/null | jq -r '.serverVersion.minor // empty' | tr -d '+' || true)"
 CA_MINOR="$(echo "$CA_APP" | cut -d. -f2)"
-# ⚠️ 못 읽었을 때 통과시키면 검사가 공허해진다 — 대조할 수 없다는 것 자체가 실패다.
+# 못 읽었을 때 통과시키면 검사가 공허해진다 — 대조할 수 없다는 것 자체가 실패다.
 [ -n "$K8S_MINOR" ] || {
   echo "API 서버의 Kubernetes 마이너 버전을 읽지 못해 CA 호환성을 대조할 수 없다 — 중단한다." >&2
   echo "  확인: kubectl version -o json" >&2
@@ -118,7 +112,7 @@ if [ "$K8S_MINOR" != "$CA_MINOR" ]; then
 fi
 echo "    cluster-autoscaler 차트 $CA_CHART_VERSION (앱 $CA_APP) ↔ k8s 1.${K8S_MINOR:-?}"
 
-# ⚠️ SA 이름(cluster-autoscaler)이 IRSA 신뢰 정책과 어긋나면 권한 오류가 아니라
+# SA 이름(cluster-autoscaler)이 IRSA 신뢰 정책과 어긋나면 권한 오류가 아니라
 # "노드가 조용히 안 늘어나는" 형태로 나타난다 — LB Controller와 같은 함정이다.
 helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
   --version "$CA_CHART_VERSION" \
@@ -127,7 +121,7 @@ helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
   --set autoDiscovery.clusterName="$CLUSTER" \
   --set-string "rbac.serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$CA_ROLE" \
   --wait --timeout 6m >/dev/null
-# ⚠️ 여기서 **경고가 아니라 실패**시킨다. 이 PR부터 CA는 선택이 아니라 기본 구성이다.
+# 여기서 경고가 아니라 실패시킨다. 이 PR부터 CA는 선택이 아니라 기본 구성이다.
 # 경고만 하면 exit 0인데 노드 오토스케일링이 죽어 있는 클러스터가 만들어지고, 그 상태로
 # 다른 측정을 먼저 하면 조건이 조용히 오염된다(TS-034가 그렇게 나왔다).
 CA_POD="$(kubectl -n kube-system get pod -l app.kubernetes.io/name=aws-cluster-autoscaler \
@@ -136,9 +130,8 @@ CA_POD="$(kubectl -n kube-system get pod -l app.kubernetes.io/name=aws-cluster-a
   echo "cluster-autoscaler 파드를 찾지 못했다 — helm 설치가 --wait로 끝났는데도 없다면 라벨을 확인하라:" >&2
   echo "  kubectl -n kube-system get pods -l app.kubernetes.io/name=aws-cluster-autoscaler --show-labels" >&2
   exit 1; }
-# ⚠️ 로그 문자열로 판정하지 않는다. 초판이 "Registering Node Group"을 찾았는데 CA 1.35에는
-# 그 문구가 없어, **정상 동작 중인 CA를 실패로 판정했다**(2026-08-26 실측). 로그 메시지는
-# 버전마다 바뀌므로 판정 근거가 될 수 없다.
+# 로그 문자열로 판정하지 않는다. 로그 메시지는 버전마다 바뀐다(예: CA 1.35에는
+# "Registering Node Group"이 없다).
 #
 # 대신 CA가 스스로 발행하는 상태 ConfigMap을 읽는다. 이건 CA의 공개 인터페이스다.
 #   autoscalerStatus: Running
@@ -175,7 +168,7 @@ helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheu
   --version "$KPS_CHART_VERSION" \
   -n monitoring --create-namespace \
   -f "$ROOT/k8s/monitoring/kube-prometheus-stack.values.yaml" --wait --timeout 12m >/dev/null
-# ⚠️ 2026-08-21에 이걸 빠뜨렸다. Application을 apply할 때 CRD가 없어서야 드러났다.
+# 이게 없으면 Application을 apply할 때 CRD가 없어 실패한다.
 helm upgrade --install argocd argo/argo-cd \
   --version "$ARGOCD_CHART_VERSION" \
   -n argocd --create-namespace \
@@ -183,7 +176,7 @@ helm upgrade --install argocd argo/argo-cd \
 echo "    ok"
 
 echo "==> 5/7 네임스페이스 → ESO 부트스트랩"
-# ⚠️ 순서가 중요하다. bootstrap.sh가 flowticket 네임스페이스에 ExternalSecret을 만드는데,
+# 순서가 중요하다. bootstrap.sh가 flowticket 네임스페이스에 ExternalSecret을 만드는데,
 # 그 네임스페이스는 원래 앱 배포(다음 단계)가 만든다. 앞으로 빼지 않으면 반드시 실패한다.
 kubectl apply -f "$ROOT/k8s/base/namespace.yaml" >/dev/null
 bash "$ROOT/k8s/external-secrets/bootstrap.sh"
@@ -209,10 +202,9 @@ CUR="$(aws route53 list-resource-record-sets --hosted-zone-id "$ZONE_ID" \
 if [ "${CUR%.}" = "$ALB" ]; then
   echo "    이미 최신($ALB)"
 else
-  # ⚠️ file://로 넘기지 않는다. Git Bash의 /tmp는 실제로 %LOCALAPPDATA%\Temp인데 aws는
+  # file://로 넘기지 않는다. Git Bash의 /tmp는 실제로 %LOCALAPPDATA%\Temp인데 aws는
   # Windows 바이너리라 file:///tmp/... 를 Windows 경로 그대로 해석해 파일을 찾지 못한다.
-  # 2026-08-25 기동에서 정확히 이 이유로 7/7이 실패했고, **도메인이 파괴된 옛 ALB를 가리킨
-  # 채 남았다** — 바로 위 주석이 경고하던 그 상태다.
+  # 그러면 레코드 갱신이 실패해 도메인이 파괴된 옛 ALB를 가리킨 채 남는다.
   # jq로 만들어 인자로 직접 넘기면 경로 해석도, 손수 이스케이프할 일도 없다.
   CHANGE_BATCH="$(jq -nc --arg n "$DOMAIN" --arg z "$ALB_ZONE" --arg d "$ALB" \
     '{Changes:[{Action:"UPSERT",ResourceRecordSet:{Name:$n,Type:"A",
@@ -230,8 +222,8 @@ for i in $(seq 1 20); do
   sleep 15
 done
 echo "    https://$DOMAIN → $CODE"
-# ⚠️ 여기서 반드시 실패시켜야 한다. 이 스크립트가 주장하는 것은 "기동 절차"가 아니라
-# **"기동 절차 + 확인"**이고, 종료 코드 0은 그 확인까지 통과했다는 뜻이어야 한다.
+# 여기서 반드시 실패시켜야 한다. 이 스크립트가 주장하는 것은 "기동 절차"가 아니라
+# "기동 절차 + 확인"이고, 종료 코드 0은 그 확인까지 통과했다는 뜻이어야 한다.
 # 그러지 않으면 --no-seed 경로에서 5분 내내 502가 나도 0으로 끝난다(뒤에 시딩이 없으므로
 # 아무도 눈치채지 못한다).
 if [ "$CODE" != "200" ]; then

@@ -22,8 +22,8 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
     long countByStatus(OutboxStatus status);
 
     /**
-     * 선행 이벤트가 DEAD로 격리된 aggregate 목록. 릴레이가 매 틱 조회해 <b>같은 aggregate의 후속
-     * 이벤트를 보류</b>하는 데 쓴다 — 앞선 이벤트가 나가지 못했는데 뒤 이벤트만 나가면 소비자가
+     * 선행 이벤트가 DEAD로 격리된 aggregate 목록. 릴레이가 매 틱 조회해 같은 aggregate의 후속
+     * 이벤트를 보류하는 데 쓴다 — 앞선 이벤트가 나가지 못했는데 뒤 이벤트만 나가면 소비자가
      * 인과를 거꾸로 본다(예: PAID를 못 본 채 REFUNDED부터 수신).
      *
      * <p>키를 문자열로 합치는 이유: aggregateType과 aggregateId를 쌍으로 비교해야 하는데

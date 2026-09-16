@@ -191,7 +191,7 @@ public class PaymentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 
         finalizePaid(order, payment, OrderStatus.VBANK_WAITING, "DEV-DEPOSIT");
-        // 발송은 finalizePaid **뒤**로 둔다. 레지스트리가 커밋 후로 미뤄 주지만(AfterCommit),
+        // 발송은 finalizePaid 뒤로 둔다. 레지스트리가 커밋 후로 미뤄 주지만(AfterCommit),
         // 확정 전에 알림을 적어 두면 읽는 사람이 순서를 오해한다 —
         // finalizePaid는 만료 sweep에 지면 롤백되는 경로가 있다(TS-011).
         orderSse.broadcast(orderId, "payment.vbank.deposited", Map.of("orderId", orderId));
@@ -226,7 +226,7 @@ public class PaymentService {
             return; // 입금 완료 상태가 아니면 대기 유지
         }
         finalizePaid(order, payment, OrderStatus.VBANK_WAITING, "TOSS-DEPOSIT-" + payment.getId());
-        // 발송은 finalizePaid **뒤**로 둔다. 레지스트리가 커밋 후로 미뤄 주지만(AfterCommit),
+        // 발송은 finalizePaid 뒤로 둔다. 레지스트리가 커밋 후로 미뤄 주지만(AfterCommit),
         // 확정 전에 알림을 적어 두면 읽는 사람이 순서를 오해한다 —
         // finalizePaid는 만료 sweep에 지면 롤백되는 경로가 있다(TS-011).
         orderSse.broadcast(orderId, "payment.vbank.deposited", Map.of("orderId", orderId));
@@ -258,11 +258,11 @@ public class PaymentService {
             // 예외로 트랜잭션 전체 롤백(markPaid·approve 포함). "주문 PAID인데 좌석은 AVAILABLE"
             // = 결제했는데 좌석이 재판매되는 반대 방향 레이스 차단(TS-011).
             if (sold != seatIds.size() || converted != 1) {
-                // 보상(TS-011 ③): PG 승인은 이미 났는데 좌석이 만료 sweep에 풀려 확정 불가.
+                // 보상(TS-011 3)): PG 승인은 이미 났는데 좌석이 만료 sweep에 풀려 확정 불가.
                 // DB는 예외로 롤백되지만 PG 승인은 외부 부수효과라 별도 취소(void)가 필요 —
                 // 안 하면 실 PG에 "승인됐지만 주문은 PENDING/재고 없음"인 미아 승인이 남는다.
                 // Mock은 no-op 성공, Toss는 결제취소 API(refund와 동일 엔드포인트).
-                // 취소 실패해도 원 예외로 롤백은 진행(승인 직후 프로세스 크래시 구간은 outbox/saga 후속).
+                // 취소 실패해도 원 예외로 롤백은 진행(승인 직후 프로세스 크래시 구간은 PaymentReconciliationService가 정리).
                 try {
                     gateway.refund(pgTid, order.getAmount());
                 } catch (RuntimeException ex) {
@@ -271,7 +271,7 @@ public class PaymentService {
                 }
                 throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
             }
-            // 아웃박스 적재(ADR-010): 이 트랜잭션과 <b>같은 커밋</b>에 이벤트를 남긴다.
+            // 아웃박스 적재(ADR-010): 이 트랜잭션과 같은 커밋에 이벤트를 남긴다.
             // 롤백되면 행도 사라져 유령 이벤트 0, 커밋되면 반드시 남아 릴레이가 재시도로 발행 → 유실 0.
             // (구 AFTER_COMMIT 발행은 커밋 후 크래시/브로커 다운 시 이벤트가 영구 유실됐다.)
             appendOutbox("order.paid", order.getId());
@@ -279,7 +279,7 @@ public class PaymentService {
     }
 
     /**
-     * 아웃박스 행 적재. id를 먼저 만들어 payload의 eventId와 <b>같은 UUID</b>를 쓴다 —
+     * 아웃박스 행 적재. id를 먼저 만들어 payload의 eventId와 같은 UUID를 쓴다 —
      * 행 PK가 곧 소비자 멱등 키라 릴레이가 재발행해도 소비는 한 번만 일어난다(ADR-010).
      */
     private void appendOutbox(String type, Long orderId) {

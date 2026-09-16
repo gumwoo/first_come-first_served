@@ -21,13 +21,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * 판매상태 게이트 회귀 — <b>대기열은 Redis만 보고 있었다.</b>
+ * 판매상태 게이트 회귀 — 대기열은 Redis만 보고 있었다.
  *
  * <p>{@code queue:wait:{eventId}}는 eventId를 문자열로만 다뤘기 때문에, 실재하지 않는 이벤트나
  * 이미 CLOSED된 공연에도 줄을 세우고 토큰을 내줬다. 사용자는 대기가 끝난 뒤 좌석 단계에서야
  * 거절당했고, 그동안 정원(capacity) 한 자리를 실제로 점유했다.
  *
- * <p>게이트는 <b>두 군데</b>에 있고 둘 다 필요하다.
+ * <p>게이트는 두 군데에 있고 둘 다 필요하다.
  * <ul>
  *   <li>{@code QueueService.issue()} — 애초에 줄을 세우지 않는다.</li>
  *   <li>{@code SeatService.hold()} — 발급 이후 상태가 바뀌는 창을 막는다. admit-ttl이 300초라
@@ -79,8 +79,7 @@ class QueueSaleStateIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 없는_이벤트에는_줄을_세우지_않는다() {
-        // 예전에는 Redis 키만 만들어져 통과했다 — 그 뒤 queue:active-events에 남아
-        // 승격 워커가 영원히 스캔하는 유령 이벤트가 됐다.
+        // 발급되면 queue:active-events에 남아 승격 워커가 영원히 스캔하는 유령 이벤트가 된다.
         assertThatThrownBy(() -> queueService.issue(1L, 999_999L))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.NOT_FOUND);

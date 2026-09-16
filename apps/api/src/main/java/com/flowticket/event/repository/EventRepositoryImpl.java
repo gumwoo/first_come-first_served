@@ -23,12 +23,12 @@ public class EventRepositoryImpl implements EventRepositoryCustom {
     }
 
     /**
-     * ⚠️ {@code selectFrom(event)}로 되돌리지 말 것 — 필요한 컬럼만 고른다.
+     * {@code selectFrom(event)}로 되돌리지 말 것 — 필요한 컬럼만 고른다.
      *
      * <p>목록이 쓰는 컬럼은 9개인데 엔티티를 통째로 읽으면 20개를 가져온다. V16에서 KOPIS 상세
      * 필드(TEXT 4개: priceText·castInfo·synopsis·scheduleText)가 붙으면서 폭이 더 넓어졌다.
      *
-     * <p>다만 이것이 <b>측정된 지연 증가의 원인이라는 근거는 없다</b> — EXPLAIN으로 재보니 쿼리
+     * <p>다만 이것이 측정된 지연 증가의 원인이라는 근거는 없다 — EXPLAIN으로 재보니 쿼리
      * 형태별 차이가 0.1~0.2ms에 그쳤고 전부 캐시 히트였다. 쓰지 않는 데이터를 읽지 않는다는
      * 이유만으로 충분한 변경이다.
      */

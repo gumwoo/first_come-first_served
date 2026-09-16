@@ -72,10 +72,10 @@ public class SecurityConfig {
                                 "/actuator/health/readiness", "/actuator/info").permitAll()
                         // /actuator/prometheus만 추가로 연다 — Prometheus는 Pod IP로 직접 긁는데
                         // 스크레이프에 인증 헤더를 붙이려면 자격증명을 관측 스택에 심어야 해서, 그쪽이
-                        // 오히려 노출 면이 넓다. 이 경로는 **인터넷에서 도달할 수 없다**: ALB Ingress는
-                        // web Service만 보고(하네스 k8s 규칙 ②·③), Next rewrites도 /api·/oauth2만
+                        // 오히려 노출 면이 넓다. 이 경로는 인터넷에서 도달할 수 없다: ALB Ingress는
+                        // web Service만 보고(하네스 k8s 규칙 2)·3)), Next rewrites도 /api·/oauth2만
                         // 프록시한다(next.config.mjs). 즉 클러스터 내부에만 열린다.
-                        // ⚠️ /actuator/** 전체를 열면 안 된다 — env·configprops에 시크릿이 실린다.
+                        // /actuator/** 전체를 열면 안 된다 — env·configprops에 시크릿이 실린다.
                         .requestMatchers("/actuator/prometheus").permitAll()
                         // 운영(S07): 모든 /admin/** 은 ROLE_ADMIN 전용. 기존 admin 엔드포인트(KOPIS 동기화·좌석 시딩)도 포함.
                         .requestMatchers("/admin/**").hasRole("ADMIN")

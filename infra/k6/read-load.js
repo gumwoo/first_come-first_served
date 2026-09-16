@@ -1,20 +1,12 @@
-// S08 시나리오 ① 조회 API 부하 — 사용자가 가장 자주 치는 읽기 경로에 부하를 걸어
+// S08 시나리오 1) 조회 API 부하 — 사용자가 가장 자주 치는 읽기 경로에 부하를 걸어
 // RPS가 더 이상 선형 증가하지 않고 p95/p99가 급등하는 "무릎(포화점)"을 찾는다.
 // 대상: 목록(GET /events) · 좌석맵(GET /events/{id}/seats) · 상세(GET /events/{id}).
 //
-// 과거 주의사항(해소됨, 기록용):
-//   요청의 20%인 `GET /events/{id}`가 **요청마다 외부 KOPIS API를 호출**하던 시절에는 이 시나리오의
-//   VU를 올리는 것이 곧 남의 API를 두들기는 일이었다. 실측(300 VU · 362 req/s)에서 상세 호출이
-//   초당 70회 수준으로 나가 KOPIS 이용 제한(IP당 1초 10회)을 약 7배 초과해 400 Request Blocked를
-//   2,014건 맞았다.
+// 상세 조회는 외부 KOPIS를 호출하지 않으므로 VU를 올려도 부하가 우리 시스템 안에서만 돈다
+// (EventDetailNoExternalCallTest가 회귀로 지킨다).
 //
-//   상세를 동기화 배치가 미리 받아 DB에 저장하도록 바꾸면서 이 경로에서 외부 호출이 사라졌다.
-//   이제 VU를 올려도 외부로 나가지 않는다 — 부하가 우리 시스템 안에서만 돈다.
-//   (보장은 EventDetailNoExternalCallTest가 회귀로 지킨다)
-//
-// ⚠️ 옵션 이름에 K6_ 접두사를 쓰지 않는다 — K6_VUS·K6_DURATION은 k6 자신의 환경변수 옵션이라
-// 아래 scenarios를 덮어쓴다. 2026-08-11 측정에서 이 경고를 흘려 넘겨 arrival-rate 시나리오가
-// 통째로 무효화된 적이 있다(vus_max=1로 돌았다).
+// 옵션 이름에 K6_ 접두사를 쓰지 않는다 — K6_VUS·K6_DURATION은 k6 자신의 환경변수 옵션이라
+// 아래 scenarios를 덮어쓴다.
 //
 // 실행(VU를 바꿔가며 각각):
 //   k6 run -e VUS=300  --summary-export=benchmarks/read-load-vu300.json infra/k6/read-load.js

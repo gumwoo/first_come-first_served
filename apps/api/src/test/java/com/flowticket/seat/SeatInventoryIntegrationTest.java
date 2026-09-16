@@ -158,7 +158,6 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
         assertThat(seatService.hold(7L, eventId, List.of(aSeatId), token).seatIds()).containsExactly(aSeatId);
 
         // 이 좌석은 뺏겼지만 나머지 99석은 남아 있다 — 매진이 아니다.
-        // 예전에는 SOLD_OUT이라 프론트가 매진 화면으로 튕겼다.
         assertThatThrownBy(() -> seatService.hold(7L, eventId, List.of(aSeatId), token))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.SEAT_CONFLICT);
@@ -219,7 +218,7 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 결제가_이긴_홀드는_sweep이_만료알림을_보내지_않는다() throws Exception {
-        // TS-011 ④: sweepExpired가 홀드를 조건부로 먼저 EXPIRED 전이 → 결제가 이겨 CONVERTED면 0행 → 스킵.
+        // TS-011 4): sweepExpired가 홀드를 조건부로 먼저 EXPIRED 전이 → 결제가 이겨 CONVERTED면 0행 → 스킵.
         // SOLD 좌석에 seat.hold.expired 유령 알림이 나가지 않아야 함(FE가 매진 좌석을 잠깐 풀린 것처럼 오탐 방지).
         String token = admittedToken(51L, eventId);
         HoldResponse held = seatService.hold(51L, eventId, List.of(aSeatId), token);
@@ -300,9 +299,9 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
     void 입장창이_만료된_토큰으로_선점하면_거부된다() {
         // 상태기계 분기: 입장(ADMITTED) 후 입장창이 만료되면 좌석 선점 게이트가 막아야 함.
         String token = admittedToken(12L, eventId);
-        // 입장창 만료 시뮬레이션. **admit 키만 지우는 것으로는 만료가 아니다**([[TS-024]]).
+        // 입장창 만료 시뮬레이션. admit 키만 지우는 것으로는 만료가 아니다(TS-024).
         // 승격은 pop+카운트+admitExp 등록까지 한 Lua로 확정되고 admit 키는 그 뒤에 붙으므로,
-        // "admit 키 없음 + admitExp 미래"는 만료가 아니라 **확정 직후 표시 전**을 뜻한다.
+        // "admit 키 없음 + admitExp 미래"는 만료가 아니라 확정 직후 표시 전을 뜻한다.
         // 실제 만료는 admit 키 TTL과 admitExp score가 같은 시점에 함께 지나는 것이다.
         redisTemplate.delete("queue:admit:" + token);
         redisTemplate.opsForZSet().add("queue:admitexp:" + eventId, token, 0); // score를 과거로

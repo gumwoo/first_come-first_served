@@ -17,7 +17,7 @@ terraform {
 }
 
 provider "aws" {
-  # ⚠️ ACM 인증서는 ALB와 같은 리전이어야 한다. us-east-1은 CloudFront용이다.
+  # ACM 인증서는 ALB와 같은 리전이어야 한다. us-east-1은 CloudFront용이다.
   region = var.region
 
   default_tags {

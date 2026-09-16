@@ -19,16 +19,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * 외부 API가 <b>응답하지 않을 때</b> 우리 스레드가 풀려나는지 검증한다.
+ * 외부 API가 응답하지 않을 때 우리 스레드가 풀려나는지 검증한다.
  *
  * <p>이 테스트가 없어서 위험이 보이지 않았다. KopisClient는 타임아웃을 지정하지 않은
  * RestClient를 썼는데, 이 이미지에는 Apache HttpClient5·Jetty·OkHttp가 없어 JDK HttpClient로
  * 떨어지고 그쪽은 타임아웃 기본값이 없다. 즉 KOPIS가 연결만 물고 응답을 주지 않으면
- * 톰캣 스레드가 <b>영원히</b> 묶인다. 스레드 풀이 마르면 이 엔드포인트뿐 아니라 API 전체가
+ * 톰캣 스레드가 영원히 묶인다. 스레드 풀이 마르면 이 엔드포인트뿐 아니라 API 전체가
  * 멎는데, readiness는 DB·Redis만 보므로 파드는 UP으로 남고 K8s가 빼주지도 않는다.
  *
  * <p>MockRestServiceServer로는 이걸 못 잡는다 — 실제 소켓이 아니라 요청을 가로채기 때문에
- * 타임아웃 설정 자체가 관여하지 않는다. 그래서 <b>받기만 하고 아무것도 쓰지 않는 소켓</b>을
+ * 타임아웃 설정 자체가 관여하지 않는다. 그래서 받기만 하고 아무것도 쓰지 않는 소켓을
  * 직접 띄운다.
  */
 class KopisTimeoutTest {
@@ -87,7 +87,7 @@ class KopisTimeoutTest {
         // 던지지 않고 빈 값으로 degrade해야 한다(상세는 없어도 응답할 수 있다).
         assertThat(result).isEmpty();
 
-        // 타임아웃이 cause=timeout으로 분류되는지 **실측으로** 확인한다.
+        // 타임아웃이 cause=timeout으로 분류되는지 실측으로 확인한다.
         // request factory가 어떤 예외를 싣는지는 문서로 단정하지 않고 여기서 판정한다 —
         // 분류가 틀리면 이 단언이 깨지면서 알려준다(io나 unknown으로 새면 원인 구분이 무의미해진다).
         Timer timer = meters.find("kopis.api.requests")

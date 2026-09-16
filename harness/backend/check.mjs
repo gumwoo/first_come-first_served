@@ -383,7 +383,7 @@ for (const file of migrationFiles) {
 // 코드 주석에 "TS-014", "ADR-012", "IMP-013" 같은 번호를 적어 두는 것은 이 저장소의 습관이다.
 // 근거를 코드 옆에 두면 나중에 "왜 이렇게 했나"를 되짚을 수 있기 때문이다.
 //
-// 문제는 **번호를 먼저 적고 문서를 나중에 쓰는 순서**다. 실제로 V15 마이그레이션이 두 곳에서
+// 문제는 번호를 먼저 적고 문서를 나중에 쓰는 순서다. 실제로 V15 마이그레이션이 두 곳에서
 // TS-014를 참조했는데 그 문서가 없었다 — 읽는 사람은 근거를 찾아가려다 빈손으로 돌아온다.
 // 근거를 가리키는 척하는 주석은 근거가 없는 것보다 나쁘다(찾는 시간까지 쓰게 만든다).
 //
@@ -437,13 +437,9 @@ for (const file of [...javaFiles, ...migrationFiles]) {
 }
 
 // ---------- 16. 응답의 LocalDateTime은 오프셋을 달고 나가야 함 ----------
-// LocalDateTime은 JSON에 "2026-08-09T06:56:54"처럼 타임존 없이 실린다. JS의 new Date()는
-// 오프셋이 없으면 그 값을 **브라우저 로컬 시간**으로 해석하므로(ES 명세), 서버 컨테이너가
-// UTC이고 사용자가 KST면 9시간이 어긋난다.
-//
-// 실제로 좌석 선점이 이것 때문에 깨졌다 — 5분 만료를 브라우저가 9시간 전으로 계산해서
-// '선택 완료' 즉시 만료 화면으로 튕겼다. **로컬에서는 재현되지 않는다**(JVM도 브라우저도 KST).
-// 그래서 테스트가 아니라 정적 규칙으로 막는다.
+// LocalDateTime은 JSON에 타임존 없이 실린다. JS의 new Date()는 오프셋이 없으면 브라우저
+// 로컬 시간으로 해석하므로(ES 명세), 서버가 UTC이고 사용자가 KST면 9시간이 어긋나 좌석 선점
+// 만료가 즉시 발동한다. 로컬에서는 재현되지 않아(JVM도 브라우저도 KST) 정적 규칙으로 막는다.
 const dtoWithLocalDateTime = [];
 for (const file of walk(API + "/src/main/java", [".java"])) {
   const rel = path.relative(REPO_ROOT, file);
@@ -470,18 +466,17 @@ if (dtoWithLocalDateTime.length > 0) {
 }
 
 // ---------- 17. DB 커넥션 상한: (maxReplicas + maxSurge) × pool 이 DB 한도를 넘지 않는가 ----------
-// 이 한도는 **곱셈으로 정해지는데 곱하는 자리가 코드에 없었다.** HPA maxReplicas(9)와 Hikari
+// 이 한도는 곱셈으로 정해지는데 곱하는 자리가 코드에 없었다. HPA maxReplicas(9)와 Hikari
 // 기본 풀(10)이 각자 합리적이었지만 곱이 90이라 실질 한도 76을 넘었고, 부하로 9까지 확장되자
 // 8번째 파드부터 Flyway가 커넥션을 얻지 못해 기동 실패했다(TS-021).
 //
-// ⚠️ **maxSurge를 빼면 안 된다.** 롤링 배포 중에는 새 Pod가 Ready가 된 뒤에 옛 Pod가 빠지므로
+// maxSurge를 빼면 안 된다. 롤링 배포 중에는 새 Pod가 Ready가 된 뒤에 옛 Pod가 빠지므로
 // (maxUnavailable=0, maxSurge=1) 순간적으로 maxReplicas + maxSurge 개가 공존한다. 평상시 값만
-// 검사하면 "배포하는 순간에만 넘는" 구성을 통과시킨다 — 초안이 그 구멍을 갖고 있었고 리뷰에서
-// 지적받아 고쳤다.
+// 검사하면 "배포하는 순간에만 넘는" 구성을 통과시킨다.
 //
-// 네 값이 서로 다른 곳에 흩어져 있어 사람이 맞추기 어렵다 — maxReplicas는 k8s/api-hpa.yaml,
-// maxSurge는 k8s/api-deployment.yaml, 풀 크기는 application.yml, max_connections는
-// **저장소 밖**(RDS 인스턴스 클래스에서 파생)이다.
+// 네 값이 서로 다른 곳에 흩어져 있어 사람이 맞추기 어렵다 — maxReplicas는 k8s/base/api-hpa.yaml,
+// maxSurge는 k8s/base/api-deployment.yaml, 풀 크기는 application.yml, max_connections는
+// 저장소 밖(RDS 인스턴스 클래스에서 파생)이다.
 // 마지막 값은 클래스별 실측치를 여기에 표로 둔다(추정 아님 — pg_settings로 직접 조회한 값).
 const DB_MAX_CONNECTIONS = {
   "db.t4g.micro": 79, // 2026-08-10 pg_settings 실측
@@ -491,9 +486,9 @@ const DB_MAX_CONNECTIONS = {
 const NON_APP_HEADROOM = 20;
 
 {
-  // ⚠️ 경로는 반드시 REPO_ROOT 기준으로 만든다. CI는 `harness/`에서 실행하므로
+  // 경로는 반드시 REPO_ROOT 기준으로 만든다. CI는 `harness/`에서 실행하므로
   // 저장소 상대 경로를 그대로 fs에 넘기면 cwd 기준으로 풀려 파일을 못 찾고,
-  // 그러면 규칙이 **실패가 아니라 조용히 건너뛰어진다**(거짓 안전). 실제로 그렇게 통과했다.
+  // 그러면 규칙이 실패가 아니라 조용히 건너뛰어진다(거짓 안전). 실제로 그렇게 통과했다.
   // fixture가 k8s 쪽 값을 갈아끼울 수 있게 열어둔다(maxSurge 항이 실제로 계산에 들어가는지 검증).
   const K8S = process.env.HARNESS_K8S_DIR || "k8s/base";
   const hpaFile = path.join(REPO_ROOT, K8S, "api-hpa.yaml");
@@ -547,30 +542,30 @@ const NON_APP_HEADROOM = 20;
   }
 }
 
-// ---------- ⑱ 외부 HTTP 클라이언트에 타임아웃이 걸려 있는가 ----------
+// ---------- 18) 외부 HTTP 클라이언트에 타임아웃이 걸려 있는가 ----------
 //
 // RestClient는 request factory를 주지 않으면 클래스패스에서 고른다. 이 이미지에는
-// Apache HttpClient5·Jetty·OkHttp가 없어 **JDK HttpClient로 떨어지고, 거기엔 connect/read
-// 기본 타임아웃이 없다**(KopisClientConfig가 파드에서 확인해 적어 둔 사실이다).
+// Apache HttpClient5·Jetty·OkHttp가 없어 JDK HttpClient로 떨어지고, 거기엔 connect/read
+// 기본 타임아웃이 없다(KopisClientConfig 참고).
 //
 // 그래서 상대가 응답을 주지 않으면 톰캣 스레드가 그대로 묶인다. 결제 경로는 더 나쁘다 —
-// 그 호출이 DB 트랜잭션 안이라 **Hikari 커넥션까지 함께** 묶이고, 풀은 파드당 5다(TS-021).
+// 그 호출이 DB 트랜잭션 안이라 Hikari 커넥션까지 함께 묶이고, 풀은 파드당 5다(TS-021).
 //
 // 실제로 KOPIS는 지키고 있었는데 TossPaymentGateway는 `RestClient.builder().baseUrl(..).build()`
-// 였다([[TS-028]]). 같은 위험을 한쪽만 막고 있었던 것이고, 런타임 테스트로는 잡기 어렵다
+// 였다(TS-028). 같은 위험을 한쪽만 막고 있었던 것이고, 런타임 테스트로는 잡기 어렵다
 // (타임아웃을 재현하려면 응답 없는 서버가 필요해 느리고 불안정하다) — 정적으로만 싸게 잡힌다.
-// 클라이언트를 **만드는** 두 가지 형태를 모두 본다.
-//   ① RestClient.builder(...) / RestClient.create(...)      — 직접 만든다
-//   ② RestClient.Builder 를 주입받아 .build() 한다           — 스프링 빌더를 쓴다
+// 클라이언트를 만드는 두 가지 형태를 모두 본다.
+//   1) RestClient.builder(...) / RestClient.create(...)      — 직접 만든다
+//   2) RestClient.Builder 를 주입받아 .build() 한다           — 스프링 빌더를 쓴다
 //
-// ⚠️ 초안은 ①만 봤고, 그래서 **이 규칙을 만든 그 수정 자체를 검사하지 못했다.**
+// 초안은 1)만 봤고, 그래서 이 규칙을 만든 그 수정 자체를 검사하지 못했다.
 // TossPaymentGateway를 고치면서 `RestClient.builder()`가 `builder.clone()`으로 바뀌었는데,
 // 그 순간 파일이 규칙의 시야에서 사라졌다 — 누가 requestFactory를 다시 지워도 통과한다.
 // 리뷰에서 잡혔고, `requestFactory`만 제거한 뒤 하네스를 돌려 실제로 통과하는 것을 확인했다.
 const HTTP_DIRECT_RE = /RestClient\s*\.\s*(builder|create)\s*\(/;
 const HTTP_INJECTED_RE = /RestClient\s*\.\s*Builder/;
 const BUILD_CALL_RE = /\.\s*build\s*\(\s*\)/;
-// ⚠️ **주석을 걷어내고 본다.** 초안은 원문 그대로 `raw.includes("requestFactory(")`를 썼는데,
+// 주석을 걷어내고 본다. 초안은 원문 그대로 `raw.includes("requestFactory(")`를 썼는데,
 // 위반 fixture의 javadoc에 그 단어가 들어 있다는 이유만으로 통과해 버렸다(규칙이 자기 fixture를
 // 못 잡았다). 주석에 이름을 언급하는 것과 실제로 호출하는 것은 다르다.
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -596,13 +591,13 @@ function normalize(p) {
 //
 // `@RequestParam(defaultValue = "0") int page` 는 검증이 없다. `?page=-1` 이면 값이 그대로
 // PageRequest.of() 까지 내려가 IllegalArgumentException이 나는데, 이 저장소에는 그 전용
-// 핸들러가 없어 fallback이 잡는다 — **클라이언트 입력 오류가 500 + ERROR 로그**가 된다.
+// 핸들러가 없어 fallback이 잡는다 — 클라이언트 입력 오류가 500 + ERROR 로그가 된다.
 // size는 상한이 없어 대량 행과 TEXT payload를 한 요청에서 직렬화할 수 있다.
 //
 // 같은 모양이 컨트롤러 6곳에 복사돼 있었다. 한 곳을 고쳐도 다음 목록 API가 또 같은 줄을
 // 복사하므로, 공통 값 객체(PageQuery)를 쓰도록 정적으로 못박는다.
 //
-// ⚠️ IllegalArgumentException 전체를 400으로 매핑하는 방식은 일부러 택하지 않았다 —
+// IllegalArgumentException 전체를 400으로 매핑하는 방식은 일부러 택하지 않았다 —
 // 그 예외는 서버 내부 프로그래밍 오류에도 흔히 쓰여, 진짜 버그가 클라이언트 오류로 숨는다.
 const PAGING_PARAM_RE =
   /@RequestParam[^)]*\)?\s*(?:final\s+)?(?:int|Integer|long|Long)\s+(page|size)\b/;
@@ -620,20 +615,19 @@ for (const f of javaFiles) {
 
 // ---------- 20. Gradle 버전은 한 곳에서만 바뀔 수 없다 ----------
 //
-// 이 저장소는 Gradle 버전을 **두 군데에 따로** 적는다.
+// 이 저장소는 Gradle 버전을 두 군데에 따로 적는다.
 //   - apps/api/gradle/wrapper/gradle-wrapper.properties  → distributionUrl (로컬 ./gradlew)
 //   - .github/workflows/ci.yml                           → setup-gradle의 gradle-version (CI)
 // CI가 wrapper를 쓰지 않고 gradle을 직접 부르기 때문에 생긴 구조다.
 //
-// 문제는 **한쪽만 올려도 아무 일도 일어나지 않는다**는 것이다. CI는 계속 통과하고,
+// 문제는 한쪽만 올려도 아무 일도 일어나지 않는다는 것이다. CI는 계속 통과하고,
 // 로컬에서만 다른 Gradle이 돌아 "내 PC에서는 되는데"가 만들어진다. 빌드 재현성이
 // 조용히 깨지는 전형적인 경로라 정적으로 묶는다.
 const wrapperProps = path.join(REPO_ROOT, API, "gradle/wrapper/gradle-wrapper.properties");
 if (fs.existsSync(wrapperProps)) {
   const distUrl = read(wrapperProps).match(/distributionUrl=.*?gradle-([0-9][^-]*)-(?:bin|all)\.zip/);
-  // ⚠️ CI 쪽과 **같은 방어**가 여기에도 있어야 한다. properties가 존재하는데 버전을 못 읽으면
+  // CI 쪽과 같은 방어가 여기에도 있어야 한다. properties가 존재하는데 버전을 못 읽으면
   // 아래 비교가 통째로 건너뛰어지고, 규칙은 검사하는 척만 하며 통과한다.
-  // (초판에 이 방어가 CI 쪽에만 있었다. distributionUrl 형식을 바꿔 실행하면 exit 0이었다.)
   if (!distUrl) {
     r.fail(
       `gradle-wrapper.properties에서 Gradle 버전을 읽지 못했다: ${path.relative(REPO_ROOT, wrapperProps)} — ` +
@@ -647,7 +641,7 @@ if (fs.existsSync(wrapperProps)) {
     // 여러 잡이 각각 선언하므로 전부 모은다. 잡끼리 어긋나는 것도 같은 종류의 사고다.
     const ci = read(ciPath);
     const ciVers = [...ci.matchAll(/gradle-version:\s*["']?([0-9][\w.]*)["']?/g)].map((m) => m[1]);
-    // ⚠️ 공허한 통과 방지. setup-gradle은 쓰는데 버전을 하나도 못 읽었다면 형식이 바뀐 것이고,
+    // 공허한 통과 방지. setup-gradle은 쓰는데 버전을 하나도 못 읽었다면 형식이 바뀐 것이고,
     // 그대로 두면 이 규칙은 영원히 통과한다(검사하는 척만 한다). 못 읽은 것 자체를 실패로 만든다.
     // setup-gradle이 아예 없으면 CI가 wrapper를 쓰도록 바뀐 것이므로 대조할 대상이 없다 — 건너뛴다.
     if (ci.includes("setup-gradle") && ciVers.length === 0) {

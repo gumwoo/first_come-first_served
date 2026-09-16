@@ -95,15 +95,15 @@ class DlqIntegrationTest {
     @Test
     void 역직렬화가_실패하는_독성_메시지도_DLQ로_간다() throws Exception {
         // 이 테스트가 없어서 배포에서 뚫렸다(TS-020). JsonDeserializer를 직접 쓰면 역직렬화가
-        // **poll() 단계**에서 터져 리스너에 도달하지 못하고, DefaultErrorHandler(+DLT)가 개입할
+        // poll() 단계에서 터져 리스너에 도달하지 못하고, DefaultErrorHandler(+DLT)가 개입할
         // 수 없다. 결과는 같은 메시지 무한 재시도 — 파드는 Running이고 readiness도 UP인데
         // 처리가 멈춘 채 CPU만 태운다(실측: 파드 711m, 노드 100%, HPA가 부하로 오해해 스케일업).
         //
-        // 위 두 테스트는 **역직렬화에 성공한 뒤** 리스너에서 던지는 경우라 이 경로를 못 잡는다.
+        // 위 두 테스트는 역직렬화에 성공한 뒤 리스너에서 던지는 경우라 이 경로를 못 잡는다.
         // 그래서 타입 헤더 없는 평문을 직접 넣는다 — 재시도해도 절대 성공하지 않는 유형이다.
-        // ⚠️ "topic이 order-events인 행이 있다"로 단언하면 안 된다. 같은 클래스의 다른 테스트도
+        // "topic이 order-events인 행이 있다"로 단언하면 안 된다. 같은 클래스의 다른 테스트도
         // 같은 토픽으로 DLQ 행을 만들고, 그 비동기 처리가 @BeforeEach의 deleteAll() 뒤에 끝나면
-        // **그 행을 보고 통과**한다. 이 PR이 지적하는 실수(있는 테스트의 바깥이 뚫린다)를
+        // 그 행을 보고 통과한다. 이 PR이 지적하는 실수(있는 테스트의 바깥이 뚫린다)를
         // 테스트 자신이 반복하게 된다. 그래서 이 메시지만 식별할 수 있는 표식을 넣는다.
         String marker = "poison-" + UUID.randomUUID();
 
@@ -119,12 +119,12 @@ class DlqIntegrationTest {
                 assertThat(dlqRepository.findAll())
                         .as("독성 메시지는 재시도로 해결되지 않으므로 DLT로 넘어가야 한다")
                         .anySatisfy(m -> {
-                            // ① 원본 바이트가 그대로 실려야 한다 — JsonSerializer로 나가면
+                            // 1) 원본 바이트가 그대로 실려야 한다 — JsonSerializer로 나가면
                             //    base64 JSON이 되어 이 표식이 평문으로 남지 않는다.
                             assertThat(m.getPayload())
                                     .as("DLT 값은 원본 byte[]여야 한다(직렬화기 구성 확인)")
                                     .contains(marker);
-                            // ② 실패 사유가 역직렬화여야 한다. 리스너 실패("boom")와 구분된다.
+                            // 2) 실패 사유가 역직렬화여야 한다. 리스너 실패("boom")와 구분된다.
                             assertThat(m.getErrorMessage())
                                     .as("역직렬화 실패로 DLT에 온 것이어야 한다")
                                     .containsIgnoringCase("deserial");
@@ -134,11 +134,10 @@ class DlqIntegrationTest {
 
     @Test
     void 재발행이_실패하면_RETRIED로_바꾸지_않는다() throws Exception {
-        // [[TS-026]] 회귀. 예전에는 kafkaTemplate.send()만 호출하고 브로커 확인 없이 곧바로
-        // markRetried()를 했다. 전송은 비동기라 "DB는 재처리했다는데 실제로는 유실"이 가능했고,
-        // 상태가 RETRIED로 바뀌면 운영자 목록에서도 사라져 영영 못 찾는다.
+        // TS-026 회귀. 브로커 확인 없이 markRetried()하면 "DB는 재처리했다는데 실제로는 유실"이
+        // 가능하고, RETRIED가 되면 운영자 목록에서도 사라진다.
         //
-        // 발행 실패를 **결정적으로** 만들기 위해 Kafka 토픽명 규칙을 위반한 이름을 쓴다
+        // 발행 실패를 결정적으로 만들기 위해 Kafka 토픽명 규칙을 위반한 이름을 쓴다
         // (허용 문자는 [a-zA-Z0-9._-]). 브로커 다운을 흉내 내는 것보다 재현이 확실하다.
         String payload = objectMapper.writeValueAsString(OrderEvent.of("order.paid", 444L));
         DlqMessage row = dlqRepository.save(new DlqMessage("invalid topic name!", payload, "err"));
@@ -155,7 +154,7 @@ class DlqIntegrationTest {
     @Test
     void 깨진_페이로드는_발행을_시도하지_않고_400으로_구분된다() {
         // 페이로드 파손은 몇 번을 눌러도 실패하므로 폐기 대상이고, 발행 실패는 나중에 다시 누르면
-        // 되는 것이다. 예전에는 둘 다 VALIDATION_ERROR로 뭉뚱그려 그 구분이 안 됐다.
+        // 되는 것이라 응답 코드로 구분돼야 한다.
         DlqMessage row = dlqRepository.save(
                 new DlqMessage(KafkaConfig.ORDER_EVENTS_TOPIC, "not-json-at-all", "err"));
 

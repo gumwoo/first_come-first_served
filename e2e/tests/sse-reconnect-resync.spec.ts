@@ -2,16 +2,16 @@ import { test, expect } from "@playwright/test";
 import { seedAdmittedUser, seedOrder, firstSelectable, seatTitle } from "../helpers/seed";
 
 /**
- * [[ADR-015]] §① 검증 경과에서 확인한 결함이 **좌석 SSE에도 같은 형태로 있었다.**
+ * ADR-015 §1) 검증 경과에서 확인한 결함이 좌석 SSE에도 같은 형태로 있었다.
  *
  * <p>`SeatSseRegistry.subscribe()`도 emitter를 등록만 하고 아무것도 보내지 않았다.
  * 첫 전송 전까지 응답이 커밋되지 않으면 브라우저 `EventSource`가 OPEN으로 전이하지 않고
  * `onopen`이 불리지 않는다. 그러면 `useSeats`의 `es.onopen = () => refresh()`가 발동하지 못한다.
  *
- * <p><b>대기열보다 나쁘다.</b> `useSeats`에는 폴링이 없다(`setInterval` 0건) —
- * 재연결 뒤 <b>자동</b> 복구 경로는 `onopen` 재조회뿐이다. 이 경로가 발동하지 않으면,
- * 사용자가 새로고침하거나 페이지를 다시 열기 전까지 <b>끊긴 사이의 좌석 상태 변경을
- * 화면이 반영하지 못한다.</b> 그동안 이미 선점된 좌석을 고르고 제출 단계에서야 거절당한다.
+ * <p>대기열보다 나쁘다. `useSeats`에는 폴링이 없다(`setInterval` 0건) —
+ * 재연결 뒤 자동 복구 경로는 `onopen` 재조회뿐이다. 이 경로가 발동하지 않으면,
+ * 사용자가 새로고침하거나 페이지를 다시 열기 전까지 끊긴 사이의 좌석 상태 변경을
+ * 화면이 반영하지 못한다. 그동안 이미 선점된 좌석을 고르고 제출 단계에서야 거절당한다.
  *
  * <p>대기열 회귀 테스트(`queue-waiting.spec.ts`)와 같은 구조다 — SSE를 막아 이벤트를
  * 소실시키고, 풀었을 때 재연결만으로 복구되는지 본다. 초기 프레임 전송을 되돌리면 실패한다.
@@ -29,11 +29,11 @@ test("SSE가 끊긴 사이 좌석이 선점돼도 재연결하면 좌석맵이 �
   await page.goto(`/events/${eventId}/seats?qt=${queueToken}`);
   await expect(page.getByTitle(title, { exact: true })).toBeEnabled();
 
-  // 2) **브라우저 UI 밖에서** 그 좌석을 선점해 서버 상태만 HELD로 바꾼다.
+  // 2) 브라우저 UI 밖에서 그 좌석을 선점해 서버 상태만 HELD로 바꾼다.
   //    seat.held 이벤트는 SSE로만 나가고, 연결이 없어 소실된다.
   //
   //    같은 사용자의 토큰을 쓰지만 상관없다 — 이 테스트가 보는 것은 "누가 잡았나"가 아니라
-  //    **UI가 모르는 사이 서버 상태가 바뀌었을 때 재연결로 따라잡는가**다. 별도 사용자를
+  //    UI가 모르는 사이 서버 상태가 바뀌었을 때 재연결로 따라잡는가다. 별도 사용자를
   //    만들면 가입 절차만 늘고 검증 내용은 같다.
   //    (page.request라 브라우저 라우트에 걸리지 않는다)
   const holdRes = await page.request.post(`/api/events/${eventId}/seats/hold`, {
@@ -55,12 +55,12 @@ test("SSE가 끊긴 사이 좌석이 선점돼도 재연결하면 좌석맵이 �
 });
 
 /**
- * 같은 결함의 **주문 경로** 회귀. `OrderSseRegistry`도 초기 프레임 없이는 `onopen`이 불리지
+ * 같은 결함의 주문 경로 회귀. `OrderSseRegistry`도 초기 프레임 없이는 `onopen`이 불리지
  * 않아 `useOrder`의 재연결 재조회가 발동하지 못했다.
  *
- * <p>가상계좌(무통장)를 고르면 화면은 "입금 대기"에 머물고, 입금은 <b>서버 밖에서</b>
- * 확정된다(실서비스는 PG 웹훅, 여기서는 개발용 트리거 API). 즉 <b>UI가 스스로 알 수 없는
- * 상태 변경</b>이라 이 결함을 재현하기에 정확한 시나리오다.
+ * <p>가상계좌(무통장)를 고르면 화면은 "입금 대기"에 머물고, 입금은 서버 밖에서
+ * 확정된다(실서비스는 PG 웹훅, 여기서는 개발용 트리거 API). 즉 UI가 스스로 알 수 없는
+ * 상태 변경이라 이 결함을 재현하기에 정확한 시나리오다.
  *
  * <p>결제 대기 화면은 주문이 PAID가 되면 완료 화면으로 자동 이동한다
  * (`orders/[id]/pay/page.tsx` — `if (order?.status === "PAID") router.replace(...)`).
@@ -78,7 +78,7 @@ test("SSE가 끊긴 사이 입금이 확정돼도 재연결하면 완료로 넘�
   await page.getByRole("button", { name: /결제하기/ }).click();
   await expect(page.getByText("입금 대기")).toBeVisible();
 
-  // 2) **브라우저 UI 밖에서** 입금을 확정한다(실서비스의 PG 웹훅에 해당).
+  // 2) 브라우저 UI 밖에서 입금을 확정한다(실서비스의 PG 웹훅에 해당).
   //    화면의 "입금 확인" 버튼을 누르면 그 핸들러가 직접 이동시켜버려 SSE 경로를 못 본다.
   const res = await page.request.post(`/api/dev/vbank/${orderId}/deposit`, {
     headers: { Authorization: `Bearer ${accessToken}` },

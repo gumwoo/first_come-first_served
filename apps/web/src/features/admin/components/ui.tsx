@@ -5,7 +5,7 @@ export const orderNo = (id: number) => `ORD-${String(id).padStart(8, "0")}`;
 const pad = (n: number) => String(n).padStart(2, "0");
 
 /**
- * 서버 시각을 **보는 사람의 로컬 존**으로 변환해 표시한다.
+ * 서버 시각을 보는 사람의 로컬 존으로 변환해 표시한다.
  *
  * 문자열을 잘라 쓰면(과거 구현: `s.slice(0, 16)`) 서버가 보낸 존의 벽시계를 그대로 보여준다.
  * 서버 컨테이너는 UTC라 KST 사용자에게 9시간 과거로 보인다. Date로 파싱해야 오프셋이 반영된다.

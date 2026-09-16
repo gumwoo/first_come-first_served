@@ -16,16 +16,15 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * [[TS-024]] 회귀 — 승격 커밋이 Lua 밖으로 새지 않는지 본다.
+ * TS-024 회귀 — 승격 커밋이 Lua 밖으로 새지 않는지 본다.
  *
- * <p>승격은 pop + admitcount 증가 + admitExp 등록까지 <b>한 Lua로 확정</b>되고,
- * {@code queue:admit:{token}} 키와 SSE 알림은 그 뒤에 붙는 부수 작업이다. 예전에는 pop과
- * 카운트 증가까지만 원자였고 admitExp 등록이 Java 루프여서 두 가지가 샜다.
+ * <p>승격은 pop + admitcount 증가 + admitExp 등록까지 한 Lua로 확정되고,
+ * {@code queue:admit:{token}} 키와 SSE 알림은 그 뒤에 붙는 부수 작업이다. admitExp 등록이
+ * Lua 밖에 있으면 두 가지가 샌다.
  *
  * <ul>
- *   <li>① wait에서도 빠지고 입장 표시도 없는 창 → 상태 조회가 EXPIRED로 떨어졌다.
- *       2026-08-12 스파이크 실측에서 3,000명 중 10명이 진입 응답으로 EXPIRED를 받았다.</li>
- *   <li>② 그 창에서 Pod가 죽으면 admitcount만 오른 채 admitExp에 없어 <b>정원이 영구 누수</b>된다.
+ *   <li>1) wait에서도 빠지고 입장 표시도 없는 창 → 상태 조회가 EXPIRED로 떨어진다.</li>
+ *   <li>2) 그 창에서 Pod가 죽으면 admitcount만 오른 채 admitExp에 없어 정원이 영구 누수된다.
  *       카운트를 줄이는 경로(RECLAIM/LEAVE)가 둘 다 admitExp를 근거로 움직이기 때문이다.</li>
  * </ul>
  *

@@ -1,17 +1,11 @@
 #!/usr/bin/env bash
 # 클러스터 철거 — terraform이 모르는 리소스를 먼저 치우고, 마지막에 잔여를 점검한다.
 #
-# 왜 스크립트인가: `terraform-design.md` §6에 순서가 있는데도 사람이 밟으면 빠뜨린다.
-#   * 2026-08-21: Ingress를 먼저 지우지 않아 VPC 삭제가 막혀 destroy를 **3번** 돌렸다
-#   * 2026-08-16: §6-4(EBS 잔여 확인)를 건너뛰어 PVC 볼륨 **50GB가 6일간 방치 과금**됐다
-#     (2026-08-22 철거 때 발견해 삭제)
-#   * 2026-08-26: destroy가 서브넷 DependencyViolation으로 실패했는데, 막고 있던 둘이
-#     **terraform 밖에서 만들어진 것**이었다 — VPC CNI의 고아 ENI, EKS가 만든 보안그룹.
-#     사람이 손으로 찾아 지웠다(6/7단계가 그 절차다).
-# 세 사고 모두 "문서에 적혀 있는데 안 밟은 것" 또는 "적혀 있지도 않은 것"이다.
-# 밟는 주체를 사람에서 스크립트로 옮긴다.
+# 왜 스크립트인가: `terraform-design.md` §6에 순서가 있어도 사람이 밟으면 빠뜨린다
+# (Ingress 선삭제 누락 → VPC 삭제 막힘, EBS 잔여 확인 누락 → 방치 과금,
+#  terraform 밖의 ENI·보안그룹 → 서브넷 DependencyViolation). 밟는 주체를 스크립트로 옮긴다.
 #
-# ⚠️ bootstrap(ECR·ACM·Route53·tfstate·IAM)은 **건드리지 않는다**(§6). 재생성 비용이 크고
+# bootstrap(ECR·ACM·Route53·tfstate·IAM)은 건드리지 않는다(§6). 재생성 비용이 크고
 # 도메인·인증서는 클러스터 수명과 무관하다.
 #
 # 사용:
@@ -35,9 +29,9 @@ have_cluster() { kubectl get nodes >/dev/null 2>&1; }
 
 audit() {
   echo "==> 잔여 점검 ($REGION, FlowTicket 소유분만)"
-  # ⚠️ 리전 전체를 세면 안 된다. 같은 리전에 무관한 RDS가 하나 생기면 이 스크립트가
-  # "철거 실패"라고 말하게 되고, 그러면 의미가 **"FlowTicket 잔여 없음"이 아니라
-  # "이 리전에 아무것도 없음"**이 된다.
+  # 리전 전체를 세면 안 된다. 같은 리전에 무관한 RDS가 하나 생기면 이 스크립트가
+  # "철거 실패"라고 말하게 되고, 그러면 의미가 "FlowTicket 잔여 없음"이 아니라
+  # "이 리전에 아무것도 없음"이 된다.
   #
   # Terraform이 만든 것은 default_tags의 `Project=flowticket`으로 정확히 걸러진다
   # (versions.tf provider 블록). Terraform 밖에서 만들어지는 둘은 이름으로 판별한다:
@@ -72,7 +66,7 @@ if [ "$AUDIT_ONLY" -eq 1 ]; then
 fi
 
 echo "==> 0/7 ArgoCD Application 삭제"
-# 먼저 지우지 않으면 아래에서 지운 워크로드를 ArgoCD가 **되살린다**(selfHeal).
+# 먼저 지우지 않으면 아래에서 지운 워크로드를 ArgoCD가 되살린다(selfHeal).
 if have_cluster; then
   kubectl delete application flowticket -n argocd --timeout=180s 2>/dev/null || true
 else
@@ -81,7 +75,7 @@ fi
 
 if have_cluster; then
   echo "==> 1/7 Ingress 삭제 → ALB 제거"
-  # ALB는 Terraform이 모르는 리소스라, 남으면 **VPC 삭제가 막힌다**(2026-08-21에 겪음).
+  # ALB는 Terraform이 모르는 리소스라, 남으면 VPC 삭제가 막힌다.
   kubectl delete ingress --all -A --timeout=180s 2>/dev/null || true
   for i in $(seq 1 40); do
     n="$(aws elbv2 describe-load-balancers --query "length(LoadBalancers[?contains(DNSName,'k8s-')])" --output text 2>/dev/null | tr -d '\r')"
@@ -94,9 +88,9 @@ if have_cluster; then
   kubectl delete kafkanodepool --all -n kafka --timeout=120s 2>/dev/null || true
 
   echo "==> 3/7 볼륨 ID 채집 → PVC 삭제"
-  # ⚠️ **삭제 대상을 여기서 확정한다.** 태그로 고르면 추측이 된다 — EBS 볼륨은 Terraform이
+  # 삭제 대상을 여기서 확정한다. 태그로 고르면 추측이 된다 — EBS 볼륨은 Terraform이
   # 아니라 EBS CSI 드라이버가 만들어 `Project=flowticket` 공통 태그가 붙지 않고,
-  # `kubernetes.io/created-for/pvc/name`만으로 고르면 **같은 계정의 다른 클러스터 볼륨까지**
+  # `kubernetes.io/created-for/pvc/name`만으로 고르면 같은 계정의 다른 클러스터 볼륨까지
   # 대상이 된다. 이 클러스터의 PV가 실제로 가리키는 ID를 읽어두면 그 문제가 사라진다.
   kubectl get pv -o jsonpath='{range .items[*]}{.spec.csi.volumeHandle}{"
 "}{end}' 2>/dev/null     | tr -d '' | grep -E '^vol-' > "$OWNED_VOLS" || true
@@ -109,8 +103,7 @@ if have_cluster; then
 fi
 
 echo "==> 4/7 고아 EBS 볼륨 정리"
-# ⚠️ 2026-08-16 철거에서 이 단계를 건너뛰어 50GB가 6일간 과금됐다.
-# **3단계에서 채집한 ID만 지운다.** 목록이 없으면(클러스터에 이미 접근 불가) 지우지 않고
+# 3단계에서 채집한 ID만 지운다. 목록이 없으면(클러스터에 이미 접근 불가) 지우지 않고
 # 후보만 보고한다 — 파괴 자동화는 소유를 증명하지 못하면 멈추는 편이 낫다.
 if [ ! -s "$OWNED_VOLS" ]; then
   echo "    소유 볼륨 목록이 없다(클러스터 접근 불가). 자동 삭제하지 않는다."
@@ -135,19 +128,19 @@ else
   echo "    삭제 ${n}개"
 fi
 
-# terraform이 모르는 VPC 잔여를 치운다. **destroy가 실패한 뒤에만 부른다.**
+# terraform이 모르는 VPC 잔여를 치운다. destroy가 실패한 뒤에만 부른다.
 #
 # 왜 destroy 전이 아닌가: 이것들은 EKS·VPC CNI가 만들고, EKS 클러스터가 살아 있는 동안에는
 # 지울 수 없다(사용 중). destroy가 클러스터를 지우다 서브넷에서 막히는 그 순간에야 고아가 된다.
 #
-# 소유 증명은 **Project=flowticket 태그가 붙은 VPC 안에 있는가**로 한다. 4단계 EBS와 같은
+# 소유 증명은 Project=flowticket 태그가 붙은 VPC 안에 있는가로 한다. 4단계 EBS와 같은
 # 원칙이다 — 소유를 증명하지 못하면 지우지 않는다.
 clean_untracked() {
   local vpc="" addr vpcs count
-  # ⚠️ **대상 VPC를 임의로 고르지 않는다.** 이 함수는 곧바로 delete-network-interface·
+  # 대상 VPC를 임의로 고르지 않는다. 이 함수는 곧바로 delete-network-interface·
   # delete-security-group을 호출한다. 대상 선택이 애매하면 지우는 것이 아니라 멈춘다.
   #
-  # (가) 1순위는 terraform state다 — 지금 destroy가 막혀 있는 **바로 그 VPC**이므로 태그보다
+  # (가) 1순위는 terraform state다 — 지금 destroy가 막혀 있는 바로 그 VPC이므로 태그보다
   #    강한 증명이다(destroy가 실패한 뒤 부르므로 state에 아직 남아 있다).
   addr="$(tf state list 2>/dev/null | grep -E 'aws_vpc\.' | head -1 | tr -d '\r')"
   if [ -n "$addr" ]; then
@@ -156,7 +149,7 @@ clean_untracked() {
     [ -n "$vpc" ] && echo "    대상 VPC: $vpc (terraform state: $addr)"
   fi
 
-  # (나) state에서 못 얻으면 태그로 찾되, **정확히 1개일 때만** 진행한다.
+  # (나) state에서 못 얻으면 태그로 찾되, 정확히 1개일 때만 진행한다.
   #    이전 철거가 실패해 flowticket VPC가 둘 남아 있으면 어느 쪽인지 코드상 보장이 없다.
   if [ -z "$vpc" ]; then
     vpcs="$(aws ec2 describe-vpcs --filters Name=tag:Project,Values=flowticket \
@@ -171,12 +164,11 @@ clean_untracked() {
     echo "    대상 VPC: $vpc (Project=flowticket, 후보 1개)"
   fi
 
-  # ① VPC CNI가 남긴 고아 ENI. detach는 됐는데 회수되지 않아 서브넷 삭제를 막는다.
+  # 1) VPC CNI가 남긴 고아 ENI. detach는 됐는데 회수되지 않아 서브넷 삭제를 막는다.
   #
-  # ⚠️ **description으로 좁힌다.** "이 VPC 안의 available ENI"만으로는 그것이 VPC CNI가
+  # description으로 좁힌다. "이 VPC 안의 available ENI"만으로는 그것이 VPC CNI가
   # 남긴 것이라는 증명이 안 된다 — SG를 접두사로 좁힌 것과 같은 이유다.
-  # VPC CNI는 `aws-K8S-<인스턴스ID>` 형태로 적는다(2026-08-26에 실제로 본 값:
-  # `aws-K8S-i-0b200e0fc5d95d6c3`).
+  # VPC CNI는 `aws-K8S-<인스턴스ID>` 형태로 적는다.
   local n=0 e
   for e in $(aws ec2 describe-network-interfaces \
       --filters "Name=vpc-id,Values=$vpc" Name=status,Values=available \
@@ -190,7 +182,7 @@ clean_untracked() {
   done
   [ "$n" -eq 0 ] && echo "    VPC CNI 고아 ENI 없음"
 
-  # 그 밖의 available ENI는 **지우지 않고 보고만 한다.** destroy가 또 막히면 사람이 본다.
+  # 그 밖의 available ENI는 지우지 않고 보고만 한다. destroy가 또 막히면 사람이 본다.
   local otherE
   otherE="$(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$vpc" \
     Name=status,Values=available \
@@ -200,13 +192,11 @@ clean_untracked() {
     echo "    ℹ️ 아래 ENI는 이 단계의 대상이 아니다(사람이 확인하라):"
     echo "$otherE" | sed 's/^/      /'; }
 
-  # ② EKS가 만든 클러스터 보안그룹. terraform이 만들지 않았으므로 destroy 대상에 없고,
+  # 2) EKS가 만든 클러스터 보안그룹. terraform이 만들지 않았으므로 destroy 대상에 없고,
   #    그대로 두면 VPC가 영원히 지워지지 않는다.
   #
-  # ⚠️ **이름 접두사로 좁힌다.** 초판은 `GroupName != 'default'`로 잡았는데, 그러면 이 VPC의
-  # non-default SG를 **전부** 지운다 — terraform이 만든 것까지 포함해서. 최종 목표가 VPC
-  # destroy라 결과적으로 다 사라질 자원이긴 하지만, 이 단계의 원칙은
-  # **"terraform 밖에서 생긴 잔여만, 소유를 증명한 것만"**이다. 구현이 원칙보다 넓으면 안 된다.
+  # 이름 접두사로 좁힌다. `GroupName != 'default'`로 잡으면 terraform이 만든 SG까지 지운다.
+  # 이 단계의 원칙은 "terraform 밖에서 생긴 잔여만, 소유를 증명한 것만"이다.
   #
   # EKS는 `eks-cluster-sg-<클러스터명>-<난수>` 형태로 만든다. 이 시점엔 클러스터가 이미
   # 지워져 `describe-cluster`로 ID를 물을 수 없으므로 이름으로 판별한다.
@@ -222,7 +212,7 @@ clean_untracked() {
   done
   [ "$m" -eq 0 ] && echo "    EKS 생성 보안그룹 없음"
 
-  # 그 밖의 non-default SG는 **지우지 않고 보고만 한다.** destroy가 또 막히면 사람이 본다.
+  # 그 밖의 non-default SG는 지우지 않고 보고만 한다. destroy가 또 막히면 사람이 본다.
   local other
   other="$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$vpc" \
     --query "SecurityGroups[?GroupName!='default' && !starts_with(GroupName,'eks-cluster-sg-${CLUSTER}-')].[GroupId,GroupName]" \
@@ -238,20 +228,19 @@ DESTROY_RC=0
 if [ "$(tf state list 2>/dev/null | wc -l)" -eq 0 ]; then
   echo "    state가 비어 있다 — 건너뛴다"
 else
-  # ⚠️ 파이프를 쓰지 않는다. `| tail` 을 붙이면 종료 코드가 tail의 것이 되어
-  # **실패한 destroy가 성공으로 보인다**(2026-08-16에 실제로 겪음).
+  # 파이프를 쓰지 않는다. `| tail` 을 붙이면 종료 코드가 tail의 것이 되어
+  # 실패한 destroy가 성공으로 보인다.
   tf destroy -auto-approve -input=false
   DESTROY_RC=$?
   echo "    terraform 종료 코드: $DESTROY_RC"
 fi
 
 echo "==> 6/7 terraform이 모르는 VPC 잔여 정리"
-# ⚠️ 2026-08-26 철거에서 destroy가 여기서 막혔다.
+# destroy가 서브넷에서 막히는 경우:
 #   DependencyViolation: The subnet '...' has dependencies and cannot be deleted.
-# 원인은 둘이었고 **둘 다 terraform 밖에서 만들어진 것**이었다.
-#   ① VPC CNI가 남긴 고아 ENI (aws-K8S-i-...)
-#   ② EKS가 만든 보안그룹 (eks-cluster-sg-flowticket-...)
-# 사람이 손으로 찾아 지운 뒤에야 VPC가 정리됐다. 그 절차를 스크립트로 옮긴다.
+# 원인은 terraform 밖에서 만들어진 둘이다.
+#   1) VPC CNI가 남긴 고아 ENI (aws-K8S-i-...)
+#   2) EKS가 만든 보안그룹 (eks-cluster-sg-flowticket-...)
 if [ "$DESTROY_RC" -eq 0 ]; then
   echo "    destroy가 성공했다 — 건너뛴다"
 else

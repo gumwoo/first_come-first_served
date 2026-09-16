@@ -213,7 +213,7 @@ class PaymentIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 만료로_확정실패시_이미난_PG승인을_보상취소한다() {
-        // TS-011 ③: PG 승인은 났는데 좌석이 만료 sweep에 풀려 확정 불가 → 트랜잭션 롤백만으로는
+        // TS-011 3): PG 승인은 났는데 좌석이 만료 sweep에 풀려 확정 불가 → 트랜잭션 롤백만으로는
         // 외부 PG에 미아 승인이 남는다. finalizePaid가 gateway.refund로 승인을 취소(void)해야 함.
         Ctx c = order(61L, 1);
         jdbc.update("update seats set status='AVAILABLE' where id=?", c.seatId());

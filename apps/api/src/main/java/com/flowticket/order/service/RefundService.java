@@ -100,16 +100,15 @@ public class RefundService {
         // 원자 전이 PAID→CANCELLED (동시 환불 방어 — 1행이면 이 요청이 취소의 주인)
         int cancelled = orderRepository.markCancelled(orderId, OrderStatus.PAID);
         if (cancelled != 1) {
-            // 여기 온 요청은 **취소의 주인이 아니다.** 그게 곧 실패는 아니다 —
+            // 여기 온 요청은 취소의 주인이 아니다. 그게 곧 실패는 아니다 —
             // 같은 멱등키의 동시 요청이었다면 이미 다른 스레드가 끝냈으므로 그 결과를 돌려준다.
             //
-            // 결제(PaymentService)는 멱등키 행을 **먼저** INSERT해서 동시 패자가 UNIQUE 제약에
+            // 결제(PaymentService)는 멱등키 행을 먼저 INSERT해서 동시 패자가 UNIQUE 제약에
             // 걸리고, pay()가 그 예외를 잡아 기존 결과를 반환한다. 환불은 순서가 반대다 —
-            // 상태 전이가 먼저고 refunds INSERT가 마지막이라, 패자는 **UNIQUE에 도달하지도
-            // 못한 채** 여기서 막혔다. 최종 상태(환불 1건)는 옳아서 오래 드러나지 않았고,
-            // 더블클릭한 사용자만 "환불할 수 없는 상태"라는 오안내를 받았다.
+            // 상태 전이가 먼저고 refunds INSERT가 마지막이라, 패자는 UNIQUE에 도달하지도 못한 채
+            // 여기서 막힌다. 그대로 실패시키면 더블클릭한 사용자가 "환불할 수 없는 상태"라는 오안내를 받는다.
             //
-            // 이 시점에는 승자가 **반드시 커밋을 마쳤다.** 위 조건부 UPDATE가 승자의 행 락에
+            // 이 시점에는 승자가 반드시 커밋을 마쳤다. 위 조건부 UPDATE가 승자의 행 락에
             // 걸려 대기하다가 커밋 후에야 0행으로 판정되기 때문이다. 그래서 지금 다시 조회하면
             // 승자가 남긴 행이 보인다(승자가 롤백했다면 이 UPDATE가 1행으로 성공했을 것이다).
             return refundRepository.findByIdempotencyKey(idemKey)

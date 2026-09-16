@@ -1,4 +1,4 @@
-# ALB는 **web만** 바라본다. API는 인터넷에 직접 노출하지 않는다.
+# ALB는 web만 바라본다. API는 인터넷에 직접 노출하지 않는다.
 #
 # 앱이 처음부터 이 구조를 전제로 짜여 있다 — next.config.mjs가 브라우저 요청을 프록시한다.
 #
@@ -7,7 +7,7 @@
 #           └→ Next rewrite: /api/:path* → ${API_ORIGIN}/:path*   ← /api를 떼어낸다
 #                └→ flowticket-api:80 → Spring @PostMapping("/auth/login")
 #
-# ⚠️ ALB에서 /api를 API Service로 직접 보내면 안 된다. ALB의 Prefix 라우팅은 접두어를
+# ALB에서 /api를 API Service로 직접 보내면 안 된다. ALB의 Prefix 라우팅은 접두어를
 # 제거하지 않으므로 Spring이 "/api/auth/login"을 받고, 그런 매핑이 없어 전부 404가 된다.
 # (Spring 쪽에는 /api 접두어가 없다 — @PostMapping("/auth/login") 형태다.)
 #

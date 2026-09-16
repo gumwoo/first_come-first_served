@@ -27,13 +27,13 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 /**
- * 페이징 입력 검증이 <b>HTTP 경계에서</b> 400으로 나가는지 본다.
+ * 페이징 입력 검증이 HTTP 경계에서 400으로 나가는지 본다.
  *
  * <p>핸들러를 직접 호출하는 단위 테스트로는 부족하다. 이 결함의 본질은 "어떤 예외가 던져지고
- * 그것이 어느 핸들러로 라우팅되는가"이므로, 예외 타입을 가정하지 않고 <b>요청 → 응답</b>으로
+ * 그것이 어느 핸들러로 라우팅되는가"이므로, 예외 타입을 가정하지 않고 요청 → 응답으로
  * 확인해야 한다. 컨테이너 없이 도는 standalone MockMvc를 쓴다.
  *
- * <p>⚠️ standalone MockMvc는 Boot 자동설정을 타지 않아 {@code Accept}가 없으면 클래스패스
+ * <p>standalone MockMvc는 Boot 자동설정을 타지 않아 {@code Accept}가 없으면 클래스패스
  * 순서대로 XML로 협상한다(운영은 JSON이 기본). 그래서 요청마다 명시한다.
  *
  * <p>대표로 {@code AdminDlqController}를 쓴다 — 6개 엔드포인트가 모두 같은 {@link PageQuery}를
@@ -59,7 +59,7 @@ class PaginationValidationTest {
     }
 
     /**
-     * <b>수정 전에 왜 500이었는지</b>를 남긴다. 회귀 가드가 아니라 근거 문서다 — 검증이 없으면
+     * 수정 전에 왜 500이었는지를 남긴다. 회귀 가드가 아니라 근거 문서다 — 검증이 없으면
      * 잘못된 값이 {@code PageRequest.of()}까지 내려가고, 거기서 나는 예외에는 전용 핸들러가 없어
      * fallback이 서버 오류로 처리한다. 클라이언트 입력 오류가 500 + ERROR 로그가 되던 경로다.
      */

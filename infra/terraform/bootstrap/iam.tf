@@ -1,9 +1,9 @@
-# GitHub Actions OIDC — ⚠️ Phase 2에서 콘솔로 이미 만든 것들이다. apply 전에 import한다.
+# GitHub Actions OIDC — Phase 2에서 콘솔로 이미 만든 것들이다. apply 전에 import한다.
 #   terraform import aws_iam_openid_connect_provider.github <provider ARN>
 #   terraform import aws_iam_role.github_actions <역할 이름>
 # 절차: README.md
 #
-# 이걸 코드로 가져오는 이유: **CI가 가진 권한이 git diff로 리뷰된다.** 신뢰 정책과 권한이
+# 이걸 코드로 가져오는 이유: CI가 가진 권한이 git diff로 리뷰된다. 신뢰 정책과 권한이
 # 콘솔에만 있으면 언제 누가 넓혔는지 알 수 없다. 장기 액세스 키를 쓰지 않는 것과 같은 이유다.
 
 data "aws_caller_identity" "current" {}
@@ -39,7 +39,7 @@ data "aws_iam_policy_document" "github_assume" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # ⚠️ 여기가 이 스택에서 가장 조심할 곳이다. sub를 좁히면 안전해지지만,
+    # 여기가 이 스택에서 가장 조심할 곳이다. sub를 좁히면 안전해지지만,
     # 실제 워크플로의 ref와 어긋나면 Image 파이프라인이 조용히 인증 실패한다.
     # 콘솔에 설정된 실제 값과 다르면 import 후 plan에 diff로 뜨므로 반드시 확인한다.
     condition {
@@ -52,7 +52,7 @@ data "aws_iam_policy_document" "github_assume" {
 
 resource "aws_iam_role" "github_actions" {
   name = var.github_actions_role_name
-  # ⚠️ IAM role description은 허용 문자 범위가 좁다(사실상 ASCII + Latin-1).
+  # IAM role description은 허용 문자 범위가 좁다(사실상 ASCII + Latin-1).
   #    한글과 em dash가 거부되어 apply에서 ValidationError로 막혔다 — ASCII로만 쓴다.
   description        = "GitHub Actions OIDC - ECR push only"
   assume_role_policy = data.aws_iam_policy_document.github_assume.json

@@ -52,7 +52,7 @@ export function seatTitle(grade: string, col: number): string {
 export type LoggedIn = { eventId: number; accessToken: string; email: string };
 
 /**
- * 가입 → 로그인 → 대상 이벤트 선택까지. **대기열 토큰은 발급하지 않는다.**
+ * 가입 → 로그인 → 대상 이벤트 선택까지. 대기열 토큰은 발급하지 않는다.
  *
  * <p>대기(WAITING) 화면을 보려면 토큰 발급 자체를 테스트가 통제해야 해서 분리했다.
  * {@link seedAdmittedUser}는 여기에 토큰 발급 + 승격 대기를 얹은 것이다.

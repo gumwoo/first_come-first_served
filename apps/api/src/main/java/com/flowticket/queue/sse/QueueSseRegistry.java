@@ -40,20 +40,17 @@ public class QueueSseRegistry implements MessageListener {
     /**
      * 토큰용 SSE 스트림 생성·등록. 완료/타임아웃/에러 시 자동 정리.
      *
-     * <p><b>연결 직후 코멘트 프레임을 한 번 보낸다.</b> 이게 없으면 응답이 커밋되지 않아
-     * 브라우저의 {@code EventSource}가 OPEN으로 전이하지 않고 <b>{@code onopen}이 불리지
-     * 않는다.</b> 프론트는 재연결 시 {@code onopen}에서 상태를 다시 읽어 놓친 승격 알림을
-     * 복구하는데([[ADR-015]] ①), 그 복구가 통째로 발동하지 못한다.
+     * <p>연결 직후 코멘트 프레임을 한 번 보낸다. 이게 없으면 응답이 커밋되지 않아
+     * 브라우저의 {@code EventSource}가 OPEN으로 전이하지 않고 {@code onopen}이 불리지
+     * 않는다. 프론트는 재연결 시 {@code onopen}에서 상태를 다시 읽어 놓친 승격 알림을
+     * 복구하는데(ADR-015 1)), 그 복구가 통째로 발동하지 못한다.
      *
-     * <p>2026-08-16 E2E trace로 관측했다 — 재연결 요청은 성립했는데 그 뒤 상태 조회가
-     * 한 건도 없었다. 승격 이벤트를 놓친 사용자는 폴링이 없으면 계속 대기 화면에 남았다.
-     *
-     * <p>코멘트({@code :}로 시작)를 쓰는 이유는 <b>프로토콜 표면을 늘리지 않기 위해서다</b> —
+     * <p>코멘트({@code :}로 시작)를 쓰는 이유는 프로토콜 표면을 늘리지 않기 위해서다 —
      * {@code EventSource}가 무시하므로 프론트에 리스너를 추가할 필요가 없다.
      *
-     * <p>⚠️ 이것은 <b>연결 성립을 위한 1회 전송</b>이고, 오래 유휴한 연결이 프록시(ALB 등)에
-     * 끊기는 것을 막는 <b>주기적 하트비트와는 다른 문제</b>다. 후자는 idle timeout 실제값을
-     * 확인한 뒤 별도로 정한다(ADR-015 ②).
+     * <p>이것은 연결 성립을 위한 1회 전송이고, 오래 유휴한 연결이 프록시(ALB 등)에
+     * 끊기는 것을 막는 주기적 하트비트와는 다른 문제다. 후자는 idle timeout 실제값을
+     * 확인한 뒤 별도로 정한다(ADR-015 2)).
      */
     public SseEmitter subscribe(String token) {
         SseEmitter emitter = new SseEmitter(timeoutMs);
@@ -77,7 +74,7 @@ public class QueueSseRegistry implements MessageListener {
     /**
      * 해당 토큰 연결로 이벤트 push. 멀티 Pod 팬아웃을 위해 Redis로 발행(미배선 시 로컬 폴백).
      *
-     * <p>트랜잭션이 열려 있으면 <b>커밋 후</b>로 미룬다 — 롤백된 상태를 알리지 않기 위해서다.
+     * <p>트랜잭션이 열려 있으면 커밋 후로 미룬다 — 롤백된 상태를 알리지 않기 위해서다.
      * 호출부마다 챙기면 언젠가 빠지므로 팬아웃 입구인 여기서 한 번에 보장한다({@link AfterCommit}).
      */
     public void send(String token, String event, Object data) {

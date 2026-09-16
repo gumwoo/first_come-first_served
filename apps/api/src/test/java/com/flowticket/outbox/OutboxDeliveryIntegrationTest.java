@@ -38,14 +38,14 @@ import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * IMP-011 측정(ADR-010): <b>브로커 장애 중 발행된 이벤트가 유실되는가</b>를 before/after로 카운트한다.
+ * IMP-011 측정(ADR-010): 브로커 장애 중 발행된 이벤트가 유실되는가를 before/after로 카운트한다.
  *
  * <p>장애는 KafkaTemplate.send가 실패하도록 스텁해 재현한다(결정적). 두 경로를 같은 장애 창에 넣고,
  * 복구 후 실제로 소비자에 도달한 건수를 세어 유실을 측정한다.
  * <ul>
- *   <li><b>before(naive)</b> — 구 AFTER_COMMIT 브리지: 발행 실패를 삼킨다. 복구해도 재발행할 근거가
+ *   <li>before(naive) — 구 AFTER_COMMIT 브리지: 발행 실패를 삼킨다. 복구해도 재발행할 근거가
  *       어디에도 없어 영구 유실.</li>
- *   <li><b>after(outbox)</b> — 이벤트가 결제와 같은 커밋으로 DB에 남아 PENDING 유지 → 복구 후 릴레이가
+ *   <li>after(outbox) — 이벤트가 결제와 같은 커밋으로 DB에 남아 PENDING 유지 → 복구 후 릴레이가
  *       재시도해 전량 발행.</li>
  * </ul>
  */
@@ -86,8 +86,8 @@ class OutboxDeliveryIntegrationTest {
 
     /**
      * 브로커 장애 재현용. 스프링 빈을 스파이/모킹하면 KafkaTemplate 후보가 둘이 되어 주입이 모호해지므로
-     * (자동설정 빈은 {@code KafkaTemplate<?,?>}), 컨텍스트는 그대로 두고 <b>실패하는 템플릿을 직접 주입한
-     * 릴레이</b>를 따로 만든다. 발행 경로 코드는 실제 {@link OutboxRelay} 그대로다.
+     * (자동설정 빈은 {@code KafkaTemplate<?,?>}), 컨텍스트는 그대로 두고 실패하는 템플릿을 직접 주입한
+     * 릴레이를 따로 만든다. 발행 경로 코드는 실제 {@link OutboxRelay} 그대로다.
      */
     private KafkaTemplate<String, Object> failingKafka;
     private OutboxRelay relayDuringOutage;

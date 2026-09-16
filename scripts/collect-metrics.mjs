@@ -8,8 +8,6 @@
 //   1) benchmarks/*-before.json, *-after.json 을 수집
 //   2) k6 summary 포맷에서 핵심 지표 추출(p95/실패율/처리량 등)
 //   3) docs/improvements/METRICS.md 의 AUTO 블록을 갱신
-//
-// 지금은 benchmarks/에 실제 결과가 없으므로 "대상 없음"으로 통과한다(틀만 동작).
 
 import fs from "node:fs";
 import path from "node:path";

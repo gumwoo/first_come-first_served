@@ -18,11 +18,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * 좌석맵 캐시(실험 스위치)의 동작과 <b>대가</b>를 함께 고정한다.
+ * 좌석맵 캐시(실험 스위치)의 동작과 대가를 함께 고정한다.
  *
  * <p>이 캐시는 성능 상한을 재기 위한 것이지 운영 최종 설계가 아니다
  * ({@code SeatService.getSeats} 주석). 그 판단의 근거가 되는 사실 —
- * <b>TTL 동안 좌석 상태 변경이 보이지 않는다</b> — 을 테스트로 박아둔다.
+ * TTL 동안 좌석 상태 변경이 보이지 않는다 — 을 테스트로 박아둔다.
  * 나중에 이벤트 기반 무효화를 붙이면 이 테스트가 바뀌어야 하고, 그때 이 대가가
  * 해소됐다는 것이 드러난다.
  */
@@ -56,13 +56,10 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
     }
 
     /**
-     * <b>캐시 hit은 DB 커넥션을 빌리지 않아야 한다.</b>
+     * 캐시 hit은 DB 커넥션을 빌리지 않아야 한다.
      *
-     * <p>처음에는 클래스 레벨 {@code @Transactional(readOnly = true)} 때문에 캐시 hit이어도
-     * 트랜잭션이 열리고 커넥션을 빌렸다 — 2026-08-16 실측에서 요청 36,002건에 커넥션 획득
-     * 36,173회로 <b>요청당 1회</b>가 그대로 나왔다. 캐시가 쿼리는 없앴는데 트랜잭션 비용은
-     * 남은 것이다. {@code getSeats}를 {@code NOT_SUPPORTED}로 빼서 고쳤고, 이 테스트가
-     * 그 수정을 고정한다.
+     * <p>클래스 레벨 {@code @Transactional(readOnly = true)}를 그대로 타면 캐시 hit이어도
+     * 트랜잭션이 열리고 커넥션을 빌린다. {@code getSeats}가 {@code NOT_SUPPORTED}인 것을 고정한다.
      */
     @Test
     void 캐시_hit은_DB_커넥션을_빌리지_않는다() {
@@ -82,8 +79,8 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
     /**
      * Hikari 커넥션 획득 누적 횟수.
      *
-     * <p><b>지표가 없으면 실패시킨다.</b> null일 때 0을 돌려주면 before·after가 모두 0이 되어
-     * <b>계측기가 없어도 테스트가 통과</b>한다 — 이 테스트의 주장("캐시 hit은 커넥션을 빌리지
+     * <p>지표가 없으면 실패시킨다. null일 때 0을 돌려주면 before·after가 모두 0이 되어
+     * 계측기가 없어도 테스트가 통과한다 — 이 테스트의 주장("캐시 hit은 커넥션을 빌리지
      * 않는다")을 증명할 수단이 사라졌는데 초록불이 되는 것이라, 회귀 테스트로서 의미가 없다.
      */
     private long acquireCount() {
@@ -106,7 +103,7 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
         long availableAfter = seatService.getSeats(eventId).seats().stream()
                 .filter(s -> "AVAILABLE".equals(s.status())).count();
 
-        // ⚠️ 이것이 이 캐시의 **대가**다. 실패가 아니라 의도된 동작이고,
+        // 이것이 이 캐시의 대가다. 실패가 아니라 의도된 동작이고,
         // 그래서 운영 설계에는 이벤트 기반 무효화가 필요하다.
         assertThat(availableAfter)
                 .as("TTL 안에서는 낡은 좌석맵이 그대로 보인다 — 무효화가 필요한 이유")

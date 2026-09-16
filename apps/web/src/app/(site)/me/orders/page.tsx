@@ -31,7 +31,7 @@ const STATUS: Record<string, { label: string; variant: BadgeProps["variant"] }> 
 const won = (n: number) => `${n.toLocaleString()}원`;
 const orderNo = (id: number) => `ORD-${String(id).padStart(8, "0")}`;
 // 문자열을 자르면(과거: `paidAt.slice(0, 10)`) 서버 존의 날짜가 나온다 — 서버는 UTC라
-// KST 자정~09시에 결제한 예매가 **하루 전날로** 표시된다. Date로 파싱해야 오프셋이 반영된다.
+// KST 자정~09시에 결제한 예매가 하루 전날로 표시된다. Date로 파싱해야 오프셋이 반영된다.
 const dateOnly = (s: string) => {
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "-";

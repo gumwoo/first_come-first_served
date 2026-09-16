@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Cluster Autoscaler 실증 — Pod가 못 들어갈 때 노드가 붙는가, 부하가 빠지면 줄어드는가.
 #
-# 왜 이 측정이 필요한가: 2026-08-25까지 이 프로젝트는 **고정 3노드 + 예산 안에 맞춘 HPA
-# 상한**이었다(api 7 / web 4 = 4,950m / allocatable 5,790m). 그 구성에서는 HPA가 상한까지
-# 늘려도 스케줄링이 성공하므로 **CA가 발동할 일이 없다.** CA를 넣었다고 말하려면
+# 왜 이 측정이 필요한가: 평시 구성은 예산 안에 맞춘 HPA 상한이다
+# (api 7 / web 4 = 4,950m / allocatable 5,790m). 그 구성에서는 HPA가 상한까지
+# 늘려도 스케줄링이 성공하므로 CA가 발동할 일이 없다. CA를 넣었다고 말하려면
 # Pending이 실제로 생기고, 노드가 붙어 해소되는 장면을 봐야 한다.
 #
-# ⚠️ 그래서 이 스크립트는 **일부러 예산을 넘긴다.** HPA 상한을 임시로 올려
+# 그래서 이 스크립트는 일부러 예산을 넘긴다. HPA 상한을 임시로 올려
 # Pending을 만든 뒤, CA가 노드를 붙이는지 본다. 끝나면 원래 값으로 되돌린다.
 #
 # 측정하는 것 네 가지:
@@ -55,7 +55,7 @@ RESTORE_NEEDED=0
 
 cleanup() {
   rc=$?
-  # ⚠️ 되돌리기는 무슨 일이 있어도 한다. HPA 상한을 올린 채 두면 다음 측정이 전혀 다른
+  # 되돌리기는 무슨 일이 있어도 한다. HPA 상한을 올린 채 두면 다음 측정이 전혀 다른
   # 조건에서 돌고(예산 초과 상태), ArgoCD를 꺼둔 채 두면 클러스터가 GitOps 밖에 남는다.
   if [ -n "$ORIG_API_MAX" ]; then
     kubectl -n "$NS" patch hpa flowticket-api --type=merge \
@@ -98,8 +98,7 @@ if [ -z "$CA_POD" ]; then
 fi
 # CA가 노드그룹을 인식하지 못하면 Pending이 나도 노드가 안 붙는다 — 결함이 아니라 설정 문제다.
 #
-# ⚠️ 로그 문자열로 판정하지 않는다. 초판이 "Registering Node Group"을 찾았는데 CA 1.35에는
-# 그 문구가 없어 정상 CA를 실패로 판정했다(2026-08-26). CA가 스스로 발행하는 상태
+# 로그 문자열로 판정하지 않는다(버전마다 바뀐다). CA가 스스로 발행하는 상태
 # ConfigMap을 읽는다 — bring-up.sh와 같은 방식이어야 두 곳이 어긋나지 않는다.
 CA_STATUS="$(kubectl -n kube-system get cm cluster-autoscaler-status \
   -o jsonpath='{.data.status}' 2>/dev/null || true)"
@@ -116,7 +115,7 @@ NG="$(printf '%s\n' "$CA_STATUS" | grep -cE '^  name: ' || true)"
 NODE_TYPE="$(kubectl get nodes -o jsonpath='{.items[0].metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "?")"
 N0="$(nodes)"
 echo "    CA=$CA_POD ($CA_RUNNING, 노드그룹 ${NG}개)  노드 ${N0}대 / $NODE_TYPE"
-# ⚠️ t3는 버스터블이라 지속 부하에서 CPU 크레딧이 개입한다(ADR-012 §5, TS-034).
+# t3는 버스터블이라 지속 부하에서 CPU 크레딧이 개입한다(ADR-012 §5, TS-034).
 case "$NODE_TYPE" in
   t3.*|t4g.*) echo "    ⚠️ 버스터블 인스턴스다 — 결과에 CPU 크레딧이 섞인다. loadtest.tfvars로 apply할 것";;
 esac
@@ -176,7 +175,7 @@ spec:
             - { name: RATE, value: "$RATE" }
             - { name: RUN_FOR, value: "$RUN_FOR" }
           resources:
-            # ⚠️ 생성기가 스스로 병목이 되면 도착률을 못 채워 Pending이 안 생긴다.
+            # 생성기가 스스로 병목이 되면 도착률을 못 채워 Pending이 안 생긴다.
             # TS-034에서 k6가 1Gi로 OOMKilled 됐다 — 넉넉히 잡는다.
             requests: { cpu: "500m", memory: "1Gi" }
             limits: { memory: "3Gi" }
@@ -236,7 +235,7 @@ if [ "$SKIP_DOWN" -eq 0 ]; then
     sleep 20
   done
   echo "    축소 시작: ${DOWN_AT:-관찰 못 함(${DOWN_WAIT}s 내)}"
-  # ⚠️ 축소가 상태 저장 워크로드를 건드렸는지 — IMP-016·017의 전제가 여기서 바뀐다.
+  # 축소가 상태 저장 워크로드를 건드렸는지 — IMP-016·017의 전제가 여기서 바뀐다.
   {
     echo "# 축소 후 Kafka / PDB 상태"
     kubectl -n kafka get pods --no-headers 2>/dev/null || true

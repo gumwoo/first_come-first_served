@@ -2,7 +2,7 @@
 # 롤링 배포 무중단 측정 — IMP-015 §8의 미검증 조건을 재현한다.
 #
 # IMP-015가 검증한 것: 이미지 동일 + web 단독 롤링 → 3,600건 5xx 0.
-# 검증하지 못한 것: **이미지 태그 변경 + web·api 동시 롤링** → 168건 중 502 1건.
+# 검증하지 못한 것: 이미지 태그 변경 + web·api 동시 롤링 → 168건 중 502 1건.
 # 이 스크립트는 후자를 §3과 같은 부하(25 rps)에서, 표본을 키워 재현한다.
 #
 # 왜 스크립트인가: IMP-015의 측정은 손으로 돌렸다("병렬 6워커, 약 25 req/s"). 그래서
@@ -18,7 +18,7 @@
 #   bash scripts/rolling-deploy-test.sh --rate 25 --duration 4m --warmup 45
 #
 # 종료 코드: 5xx가 1건이라도 있으면 non-zero. 이 스크립트가 주장하는 것은
-# "측정을 돌렸다"가 아니라 **"무중단이었다"**이고, 종료 코드가 그 판정이어야 한다.
+# "측정을 돌렸다"가 아니라 "무중단이었다"이고, 종료 코드가 그 판정이어야 한다.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -70,7 +70,7 @@ RESTORE_NEEDED=0
 
 cleanup() {
   rc=$?
-  # ⚠️ 자동 동기화 복원은 **무슨 일이 있어도** 해야 한다. 여기서 빠지면 클러스터가 GitOps
+  # 자동 동기화 복원은 무슨 일이 있어도 해야 한다. 여기서 빠지면 클러스터가 GitOps
   # 밖에 남는다 — 그게 정확히 TS-021 §6-1에서 며칠짜리 드리프트를 만든 상태다.
   if [ "$RESTORE_NEEDED" -eq 1 ]; then
     echo "==> ArgoCD 자동 동기화 복원"
@@ -125,15 +125,15 @@ if [ "$RESTART" -eq 1 ]; then
   DIGEST_NOTE="이미지 동일(rollout restart)"
   echo "    이미지 변경 없음 — rollout restart로 파드만 교체한다"
 elif [ -z "$TAG" ]; then
-  # 두 리포에 **모두** 있는 태그 중, 현재 돌고 있는 두 태그가 **아닌** 가장 최근 것.
+  # 두 리포에 모두 있는 태그 중, 현재 돌고 있는 두 태그가 아닌 가장 최근 것.
   #
-  # ⚠️ 여기서 두 가지를 반드시 지켜야 한다. 어기면 스크립트가 검증하려는 조건 자체가 깨진다.
+  # 여기서 두 가지를 반드시 지켜야 한다. 어기면 스크립트가 검증하려는 조건 자체가 깨진다.
   #
-  # 1) 정렬은 imagePushedAt으로만 한다. 태그가 커밋 SHA라 **사전순은 시간순과 무관하다.**
+  # 1) 정렬은 imagePushedAt으로만 한다. 태그가 커밋 SHA라 사전순은 시간순과 무관하다.
   #    (이전 구현이 sort_by(imagePushedAt)으로 뽑아 놓고 sort -u로 그 순서를 날렸다.)
-  # 2) CUR_API와 CUR_WEB을 **둘 다** 제외한다. CUR_API만 걸러내면 CUR_WEB이 선택될 수 있고,
+  # 2) CUR_API와 CUR_WEB을 둘 다 제외한다. CUR_API만 걸러내면 CUR_WEB이 선택될 수 있고,
   #    그러면 --scope both에서 api는 롤링되지만 web은 "같은 태그로 교체"라 아무 일도 안 난다.
-  #    즉 **"이미지 변경 + web·api 동시 롤링"이 아닌 조건으로 측정이 진행된다.**
+  #    즉 "이미지 변경 + web·api 동시 롤링"이 아닌 조건으로 측정이 진행된다.
   aws ecr describe-images --repository-name flowticket-api --region "$REGION" \
     --query 'imageDetails[].{pushed:imagePushedAt,tags:imageTags}' --output json > "$WORK/api.json" 2>/dev/null || echo '[]' > "$WORK/api.json"
   aws ecr describe-images --repository-name flowticket-web --region "$REGION" \
@@ -168,11 +168,11 @@ for t in $TARGETS; do
 done
 echo "    롤링 대상 태그=$TAG"
 
-# ⚠️ 정직하게 기록한다. 이 태그가 현재와 **다른 다이제스트**여야 이미지 pull이 실제로 일어난다.
+# 정직하게 기록한다. 이 태그가 현재와 다른 다이제스트여야 이미지 pull이 실제로 일어난다.
 # 같은 내용에 다른 태그만 단 것이면 레이어가 캐시돼 pull이 즉시 끝나고, 우리가 의심하는
 # "pull 지연 → Ready 지연" 경로를 재현하지 못한다. 그 경우 결과는 조건 미달로 읽어야 한다.
 #
-# **롤링 대상 전부**를 확인한다. api만 보면, api는 새 이미지인데 web은 같은 다이제스트인
+# 롤링 대상 전부를 확인한다. api만 보면, api는 새 이미지인데 web은 같은 다이제스트인
 # 경우를 놓친다 — web 쪽에서는 pull 지연 가설이 재현되지 않는데도 "확인함"으로 남는다.
 digest_of() {
   aws ecr describe-images --repository-name "flowticket-$1" --region "$REGION" \
@@ -196,7 +196,7 @@ fi
 # ── 2. ArgoCD 자동 동기화 일시 중지 ─────────────────────────────────
 say "2/8 ArgoCD 자동 동기화 일시 중지"
 # selfHeal: true가 켜져 있어 kubectl set image를 곧바로 되돌린다. 그러면 측정 구간에
-# **두 번째 롤링**이 겹쳐 들어와 원인 분리가 불가능해진다. 원본을 보관했다가 trap에서 복원한다.
+# 두 번째 롤링이 겹쳐 들어와 원인 분리가 불가능해진다. 원본을 보관했다가 trap에서 복원한다.
 AUTOMATED="$(kubectl -n "$ARGO_NS" get application "$APP" \
   -o jsonpath='{.spec.syncPolicy.automated}' 2>/dev/null || true)"
 if [ -n "$AUTOMATED" ] && [ "$AUTOMATED" != "null" ]; then
@@ -282,7 +282,7 @@ for t in $TARGETS; do
 done
 T1="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# ⚠️ rollout status가 빨리 끝났다고 롤링이 없었다고 볼 수 없다 — IMP-015 §4에서 6초 만에
+# rollout status가 빨리 끝났다고 롤링이 없었다고 볼 수 없다 — IMP-015 §4에서 6초 만에
 # 끝나 의심했고, ReplicaSet 이력으로 실제 교체를 확인했다. 그 확인을 자동화한다.
 {
   echo "# ReplicaSet 이력 — 교체가 실제로 일어났는지"

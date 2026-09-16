@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Alertmanager 설정 검증 — **webhook 없이, 클러스터 없이** 라우팅을 판정한다.
+# Alertmanager 설정 검증 — webhook 없이, 클러스터 없이 라우팅을 판정한다.
 #
-# 왜 필요한가: 규칙(promtool)은 검증하는데 **라우팅은 아무도 보지 않았다.** 규칙이 옳아도
+# 왜 필요한가: 규칙(promtool)은 검증하는데 라우팅은 아무도 보지 않았다. 규칙이 옳아도
 # 라우트를 잘못 쓰면 알림이 엉뚱한 리시버로 가거나 아무 데도 안 간다. 배포 전에는 증상이 없다.
 #
-# 특히 Watchdog은 **항상 발화하는** 알림이라, null로 빠지지 않으면 Slack이 끊임없이 울린다.
+# 특히 Watchdog은 항상 발화하는 알림이라, null로 빠지지 않으면 Slack이 끊임없이 울린다.
 # 그건 "알림을 붙였더니 소음이 됐다"는 실패의 가장 빠른 경로다.
 set -euo pipefail
 
@@ -14,7 +14,7 @@ DIR="$(cd "$DIR" && pwd)"
 # Git Bash에서는 마운트 원본을 Windows 경로로 줘야 Docker가 인식한다(리눅스에선 그대로).
 command -v cygpath >/dev/null 2>&1 && DIR="$(cygpath -m "$DIR")"
 
-# Git Bash가 컨테이너 **안쪽** 경로(/w, /bin/amtool)를 Windows 경로로 바꾸는 것을 막는다.
+# Git Bash가 컨테이너 안쪽 경로(/w, /bin/amtool)를 Windows 경로로 바꾸는 것을 막는다.
 # 리눅스(CI)에서는 아무 영향이 없다.
 export MSYS_NO_PATHCONV=1
 

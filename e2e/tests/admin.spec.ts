@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { loginAsAdmin, seedAdmittedUser } from "../helpers/seed";
 
 /**
- * S07 운영 콘솔 E2E — 권한 경계(가장 중요) + 사이드바 콘솔 스모크.
+ * 운영 콘솔 E2E — 권한 경계(가장 중요) + 사이드바 콘솔 스모크.
  * 성공: 관리자는 사이드바로 대시보드·주문·DLQ·알림·공연에 접근하고 등록·설정을 한다.
  * 실패: 비관리자/미로그인은 접근 거부.
  * 관리자 계정은 백엔드가 ADMIN_EMAIL/ADMIN_PASSWORD로 부트스트랩(CI env 주입).
@@ -21,7 +21,6 @@ test("관리자는 사이드바로 콘솔 섹션을 이동한다", async ({ page
   await expect(page.getByText("총 공연")).toBeVisible();
   await expect(page.getByText("누적 매출")).toBeVisible();
 
-  // 사이드바 네비로 각 섹션 이동
   await page.getByRole("link", { name: "주문 조회" }).click();
   await expect(page).toHaveURL(/\/admin\/orders$/);
   await expect(page.getByRole("heading", { name: "주문 조회" })).toBeVisible();

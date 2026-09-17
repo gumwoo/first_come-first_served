@@ -3,7 +3,7 @@ package com.flowticket.order.event;
 import java.util.UUID;
 
 /**
- * 주문 도메인 이벤트(S07 Phase 4). Kafka order-events 토픽 페이로드.
+ * 주문 도메인 이벤트. Kafka order-events 토픽 페이로드.
  * type 예: "order.paid". orderId는 주문 식별자.
  *
  * <p>eventId는 소비자 멱등 키다(ADR-010). 아웃박스 경로는 outbox_events 행의 PK를 그대로 쓰므로,

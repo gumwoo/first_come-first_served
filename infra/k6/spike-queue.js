@@ -12,7 +12,7 @@
 //
 // executor는 per-vu-iterations 여야 한다. 1인 1토큰이라 VU와 사용자가 1:1로 고정되는데,
 // shared-iterations는 전체 iteration을 VU들이 나눠 갖기 때문에 그 전제가 깨진다
-// (hold-contention.js에서 같은 실수를 했다).
+// (hold-contention.js와 같은 이유).
 //
 // 실행:
 //   k6 run -e K6_BASE_URL=... -e TOKENS=/path/tokens3k.json -e EVENT_ID=1733 \

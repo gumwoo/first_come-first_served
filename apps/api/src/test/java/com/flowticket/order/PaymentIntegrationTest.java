@@ -44,7 +44,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 결제 승인(BE-2): Mock 승인 → PENDING→PAID(조건부) + 좌석 SOLD + hold CONVERTED,
+ * 결제 승인: Mock 승인 → PENDING→PAID(조건부) + 좌석 SOLD + hold CONVERTED,
  * 거절 시 payment FAILED/order PENDING 유지, 멱등, 이미 PAID 재결제 거부.
  */
 @SpringBootTest

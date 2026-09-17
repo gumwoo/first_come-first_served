@@ -39,7 +39,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
- * 주문 생성(BE-1): hold→order 승격 + 가격 스냅샷 + 멱등 + 소유자/만료 검증.
+ * 주문 생성: hold→order 승격 + 가격 스냅샷 + 멱등 + 소유자/만료 검증.
  * capacity 높게·워커 비활성으로 결정적, hold-ttl 1s로 만료 케이스 재현.
  */
 @TestPropertySource(properties = {"seat.hold-ttl=1"})

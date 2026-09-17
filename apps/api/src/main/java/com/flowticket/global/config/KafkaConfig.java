@@ -25,7 +25,7 @@ import org.springframework.kafka.support.serializer.JsonSerializer;
 import org.springframework.util.backoff.FixedBackOff;
 
 /**
- * Kafka 토픽·에러핸들러 선언(S07 Phase 4). 주문 도메인 이벤트 백본 + DLQ.
+ * Kafka 토픽·에러핸들러 선언. 주문 도메인 이벤트 백본 + DLQ.
  * 팩토리/시리얼라이저는 application.yml + Spring Boot 자동설정에 위임.
  */
 @Configuration

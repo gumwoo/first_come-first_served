@@ -10,7 +10,7 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
 /**
- * DLT 소비 → dlq_messages 적재(S07 Phase 4c).
+ * DLT 소비 → dlq_messages 적재.
  * 재시도 소진으로 order-events.DLT에 넘어온 메시지를 운영 조회/재처리용으로 DB에 보존한다.
  * DeadLetterPublishingRecoverer가 실어준 원본 토픽·예외 메시지 헤더를 함께 기록.
  */

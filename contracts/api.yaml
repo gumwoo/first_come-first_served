@@ -3,7 +3,7 @@
 # path 변수는 {id} 형태로 정규화. (YAML flow 충돌 방지 위해 path는 따옴표)
 
 endpoints:
-  # S01 인증
+  # 인증
   - { method: POST,   path: "/auth/signup",              slice: S01 }
   - { method: POST,   path: "/auth/login",               slice: S01 }
   - { method: POST,   path: "/auth/refresh",             slice: S01 }
@@ -13,7 +13,7 @@ endpoints:
   - { method: POST,   path: "/auth/phone/verify",        slice: S01 }
   # 소셜 OAuth2는 Spring Security 필터 체인(컨트롤러 아님) → ignore_paths
 
-  # S02 공연조회 + KOPIS
+  # 공연조회 + KOPIS
   - { method: GET,    path: "/events",                   slice: S02 }
   - { method: GET,    path: "/events/popular",           slice: S02 }
   - { method: GET,    path: "/events/ranking/realtime",  slice: S02 }
@@ -23,18 +23,18 @@ endpoints:
   - { method: POST,   path: "/admin/sync/kopis",         slice: S02 }
   - { method: GET,    path: "/admin/sync/kopis/status",  slice: S02 }  # 상세 동기화 진행 상황(기동 스크립트)
 
-  # S03 대기열
+  # 대기열
   - { method: POST,   path: "/events/{id}/queue/token",  slice: S03 }
   - { method: DELETE, path: "/queue/token",              slice: S03 }
   - { method: GET,    path: "/queue/status",             slice: S03 }
 
-  # S04 좌석·재고
+  # 좌석·재고
   - { method: GET,    path: "/events/{id}/seats",        slice: S04 }
   - { method: POST,   path: "/events/{id}/seats/hold",   slice: S04 }
   - { method: DELETE, path: "/seats/hold/{holdId}",      slice: S04 }
   - { method: POST,   path: "/admin/events/{id}/seats",  slice: S04 }
 
-  # S05 주문·결제
+  # 주문·결제
   - { method: POST,   path: "/orders",                   slice: S05 }
   - { method: GET,    path: "/orders/{id}",              slice: S05 }
   - { method: POST,   path: "/orders/{id}/sse-ticket",  slice: S05 }  # SSE 구독 티켓(소유자만)
@@ -43,12 +43,12 @@ endpoints:
   - { method: POST,   path: "/webhooks/payments",         slice: S05 }   # PG 웹훅 수신(서명검증)
   - { method: POST,   path: "/dev/vbank/{id}/deposit",    slice: S05 }   # vbank 입금 수동 트리거(dev)
 
-  # S06 마이/취소
+  # 마이/취소
   - { method: GET,    path: "/me/orders",                slice: S06 }
   - { method: GET,    path: "/me/orders/{id}",           slice: S06 }
   - { method: POST,   path: "/me/orders/{id}/refund",    slice: S06 }
 
-  # S07 운영
+  # 운영
   - { method: GET,    path: "/admin/dashboard",          slice: S07 }
   - { method: GET,    path: "/admin/orders",             slice: S07 }
   - { method: GET,    path: "/admin/events",             slice: S07 }
@@ -69,7 +69,7 @@ endpoints:
   - { method: GET,    path: "/sse/events/{id}/seats",    slice: S04 }
   - { method: GET,    path: "/sse/orders/{id}",          slice: S05 }
 
-  # S08 부하/모니터링
+  # 부하/모니터링
   - { method: POST,   path: "/dev/loadtest",             slice: S08 }
   - { method: GET,    path: "/dev/loadtest/{id}",        slice: S08 }
   - { method: GET,    path: "/dev/loadtest/{id}/result", slice: S08 }

@@ -89,22 +89,18 @@ public class SeatService {
      * 좌석맵: 등급 요약(가격·잔여) + 개별 좌석.
      *
      * <p>{@code seat.map-cache-ttl-ms}가 0보다 크면 짧은 TTL 캐시를 태운다. 기본값은 0(끔)이다.
-     * 0단계 실측에서 이 경로가 API CPU 비용의 약 57%를 차지해(요청 비율은 50%) 캐시 후보 1순위였다
-     * (`benchmarks/cache-experiment/`).
-     *
-     * <p>이건 성능 상한을 확인하기 위한 실험용이지 운영 최종 설계가 아니다.
+     * 성능 상한을 확인하기 위한 실험 스위치이지 운영 설계가 아니다(IMP-020).
      * 좌석은 단순 조회 데이터가 아니라 재고성 상태라, TTL 동안 이미 선점된 좌석이
      * AVAILABLE로 보일 수 있다. 최종 선점은 조건부 UPDATE가 막지만(ADR-003) 사용자가 고른 뒤
      * 거절당하는 충돌은 늘어난다.
      *
      * <p>운영 설계로 가려면 이벤트 기반 무효화를 얹어야 한다 —
      * {@code seat.held/released/expired} 발생 시 해당 eventId 캐시를 지우고, 이벤트 유실에 대비해
-     * 짧은 TTL을 함께 둔다. 그 판단은 이 실험의 개선폭을 보고 한다.
+     * 짧은 TTL을 함께 둔다.
      *
      * <p>TTL 만료 시 동시 miss에 대한 single-flight/lock을 구현하지 않았다.
      * 도착률이 높고 TTL이 짧으면 키가 만료되는 순간 여러 요청이 동시에 miss를 보고 전부
-     * {@code loadSeatMap()}으로 들어간다(cache stampede). correctness 문제는 아니지만
-     * 측정에는 주기적인 만료 버스트 비용이 포함되며, 그것을 단순 캐시의 실제 비용으로 읽는다.
+     * {@code loadSeatMap()}으로 들어간다(cache stampede). correctness 문제는 아니다.
      *
      * <p>{@code NOT_SUPPORTED}로 트랜잭션 밖에서 돈다. 클래스 레벨
      * {@code @Transactional(readOnly = true)}를 그대로 두면 캐시 hit이어도 트랜잭션이 열리고

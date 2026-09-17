@@ -2,13 +2,13 @@ import { test, expect } from "@playwright/test";
 import { seedAdmittedUser, seedOrder, firstSelectable, seatTitle } from "../helpers/seed";
 
 /**
- * ADR-015 §1) 검증 경과에서 확인한 결함이 좌석 SSE에도 같은 형태로 있었다.
+ * ADR-015 §1) 회귀 — 좌석 SSE도 대기열과 같은 초기 프레임이 필요하다.
  *
- * <p>`SeatSseRegistry.subscribe()`도 emitter를 등록만 하고 아무것도 보내지 않았다.
+ * <p>`SeatSseRegistry.subscribe()`가 emitter를 등록만 하고 아무것도 보내지 않으면,
  * 첫 전송 전까지 응답이 커밋되지 않으면 브라우저 `EventSource`가 OPEN으로 전이하지 않고
  * `onopen`이 불리지 않는다. 그러면 `useSeats`의 `es.onopen = () => refresh()`가 발동하지 못한다.
  *
- * <p>대기열보다 나쁘다. `useSeats`에는 폴링이 없다(`setInterval` 0건) —
+ * <p>대기열보다 위험하다. `useSeats`에는 폴링이 없다 —
  * 재연결 뒤 자동 복구 경로는 `onopen` 재조회뿐이다. 이 경로가 발동하지 않으면,
  * 사용자가 새로고침하거나 페이지를 다시 열기 전까지 끊긴 사이의 좌석 상태 변경을
  * 화면이 반영하지 못한다. 그동안 이미 선점된 좌석을 고르고 제출 단계에서야 거절당한다.
@@ -56,7 +56,7 @@ test("SSE가 끊긴 사이 좌석이 선점돼도 재연결하면 좌석맵이 �
 
 /**
  * 같은 결함의 주문 경로 회귀. `OrderSseRegistry`도 초기 프레임 없이는 `onopen`이 불리지
- * 않아 `useOrder`의 재연결 재조회가 발동하지 못했다.
+ * 않아 `useOrder`의 재연결 재조회가 발동하지 못한다.
  *
  * <p>가상계좌(무통장)를 고르면 화면은 "입금 대기"에 머물고, 입금은 서버 밖에서
  * 확정된다(실서비스는 PG 웹훅, 여기서는 개발용 트리거 API). 즉 UI가 스스로 알 수 없는

@@ -1,7 +1,6 @@
 // k8s 하네스: 배포 매니페스트가 애플리케이션 코드와 실제로 맞는지 검사한다.
 //
-// 왜 필요한가: 백엔드·프론트 하네스는 있는데 k8s/는 아무도 보지 않았다. 그래서 매니페스트
-// 초안이 두 가지를 틀린 채 리뷰까지 갔다.
+// 왜 필요한가: 매니페스트는 앱과 따로 작성돼 이런 불일치가 생긴다.
 //   1) 존재하지 않는 환경변수(NEXT_PUBLIC_API_BASE_URL)를 주입 — 앱은 API_ORIGIN을 읽는다
 //   2) ALB에서 /api를 API Service로 직결 — Spring에는 /api 접두어가 없어 전부 404
 // 둘 다 apply 전에는 아무 증상이 없고, apply하면 조용히 깨진다. 정적으로만 잡을 수 있다.
@@ -69,7 +68,7 @@ for (const file of manifests) {
   //
   // 파일 전체에서 "kind: Ingress"와 "name: flowticket-api"를 따로 찾으면 오탐이 난다 —
   // 오버레이 kustomization은 patch target(kind: Ingress)과 images(name: flowticket-api)를
-  // 한 파일에 갖는다. 실제로 그렇게 걸렸다. backend 블록 안에서 함께 나올 때만 위반이다.
+  // 한 파일에 갖는다. backend 블록 안에서 함께 나올 때만 위반이다.
   const backendRe = /backend:\s*(?:\r?\n\s+|\{\s*)service:\s*(?:\r?\n\s+|\{\s*)name:\s*(\S+?)[\s,}]/g;
   if (/\bkind:\s*Ingress\b/.test(raw)) {
     for (const m of raw.matchAll(backendRe)) {
@@ -110,7 +109,7 @@ for (const file of manifests) {
 
 // ---------- 5) 이미지 build-arg의 API 주소가 Service가 여는 포트와 맞는가 ----------
 // Service는 port(클라이언트가 붙는 포트)와 targetPort(Pod로 넘기는 포트)가 다르다.
-// targetPort를 URL에 적으면 Service가 열지 않은 포트라 연결이 거부된다 — 초안이 :8080이었다.
+// targetPort를 URL에 적으면 Service가 열지 않은 포트라 연결이 거부된다(예: :8080).
 const svcPorts = new Map();
 for (const file of manifests) {
   for (const block of read(file).split(/^---$/m)) {
@@ -131,7 +130,7 @@ if (fs.existsSync(imageWorkflow)) {
     if (host === "localhost" || host === "api") continue;
 
     // 포트를 안 붙였다고 통과시키면 안 된다 — 오타난 Service 이름은 포트가 없어도 못 붙는다.
-    // 초안의 규칙이 딱 이 구멍을 갖고 있었다(포트가 틀린 경우만 잡았다).
+    // 포트가 틀린 경우만 잡으면 이 구멍이 남는다.
     if (!svcPorts.has(host)) {
       r.fail(
         `image.yml의 API_ORIGIN이 존재하지 않는 Service를 가리킨다: http://${host} — ` +
@@ -209,7 +208,7 @@ if (!apiDeploy) {
 }
 
 // ---------- 8) HPA가 소유하는 Deployment에 replicas를 두지 않는다 ----------
-// ArgoCD가 붙으면서 실제로 터진 문제다. Git에 replicas가 있으면 sync가 돌 때마다 HPA가 정한
+// Git에 replicas가 있으면 sync가 돌 때마다 HPA가 정한
 // 파드 수를 Git 값으로 덮어쓴다. 부하 중 스케일아웃이 sync 한 번에 취소된다는 뜻이다.
 //
 // ignoreDifferences + RespectIgnoreDifferences=true 로 막으려 했으나 실측에서 막지 못했다
@@ -260,8 +259,6 @@ for (const { doc, file } of docs) {
 //
 // 증상이 고약하다: 적용 안 된 ExternalSecret은 오류를 내지 않는다. 그냥 Secret이 안 생기고,
 // 그걸 마운트하는 파드가 ContainerCreating에서 멈춘다 — 원인에서 한 칸 떨어진 곳에서 터진다.
-// 실제로 Alertmanager용 ExternalSecret을 추가하면서 이 연결을 빠뜨렸고, CI는 GREEN이었다
-// (문법·규칙·지표 이름은 봤지만 "배포 경로에 있는가"는 아무도 보지 않았다).
 const ES_DIR = path.join(REPO_ROOT, K8S, "external-secrets");
 if (fs.existsSync(ES_DIR)) {
   const bootstrapPath = path.join(ES_DIR, "bootstrap.sh");

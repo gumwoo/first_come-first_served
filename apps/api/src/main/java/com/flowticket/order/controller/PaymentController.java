@@ -30,7 +30,7 @@ public class PaymentController {
                 userId, id, request.method(), request.provider(), request.idempotencyKey()));
     }
 
-    /** 결제창(Toss) 인증 확정. 클라이언트가 받은 paymentKey로 서버 승인(BE-5). */
+    /** 결제창(Toss) 인증 확정. 클라이언트가 받은 paymentKey로 서버 승인. */
     @PostMapping("/orders/{id}/payments/confirm")
     public ApiResponse<PaymentResponse> confirm(@PathVariable Long id,
                                                 @AuthenticationPrincipal Long userId,

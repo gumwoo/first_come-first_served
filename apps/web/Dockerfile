@@ -15,9 +15,9 @@ RUN pnpm install --frozen-lockfile
 
 COPY apps/web/ ./
 
-# API 오리진은 <b>빌드 시점</b>에 정해진다. next.config의 rewrites는 standalone 번들로 구워지므로
-# 런타임 환경변수로는 바뀌지 않는다(실제로 런타임 주입을 시도했더니 빌드 때 값인 localhost:8080으로
-# 프록시해 ECONNREFUSED가 났다). 그래서 build-arg로 받는다.
+# API 오리진은 빌드 시점에 정해진다. next.config의 rewrites는 standalone 번들로 구워지므로
+# 런타임 환경변수로는 바뀌지 않는다(주입해도 빌드 때 값으로 프록시해 ECONNREFUSED가 난다).
+# 그래서 build-arg로 받는다.
 #  - 로컬 compose: http://api:8080 (컨테이너 네트워크 서비스명)
 #  - K8s: http://flowticket-api (Service DNS). ALB는 web만 보고 /api·/oauth2는 이 rewrite가
 #    프록시한다 — Ingress가 API로 직결하면 ALB가 접두어를 안 떼어 Spring이 404를 낸다.

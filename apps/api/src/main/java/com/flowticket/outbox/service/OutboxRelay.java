@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 아웃박스 릴레이(S08, ADR-010). PENDING 행을 오래된 순으로 Kafka에 발행하고, 발행 성공을 확인한 뒤
+ * 아웃박스 릴레이(ADR-010). PENDING 행을 오래된 순으로 Kafka에 발행하고, 발행 성공을 확인한 뒤
  * PUBLISHED로 마킹한다(publish-then-mark). 크래시로 마킹 전에 죽으면 다음 틱에 재발행되므로
  * at-least-once이고 유실이 0이다 — 중복은 소비자 멱등(eventId)이 흡수한다.
  *
@@ -65,7 +65,7 @@ public class OutboxRelay {
      *
      * <p>격리해도 순서는 지킨다. DEAD가 난 aggregate의 후속 이벤트는 보류한다 — 발행된
      * 것들끼리의 상대 순서가 유지돼도, 앞 이벤트가 영영 안 나간 채 뒤 이벤트만 나가면 소비자는
-     * 인과를 거꾸로 본다. 차단 범위를 해당 aggregate로 한정하는 것이 이 수정의 요점이다.
+     * 인과를 거꾸로 본다. 차단 범위를 해당 aggregate로 한정하는 것이 요점이다.
      *
      * <p>시도 횟수만으로 DEAD로 넘기지 않는다. 브로커가 오래 죽어 있었다는 이유로 멀쩡한 이벤트를
      * 버리면 아웃박스의 존재 이유가 사라진다.

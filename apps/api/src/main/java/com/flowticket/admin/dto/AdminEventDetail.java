@@ -4,7 +4,7 @@ import com.flowticket.event.domain.Event;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-/** 운영 이벤트 상세(S07). 편집 폼 프리필용 전체 필드. */
+/** 운영 이벤트 상세. 편집 폼 프리필용 전체 필드. */
 public record AdminEventDetail(
         Long id,
         String kopisId,

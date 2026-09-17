@@ -61,7 +61,7 @@ public class Event {
     @Column(nullable = false, length = 20)
     private EventStatus status;
 
-    /** 표시용 최소 가격(원). 등급별 가격/재고는 S04. */
+    /** 표시용 최소 가격(원). 등급별 가격/재고는 좌석 도메인이 관리한다. */
     @Column(name = "base_price")
     private Integer basePrice;
 
@@ -161,7 +161,7 @@ public class Event {
     }
 
     /**
-     * 운영자 수동 편집(S07). null이 아닌 필드만 덮어써 부분 수정(PATCH)을 지원한다.
+     * 운영자 수동 편집. null이 아닌 필드만 덮어써 부분 수정(PATCH)을 지원한다.
      * KOPIS 동기화 메타(updateFromSync)와 달리 운영자가 임의 값으로 바꿀 수 있다.
      */
     public void edit(String title, String venue, String region, String genre, String posterUrl,
@@ -181,7 +181,7 @@ public class Event {
         this.updatedAt = LocalDateTime.now();
     }
 
-    /** 좌석 시딩 시 표시용 최저가(등급 최저가)를 기록(S04). */
+    /** 좌석 시딩 시 표시용 최저가(등급 최저가)를 기록. */
     public void applyBasePrice(Integer basePrice) {
         this.basePrice = basePrice;
         this.updatedAt = LocalDateTime.now();

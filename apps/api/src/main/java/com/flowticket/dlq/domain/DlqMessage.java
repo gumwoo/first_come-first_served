@@ -13,7 +13,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** DLQ 적재 메시지(S07 Phase 4c). DLT에서 넘어온 실패 메시지를 운영 조회/재처리용으로 보존. */
+/** DLQ 적재 메시지. DLT에서 넘어온 실패 메시지를 운영 조회/재처리용으로 보존. */
 @Entity
 @Table(name = "dlq_messages")
 @Getter

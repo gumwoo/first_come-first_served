@@ -27,7 +27,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 
 /**
- * S08 2단계(ADR-011): PG 승인은 났는데 트랜잭션이 롤백돼 DB에 흔적이 없는 미아 승인을
+ * 결제 정산(ADR-011): PG 승인은 났는데 트랜잭션이 롤백돼 DB에 흔적이 없는 미아 승인을
  * 정산 잡이 찾아 취소하는지 검증. 아웃박스로는 닫을 수 없는 클래스(닫을 행 자체가 없음).
  */
 @SpringBootTest

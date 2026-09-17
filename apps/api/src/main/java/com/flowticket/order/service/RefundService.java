@@ -30,7 +30,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 예매 취소·환불(S06). PAID + 시점 게이트에서만 가능. 조건부 전이(PAID→CANCELLED→REFUNDED)로 원자화하고
+ * 예매 취소·환불. PAID + 시점 게이트에서만 가능. 조건부 전이(PAID→CANCELLED→REFUNDED)로 원자화하고
  * 좌석을 SOLD→AVAILABLE 복구한다. 멱등: 더블클릭/재전송에도 이중 환불·이중 복구 0(ADR-006).
  */
 @Service

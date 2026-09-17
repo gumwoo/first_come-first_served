@@ -1,4 +1,4 @@
-# GitHub Actions OIDC — Phase 2에서 콘솔로 이미 만든 것들이다. apply 전에 import한다.
+# GitHub Actions OIDC — 콘솔로 먼저 만든 것들이다. apply 전에 import한다.
 #   terraform import aws_iam_openid_connect_provider.github <provider ARN>
 #   terraform import aws_iam_role.github_actions <역할 이름>
 # 절차: README.md

@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 운영 알림 임계치(S07). /admin/** 은 SecurityConfig에서 ROLE_ADMIN 전용. */
+/** 운영 알림 임계치. /admin/** 은 SecurityConfig에서 ROLE_ADMIN 전용. */
 @RestController
 public class AdminAlertController {
 

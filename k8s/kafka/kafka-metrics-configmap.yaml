@@ -2,9 +2,9 @@
 #
 # 전부 노출하지 않는다. Kafka의 MBean은 수천 개고 토픽·파티션·요청타입별로 곱해지면
 # 시리즈가 폭발한다. 이 클러스터의 Prometheus는 t3.large 위에 떠 있고 앱 메트릭도 함께
-# 받으므로, Phase 8에서 실제로 볼 것만 남긴다.
+# 받으므로, 실제로 볼 것만 남긴다.
 #
-# 남긴 기준 — Phase 8이 증명하려는 두 가지에 필요한 것:
+# 남긴 기준 — 두 가지를 보는 데 필요한 것:
 #   1) 브로커 페일오버: 브로커 1대를 죽였을 때 쓰기가 계속되는가
 #      → UnderReplicated/UnderMinIsr/OfflinePartitions/ActiveController/Isr 변동
 #   2) 처리량과 부하: 아웃박스 릴레이가 실제로 얼마나 밀어냈는가

@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * 운영 아웃박스 목록/상세 항목(S08).
+ * 운영 아웃박스 목록/상세 항목.
  *
  * <p>payload를 그대로 노출한다 — 격리된 행을 판단하려면 무엇이 깨졌는지를 봐야 하고,
  * 그게 이 화면의 존재 이유다(운영 DLQ 조회도 같은 이유로 payload를 싣는다).

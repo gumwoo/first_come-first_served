@@ -10,7 +10,7 @@ import com.flowticket.order.repository.OrderRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 운영 대시보드 집계(S07). 이벤트·결제·매출 + Kafka 연결 상태(4a) + DLQ 적체(4c). */
+/** 운영 대시보드 집계. 이벤트·결제·매출 + Kafka 연결 상태 + DLQ 적체. */
 @Service
 public class AdminDashboardService {
 

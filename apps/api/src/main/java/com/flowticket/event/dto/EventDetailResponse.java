@@ -20,7 +20,7 @@ public record EventDetailResponse(
         LocalDate endDate,
         String status,
         Integer basePrice,
-        // KOPIS 상세(lazy)
+        // KOPIS 상세(동기화 배치가 채운다. 아직 없으면 null)
         String runningTime,
         String ageLimit,
         String priceText,

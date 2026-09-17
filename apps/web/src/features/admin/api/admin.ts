@@ -1,7 +1,7 @@
 import { api } from "@/lib/apiClient";
 import type { Page } from "@/features/order/api/order";
 
-/** 운영 대시보드 지표(S07). kafkaConnected=실 연결(4a), dlqPending=DLQ 적체(4c). */
+/** 운영 대시보드 지표. kafkaConnected=실 연결, dlqPending=DLQ 적체. */
 export type AdminDashboard = {
   totalEvents: number;
   paidOrders: number;
@@ -26,7 +26,7 @@ export type AdminOrderSummary = {
 export const getDashboard = (token: string | null) =>
   api<AdminDashboard>("/admin/dashboard", { token });
 
-// --- 이벤트 관리(S07) ---
+// --- 이벤트 관리 ---
 export type AdminEventSummary = {
   id: number;
   title: string;
@@ -91,7 +91,7 @@ export const createAdminEvent = (body: EventInput, token: string | null) =>
 export const updateAdminEvent = (id: number, body: EventInput, token: string | null) =>
   api<AdminEventDetail>(`/admin/events/${id}`, { method: "PATCH", token, body });
 
-// --- DLQ(S07 Phase 4c) ---
+// --- DLQ ---
 export type DlqMessage = {
   id: number;
   topic: string;
@@ -119,7 +119,7 @@ export const retryDlq = (id: number, token: string | null) =>
 export const discardDlq = (id: number, token: string | null) =>
   api<void>(`/admin/dlq/${id}/discard`, { method: "POST", token });
 
-// --- 알림 임계치(S07) ---
+// --- 알림 임계치 ---
 export type AlertSettings = {
   dlqPendingThreshold: number;
   dlqPending: number;

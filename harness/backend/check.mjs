@@ -383,8 +383,8 @@ for (const file of migrationFiles) {
 // 코드 주석에 "TS-014", "ADR-012", "IMP-013" 같은 번호를 적어 두는 것은 이 저장소의 습관이다.
 // 근거를 코드 옆에 두면 나중에 "왜 이렇게 했나"를 되짚을 수 있기 때문이다.
 //
-// 문제는 번호를 먼저 적고 문서를 나중에 쓰는 순서다. 실제로 V15 마이그레이션이 두 곳에서
-// TS-014를 참조했는데 그 문서가 없었다 — 읽는 사람은 근거를 찾아가려다 빈손으로 돌아온다.
+// 문제는 번호를 먼저 적고 문서를 나중에 쓰는 순서다. 문서가 없으면 읽는 사람은 근거를
+// 찾아가려다 빈손으로 돌아온다.
 // 근거를 가리키는 척하는 주석은 근거가 없는 것보다 나쁘다(찾는 시간까지 쓰게 만든다).
 //
 // 컴파일·테스트는 주석을 보지 않으므로 정적으로만 잡을 수 있다.
@@ -396,7 +396,7 @@ const DOC_DIRS = {
 
 // 각 디렉터리에 실제로 존재하는 번호를 모은다(파일명 앞머리 기준: TS-014-....md).
 // 정규식을 쓰지 않는다 — 템플릿 리터럴 안의 \d 는 이스케이프가 아니라 그냥 d 로 죽는다.
-// 초안이 그렇게 작성돼 목록이 조용히 비었고, 규칙이 아무것도 잡지 못했다.
+// 그러면 목록이 조용히 비어 규칙이 아무것도 잡지 못한다.
 const existingDocs = {};
 for (const [prefix, dir] of Object.entries(DOC_DIRS)) {
   const abs = path.join(REPO_ROOT, dir);
@@ -466,9 +466,8 @@ if (dtoWithLocalDateTime.length > 0) {
 }
 
 // ---------- 17. DB 커넥션 상한: (maxReplicas + maxSurge) × pool 이 DB 한도를 넘지 않는가 ----------
-// 이 한도는 곱셈으로 정해지는데 곱하는 자리가 코드에 없었다. HPA maxReplicas(9)와 Hikari
-// 기본 풀(10)이 각자 합리적이었지만 곱이 90이라 실질 한도 76을 넘었고, 부하로 9까지 확장되자
-// 8번째 파드부터 Flyway가 커넥션을 얻지 못해 기동 실패했다(TS-021).
+// 이 한도는 곱셈으로 정해진다. HPA maxReplicas와 Hikari 풀 크기가 각자 합리적이어도 곱이
+// 실질 한도를 넘으면, 확장된 파드부터 Flyway가 커넥션을 얻지 못해 기동에 실패한다(TS-021).
 //
 // maxSurge를 빼면 안 된다. 롤링 배포 중에는 새 Pod가 Ready가 된 뒤에 옛 Pod가 빠지므로
 // (maxUnavailable=0, maxSurge=1) 순간적으로 maxReplicas + maxSurge 개가 공존한다. 평상시 값만
@@ -551,23 +550,19 @@ const NON_APP_HEADROOM = 20;
 // 그래서 상대가 응답을 주지 않으면 톰캣 스레드가 그대로 묶인다. 결제 경로는 더 나쁘다 —
 // 그 호출이 DB 트랜잭션 안이라 Hikari 커넥션까지 함께 묶이고, 풀은 파드당 5다(TS-021).
 //
-// 실제로 KOPIS는 지키고 있었는데 TossPaymentGateway는 `RestClient.builder().baseUrl(..).build()`
-// 였다(TS-028). 같은 위험을 한쪽만 막고 있었던 것이고, 런타임 테스트로는 잡기 어렵다
-// (타임아웃을 재현하려면 응답 없는 서버가 필요해 느리고 불안정하다) — 정적으로만 싸게 잡힌다.
+// 런타임 테스트로는 잡기 어렵다(타임아웃을 재현하려면 응답 없는 서버가 필요해 느리고
+// 불안정하다) — 정적으로 싸게 잡는다(TS-028).
 // 클라이언트를 만드는 두 가지 형태를 모두 본다.
 //   1) RestClient.builder(...) / RestClient.create(...)      — 직접 만든다
 //   2) RestClient.Builder 를 주입받아 .build() 한다           — 스프링 빌더를 쓴다
 //
-// 초안은 1)만 봤고, 그래서 이 규칙을 만든 그 수정 자체를 검사하지 못했다.
-// TossPaymentGateway를 고치면서 `RestClient.builder()`가 `builder.clone()`으로 바뀌었는데,
-// 그 순간 파일이 규칙의 시야에서 사라졌다 — 누가 requestFactory를 다시 지워도 통과한다.
-// 리뷰에서 잡혔고, `requestFactory`만 제거한 뒤 하네스를 돌려 실제로 통과하는 것을 확인했다.
+// 1)만 보면 주입받은 빌더를 `clone()`해 쓰는 코드(TossPaymentGateway)가 규칙의 시야에서 빠져,
+// requestFactory를 지워도 통과한다.
 const HTTP_DIRECT_RE = /RestClient\s*\.\s*(builder|create)\s*\(/;
 const HTTP_INJECTED_RE = /RestClient\s*\.\s*Builder/;
 const BUILD_CALL_RE = /\.\s*build\s*\(\s*\)/;
-// 주석을 걷어내고 본다. 초안은 원문 그대로 `raw.includes("requestFactory(")`를 썼는데,
-// 위반 fixture의 javadoc에 그 단어가 들어 있다는 이유만으로 통과해 버렸다(규칙이 자기 fixture를
-// 못 잡았다). 주석에 이름을 언급하는 것과 실제로 호출하는 것은 다르다.
+// 주석을 걷어내고 본다. 원문에서 `requestFactory(`를 찾으면 javadoc에 그 단어가 있다는
+// 이유만으로 통과한다(위반 fixture가 실제로 그렇다). 주석에 이름을 언급하는 것과 실제로 호출하는 것은 다르다.
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 for (const file of javaFiles) {
   const code = stripComments(read(file));
@@ -594,8 +589,7 @@ function normalize(p) {
 // 핸들러가 없어 fallback이 잡는다 — 클라이언트 입력 오류가 500 + ERROR 로그가 된다.
 // size는 상한이 없어 대량 행과 TEXT payload를 한 요청에서 직렬화할 수 있다.
 //
-// 같은 모양이 컨트롤러 6곳에 복사돼 있었다. 한 곳을 고쳐도 다음 목록 API가 또 같은 줄을
-// 복사하므로, 공통 값 객체(PageQuery)를 쓰도록 정적으로 못박는다.
+// 한 곳을 고쳐도 다음 목록 API가 또 같은 줄을 복사하므로, 공통 값 객체(PageQuery)를 쓰도록 정적으로 못박는다.
 //
 // IllegalArgumentException 전체를 400으로 매핑하는 방식은 일부러 택하지 않았다 —
 // 그 예외는 서버 내부 프로그래밍 오류에도 흔히 쓰여, 진짜 버그가 클라이언트 오류로 숨는다.

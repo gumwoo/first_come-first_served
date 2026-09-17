@@ -15,7 +15,7 @@ const NAV: NavItem[] = [
   { href: "/admin/alerts", label: "알림" },
 ];
 
-/** 운영 콘솔 셸(S07). 무채색·텍스트 우선 사이드바(활성=좌측 바). 공통 권한 게이트. */
+/** 운영 콘솔 셸. 무채색·텍스트 우선 사이드바(활성=좌측 바). 공통 권한 게이트. */
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const user = useAuthStore((s) => s.user);

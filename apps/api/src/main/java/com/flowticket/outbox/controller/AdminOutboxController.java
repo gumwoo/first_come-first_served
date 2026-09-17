@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 운영 아웃박스 조회·재발행·폐기(S08). /admin/** 은 SecurityConfig에서 ROLE_ADMIN 전용. */
+/** 운영 아웃박스 조회·재발행·폐기. /admin/** 은 SecurityConfig에서 ROLE_ADMIN 전용. */
 @RestController
 public class AdminOutboxController {
 

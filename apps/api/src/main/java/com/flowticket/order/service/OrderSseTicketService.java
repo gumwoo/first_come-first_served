@@ -12,8 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 주문 SSE 구독 자격 — 발급(소유자 확인)과 검증(티켓 대조).
  *
- * <p>왜 티켓인가: {@code /sse/orders/{id}}는 인가 없이 열려 있었고 {@code id}는 순차
- * 정수라, 누구나 남의 주문 상태 변화를 관찰할 수 있었다. 그렇다고 Bearer를 요구할 수는 없다 —
+ * <p>왜 티켓인가: {@code /sse/orders/{id}}의 {@code id}는 순차 정수라, 인가가 없으면
+ * 누구나 남의 주문 상태 변화를 관찰할 수 있다. 그렇다고 Bearer를 요구할 수는 없다 —
  * {@code EventSource}는 요청 헤더를 붙이지 못한다. fetch 기반 스트림으로 바꾸면 헤더는 붙지만
  * 브라우저의 자동 재연결을 잃는데, 이 프로젝트의 복구는 그 재연결 위에 서 있다(ADR-015).
  *

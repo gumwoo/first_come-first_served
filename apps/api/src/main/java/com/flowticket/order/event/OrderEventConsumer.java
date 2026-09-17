@@ -10,7 +10,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 /**
- * order-events 소비 → 실시간 SSE 전달(S07 Phase 4). Kafka가 이벤트 백본, SSE는 마지막 홉(브라우저 push).
+ * order-events 소비 → 실시간 SSE 전달. Kafka가 이벤트 백본, SSE는 마지막 홉(브라우저 push).
  *
  * <p>아웃박스 릴레이는 at-least-once라 같은 이벤트가 재발행될 수 있다(ADR-010). 그래서 eventId로
  * Redis SETNX 멱등을 건다. SSE 전달은 중복의 업무 영향이 작고 영구적인 처리 감사가 필요 없어

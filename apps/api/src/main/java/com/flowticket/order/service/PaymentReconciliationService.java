@@ -16,7 +16,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * 결제 정산·보상(S08 2단계, ADR-011). 외부 PG ↔ 내부 주문 상태의 불일치를 주기적으로 잡는다.
+ * 결제 정산·보상(ADR-011). 외부 PG ↔ 내부 주문 상태의 불일치를 주기적으로 잡는다.
  *
  * <p>아웃박스(ADR-010)는 "DB에 커밋된 사실"을 밖으로 전달하는 패턴이라 이 문제를 못 닫는다 —
  * PG 승인은 성공했는데 좌석 확정 실패·프로세스 크래시로 트랜잭션이 롤백되면 payments 행까지

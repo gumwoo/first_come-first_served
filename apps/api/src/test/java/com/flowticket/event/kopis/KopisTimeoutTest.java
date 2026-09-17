@@ -21,9 +21,8 @@ import org.junit.jupiter.api.Test;
 /**
  * 외부 API가 응답하지 않을 때 우리 스레드가 풀려나는지 검증한다.
  *
- * <p>이 테스트가 없어서 위험이 보이지 않았다. KopisClient는 타임아웃을 지정하지 않은
- * RestClient를 썼는데, 이 이미지에는 Apache HttpClient5·Jetty·OkHttp가 없어 JDK HttpClient로
- * 떨어지고 그쪽은 타임아웃 기본값이 없다. 즉 KOPIS가 연결만 물고 응답을 주지 않으면
+ * <p>타임아웃을 지정하지 않은 RestClient는, 이 이미지에는 Apache HttpClient5·Jetty·OkHttp가 없어 JDK HttpClient로
+ * 떨어지고 그쪽은 타임아웃 기본값이 없다. 그러면 KOPIS가 연결만 물고 응답을 주지 않으면
  * 톰캣 스레드가 영원히 묶인다. 스레드 풀이 마르면 이 엔드포인트뿐 아니라 API 전체가
  * 멎는데, readiness는 DB·Redis만 보므로 파드는 UP으로 남고 K8s가 빼주지도 않는다.
  *

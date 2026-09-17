@@ -3,7 +3,7 @@ package com.flowticket.dlq.dto;
 import com.flowticket.dlq.domain.DlqMessage;
 import java.time.LocalDateTime;
 
-/** 운영 DLQ 목록/상세 항목(S07 Phase 4c). */
+/** 운영 DLQ 목록/상세 항목. */
 public record DlqMessageSummary(
         Long id,
         String topic,

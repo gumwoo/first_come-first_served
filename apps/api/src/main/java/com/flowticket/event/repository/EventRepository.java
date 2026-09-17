@@ -22,10 +22,10 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
      */
     List<Event> findAllByKopisIdIn(Collection<String> kopisIds);
 
-    /** 운영 이벤트 목록(S07) — 최신순 페이징. */
+    /** 운영 이벤트 목록 — 최신순 페이징. */
     Page<Event> findAllByOrderByIdDesc(Pageable pageable);
 
-    /** 좌석 시딩 대상: 판매 가능 상태의 이벤트 id (S04 자동 시딩). */
+    /** 좌석 시딩 대상: 판매 가능 상태의 이벤트 id (자동 시딩). */
     @Query("select e.id from Event e where e.status in :statuses")
     List<Long> findIdsByStatusIn(@Param("statuses") Collection<EventStatus> statuses);
 
@@ -38,8 +38,8 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
      *   정렬: 오래된 순, NULL 먼저
      * </pre>
      *
-     * <p>왜 오래된 것도 넣나. 초안은 NULL만 대상으로 삼아 한 번 채우면 영원히 다시
-     * 보지 않았다. KOPIS에서 가격·출연진·공연시간이 바뀌어도 우리 값은 그대로 남는다.
+     * <p>왜 오래된 것도 넣나. NULL만 대상으로 삼으면 한 번 채운 뒤 다시 보지 않아,
+     * KOPIS에서 가격·출연진·공연시간이 바뀌어도 우리 값은 그대로 남는다.
      *
      * <p>왜 전량을 매일 다시 받지 않나. 공연 약 1,446건인데 레이트 리밋(5회/초) 때문에
      * 전량이면 약 5분이고, 회차당 상한이 300건이라 매일 전부를 대상으로 만들면 계속 밀린다.

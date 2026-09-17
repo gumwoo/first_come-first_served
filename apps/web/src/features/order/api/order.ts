@@ -39,7 +39,7 @@ export const payOrder = (
   token: string | null
 ) => api<PaymentResult>(`/orders/${orderId}/payments`, { method: "POST", token, body });
 
-/** 결제창(Toss) 인증 확정. 결제창이 발급한 paymentKey로 서버 승인(BE-5). */
+/** 결제창(Toss) 인증 확정. 결제창이 발급한 paymentKey로 서버 승인. */
 export const confirmPayment = (orderId: number, paymentKey: string, token: string | null) =>
   api<PaymentResult>(`/orders/${orderId}/payments/confirm`, {
     method: "POST",
@@ -62,7 +62,7 @@ export const issueSseTicket = (orderId: number, token: string | null) =>
 export const orderSseUrl = (orderId: number, ticket: string) =>
   `/api/sse/orders/${orderId}?ticket=${encodeURIComponent(ticket)}`;
 
-// --- 마이페이지(S06) ---
+// --- 마이페이지 ---
 export type Page<T> = { items: T[]; page: number; size: number; total: number };
 
 export type MyOrderSummary = {

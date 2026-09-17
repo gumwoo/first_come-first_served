@@ -1,4 +1,4 @@
-# ECR — Phase 2에서 콘솔로 이미 만든 저장소다. apply 전에 import해야 한다.
+# ECR — 콘솔로 먼저 만든 저장소다. apply 전에 import해야 한다.
 #   terraform import 'aws_ecr_repository.this["api"]' flowticket-api
 #   terraform import 'aws_ecr_repository.this["web"]' flowticket-web
 # 절차: README.md

@@ -29,7 +29,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 
 /**
- * 운영 주문 조회(S07 Phase 2): 관리자는 전 사용자 주문을 주문자 이메일과 함께 조회하고, 상태 필터가 동작한다.
+ * 운영 주문 조회: 관리자는 전 사용자 주문을 주문자 이메일과 함께 조회하고, 상태 필터가 동작한다.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class AdminOrderIntegrationTest extends IntegrationTestSupport {

@@ -56,7 +56,6 @@ export function AuthBootstrap() {
       }
     });
 
-    // 다른 탭의 로그인/로그아웃을 즉시 반영
     const unsub = onAuthBroadcast((e) => {
       if (e === "logout") {
         setAccessToken(null);

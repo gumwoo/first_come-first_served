@@ -5,8 +5,7 @@ import { fillQueueCapacity, releaseQueueCapacity } from "../helpers/redis";
 /**
  * 대기(WAITING) 상태를 결정적으로 만드는 기반을 검증한다.
  *
- * <p>지금까지 E2E는 대기 화면을 한 번도 보지 못했다. 정원이 100이라 단일 사용자는 즉시
- * 승격되고, `QUEUE_CAPACITY`를 낮추면 같은 백엔드를 공유하는 다른 E2E가 전부 깨진다
+ * <p>정원이 100이라 단일 사용자는 즉시 승격되고, `QUEUE_CAPACITY`를 낮추면 같은 백엔드를 공유하는 다른 E2E가 전부 깨진다
  * (`seedAdmittedUser`에 의존하는 예매·결제·환불). 그래서 `queue:admitcount:<eventId>`를
  * 직접 채워 그 이벤트만 정원이 찬 상태로 만든다.
  *
@@ -19,10 +18,7 @@ import { fillQueueCapacity, releaseQueueCapacity } from "../helpers/redis";
  * 않는다. 남기면 그 이벤트는 영구히 정원이 찬 상태가 되어 뒤따르는 E2E가 막힌다.
  * 그래서 모든 조작을 `try/finally`로 감싼다.
  *
- * <p>그리고 이 이벤트에 실제 ADMITTED 사용자가 이미 있을 수 있다 — 앞선 테스트가
- * 같은 이벤트를 골랐다면 admit-ttl(300초) 동안 남아 있다. 그래서 fixture는 값을 덮어쓰지
- * 않고 더했다 빼는 방식이다(`helpers/redis.ts` 참고). 덮어썼다가 지우면 실제
- * 카운트가 사라지고, 이후 reclaim의 DECRBY가 음수를 만들어 정원 초과 승격으로 이어진다.
+ * <p>fixture는 값을 덮어쓰지 않고 더했다 빼는 방식이다 — 이유는 `helpers/redis.ts` 참고.
  */
 
 // 승격 워커 주기 1500ms(application.yml `queue.admit-interval-ms`).

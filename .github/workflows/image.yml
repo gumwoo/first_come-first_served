@@ -158,7 +158,7 @@ jobs:
           file: apps/web/Dockerfile
           push: true
           tags: ${{ steps.ecr.outputs.registry }}/flowticket-web:${{ needs.guard.outputs.sha }}
-          # API_ORIGIN은 빌드 시점에 굳는다(S09-1 실측 — apps/web/Dockerfile 참고).
+          # API_ORIGIN은 빌드 시점에 굳는다(apps/web/Dockerfile 참고).
           # Next standalone이 rewrites 목적지를 번들로 구워 런타임 env로는 바뀌지 않으므로
           # 여기서 정한다.
           #

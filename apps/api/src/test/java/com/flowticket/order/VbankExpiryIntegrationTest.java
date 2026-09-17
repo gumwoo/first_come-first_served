@@ -34,7 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
- * 무통장(vbank) 발급/입금확인 + 주문 만료 sweep(BE-3). hold-ttl 2s로 만료 케이스 재현.
+ * 무통장(vbank) 발급/입금확인 + 주문 만료 sweep. hold-ttl 2s로 만료 케이스 재현.
  */
 @TestPropertySource(properties = {"seat.hold-ttl=2"})
 @SpringBootTest

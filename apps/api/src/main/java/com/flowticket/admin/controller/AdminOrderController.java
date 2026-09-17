@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 운영 주문 조회(S07). /admin/** 은 SecurityConfig에서 ROLE_ADMIN 전용으로 게이트된다. */
+/** 운영 주문 조회. /admin/** 은 SecurityConfig에서 ROLE_ADMIN 전용으로 게이트된다. */
 @RestController
 public class AdminOrderController {
 

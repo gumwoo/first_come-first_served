@@ -77,7 +77,7 @@ public class SecurityConfig {
                         // 프록시한다(next.config.mjs). 즉 클러스터 내부에만 열린다.
                         // /actuator/** 전체를 열면 안 된다 — env·configprops에 시크릿이 실린다.
                         .requestMatchers("/actuator/prometheus").permitAll()
-                        // 운영(S07): 모든 /admin/** 은 ROLE_ADMIN 전용. 기존 admin 엔드포인트(KOPIS 동기화·좌석 시딩)도 포함.
+                        // 운영: 모든 /admin/** 은 ROLE_ADMIN 전용. 기존 admin 엔드포인트(KOPIS 동기화·좌석 시딩)도 포함.
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         // 대기 상태는 토큰(비밀 UUID)으로 조회 — Bearer 불필요(ADR-002). /queue/** 인증보다 먼저.
                         .requestMatchers(HttpMethod.GET, "/queue/status").permitAll()

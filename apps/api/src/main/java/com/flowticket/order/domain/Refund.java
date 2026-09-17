@@ -12,7 +12,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** 환불 기록(S06). 취소 1건당 1행. idempotency_key UNIQUE로 이중 환불 차단. */
+/** 환불 기록. 취소 1건당 1행. idempotency_key UNIQUE로 이중 환불 차단. */
 @Entity
 @Table(name = "refunds")
 @Getter

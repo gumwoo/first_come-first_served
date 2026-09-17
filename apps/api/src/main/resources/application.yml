@@ -15,12 +15,10 @@ spring:
       #
       #   maxReplicas × maximum-pool-size + 앱 외 세션 + 여유 ≤ max_connections − reserved
       #
-      # 기본값 10을 쓰던 때 9파드 × 10 = 90이 실질 한도 76을 넘어, 부하로 9까지 확장되자
-      # 8번째부터 Flyway가 커넥션을 못 얻어 기동 실패했다(TS-021). 두 값이 각자 합리적이어도
-      # 곱이 한도를 넘을 수 있는데, 그 곱을 계산하는 자리가 코드 어디에도 없었다.
+      # 두 값이 각자 합리적이어도 곱이 한도를 넘으면 확장된 파드가 기동에 실패한다(TS-021).
       #
-      # 5로 낮춰 9 × 5 = 45로 만든다. 실측상 부하 중 pending은 0, active도 파드당 0~1이라
-      # 이 워크로드는 풀을 거의 쓰지 않는다. 하네스 backend 규칙 17이 이 곱을 검사한다.
+      # 실측상 부하 중 pending은 0, active도 파드당 0~1이라 이 워크로드는 풀을 거의 쓰지 않는다.
+      # 하네스 backend 규칙 17이 이 곱을 검사한다.
       maximum-pool-size: ${DB_POOL_MAX:5}
   jpa:
     hibernate:
@@ -49,8 +47,7 @@ spring:
       # JsonDeserializer를 직접 쓰면 안 된다. 역직렬화는 poll() 단계에서 일어나
       # 리스너에 도달하기 전에 터지므로, DefaultErrorHandler(+DLT)가 개입할 수 없다.
       # 결과는 같은 메시지 무한 재시도다 — 파드는 Running이고 readiness도 UP인데(Kafka 제외)
-      # 처리가 멈춘 채 CPU만 태운다. 실제로 노드 CPU 100%까지 갔고 HPA가 부하로 오해해
-      # 스케일업까지 했다(TS-020).
+      # 처리가 멈춘 채 CPU만 태우고, HPA가 부하로 오해해 스케일업한다(TS-020).
       #
       # ErrorHandlingDeserializer가 실패를 잡아 null + 예외 헤더로 바꿔 리스너 단계까지
       # 넘겨주고, 그때부터 DefaultErrorHandler가 DLT로 보낼 수 있다.
@@ -157,12 +154,9 @@ management:
         http.server.requests: 1ms
       # 상한을 넘는 요청은 +Inf 한 칸에 뭉쳐 그 구간의 백분위를 복구할 수 없다.
       #
-      # 처음엔 2s로 뒀다가 부하 테스트에서 실제로 걸렸다. 300 VU에서 전체 요청의 8.1%
-      # (10,181건 중 822건)가 2s를 넘어 p95가 +Inf 버킷에 들어갔고, histogram_quantile이
-      # 상한값을 그대로 돌려줬다 — 세 엔드포인트가 나란히 "정확히 2000.0ms"로 찍혔다.
-      # 그 숫자는 측정값이 아니라 더 못 잰다는 표시다.
+      # 그러면 histogram_quantile이 상한값을 그대로 돌려줘(예: "정확히 2000.0ms") 측정값처럼 보인다.
       #
-      # 10s로 올린다. 앞으로 개선 전후를 비교하려면 AS-IS가 검열되지 않아야 한다.
+      # 10s로 둔다. 개선 전후를 비교하려면 AS-IS가 검열되지 않아야 한다.
       # 초과 발생 여부는 계속 감시한다(대시보드 "상한 초과 요청률" 패널):
       #   sum(rate(..._bucket{le="+Inf"}[5m])) - sum(rate(..._bucket{le="10.0"}[5m]))
       maximum-expected-value:
@@ -175,13 +169,11 @@ management:
 #   - IP 제한: 1초당 10회 초과 시 서비스가 중지된다
 #
 # 마지막 항목이 특히 중요하다. 429가 아니라 차단이고, 막히면 시딩 자체를 못 한다.
-# 실제로 부하 테스트 중 사용자 경로의 상세 조회가 초당 70회 수준으로 나가 400 Request Blocked를
-# 2,014건 맞았다(같은 시각 유휴 상태에서는 31/31 성공). 부하가 곧 외부 호출량이 되는 구조였다.
 #
-# 대응은 두 단계이고 둘 다 끝났다.
-#   1) 사용자 요청 경로에서 KOPIS 호출을 제거했다 — 제한이 아니라 제거다.
-#      (요청 스레드를 재우는 방식은 외부 지연이 API 전체를 멎게 하는 실패를 다시 만든다)
-#      상세는 동기화 배치가 미리 받아 events 테이블에 저장한다(V16).
+# 그래서 두 가지를 함께 둔다.
+#   1) 사용자 요청 경로에서는 KOPIS를 호출하지 않는다 — 제한이 아니라 제거다.
+#      (요청 스레드를 재우면 외부 지연이 API 전체를 멎게 한다)
+#      상세는 동기화 배치가 미리 받아 events 테이블에 저장한다.
 #   2) 남은 호출자(동기화)는 rate-limit-per-second로 간격을 둔다(아래).
 #
 # 그래서 KOPIS로 나가는 호출이 동기화 하나로 좁혀졌고, 목록·상세가 같은 제한기를 통과한다.
@@ -203,8 +195,8 @@ kopis:
     detail-batch-limit: ${KOPIS_SYNC_DETAIL_BATCH_LIMIT:300}
     # 상세를 다시 받아올 주기. 이보다 오래된 건은 갱신 대상이 된다.
     #
-    # 이 값이 없던 초안은 detail_synced_at IS NULL만 대상으로 삼아, 한 번 채우면
-    # 영원히 다시 보지 않았다 — KOPIS에서 가격·출연진이 바뀌어도 우리 값은 그대로였다.
+    # 이 값이 없으면 detail_synced_at IS NULL만 대상이 되어, 한 번 채운 뒤 다시 보지 않는다 —
+    # KOPIS에서 가격·출연진이 바뀌어도 우리 값은 그대로 남는다.
     #
     # 대상은 "오래된 순, NULL 먼저"로 고르므로 미수집 채우기와 순환 갱신이 같은 규칙으로 처리된다.
     # 회차당 300건이면 전체가 한 바퀴 도는 데 약 5일이다 — 이 값을 그보다 짧게 잡으면
@@ -229,14 +221,14 @@ app:
     # 비어 있으면(기본) XFF 무시 → remoteAddr 사용(위조 방지). 운영 LB IP를 주입.
     trusted: ${TRUSTED_PROXIES:}
 
-# 대기열(S03) — Redis ZSet 기반 선착순 직렬화
+# 대기열 — Redis ZSet 기반 선착순 직렬화
 queue:
   capacity: ${QUEUE_CAPACITY:100}            # 이벤트당 동시 입장 정원
   token-ttl: ${QUEUE_TOKEN_TTL:1800}         # 대기 토큰 수명(초)
   admit-ttl: ${QUEUE_ADMIT_TTL:300}          # 입장 후 좌석선택 제한(초)
   admit-interval-ms: ${QUEUE_ADMIT_INTERVAL:1500}  # 승격 워커 주기(ms)
 
-# 좌석·재고(S04)
+# 좌석·재고
 seat:
   hold-ttl: ${SEAT_HOLD_TTL:300}          # 선점 유지 시간(초, ~5분)
   max-per-user: ${SEAT_MAX_PER_USER:4}    # 이벤트당 1인 구매 한도
@@ -246,7 +238,7 @@ seat:
   map-cache-ttl-ms: ${SEAT_MAP_CACHE_TTL_MS:0}
   sweep-interval-ms: ${SEAT_SWEEP_INTERVAL:60000}  # 만료 회수 워커 주기(ms)
 
-# 주문·결제(S05)
+# 주문·결제
 order:
   sweep-interval-ms: ${ORDER_SWEEP_INTERVAL:60000}  # 미완료 주문 만료 회수 주기(ms)
 
@@ -278,14 +270,14 @@ payment:
   reconcile-lookback-hours: ${PAYMENT_RECONCILE_LOOKBACK:24}    # 소급 한계(이전 건은 수동 정산)
   reconcile-batch-size: ${PAYMENT_RECONCILE_BATCH:50}           # 틱당 PG 조회 상한
 
-# 취소 수수료 정책(S06). 공연일까지 남은 일수 기준 기간별 수수료율(%). 당일·이후는 환불 불가.
+# 취소 수수료 정책. 공연일까지 남은 일수 기준 기간별 수수료율(%). 당일·이후는 환불 불가.
 refund:
   free-days: ${REFUND_FREE_DAYS:8}     # 이 일수 이상 남으면 0%
   tier1-days: ${REFUND_TIER1_DAYS:3}   # 이 일수 이상 남으면 tier1 수수료율
   tier1-rate: ${REFUND_TIER1_RATE:10}  # D-3~D-7 (%)
   tier2-rate: ${REFUND_TIER2_RATE:30}  # D-1~D-2 (%)
 
-# 관리자 계정 부트스트랩(S07). 둘 다 설정 시 최초 1회 ROLE_ADMIN 생성. 자격증명은 환경변수로만.
+# 관리자 계정 부트스트랩. 둘 다 설정 시 최초 1회 ROLE_ADMIN 생성. 자격증명은 환경변수로만.
 admin:
   email: ${ADMIN_EMAIL:}
   password: ${ADMIN_PASSWORD:}

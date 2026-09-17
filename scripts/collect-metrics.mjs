@@ -59,7 +59,6 @@ function main() {
     return;
   }
 
-  // topic 별로 before/after 묶기
   const topics = {};
   for (const f of files) {
     const m = f.match(/^(.*)-(before|after)\.json$/);

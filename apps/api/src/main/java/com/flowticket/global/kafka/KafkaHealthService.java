@@ -7,7 +7,7 @@ import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.stereotype.Service;
 
 /**
- * Kafka 연결 상태 점검(S07 Phase 4). 대시보드 kafkaConnected 지표에 사용.
+ * Kafka 연결 상태 점검. 대시보드 kafkaConnected 지표에 사용.
  * AdminClient로 클러스터를 짧은 타임아웃 안에 describe해 성공하면 연결됨으로 본다.
  * 브로커 미가용이어도 예외를 삼켜 false만 반환(대시보드가 죽지 않게).
  */

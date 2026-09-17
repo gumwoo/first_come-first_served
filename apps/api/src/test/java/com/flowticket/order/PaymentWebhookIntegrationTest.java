@@ -34,7 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
- * 가상계좌 입금 웹훅(Toss DEPOSIT_CALLBACK, BE-5). Mock 게이트웨이로 결정론 검증.
+ * 가상계좌 입금 웹훅(Toss DEPOSIT_CALLBACK). Mock 게이트웨이로 결정론 검증.
  * secret 대조(위조 거부), status=DONE에서만 확정, 재전송 멱등(이미 PAID면 no-op)을 확인한다.
  */
 @SpringBootTest

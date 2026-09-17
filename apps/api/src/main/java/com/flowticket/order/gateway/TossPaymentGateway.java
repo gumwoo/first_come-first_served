@@ -31,19 +31,8 @@ public class TossPaymentGateway implements PaymentGateway {
     private final String authHeader;
 
     /**
-     * 타임아웃을 반드시 건다. request factory를 주지 않으면 RestClient는 JDK HttpClient로
-     * 떨어지고(이 이미지에는 Apache HttpClient5·Jetty·OkHttp가 없다), 그쪽은 connect/read 기본
-     * 타임아웃이 없다({@link com.flowticket.event.kopis.KopisClientConfig}와 같은 이유).
-     *
-     * <p>결제는 KOPIS보다 나쁘다. 이 호출은 DB 트랜잭션 안에서 일어나므로(PaymentService·
-     * RefundService), 응답 없는 PG 하나가 톰캣 스레드와 Hikari 커넥션을 함께 묶는다.
-     * 풀은 파드당 5다({@code DB_POOL_MAX}, TS-021) — 느린 결제 5건이면 그 파드의 DB가 멎는다.
-     *
-     * <p>read 타임아웃이 새 실패 유형을 만든다는 점을 알고 고른 값이다. 타임아웃은
-     * "승인 안 됨"이 아니라 "모름"이다 — Toss는 승인했는데 우리가 못 받았을 수 있고,
-     * 그러면 롤백돼 DB에 흔적이 없는 미아 승인이 된다. 그 클래스를 회수하려고 만든 것이
-     * ADR-011 정산 잡이라, 이 타임아웃은 그 장치가 있기 때문에 안전하다.
-     * 반대로 값이 짧으면 멀쩡한 결제를 미아로 만들므로 넉넉히 준다(기본 10초).
+     * 타임아웃을 반드시 건다. 이 호출은 DB 트랜잭션 안이라 응답 없는 PG가 Hikari 커넥션까지 묶는다(TS-028).
+     * read 타임아웃은 "모름"이라 미아 승인이 생길 수 있지만 ADR-011 정산이 회수하므로 넉넉히 준다(기본 10초).
      */
     public TossPaymentGateway(RestClient.Builder builder,
                               @Value("${TOSS_SECRET_KEY:}") String secretKey,

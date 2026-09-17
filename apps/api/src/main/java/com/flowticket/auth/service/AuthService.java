@@ -44,22 +44,10 @@ public class AuthService {
     }
 
     /**
-     * 회원가입. 이메일·휴대폰 중복은 409로 돌려준다.
+     * 회원가입. 이메일·휴대폰 중복은 동시 가입이어도 409로 돌려준다.
      *
-     * <p>{@code existsByEmail} 사전 검사는 순차 요청만 막는다. 같은 이메일로 동시에 오면
-     * 둘 다 "없음"을 보고 각자 INSERT하고, 늦은 쪽이 {@code uq_users_email}에 걸린다. 이를 500이
-     * 아니라 409로 돌려준다 — 중복 가입은 서버 오류가 아니라 재시도하면 안 되는 충돌이다.
-     *
-     * <p>어느 제약에 걸렸는지는 다시 조회해서 판별한다. Hibernate 예외의 제약 이름을
-     * 파싱하는 방법도 있지만 드라이버·방언 구현에 묶인다. 경쟁에서 이긴 쪽의 행이 이미 커밋돼
-     * 있으므로 조회로 확실히 갈린다(주문 생성과 같은 형태 — 제약 위반 후 승자를 조회). 승자가
-     * 아직 커밋 전이면 진 쪽의 INSERT는 유니크 인덱스에서 대기하다가 승자의 커밋 이후에야
-     * 위반을 받는다. 즉 이 조회 시점에는 승자 행이 이미 보인다.
-     *
-     * <p>{@code NOT_SUPPORTED}가 반드시 필요하다. 클래스 레벨
-     * {@code @Transactional(readOnly = true)} 때문에 아무것도 안 붙이면 읽기 전용 트랜잭션이
-     * 열린 채로 들어오고, {@code signupTx}의 {@code REQUIRED}가 거기 참여해버려 (1) INSERT가
-     * read-only로 실패하고 (2) 경계가 분리되지 않아 캐치가 무의미해진다. 캐치는 트랜잭션 밖이어야 rollback-only에 걸리지 않는다.
+     * <p>사전 검사를 통과한 동시 요청은 UNIQUE 위반으로 끝나고, 어느 제약인지는 다시 조회해 가른다.
+     * {@code NOT_SUPPORTED}여야 캐치가 트랜잭션 밖에 있다(domain/auth.md §1, TS-014).
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void signup(SignupRequest req) {

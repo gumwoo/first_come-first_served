@@ -85,6 +85,11 @@ GET /admin/sync/kopis/status → { totalEvents, detailMissing }
 순환 갱신하므로 **0이 될 수 없다**(7일이 지나면 다시 대상이 된다). 이 값이 답해야 하는 질문은
 "초기 수집이 끝났는가"라서 `detailSyncedAt IS NULL`만 센다.
 
+참고로 `findIdsNeedingDetail`이 전량을 매일 대상으로 삼지 않는 이유: 레이트 리밋(5회/초)과
+회차당 상한(300건) 때문에 전량을 매번 대상으로 만들면 계속 밀린다. 대신 오래된 순(NULL 먼저)으로
+300건씩 순환시켜, 약 1,446건 기준 한 바퀴에 약 5일이 걸리고 KOPIS 호출량은 하루 300건으로 일정하다.
+갱신 주기(`kopis.sync.detail-refresh-after-days`, 기본 7일)는 이보다 길어야 대상이 쌓이지 않는다.
+
 의미는 테스트로 고정했다(`EventDetailSyncMarkerTest`) —
 *"runningTime이 비어도 상세를 받았으면 detailSyncedAt이 찍힌다"*.
 
@@ -127,5 +132,8 @@ No property 'findIdsNeedingDetail' found for type 'Event'
 - **53건이 정확히 무엇이었는지는 개별 확인하지 않았다.** `detailMissing: 0`이 나온 것으로
   "상세는 다 받았다"까지만 확정했고, 그 공연들의 KOPIS 원본에 `prfruntime`이 왜 없는지는
   보지 않았다. 이 문서의 주장은 **"대리값이 틀렸다"**이지 "KOPIS 데이터가 이렇다"가 아니다.
+- **상세 조회가 영구적으로 실패하는 공연이 많으면 뒤가 굶는다.** 대상 정렬이 NULL을 앞에 두고, 실패 시
+  `detailSyncedAt`을 남기지 않으므로, 그런 공연이 회차 상한(300)보다 많으면 매 회차를 차지한다.
+  그런 상황이 생기면 "시도 시각"을 성공 시각과 분리해 기록해야 한다 — 지금은 넣지 않았다.
 - **`detailMissing`이 0을 유지한다는 보장은 없다.** 새 공연이 들어오면 다시 늘어난다 —
   이 값은 "지금 이 순간 초기 수집이 끝났는가"이지 완료 상태의 영구 표식이 아니다.

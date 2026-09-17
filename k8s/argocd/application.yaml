@@ -46,19 +46,10 @@ spec:
       - CreateNamespace=true
       # 대량 리소스가 아니므로 서버사이드 적용으로 필드 소유권 충돌을 줄인다.
       - ServerSideApply=true
-      # RespectIgnoreDifferences=true 는 쓰지 않는다. 문서상으로는 sync 단계에서도
-      # ignoreDifferences를 존중해야 하지만, 이 클러스터(ArgoCD v3.5.0)에서는 막지 못했다
-      # (web으로 통제 실험: replicas 4 → sync → Git 값 2로 복귀, SSA를 빼도 동일).
-      # 동작하지 않는 옵션을 "이걸로 막힌다"고 남겨두면 다음 사람이 속는다.
-      # 실제 방어는 api-deployment.yaml 에서 replicas 필드를 없앤 것이다.
-  # diff 노이즈 제거용으로만 남긴다. api는 Git에 replicas가 없으므로 클러스터의 실제 값
-  # (HPA가 정한 수)이 항상 "추가된 필드"로 잡히는데, 그걸 OutOfSync로 띄우지 않기 위해서다.
-  # 이것만으로 sync를 막지는 못한다(위 참조) — 방어는 매니페스트에서 필드를 뺀 것이다.
-  # name으로 하나씩 명시한다. kind 전체로 넓히지 않는다.
-  # 넓히면 앞으로 추가되는 모든 Deployment의 replicas 드리프트까지 조용히 무시된다.
-  # 하네스 규칙 8)은 "HPA 대상 Deployment에 replicas 금지"만 막을 뿐,
-  # HPA가 없는 새 Deployment의 드리프트가 무시되는 것은 막지 못한다 — 방향이 반대다.
-  # HPA를 붙일 때마다 여기에 한 줄 추가하는 수고가 그 위험보다 싸다.
+      # RespectIgnoreDifferences=true 는 쓰지 않는다 — 이 클러스터에서 sync를 막지 못했다(TS-022).
+      # 실제 방어는 api-deployment.yaml에서 replicas 필드를 없앤 것이다.
+  # diff 노이즈 제거용이다(HPA가 정한 replicas를 OutOfSync로 띄우지 않음). sync를 막지는 못한다.
+  # name으로 하나씩 명시한다 — kind 전체로 넓히면 새 Deployment의 replicas 드리프트까지 조용히 무시된다.
   ignoreDifferences:
     - group: apps
       kind: Deployment

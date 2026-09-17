@@ -12,16 +12,8 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 
 /**
- * Redis 전송 중 암호화(TLS)는 인프라와 앱이 짝을 맞춰야만 동작한다.
- *
- * <p>{@code platform} 스택은 ElastiCache를 {@code transit_encryption_enabled = true}로 만든다.
- * TLS를 켠 캐시에 평문으로 붙으면 연결이 전부 실패하고, readiness에 {@code redis}가 있어
- * Pod가 영원히 Ready가 되지 않는다. 반대로 로컬·CI의 Testcontainers Redis는 평문이라
- * 기본값을 켜 두면 개발 흐름과 테스트가 통째로 깨진다.
- *
- * <p>그래서 지켜야 할 것이 두 방향이고, 아래 두 테스트가 각각을 잡는다.
- * 하나만 두면 나머지 방향의 회귀를 놓친다 — "기본이 꺼져 있다"만 보면 스위치가 고장 나도 통과하고,
- * "스위치가 동작한다"만 보면 기본값이 켜져도 통과한다.
+ * Redis TLS는 인프라와 앱이 짝을 맞춰야 한다(ADR-013) — 운영 ElastiCache는 TLS, 로컬·CI는 평문.
+ * 두 방향을 각각 잡는다: 기본값은 꺼져 있는가, 스위치를 켜면 실제로 SSL이 켜지는가.
  */
 @SpringBootTest
 class RedisTlsConfigIntegrationTest extends IntegrationTestSupport {

@@ -32,17 +32,9 @@ import org.springframework.test.context.TestPropertySource;
         // 없어 컨텍스트가 뜨는 순간 첫 실행이 즉시 발사되고, 그 UPDATE(RowExclusive)가 다른 테스트의
         // TRUNCATE(ACCESS EXCLUSIVE)와 데드락을 만든다.
         "flowticket.scheduling.enabled=false",
-        // 토픽 자동 생성을 끈다. 이 한 줄이 컨텍스트 부트를 41초 → 1초대로 바꾼다.
-        //
-        // KafkaConfig에 NewTopic 빈이 둘 있어(order-events, order-events.DLT) Spring Boot의
-        // KafkaAdmin이 부팅 시 브로커에 붙어 토픽을 만들려 한다. 이 그룹은 브로커를 쓰지 않아
-        // 아래 @DynamicPropertySource가 bootstrap을 연결 불가 주소로 박으므로, admin 클라이언트가
-        // 붙지 못한 채 재시도하다 약 40초 뒤에야 포기한다(IMP-019).
-        //
-        // 리스너(spring.kafka.listener.auto-startup)를 끄는 것으로는 해결되지 않는다 —
-        // 멈추는 주체가 리스너가 아니라 admin 클라이언트이기 때문이다.
-        //
-        // Kafka를 실제로 쓰는 테스트 4개는 이 베이스를 상속하지 않으므로 토픽 생성이 유지된다.
+        // 토픽 자동 생성을 끈다. 이 그룹은 브로커가 없어 KafkaAdmin이 약 40초 재시도한 뒤 포기한다(IMP-019).
+        // 리스너 auto-startup으로는 안 된다 — 멈추는 주체가 admin 클라이언트다.
+        // Kafka를 실제로 쓰는 테스트는 이 베이스를 상속하지 않는다.
         "spring.kafka.admin.auto-create=false",
 })
 public abstract class IntegrationTestSupport {

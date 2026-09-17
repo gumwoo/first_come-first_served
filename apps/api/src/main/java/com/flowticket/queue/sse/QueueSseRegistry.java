@@ -40,17 +40,9 @@ public class QueueSseRegistry implements MessageListener {
     /**
      * 토큰용 SSE 스트림 생성·등록. 완료/타임아웃/에러 시 자동 정리.
      *
-     * <p>연결 직후 코멘트 프레임을 한 번 보낸다. 이게 없으면 응답이 커밋되지 않아
-     * 브라우저의 {@code EventSource}가 OPEN으로 전이하지 않고 {@code onopen}이 불리지
-     * 않는다. 프론트는 재연결 시 {@code onopen}에서 상태를 다시 읽어 놓친 승격 알림을
-     * 복구하는데(ADR-015 1)), 그 복구가 통째로 발동하지 못한다.
-     *
-     * <p>코멘트({@code :}로 시작)를 쓰는 이유는 프로토콜 표면을 늘리지 않기 위해서다 —
-     * {@code EventSource}가 무시하므로 프론트에 리스너를 추가할 필요가 없다.
-     *
-     * <p>이것은 연결 성립을 위한 1회 전송이고, 오래 유휴한 연결이 프록시(ALB 등)에
-     * 끊기는 것을 막는 주기적 하트비트와는 다른 문제다. 후자는 idle timeout 실제값을
-     * 확인한 뒤 별도로 정한다(ADR-015 2)).
+     * <p>연결 직후 코멘트 프레임({@code :})을 한 번 보낸다. 없으면 응답이 커밋되지 않아 {@code onopen}이
+     * 불리지 않고, 재연결 시 상태 재조회(ADR-015 ①, TS-012)가 발동하지 못한다.
+     * 유휴 연결 유지용 하트비트(ADR-015 ②)와는 다른 문제다.
      */
     public SseEmitter subscribe(String token) {
         SseEmitter emitter = new SseEmitter(timeoutMs);

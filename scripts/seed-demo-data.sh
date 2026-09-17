@@ -108,7 +108,7 @@ echo "    좌석 있음 ${already}건 / 보조 시딩 ${seeded}건"
 #
 # 이건 운영 기본 동작과 다르다. 앱은 일부러 회차당 300건만 처리한다 —
 # "오래된 순으로 300건씩 순환시켜 전체가 약 5일에 한 바퀴, KOPIS 호출량은 하루 300건으로 일정"
-# 이 설계 의도다(EventRepository.findIdsNeedingDetail javadoc).
+# 이 설계 의도다(TS-033).
 #
 # 여기서 반복하는 이유는 갓 만든 클러스터는 전부 비어 있어서다. 며칠을 기다릴 수 없다.
 # 속도 제한은 지킨다(앱의 KopisRateLimiter 5회/초, KOPIS 허용은 IP당 10회/초 — IMP-018).

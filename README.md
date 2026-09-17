@@ -1,6 +1,6 @@
 # FlowTicket
 
-선착순 공연 예매 시스템입니다. 대기열·좌석 선점·주문·결제·환불을 하나의 수직 슬라이스로 다룹니다.
+선착순 공연 예매 시스템입니다. 대기열·좌석 선점·주문·결제·환불까지 예매 흐름 전체를 다룹니다.
 
 - **동시성 정합성** — 대기열·좌석·결제를 Redis Lua·조건부 `UPDATE`·멱등성 키로 원자화합니다.
 - **GitOps 배포** — Terraform(인프라)과 Argo CD(앱)로 소유를 나눠 AWS EKS에 올립니다.
@@ -156,7 +156,7 @@ contracts/             enum, API, event, error, stack, layer 계약
 docs/
   common/              공통 API·레이아웃·디자인 시스템
   rules/               도메인·백엔드·프론트 규칙
-  screens/             기능 슬라이스와 화면 스펙
+  screens/             기능별 구현 목록과 화면 스펙
   decisions/           ADR 설계 결정
   improvements/        IMP 측정 기반 개선 기록
   troubleshooting/     TS 장애·회고 기록
@@ -201,7 +201,7 @@ flowchart LR
 
 | 목적 | 문서 |
 |---|---|
-| 현재 기능 슬라이스·화면 상태 | [docs/screens/_index.md](docs/screens/_index.md) |
+| 기능별 구현·화면 상태 | [docs/screens/_index.md](docs/screens/_index.md) |
 | 도메인 불변식 | [docs/rules/domain-rules.md](docs/rules/domain-rules.md) |
 | API·이벤트·enum 계약 | [contracts](contracts) |
 | 공통 API·레이아웃·디자인 | [docs/common](docs/common) |
@@ -212,6 +212,6 @@ flowchart LR
 
 ## 작업 원칙
 
-기능은 화면 하나가 아니라 **DB 스키마 → API → 프론트 화면 → 통합 검증**의 수직 슬라이스로 완성합니다. 위험 도메인인 대기열·좌석·결제·환불을 변경할 때는 해당 도메인 규칙과 ADR을 먼저 확인합니다.
+기능 하나를 **DB 스키마 → API → 프론트 화면 → 통합 검증**까지 끝낸 뒤 다음 기능으로 넘어갑니다. 위험 도메인인 대기열·좌석·결제·환불을 변경할 때는 해당 도메인 규칙과 ADR을 먼저 확인합니다.
 
 상세 작업 규칙은 [AGENTS.md](AGENTS.md), 계약·하네스의 상세 설명은 [docs/HARNESS.md](docs/HARNESS.md)를 참고합니다.

@@ -9,27 +9,8 @@ import org.springframework.stereotype.Service;
 /**
  * 로그아웃된 Access Token을 남은 TTL 동안 블랙리스트로 관리.
  *
- * <p>Redis 장애 시의 방침을 여기서 정한다(ADR-016). 읽기와 쓰기를 다르게 다룬다.
- *
- * <ul>
- *   <li>읽기({@link #isBlacklisted})는 fail-open — 확인하지 못하면 "블랙리스트가 아니다"로
- *       간주하고 요청을 통과시킨다. 이 검사는 {@code JwtAuthenticationFilter} 안에 있어서,
- *       예외를 그대로 올리면 Bearer 헤더가 달린 모든 요청이 500이 된다 — 공개 경로인
- *       좌석·공연 조회까지 포함해서다(로그인한 브라우저는 공개 경로에도 토큰을 보낸다).</li>
- *   <li>쓰기({@link #blacklist})는 fail-loud — 실패를 삼키지 않는다. 취소를 기록하지
- *       못했는데 "로그아웃됐다"고 답하면 거짓말이 된다.</li>
- * </ul>
- *
- * <p>fail-open이 무엇을 포기하는가: Redis를 못 읽는 동안, 이미 로그아웃된 access token이
- * 남은 TTL(최대 30분, {@code jwt.access-token-ttl}) 동안 다시 통한다.
- *
- * <p>그럼에도 fail-open인 이유: 같은 장애 구간에서 {@code AuthService.logout()}은 어차피
- * 실패한다 — {@code TokenService.revoke()}와 이 클래스의 쓰기가 모두 Redis다. 즉 fail-closed로
- * 막아도 "취소할 수 있는 상태"가 보존되지 않는다. 얻는 것 없이 "취소가 지연된다"를
- * "서비스가 멈춘다"로 바꿀 뿐이다.
- *
- * <p>이 판단이 뒤집히는 조건: 블랙리스트가 로그아웃 외의 것을 막게 되면(예: 침해 계정
- * 강제 차단, 관리자 세션 킬) 지연의 대가가 달라진다. 그때는 다시 결정해야 한다.
+ * <p>Redis 장애 시 읽기({@link #isBlacklisted})는 fail-open, 쓰기({@link #blacklist})는 실패를 전파한다.
+ * 필터 안의 읽기가 예외를 올리면 공개 경로까지 Bearer 요청이 전부 500이 된다(ADR-016).
  */
 @Slf4j
 @Service

@@ -88,32 +88,12 @@ public class SeatService {
     /**
      * 좌석맵: 등급 요약(가격·잔여) + 개별 좌석.
      *
-     * <p>{@code seat.map-cache-ttl-ms}가 0보다 크면 짧은 TTL 캐시를 태운다. 기본값은 0(끔)이다.
-     * 성능 상한을 확인하기 위한 실험 스위치이지 운영 설계가 아니다(IMP-020).
-     * 좌석은 단순 조회 데이터가 아니라 재고성 상태라, TTL 동안 이미 선점된 좌석이
-     * AVAILABLE로 보일 수 있다. 최종 선점은 조건부 UPDATE가 막지만(ADR-003) 사용자가 고른 뒤
-     * 거절당하는 충돌은 늘어난다.
+     * <p>{@code seat.map-cache-ttl-ms}가 0보다 크면 짧은 TTL 캐시를 태운다(기본 0, 실험 스위치).
+     * 이벤트 기반 무효화가 없어 TTL 동안 선점된 좌석이 AVAILABLE로 보일 수 있다(IMP-020).
      *
-     * <p>운영 설계로 가려면 이벤트 기반 무효화를 얹어야 한다 —
-     * {@code seat.held/released/expired} 발생 시 해당 eventId 캐시를 지우고, 이벤트 유실에 대비해
-     * 짧은 TTL을 함께 둔다.
-     *
-     * <p>TTL 만료 시 동시 miss에 대한 single-flight/lock을 구현하지 않았다.
-     * 도착률이 높고 TTL이 짧으면 키가 만료되는 순간 여러 요청이 동시에 miss를 보고 전부
-     * {@code loadSeatMap()}으로 들어간다(cache stampede). correctness 문제는 아니다.
-     *
-     * <p>{@code NOT_SUPPORTED}로 트랜잭션 밖에서 돈다. 클래스 레벨
-     * {@code @Transactional(readOnly = true)}를 그대로 두면 캐시 hit이어도 트랜잭션이 열리고
-     * 커넥션을 빌린다 — 캐시 hit이 조회 쿼리를 피해도 트랜잭션·커넥션 경계 비용은 남는다.
-     *
-     * <p>그래서 조회는 트랜잭션 밖에서 하고, miss일 때만 프록시를 거쳐
-     * {@link #loadSeatMap(Long)}을 불러 트랜잭션을 연다. 자기 호출은 프록시를 타지 않으므로
-     * {@code self}를 거친다(PaymentService와 같은 패턴).
-     *
-     * <p>{@code NOT_SUPPORTED}는 "트랜잭션을 새로 열지 않는다"가 아니라 호출자가 이미
-     * 트랜잭션 안이면 그것을 일시 중단(suspend)한다. 현재 호출처는
-     * {@code SeatController} 하나뿐이고 그쪽에 {@code @Transactional}이 없어 문제가 없다 —
-     * 트랜잭션 안에서 이 메서드를 부르는 코드가 생기면 그 의미를 다시 봐야 한다.
+     * <p>{@code NOT_SUPPORTED}로 트랜잭션 밖에서 돌고, miss일 때만 {@code self}를 거쳐
+     * {@link #loadSeatMap(Long)}의 트랜잭션을 연다. 호출자가 트랜잭션 안이면 그것을 suspend하므로
+     * 트랜잭션 안에서 이 메서드를 부르는 코드가 생기면 다시 봐야 한다.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SeatMapResponse getSeats(Long eventId) {

@@ -23,26 +23,8 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 검증 실패 → 400. 상위 타입인 {@code BindException}으로 받는다.
-     *
-     * <pre>
-     * Exception
-     *   └─ BindException                       ← @ModelAttribute + setter 바인딩(가변 빈)
-     *        └─ MethodArgumentNotValidException ← @RequestBody, 그리고
-     *                                             @ModelAttribute + 생성자 바인딩(record)
-     * </pre>
-     *
-     * <p>이 계층은 측정으로 확인했다. "@ModelAttribute면 BindException"이라는 통설은
-     * 가변 빈에만 맞고, {@code PageQuery} 같은 record는 생성자 바인딩이라 Spring 6.1이
-     * {@code MethodArgumentNotValidException}을 던진다(MockMvc로 실제 resolvedException 확인).
-     *
-     * <p>그래서 record만 쓰는 지금은 하위 타입만 잡아도 동작한다. 그럼에도 상위 타입으로 받는 이유는
-     * 가변 DTO가 하나라도 추가되는 순간 그쪽이 조용히 500으로 떨어지기 때문이다.
-     * 본문 구성은 그대로다 — {@code BindException}에도 {@code getBindingResult()}가 있다.
-     *
-     * <p>{@code @RequestParam}에 제약을 다는 방식({@code @Validated} + {@code @Min})은 쓰지 않았다.
-     * 그쪽은 {@code ConstraintViolationException}을 던지는데 이 저장소에 그 핸들러가 없어
-     * 결국 500이 된다.
+     * 검증 실패 → 400. 하위 타입({@code MethodArgumentNotValidException})이 아니라 {@code BindException}으로
+     * 받는다 — 가변 DTO가 추가되면 그쪽은 {@code BindException}을 던져 500으로 떨어진다(api-rules.md §4).
      */
     @ExceptionHandler(BindException.class)
     public ResponseEntity<ErrorResponse> handleValidation(BindException e) {

@@ -2,19 +2,10 @@ import { test, expect } from "@playwright/test";
 import { seedAdmittedUser, seedOrder, firstSelectable, seatTitle } from "../helpers/seed";
 
 /**
- * ADR-015 §1) 회귀 — 좌석 SSE도 대기열과 같은 초기 프레임이 필요하다.
+ * ADR-015 §1) 회귀 — 좌석 SSE도 초기 프레임이 있어야 재연결 후 `onopen` 재조회가 발동한다.
  *
- * <p>`SeatSseRegistry.subscribe()`가 emitter를 등록만 하고 아무것도 보내지 않으면,
- * 첫 전송 전까지 응답이 커밋되지 않으면 브라우저 `EventSource`가 OPEN으로 전이하지 않고
- * `onopen`이 불리지 않는다. 그러면 `useSeats`의 `es.onopen = () => refresh()`가 발동하지 못한다.
- *
- * <p>대기열보다 위험하다. `useSeats`에는 폴링이 없다 —
- * 재연결 뒤 자동 복구 경로는 `onopen` 재조회뿐이다. 이 경로가 발동하지 않으면,
- * 사용자가 새로고침하거나 페이지를 다시 열기 전까지 끊긴 사이의 좌석 상태 변경을
- * 화면이 반영하지 못한다. 그동안 이미 선점된 좌석을 고르고 제출 단계에서야 거절당한다.
- *
- * <p>대기열 회귀 테스트(`queue-waiting.spec.ts`)와 같은 구조다 — SSE를 막아 이벤트를
- * 소실시키고, 풀었을 때 재연결만으로 복구되는지 본다. 초기 프레임 전송을 되돌리면 실패한다.
+ * <p>`useSeats`에는 폴링이 없어 이 경로가 유일한 복구 수단이다. SSE를 막아 이벤트를 소실시키고,
+ * 풀었을 때 재연결만으로 좌석맵이 갱신되는지 본다. 초기 프레임 전송을 되돌리면 실패한다.
  */
 test("SSE가 끊긴 사이 좌석이 선점돼도 재연결하면 좌석맵이 갱신된다", async ({ page }) => {
   const { eventId, queueToken, accessToken } = await seedAdmittedUser(page);

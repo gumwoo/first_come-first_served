@@ -94,16 +94,8 @@ class DlqIntegrationTest {
 
     @Test
     void 역직렬화가_실패하는_독성_메시지도_DLQ로_간다() throws Exception {
-        // TS-020 회귀. JsonDeserializer를 직접 쓰면 역직렬화가
-        // poll() 단계에서 터져 리스너에 도달하지 못하고, DefaultErrorHandler(+DLT)가 개입할
-        // 수 없다. 결과는 같은 메시지 무한 재시도 — 파드는 Running이고 readiness도 UP인데
-        // 처리가 멈춘 채 CPU만 태운다.
-        //
-        // 위 두 테스트는 역직렬화에 성공한 뒤 리스너에서 던지는 경우라 이 경로를 못 잡는다.
-        // 그래서 타입 헤더 없는 평문을 직접 넣는다 — 재시도해도 절대 성공하지 않는 유형이다.
-        // "topic이 order-events인 행이 있다"로 단언하면 안 된다. 같은 클래스의 다른 테스트도
-        // 같은 토픽으로 DLQ 행을 만들고, 그 비동기 처리가 @BeforeEach의 deleteAll() 뒤에 끝나면
-        // 그 행을 보고 거짓 통과한다. 그래서 이 메시지만 식별할 수 있는 표식을 넣는다.
+        // TS-020 회귀 — 역직렬화 단계의 실패도 DLQ로 가는가. 타입 헤더 없는 평문을 직접 넣는다.
+        // 토픽만으로 단언하면 다른 테스트가 비동기로 남긴 DLQ 행을 보고 거짓 통과하므로, 이 메시지 전용 표식을 쓴다.
         String marker = "poison-" + UUID.randomUUID();
 
         try (KafkaProducer<String, String> raw = new KafkaProducer<>(Map.of(

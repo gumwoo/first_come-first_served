@@ -30,29 +30,9 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
     List<Long> findIdsByStatusIn(@Param("statuses") Collection<EventStatus> statuses);
 
     /**
-     * 상세를 받아야 할 공연 id. 미수집 + 오래된 것 둘 다 대상이다.
-     *
-     * <pre>
-     *   detailSyncedAt IS NULL           → 아직 한 번도 못 받음 (최우선)
-     *   detailSyncedAt &lt; staleBefore     → 받은 지 오래됨 (순환 갱신)
-     *   정렬: 오래된 순, NULL 먼저
-     * </pre>
-     *
-     * <p>왜 오래된 것도 넣나. NULL만 대상으로 삼으면 한 번 채운 뒤 다시 보지 않아,
-     * KOPIS에서 가격·출연진·공연시간이 바뀌어도 우리 값은 그대로 남는다.
-     *
-     * <p>왜 전량을 매일 다시 받지 않나. 공연 약 1,446건인데 레이트 리밋(5회/초) 때문에
-     * 전량이면 약 5분이고, 회차당 상한이 300건이라 매일 전부를 대상으로 만들면 계속 밀린다.
-     * 대신 오래된 순으로 300건씩 순환시킨다 — 전체가 한 바퀴 도는 데 약 5일이 걸리고,
-     * 그 사이 KOPIS 호출량은 하루 300건으로 일정하다.
-     *
-     * <p>알려진 한계: 정렬이 NULL을 앞에 두므로, 상세 조회가 영구적으로 실패하는
-     * 공연이 회차 상한(300)보다 많으면 그것들이 매 회차를 차지해 뒤가 굶는다. 실패 시
-     * {@code detailSyncedAt}을 남기지 않는 설계의 대가다. 실제로 그런 상황이 생기면
-     * "시도 시각"을 성공 시각과 분리해 기록해야 한다 — 지금은 넣지 않았다.
-     *
-     * <p>id만 뽑는 이유는 한 번에 다 로드하지 않기 위해서다 — 상세 수집은 건별 외부 호출이라
-     * 오래 걸리므로, 엔티티를 통째로 들고 있으면 그 시간 내내 영속성 컨텍스트에 남는다.
+     * 상세를 받아야 할 공연 id — 미수집(NULL)과 오래된 것을 오래된 순(NULL 먼저)으로 고른다.
+     * 회차당 상한으로 순환시키는 이유와 알려진 한계(영구 실패 공연이 많으면 뒤가 굶음)는 TS-033.
+     * 엔티티가 아니라 id만 뽑아, 건별 외부 호출 동안 영속성 컨텍스트에 남기지 않는다.
      */
     @Query("""
             select e.id from Event e
@@ -64,15 +44,8 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
                                     Pageable pageable);
 
     /**
-     * 상세를 한 번도 못 받은 공연 수.
-     *
-     * <p>{@code findIdsNeedingDetail}과 조건이 일부러 다르다 — 그쪽은 "오래된 것"도 대상에
-     * 넣어 순환 갱신하므로 0이 될 수 없다(7일이 지나면 다시 대상이 된다).
-     * 이 값은 "초기 수집이 끝났는가"를 묻는 것이라 NULL만 센다.
-     *
-     * <p>{@code runningTime} 같은 개별 필드로 대신 판정하면 안 된다.
-     * {@code Event.updateDetail()}은 상세 응답에 그 필드가 없어도 {@code detailSyncedAt}을
-     * 찍는다 — 즉 상세는 받았는데 runningTime만 비어 있는 공연이 정상적으로 존재한다.
+     * 상세를 한 번도 못 받은 공연 수("초기 수집이 끝났는가"). 순환 갱신 대상과 달리 NULL만 센다.
+     * {@code runningTime} 같은 개별 필드로 대신 세면 틀린다(TS-033).
      */
     long countByKopisIdIsNotNullAndDetailSyncedAtIsNull();
 

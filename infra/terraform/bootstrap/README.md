@@ -107,6 +107,19 @@ gh workflow run image.yml --ref main
 ARN이 platform으로 넘어가 **ALB 생성이 실패한다.** 대기가 길어지면 Route53에 검증 레코드가
 실제로 생성됐는지 먼저 본다.
 
+### 검증 레코드는 리소스 하나로 둔다
+
+루트(`flow-ticket.com`)와 와일드카드(`*.flow-ticket.com`)는 ACM이 **같은 검증 CNAME**을 돌려준다
+(apply에서 두 항목의 레코드 이름·값이 동일했다). 공급자 문서 예제처럼 도메인별로 `aws_route53_record`를
+만들면 Route53 레코드 하나를 Terraform 주소 둘이 소유한다.
+
+- destroy 때 먼저 지운 쪽 다음에 두 번째가 없는 레코드를 지우려다 실패한다
+- 한쪽만 제거하는 리팩터링이 실제 DNS 레코드를 지운다
+- state에는 2개, AWS에는 1개라 소유 관계가 어긋난다
+
+`allow_overwrite`는 UPSERT를 허용할 뿐 이 중복 소유를 풀지 않는다. 그래서 루트 도메인 항목 하나만
+골라 리소스 1개로 만든다(`acm.tf`). `for_each`를 쓰지 않으니 "키가 apply 이후에 정해진다"는 제약도 없다.
+
 ## 이 스택을 destroy하지 않는다
 
 `prevent_destroy`를 ECR·IAM 롤·OIDC 공급자에 걸어 뒀다. 지우면 Image 파이프라인이 즉시 멈추고

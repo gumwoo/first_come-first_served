@@ -59,24 +59,9 @@ public class OrderService {
 
     /**
      * 주문 생성: hold 검증(HELD·소유자·미만료) → 가격 스냅샷 → order(PENDING).
-     * 같은 hold로는 활성 주문이 하나만 존재한다.
      *
-     * <p>앱의 "찾고 → 없으면 생성"은 순차 더블 POST만 막는다. 동시에 오면 둘 다 "없음"을
-     * 보고 각자 INSERT하므로, 최종 방어선은 부분 UNIQUE 인덱스({@code uq_orders_active_hold})다.
-     * 제약에 걸린 쪽은 이미 다른 요청이 만든 주문을 멱등하게 반환한다(결제·환불과 같은 형태).
-     *
-     * <p>캐치가 트랜잭션 밖에 있어야 한다. 안에서 잡으면 이미 rollback-only로 표시돼
-     * 이어지는 조회·커밋이 실패한다.
-     *
-     * <p>활성 주문이 안 잡히면 우리가 아는 제약이 아니다 — NOT NULL·FK 같은 진짜 버그다.
-     * 그때는 원 예외를 그대로 올린다. 가입({@code AuthService.duplicateOf})과 같은 규칙이다:
-     * 제약 위반을 도메인 예외로 바꾸는 건 정체를 확인한 것만이고, 나머지는 손대지 않는다.
-     *
-     * <p>{@code NOT_SUPPORTED}가 반드시 필요하다. 이 클래스에는 클래스 레벨
-     * {@code @Transactional(readOnly = true)}가 붙어 있어, 메서드에 아무것도 없으면
-     * 읽기 전용 트랜잭션이 이미 열린 상태로 들어온다. 그러면 {@code createTx}의
-     * {@code REQUIRED}가 새 트랜잭션을 만드는 대신 그 읽기 전용 트랜잭션에 참여해
-     * (1) INSERT가 read-only 오류로 실패하고 (2) 경계가 분리되지 않아 캐치도 무의미해진다.
+     * <p>동시 생성의 최종 방어선은 부분 UNIQUE({@code uq_orders_active_hold})이고, 진 쪽은 기존 주문을 반환한다.
+     * 확인한 제약이 아니면 원 예외를 올린다. {@code NOT_SUPPORTED}여야 캐치가 트랜잭션 밖에 있다(TS-014).
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public OrderResponse create(Long userId, Long holdId) {

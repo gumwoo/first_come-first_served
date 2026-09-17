@@ -72,16 +72,8 @@ public class KafkaConfig {
     }
 
     /**
-     * DLT로 나가는 값은 두 종류다 — 이걸 한 직렬화기로 처리할 수 없다(TS-020).
-     *
-     * <pre>
-     *   리스너에서 실패    → 역직렬화는 성공했으므로 값이 OrderEvent → JsonSerializer
-     *   역직렬화에서 실패  → 값이 없다. Recoverer가 원본 byte[]를 그대로 싣는다 → ByteArraySerializer
-     * </pre>
-     *
-     * <p>JsonSerializer 하나로 두면 {@code byte[]}가 base64 JSON 문자열로 직렬화돼
-     * DLT 소비 쪽에서 다시 역직렬화에 실패한다. 독성 메시지가 DLT로 이사할 뿐이고,
-     * DLT에는 다시 보낼 곳이 없어 거기서 무한 재시도가 된다.
+     * DLT 값 직렬화기를 타입별로 나눈다 — 리스너 실패는 {@code OrderEvent}(JSON), 역직렬화 실패는 원본 byte[].
+     * JSON 하나로 두면 byte[]가 base64 문자열이 되어 DLT 소비에서 다시 실패한다(TS-020).
      *
      * <p>{@code assignable=true}라 {@code OrderEvent}가 {@code Object.class} 매핑에 걸린다.
      */

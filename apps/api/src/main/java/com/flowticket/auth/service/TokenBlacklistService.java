@@ -29,7 +29,7 @@ public class TokenBlacklistService {
         this.meterRegistry = meterRegistry;
     }
 
-    /** 실패를 삼키지 않는다 — 취소를 기록하지 못했다면 로그아웃도 성공이 아니다. */
+    /** 실패를 삼키지 않는다. 취소를 기록하지 못했다면 로그아웃도 성공이 아니다. */
     public void blacklist(String accessToken, long remainingSeconds) {
         if (remainingSeconds <= 0) {
             return;
@@ -41,7 +41,7 @@ public class TokenBlacklistService {
      * 확인하지 못하면 {@code false}(=통과). 위 클래스 주석의 fail-open 방침이다.
      *
      * <p>지표를 올리는 이유: 이 실패는 사용자에게 보이지 않는다. 요청은 전부 성공하고
-     * 취소만 조용히 안 먹는다. 세지 않으면 알아챌 방법이 없다.
+     * 로그아웃 취소만 반영되지 않는다. 세지 않으면 알아챌 방법이 없다.
      */
     public boolean isBlacklisted(String accessToken) {
         try {

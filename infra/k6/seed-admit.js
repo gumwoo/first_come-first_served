@@ -1,5 +1,5 @@
 // 시드 사용자들을 대기열에 넣고 ADMITTED가 된 것만 골라 토큰 파일을 갱신한다.
-// 정원이 100이라 120명 중 최대 100명이 통과한다 — 그 상한 자체가 이 경로의 설계다.
+// 정원이 100이라 120명 중 최대 100명이 통과한다. 그 상한 자체가 이 경로의 설계다.
 const fs=require('fs');
 const B='https://flow-ticket.com/api';
 const EV=process.argv[2], IN=process.argv[3], OUT=process.argv[4];

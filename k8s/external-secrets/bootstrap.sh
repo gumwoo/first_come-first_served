@@ -39,13 +39,13 @@ sed "s|__RDS_SECRET_ARN__|${RDS_SECRET_ARN}|g" "$HERE/externalsecret-api.yaml" |
 
 echo "==> 5/5 Alertmanager Slack webhook ExternalSecret 적용"
 # 파라미터가 없으면 여기서 멈춘다. 뒤로 미루면 증상이 "Alertmanager 파드가 ContainerCreating에서
-# 멈춤"으로 나타나 원인에서 한 칸 떨어진 곳에서 터진다 — 여기서 이름을 대고 죽는 편이 낫다.
+# 멈춤"으로 나타나 원인에서 한 칸 떨어진 곳에서 터진다. 여기서 이름을 대고 죽는 편이 낫다.
 # 값은 읽지 않는다(--with-decryption 없이 이름만 조회).
 # MSYS_NO_PATHCONV는 이 명령에만 건다. Git Bash(Windows)는 `/`로 시작하는 인자를
 # Windows 경로로 바꾸는데, SSM 파라미터 이름이 정확히 그 모양이라 끄지 않으면
 # `/flowticket/X`가 `C:/Program Files/Git/flowticket/X`로 둔갑해 파라미터가 있는데도
 # ParameterNotFound가 난다.
-# 전역으로 끄면 안 된다 — 위 `terraform -chdir`이 Windows 경로를 받아야 하므로 함께 깨진다.
+# 전역으로 끄면 안 된다. 위 `terraform -chdir`이 Windows 경로를 받아야 하므로 함께 깨진다.
 if ! MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "$SLACK_PARAM" --query 'Parameter.Name' --output text >/dev/null 2>&1; then
   cat >&2 <<EOF
 SSM 파라미터가 없다: $SLACK_PARAM
@@ -58,7 +58,7 @@ fi
 # 존재만으로는 부족하다. 값에 작은따옴표가 섞여 저장되면(PowerShell은 홑따옴표를 벗기지
 # 않는다) 실패가 한참 뒤 Alertmanager 로그에서야 드러난다:
 #   err="parse ...: first path segment in URL cannot contain colon"
-# 값을 출력하지 않고 모양만 본다 — 셸 로그·CI 로그에 URL이 남으면 안 된다.
+# 값을 출력하지 않고 모양만 본다. 셸 로그·CI 로그에 URL이 남으면 안 된다.
 SLACK_URL="$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "$SLACK_PARAM" --with-decryption   --query 'Parameter.Value' --output text)"
 case "$SLACK_URL" in
   https://hooks.slack.com/services/*) ;;
@@ -70,7 +70,7 @@ case "$SLACK_URL" in
     exit 1
     ;;
 esac
-unset SLACK_URL   # 뒤 단계에서 쓰지 않는다 — 환경에 남겨 둘 이유가 없다
+unset SLACK_URL   # 뒤 단계에서 쓰지 않는다. 환경에 남겨 둘 이유가 없다
 # monitoring 네임스페이스는 kube-prometheus-stack helm이 만들지만, 이 스크립트가 먼저 돌 수 있다.
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f "$HERE/externalsecret-alertmanager.yaml"

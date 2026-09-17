@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 클러스터 철거 — terraform이 모르는 리소스를 먼저 치우고, 마지막에 잔여를 점검한다.
+# 클러스터 철거: terraform이 모르는 리소스를 먼저 치우고, 마지막에 잔여를 점검한다.
 #
 # 왜 스크립트인가: `terraform-design.md` §6에 순서가 있어도 사람이 밟으면 빠뜨린다
 # (Ingress 선삭제 누락 → VPC 삭제 막힘, EBS 잔여 확인 누락 → 방치 과금,
@@ -35,8 +35,8 @@ audit() {
   #
   # Terraform이 만든 것은 default_tags의 `Project=flowticket`으로 정확히 걸러진다
   # (versions.tf provider 블록). Terraform 밖에서 만들어지는 둘은 이름으로 판별한다:
-  #   * ALB  — aws-load-balancer-controller가 `k8s-<ns>-<ingress>-...` 형태로 만든다
-  #   * EBS  — EBS CSI 드라이버가 만든다(PVC 태그로 식별)
+  #   * ALB: aws-load-balancer-controller가 `k8s-<ns>-<ingress>-...` 형태로 만든다
+  #   * EBS: EBS CSI 드라이버가 만든다(PVC 태그로 식별)
   local fail=0
   chk() {
     printf "    %-26s %s
@@ -51,7 +51,7 @@ audit() {
   chk "Elastic IP"       "$(aws ec2 describe-addresses --filters "$TAG" --query 'length(Addresses)' --output text 2>/dev/null)"
   chk "VPC"              "$(aws ec2 describe-vpcs --filters "$TAG" --query 'length(Vpcs)' --output text 2>/dev/null)"
   chk "EBS(전체)"        "$(aws ec2 describe-volumes --filters "$TAG" --query 'length(Volumes)' --output text 2>/dev/null)"
-  # PVC 볼륨은 Terraform 밖에서 생겨 Project 태그가 없다 — 별도로 센다.
+  # PVC 볼륨은 Terraform 밖에서 생겨 Project 태그가 없다. 별도로 센다.
   chk "EBS(PVC, 미사용)" "$(aws ec2 describe-volumes --filters Name=status,Values=available --query "length(Volumes[?Tags[?Key=='kubernetes.io/created-for/pvc/name']])" --output text 2>/dev/null)"
   chk "EKS 클러스터"      "$(aws eks list-clusters --query "length(clusters[?@=='$CLUSTER'])" --output text 2>/dev/null)"
   chk "RDS"              "$(aws rds describe-db-instances --query "length(DBInstances[?contains(DBInstanceIdentifier,'$CLUSTER')])" --output text 2>/dev/null)"
@@ -88,7 +88,7 @@ if have_cluster; then
   kubectl delete kafkanodepool --all -n kafka --timeout=120s 2>/dev/null || true
 
   echo "==> 3/7 볼륨 ID 채집 → PVC 삭제"
-  # 삭제 대상을 여기서 확정한다. 태그로 고르면 추측이 된다 — EBS 볼륨은 Terraform이
+  # 삭제 대상을 여기서 확정한다. 태그로 고르면 추측이 된다. EBS 볼륨은 Terraform이
   # 아니라 EBS CSI 드라이버가 만들어 `Project=flowticket` 공통 태그가 붙지 않고,
   # `kubernetes.io/created-for/pvc/name`만으로 고르면 같은 계정의 다른 클러스터 볼륨까지
   # 대상이 된다. 이 클러스터의 PV가 실제로 가리키는 ID를 읽어두면 그 문제가 사라진다.
@@ -96,7 +96,7 @@ if have_cluster; then
 "}{end}' 2>/dev/null     | tr -d '' | grep -E '^vol-' > "$OWNED_VOLS" || true
   echo "    이 클러스터 소유 볼륨 $(grep -c . "$OWNED_VOLS" 2>/dev/null || echo 0)개 기록"
 
-  # Prometheus가 PVC를 잡고 있으면 삭제가 타임아웃된다 — helm 릴리스를 먼저 내린다.
+  # Prometheus가 PVC를 잡고 있으면 삭제가 타임아웃된다. helm 릴리스를 먼저 내린다.
   helm uninstall kube-prometheus-stack -n monitoring --timeout 5m >/dev/null 2>&1 || true
   sleep 15
   kubectl delete pvc --all -A --timeout=180s 2>/dev/null || true
@@ -104,7 +104,7 @@ fi
 
 echo "==> 4/7 고아 EBS 볼륨 정리"
 # 3단계에서 채집한 ID만 지운다. 목록이 없으면(클러스터에 이미 접근 불가) 지우지 않고
-# 후보만 보고한다 — 파괴 자동화는 소유를 증명하지 못하면 멈추는 편이 낫다.
+# 후보만 보고한다. 파괴 자동화는 소유를 증명하지 못하면 멈추는 편이 낫다.
 if [ ! -s "$OWNED_VOLS" ]; then
   echo "    소유 볼륨 목록이 없다(클러스터 접근 불가). 자동 삭제하지 않는다."
   CAND="$(aws ec2 describe-volumes --filters Name=status,Values=available     --query "Volumes[?Tags[?Key=='kubernetes.io/created-for/pvc/name']].[VolumeId,Size,Tags[?Key=='kubernetes.io/created-for/pvc/name']|[0].Value]"     --output text 2>/dev/null | tr -d '')"
@@ -134,13 +134,13 @@ fi
 # 지울 수 없다(사용 중). destroy가 클러스터를 지우다 서브넷에서 막히는 그 순간에야 고아가 된다.
 #
 # 소유 증명은 Project=flowticket 태그가 붙은 VPC 안에 있는가로 한다. 4단계 EBS와 같은
-# 원칙이다 — 소유를 증명하지 못하면 지우지 않는다.
+# 원칙이다. 소유를 증명하지 못하면 지우지 않는다.
 clean_untracked() {
   local vpc="" addr vpcs count
   # 대상 VPC를 임의로 고르지 않는다. 이 함수는 곧바로 delete-network-interface·
   # delete-security-group을 호출한다. 대상 선택이 애매하면 지우는 것이 아니라 멈춘다.
   #
-  # (가) 1순위는 terraform state다 — 지금 destroy가 막혀 있는 바로 그 VPC이므로 태그보다
+  # (가) 1순위는 terraform state다. 지금 destroy가 막혀 있는 바로 그 VPC이므로 태그보다
   #    강한 증명이다(destroy가 실패한 뒤 부르므로 state에 아직 남아 있다).
   addr="$(tf state list 2>/dev/null | grep -E 'aws_vpc\.' | head -1 | tr -d '\r')"
   if [ -n "$addr" ]; then
@@ -167,7 +167,7 @@ clean_untracked() {
   # 1) VPC CNI가 남긴 고아 ENI. detach는 됐는데 회수되지 않아 서브넷 삭제를 막는다.
   #
   # description으로 좁힌다. "이 VPC 안의 available ENI"만으로는 그것이 VPC CNI가
-  # 남긴 것이라는 증명이 안 된다 — SG를 접두사로 좁힌 것과 같은 이유다.
+  # 남긴 것이라는 증명이 안 된다. SG를 접두사로 좁힌 것과 같은 이유다.
   # VPC CNI는 `aws-K8S-<인스턴스ID>` 형태로 적는다.
   local n=0 e
   for e in $(aws ec2 describe-network-interfaces \

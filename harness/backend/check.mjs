@@ -3,7 +3,7 @@
 //
 // 검사 방향(중요):
 //  - 코드에 있으나 계약에 없는 것 = drift → 실패
-//  - 계약에 있으나 코드에 아직 없는 것 = 미구현(허용) — 슬라이스 done 시 done-criteria가 잡음
+//  - 계약에 있으나 코드에 아직 없는 것 = 미구현(허용): 슬라이스 done 시 done-criteria가 잡음
 //  - 단, 코드+계약 양쪽에 존재하는 enum은 값이 정확히 일치해야 함
 
 import { loadYaml, walk, read, globToRe, Reporter, REPO_ROOT } from "../lib/util.mjs";
@@ -260,7 +260,7 @@ for (const file of javaFiles) {
     }
   }
 
-  // (b) actuator 전체(/actuator/**) permitAll 금지 — metrics/prometheus 정보 노출.
+  // (b) actuator 전체(/actuator/**) permitAll 금지: metrics/prometheus 정보 노출.
   if (/["']\/actuator\/\*\*["']/.test(src) && /permitAll/.test(src)) {
     r.fail(`actuator 전체 permitAll 금지(정보 노출): ${rel} — health/info만 공개`);
   }
@@ -283,19 +283,19 @@ for (const file of javaFiles) {
     r.fail(`@Entity에 @Data/@EqualsAndHashCode 금지 → @Getter 등 사용: ${rel}`);
   }
 
-  // (c) 필드/세터 주입 금지 — 생성자 주입만(layer-rules). @Autowired 사용 자체를 차단.
+  // (c) 필드/세터 주입 금지: 생성자 주입만(layer-rules). @Autowired 사용 자체를 차단.
   if (/@Autowired\b/.test(src)) {
     r.fail(`@Autowired 금지 → 생성자 주입 사용: ${rel}`);
   }
 
-  // (d) private 메서드 @Transactional 금지(프록시 미적용으로 트랜잭션이 조용히 안 걸림).
+  // (d) private 메서드 @Transactional 금지(프록시 미적용으로 트랜잭션이 안 걸림).
   //     주석에 방해받지 않도록 주석 제거 후 검사.
   const noComments = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
   if (/@Transactional\b(?:\([^)]*\))?\s*(?:@\w+(?:\([^)]*\))?\s*)*private\b/.test(noComments)) {
     r.fail(`private 메서드에 @Transactional 금지(프록시 미적용): ${rel}`);
   }
 
-  // (e) 전체 개방 금지 — anyRequest().permitAll() 또는 "/**" permitAll.
+  // (e) 전체 개방 금지: anyRequest().permitAll() 또는 "/**" permitAll.
   if (/anyRequest\(\)\s*\.\s*permitAll/.test(src)) {
     r.fail(`anyRequest().permitAll() 금지(전체 API 개방): ${rel}`);
   }
@@ -395,8 +395,8 @@ const DOC_DIRS = {
 };
 
 // 각 디렉터리에 실제로 존재하는 번호를 모은다(파일명 앞머리 기준: TS-014-....md).
-// 정규식을 쓰지 않는다 — 템플릿 리터럴 안의 \d 는 이스케이프가 아니라 그냥 d 로 죽는다.
-// 그러면 목록이 조용히 비어 규칙이 아무것도 잡지 못한다.
+// 정규식을 쓰지 않는다. 템플릿 리터럴 안의 \d 는 이스케이프가 아니라 그냥 d 로 죽는다.
+// 그러면 목록이 비어 규칙이 아무것도 잡지 못한다.
 const existingDocs = {};
 for (const [prefix, dir] of Object.entries(DOC_DIRS)) {
   const abs = path.join(REPO_ROOT, dir);
@@ -473,10 +473,10 @@ if (dtoWithLocalDateTime.length > 0) {
 // (maxUnavailable=0, maxSurge=1) 순간적으로 maxReplicas + maxSurge 개가 공존한다. 평상시 값만
 // 검사하면 "배포하는 순간에만 넘는" 구성을 통과시킨다.
 //
-// 네 값이 서로 다른 곳에 흩어져 있어 사람이 맞추기 어렵다 — maxReplicas는 k8s/base/api-hpa.yaml,
+// 네 값이 서로 다른 곳에 흩어져 있어 사람이 맞추기 어렵다. maxReplicas는 k8s/base/api-hpa.yaml,
 // maxSurge는 k8s/base/api-deployment.yaml, 풀 크기는 application.yml, max_connections는
 // 저장소 밖(RDS 인스턴스 클래스에서 파생)이다.
-// 마지막 값은 클래스별 실측치를 여기에 표로 둔다(추정 아님 — pg_settings로 직접 조회한 값).
+// 마지막 값은 클래스별 실측치를 여기에 표로 둔다(추정 아님: pg_settings로 직접 조회한 값).
 const DB_MAX_CONNECTIONS = {
   "db.t4g.micro": 79, // 2026-08-10 pg_settings 실측
 };
@@ -487,7 +487,7 @@ const NON_APP_HEADROOM = 20;
 {
   // 경로는 반드시 REPO_ROOT 기준으로 만든다. CI는 `harness/`에서 실행하므로
   // 저장소 상대 경로를 그대로 fs에 넘기면 cwd 기준으로 풀려 파일을 못 찾고,
-  // 그러면 규칙이 실패가 아니라 조용히 건너뛰어진다(거짓 안전). 실제로 그렇게 통과했다.
+  // 그러면 규칙이 실패가 아니라 건너뛰어진다(거짓 안전). 실제로 그렇게 통과했다.
   // fixture가 k8s 쪽 값을 갈아끼울 수 있게 열어둔다(maxSurge 항이 실제로 계산에 들어가는지 검증).
   const K8S = process.env.HARNESS_K8S_DIR || "k8s/base";
   const hpaFile = path.join(REPO_ROOT, K8S, "api-hpa.yaml");
@@ -500,7 +500,7 @@ const NON_APP_HEADROOM = 20;
     r.fail("커넥션 상한 검사 대상 파일을 못 찾았다(api-hpa.yaml / api-deployment.yaml / rds variables.tf) — 규칙이 무력화된 상태");
   } else {
     const maxReplicas = Number(read(hpaFile).match(/^\s*maxReplicas:\s*(\d+)/m)?.[1]);
-    // 설정이 없으면 HikariCP 기본값 10이다 — "안 정한 것"도 정해진 값으로 취급해야 한다.
+    // 설정이 없으면 HikariCP 기본값 10이다. "안 정한 것"도 정해진 값으로 취급해야 한다.
     const poolRaw = fs.existsSync(ymlFile)
       ? read(ymlFile).match(/^\s*maximum-pool-size:\s*(?:\$\{[A-Z_]+:)?(\d+)/m)?.[1]
       : undefined;
@@ -547,14 +547,14 @@ const NON_APP_HEADROOM = 20;
 // Apache HttpClient5·Jetty·OkHttp가 없어 JDK HttpClient로 떨어지고, 거기엔 connect/read
 // 기본 타임아웃이 없다(KopisClientConfig 참고).
 //
-// 그래서 상대가 응답을 주지 않으면 톰캣 스레드가 그대로 묶인다. 결제 경로는 더 나쁘다 —
+// 그래서 상대가 응답을 주지 않으면 톰캣 스레드가 그대로 묶인다. 결제 경로는 더 나쁘다.
 // 그 호출이 DB 트랜잭션 안이라 Hikari 커넥션까지 함께 묶이고, 풀은 파드당 5다(TS-021).
 //
 // 런타임 테스트로는 잡기 어렵다(타임아웃을 재현하려면 응답 없는 서버가 필요해 느리고
-// 불안정하다) — 정적으로 싸게 잡는다(TS-028).
+// 불안정하다): 정적으로 싸게 잡는다(TS-028).
 // 클라이언트를 만드는 두 가지 형태를 모두 본다.
-//   1) RestClient.builder(...) / RestClient.create(...)      — 직접 만든다
-//   2) RestClient.Builder 를 주입받아 .build() 한다           — 스프링 빌더를 쓴다
+//   1) RestClient.builder(...) / RestClient.create(...): 직접 만든다
+//   2) RestClient.Builder 를 주입받아 .build() 한다. 스프링 빌더를 쓴다
 //
 // 1)만 보면 주입받은 빌더를 `clone()`해 쓰는 코드(TossPaymentGateway)가 규칙의 시야에서 빠져,
 // requestFactory를 지워도 통과한다.
@@ -586,12 +586,12 @@ function normalize(p) {
 //
 // `@RequestParam(defaultValue = "0") int page` 는 검증이 없다. `?page=-1` 이면 값이 그대로
 // PageRequest.of() 까지 내려가 IllegalArgumentException이 나는데, 이 저장소에는 그 전용
-// 핸들러가 없어 fallback이 잡는다 — 클라이언트 입력 오류가 500 + ERROR 로그가 된다.
+// 핸들러가 없어 fallback이 잡는다. 클라이언트 입력 오류가 500 + ERROR 로그가 된다.
 // size는 상한이 없어 대량 행과 TEXT payload를 한 요청에서 직렬화할 수 있다.
 //
 // 한 곳을 고쳐도 다음 목록 API가 또 같은 줄을 복사하므로, 공통 값 객체(PageQuery)를 쓰도록 정적으로 못박는다.
 //
-// IllegalArgumentException 전체를 400으로 매핑하는 방식은 일부러 택하지 않았다 —
+// IllegalArgumentException 전체를 400으로 매핑하는 방식은 일부러 택하지 않았다.
 // 그 예외는 서버 내부 프로그래밍 오류에도 흔히 쓰여, 진짜 버그가 클라이언트 오류로 숨는다.
 const PAGING_PARAM_RE =
   /@RequestParam[^)]*\)?\s*(?:final\s+)?(?:int|Integer|long|Long)\s+(page|size)\b/;
@@ -637,7 +637,7 @@ if (fs.existsSync(wrapperProps)) {
     const ciVers = [...ci.matchAll(/gradle-version:\s*["']?([0-9][\w.]*)["']?/g)].map((m) => m[1]);
     // 공허한 통과 방지. setup-gradle은 쓰는데 버전을 하나도 못 읽었다면 형식이 바뀐 것이고,
     // 그대로 두면 이 규칙은 영원히 통과한다(검사하는 척만 한다). 못 읽은 것 자체를 실패로 만든다.
-    // setup-gradle이 아예 없으면 CI가 wrapper를 쓰도록 바뀐 것이므로 대조할 대상이 없다 — 건너뛴다.
+    // setup-gradle이 아예 없으면 CI가 wrapper를 쓰도록 바뀐 것이므로 대조할 대상이 없다. 건너뛴다.
     if (ci.includes("setup-gradle") && ciVers.length === 0) {
       r.fail(
         `ci.yml에서 setup-gradle의 gradle-version을 읽지 못했다 — 형식이 바뀌었다면 ` +

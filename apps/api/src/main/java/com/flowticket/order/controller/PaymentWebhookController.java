@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * PG(Toss) 웹훅 수신. 인증(Bearer) 없이 공개 — 대신 서비스에서 secret 대조로 위조를 막는다(ADR-005).
+ * PG(Toss) 웹훅 수신. 인증(Bearer) 없이 공개: 대신 서비스에서 secret 대조로 위조를 막는다(ADR-005).
  * 가상계좌 입금(DEPOSIT_CALLBACK) → VBANK_WAITING→PAID 확정(멱등, Toss 최대 7회 재전송 대비).
  */
 @RestController

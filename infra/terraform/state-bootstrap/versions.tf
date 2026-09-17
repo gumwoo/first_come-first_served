@@ -8,7 +8,7 @@ terraform {
     }
   }
 
-  # backend를 두지 않는다 — 이 스택이 만드는 버킷에 자기 state를 둘 수는 없다.
+  # backend를 두지 않는다. 이 스택이 만드는 버킷에 자기 state를 둘 수는 없다.
   # local state(terraform.tfstate)가 남으며 .gitignore 대상이다.
   #
   # 이 파일을 별도로 백업한다(암호화된 개인 저장소). 유실돼도 AWS 자원은 지워지지

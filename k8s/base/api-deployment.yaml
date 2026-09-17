@@ -7,7 +7,7 @@ spec:
   # replicas를 의도적으로 두지 않는다. 이 Deployment는 HPA가 소유한다(api-hpa.yaml, min 3 / max 7).
   # 여기에 값을 두면 ArgoCD가 sync할 때마다 HPA가 정한 파드 수를 Git 값으로 덮어쓴다.
   #
-  # ignoreDifferences + RespectIgnoreDifferences=true 로 막으려 했으나 실측에서 막지 못했다 —
+  # ignoreDifferences + RespectIgnoreDifferences=true 로 막으려 했으나 실측에서 막지 못했다.
   # HPA가 없는 flowticket-web으로 통제 실험한 결과 4 → sync → 2로 되돌아갔고, ServerSideApply를
   # 빼도 동일했다. 필드 자체를 Git에서 없애는 쪽이 확실하다.
   #
@@ -26,7 +26,7 @@ spec:
       labels: { app: flowticket-api }
     spec:
       # 앱의 SHUTDOWN_TIMEOUT(30s) + preStop(5s)보다 커야 한다. 작으면 진행 중 요청을
-      # 마치기 전에 SIGKILL이 온다 — graceful shutdown 설정이 무의미해지는 지점.
+      # 마치기 전에 SIGKILL이 온다. graceful shutdown 설정이 무의미해지는 지점.
       terminationGracePeriodSeconds: 45
 
       # 같은 노드/AZ에 replica가 몰리면 노드 하나가 죽을 때 용량이 통째로 빠진다.
@@ -78,14 +78,14 @@ spec:
               exec:
                 # SIGTERM 직전에 잠깐 멈춘다. Pod 종료와 ALB 타깃 등록 해제는 비동기라,
                 # 바로 내려가면 아직 우리를 향해 오는 요청이 502가 된다.
-                # 5초가 그 창을 "덮는다"고 보장할 수는 없다 — 등록 해제가 ALB에 반영되는
+                # 5초가 그 창을 "덮는다"고 보장할 수는 없다. 등록 해제가 ALB에 반영되는
                 # 시간은 우리가 정하는 값이 아니다. 이 유예는 드레이닝이 시작될 시간을 버는 것이고,
                 # 실제로 충분한지는 롤링 중 무중단 실측(k6)으로 확인해야 한다.
                 command: ["sh", "-c", "sleep 5"]
 
           resources:
             # requests = 스케줄러가 보는 예약분(HPA의 CPU 기준선이기도 하다).
-            # limits.cpu는 두지 않는다 — CPU는 압축 가능한 자원이라 limit을 걸면 스로틀링으로
+            # limits.cpu는 두지 않는다. CPU는 압축 가능한 자원이라 limit을 걸면 스로틀링으로
             # p99가 튀고, 부하 실증에서 측정하려는 것이 바로 그 지연이다.
             requests: { cpu: "300m", memory: "768Mi" }
             limits: { memory: "1Gi" }
@@ -107,7 +107,7 @@ spec:
   selector: { app: flowticket-api }
   ports:
     # ServiceMonitor는 포트를 이름으로 지정한다(spec.endpoints[].port = Service 포트 이름).
-    # 이름이 없으면 매칭할 방법이 없어 타깃이 조용히 0개가 된다.
+    # 이름이 없으면 매칭할 방법이 없어 타깃이 0개가 된다(에러는 나지 않는다).
     - name: http
       port: 80
       targetPort: 8080

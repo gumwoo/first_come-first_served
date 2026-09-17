@@ -77,7 +77,7 @@ for (const c of cases) {
     console.error(`✗ meta: ${c.name} → 하네스가 위반을 못 잡음 (exit ${res.status}) [FALSE NEGATIVE]`);
     continue;
   }
-  // exit 1만으로는 "의도한 규칙이 잡았는지"를 알 수 없다 — fixture가 엉뚱한 규칙에 걸려도
+  // exit 1만으로는 "의도한 규칙이 잡았는지"를 알 수 없다. fixture가 엉뚱한 규칙에 걸려도
   // 통과한 것처럼 보인다. expect가 있는 케이스는 메시지까지 확인한다.
   if (c.expect && !`${res.stdout ?? ""}${res.stderr ?? ""}`.includes(c.expect)) {
     failed++;

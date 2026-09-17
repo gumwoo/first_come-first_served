@@ -20,7 +20,7 @@ import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 
 /**
  * 1) SSE 팬아웃(멀티 Pod). 한 인스턴스(podA)에서 broadcast하면 Redis pub/sub을 통해 다른
- * 인스턴스(podB)가 수신해 자기 로컬 SSE로 전달하는지 검증 — 두 SeatSseRegistry 인스턴스를
+ * 인스턴스(podB)가 수신해 자기 로컬 SSE로 전달하는지 검증: 두 SeatSseRegistry 인스턴스를
  * 같은 Redis에 물려 "연결 Pod ≠ 소비 Pod" 상황을 재현한다.
  */
 @SpringBootTest

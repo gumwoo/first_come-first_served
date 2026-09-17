@@ -16,7 +16,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 /**
  * 2) ShedLock(멀티 Pod 스케줄러 중복 방지). Redis lock provider가 같은 락 이름에 대해
- * 상호배제(한 번에 하나만 획득)를 보장하는지 검증 — @Scheduled가 Pod마다 돌아도 한 Pod만 실행되는 근거.
+ * 상호배제(한 번에 하나만 획득)를 보장하는지 검증: @Scheduled가 Pod마다 돌아도 한 Pod만 실행되는 근거.
  */
 @SpringBootTest
 class SchedulerLockIntegrationTest extends IntegrationTestSupport {

@@ -9,7 +9,7 @@ import { fillQueueCapacity, releaseQueueCapacity } from "../helpers/redis";
  * (`seedAdmittedUser`에 의존하는 예매·결제·환불). 그래서 `queue:admitcount:<eventId>`를
  * 직접 채워 그 이벤트만 정원이 찬 상태로 만든다.
  *
- * <p>이 파일 자체는 기능 회귀가 아니라 다음 테스트를 위한 기반이다 —
+ * <p>이 파일 자체는 기능 회귀가 아니라 다음 테스트를 위한 기반이다.
  * ADR-015 1)(onopen 재동기화)의 회귀 테스트가 이 위에 올라간다.
  * 그래서 여기서는 두 가지만 본다: 정원을 채우면 막히는가, 비우면 풀리는가.
  *
@@ -18,7 +18,7 @@ import { fillQueueCapacity, releaseQueueCapacity } from "../helpers/redis";
  * 않는다. 남기면 그 이벤트는 영구히 정원이 찬 상태가 되어 뒤따르는 E2E가 막힌다.
  * 그래서 모든 조작을 `try/finally`로 감싼다.
  *
- * <p>fixture는 값을 덮어쓰지 않고 더했다 빼는 방식이다 — 이유는 `helpers/redis.ts` 참고.
+ * <p>fixture는 값을 덮어쓰지 않고 더했다 빼는 방식이다. 이유는 `helpers/redis.ts` 참고.
  */
 
 // 승격 워커 주기 1500ms(application.yml `queue.admit-interval-ms`).
@@ -36,7 +36,7 @@ test("정원이 차 있으면 승격되지 않고, 비우면 승격된다", asyn
     await page.waitForTimeout(ADMIT_INTERVAL_MS * 2);
     expect(await queueStatus(page, token)).toBe("WAITING");
 
-    // 정원을 비우면 다음 주기에 승격된다 — 이 단언이 곧 뒷정리가 실제로 먹혔다는 증거다.
+    // 정원을 비우면 다음 주기에 승격된다. 이 단언이 곧 뒷정리가 실제로 먹혔다는 증거다.
     // 여기가 통과하지 않으면 위 admitcount가 남아 뒤 테스트를 막고 있다는 뜻이다.
     await releaseQueueCapacity(eventId);
     await expect
@@ -46,14 +46,14 @@ test("정원이 차 있으면 승격되지 않고, 비우면 승격된다", asyn
       })
       .toBe("ADMITTED");
   } finally {
-    // 위에서 이미 비웠어도 한 번 더 부른다 — 중간 실패로 그 줄에 못 갔을 때가 목적이다.
+    // 위에서 이미 비웠어도 한 번 더 부른다. 중간 실패로 그 줄에 못 갔을 때가 목적이다.
     // 두 번 불려도 안전하다(헬퍼가 멱등). DECRBY를 쓰므로 그 보장이 없으면 음수로 내려간다.
     await releaseQueueCapacity(eventId);
   }
 });
 
 /**
- * ADR-015 1) 회귀 — SSE 재연결만으로 승격을 인지하는가.
+ * ADR-015 1) 회귀: SSE 재연결만으로 승격을 인지하는가.
  *
  * <p>이 테스트가 성립하려면 폴링이 살아 있으면 안 된다. 폴링과 onopen 재조회는 같은
  * `/queue/status`를 부르므로, 폴링이 돌면 그쪽이 먼저 복구해버려 onopen 경로를
@@ -63,7 +63,7 @@ test("정원이 차 있으면 승격되지 않고, 비우면 승격된다", asyn
  * <p>시나리오: 연결이 끊긴 사이 승격되면 서버는 이벤트를
  * 그냥 버린다(`QueueSseRegistry.deliverLocal`). 재전송도 Last-Event-ID도 없다.
  *
- * <p>onopen 재조회를 되돌리면 5단계에서 실패한다 — 그게 이 테스트의 존재 이유다.
+ * <p>onopen 재조회를 되돌리면 5단계에서 실패한다. 그게 이 테스트의 존재 이유다.
  */
 test("SSE가 끊긴 사이 승격돼도 재연결하면 복구된다", async ({ page }) => {
   const { eventId } = await seedLoggedInUser(page);
@@ -83,7 +83,7 @@ test("SSE가 끊긴 사이 승격돼도 재연결하면 복구된다", async ({ 
     await releaseQueueCapacity(eventId);
     await page.waitForTimeout(ADMIT_INTERVAL_MS * 2);
 
-    // 4) 폴링이 밀려나 있으므로 스스로 복구되지 않는다 — 이 단언이 곧
+    // 4) 폴링이 밀려나 있으므로 스스로 복구되지 않는다. 이 단언이 곧
     //    "지금 복구할 수 있는 경로가 SSE 재연결뿐"이라는 조건을 고정한다.
     await expect(page).toHaveURL(new RegExp(`/events/${eventId}/queue`));
 
@@ -102,12 +102,12 @@ test("정원이 차 있으면 대기 화면에 머문다", async ({ page }) => {
 
   await fillQueueCapacity(eventId);
   try {
-    // 페이지가 스스로 토큰을 발급한다(useQueue) — 위 테스트와 달리 UI 경로를 그대로 탄다.
+    // 페이지가 스스로 토큰을 발급한다(useQueue): 위 테스트와 달리 UI 경로를 그대로 탄다.
     await page.goto(`/events/${eventId}/queue`);
     await expect(page.getByRole("heading", { name: "예매 대기열" })).toBeVisible();
 
     // 여기서 끝내면 안 된다. 진입 직후에는 fixture가 먹지 않았어도 WAITING 화면이
-    // 잠깐 보이고, 1.5초 뒤 승격돼 좌석으로 넘어간다 — 그래도 단언은 통과해버린다.
+    // 잠깐 보이고, 1.5초 뒤 승격돼 좌석으로 넘어간다. 그래도 단언은 통과해버린다.
     // 위 API 테스트와 같은 기준을 적용한다: 워커가 여러 번 돌고도 여전히 대기 화면이어야 한다.
     await page.waitForTimeout(ADMIT_INTERVAL_MS * 2);
 

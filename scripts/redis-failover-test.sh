@@ -2,7 +2,7 @@
 # ElastiCache 페일오버 중 앱의 거동과 유실 범위를 측정한다.
 #
 # 왜 필요한가: ADR-012 §10이 Redis Multi-AZ를 A(실증) 범주에 넣었고
-# terraform-design이 관찰 항목까지 지정했다 — "대기열 순번 보존 여부, SSE 재연결, 유실 범위".
+# terraform-design이 관찰 항목까지 지정했다. "대기열 순번 보존 여부, SSE 재연결, 유실 범위".
 #
 # 좌석 조회(/events/{id}/seats)로 하면 의미가 없다. 그 경로는 DB·캐시를 타지
 # 대기열 Redis 자료구조를 타지 않는다. Redis가 진실원인 경로를 때려야 유실이 보인다.
@@ -89,7 +89,7 @@ PRIMARY0="$(aws elasticache describe-replication-groups --region "$REGION" --rep
 echo "    node-group=$NG 현재 primary=${PRIMARY0:-?}"
 # 상태가 모두 available이어도 test-failover가 거부될 수 있다. 이전 페일오버 뒤
 # 옛 primary가 재동기화("Recovering cache nodes") 중이면 AWS가
-# TestFailoverNotAvailableFault를 낸다 — 워밍업을 태우기 전에 확인한다.
+# TestFailoverNotAvailableFault를 낸다. 워밍업을 태우기 전에 확인한다.
 #
 # fail-closed다. 이 체크의 목적이 "워밍업까지 태우고 나서 AWS에 거절당하는 것을
 # 막는 것"이므로, 재동기화가 끝났다고 확인하지 못하면 시작하지 않는다.
@@ -141,7 +141,7 @@ QT="$(curl -sS -X POST "$API/events/$EVENT_ID/queue/token" -H "Authorization: Be
 # 응답 형식:
 #   {"rank":0,"total":0,"etaSeconds":0,"status":"ADMITTED"}
 # 필드는 position이 아니라 rank이고, 입장 완료면 rank가 0이 된다. 그래서 rank로는
-# 유실을 판정할 수 없다 — status가 신호다.
+# 유실을 판정할 수 없다. status가 신호다.
 ST0_JSON="$(curl -sS "$API/queue/status?token=$QT" 2>/dev/null || true)"
 POS0="$(printf '%s' "$ST0_JSON" | jq -r '.data.rank // empty' | tr -d '\r')"
 STATUS0="$(printf '%s' "$ST0_JSON" | jq -r '.data.status // empty' | tr -d '\r')"
@@ -256,7 +256,7 @@ T1="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "    primary 전환: ${PRIMARY0:-?} → ${NEWPRIMARY:-확인못함}"
 [ -n "$NEWPRIMARY" ] || echo "    ⚠️ primary 전환을 확인하지 못했다 — 해석 시 주의"
 
-# 페일오버 후 순번이 남아 있는가 — 이 실험의 핵심
+# 페일오버 후 순번이 남아 있는가: 이 실험의 핵심
 # 여기서 죽으면 안 된다. 페일오버 직후라 응답이 JSON이 아닐 수 있고(그 자체가 관찰
 # 대상이다), jq parse error로 종료하면 주 측정 로그를 잃는다. 파싱 실패를 예외가 아니라 값으로 다룬다. 필드도 position이 아니라 status·rank다.
 ST1_JSON="$(http_body "$API/queue/status?token=$QT" || true)"

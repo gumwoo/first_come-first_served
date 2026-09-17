@@ -165,7 +165,7 @@ for (const file of apiFnFiles) {
 // ---------- 7. SSE 훅은 구독 공백 복구 경로를 가져야 함 ----------
 // SSE 이벤트는 재전송되지 않는다. 구독하지 않은 구간(최초 조회~구독 성립, 끊김~재연결)에
 // 지나간 이벤트는 사라지므로, 구독이 성립할 때 현재 상태를 다시 읽거나(onopen) 주기적으로
-// 폴링해야 한다. 둘 다 없으면 화면이 낡은 채로 고정된다 — 종료 상태 이벤트(order.paid 등)는
+// 폴링해야 한다. 둘 다 없으면 화면이 낡은 채로 고정된다. 종료 상태 이벤트(order.paid 등)는
 // 다시 오지 않아 영구 고착이다(TS-012).
 //
 // typecheck·lint·build가 전혀 못 잡는 무증상 결함이라 정적으로 막는다.
@@ -196,10 +196,10 @@ for (const file of tsFiles) {
 
 // ---------- 8. 브라우저가 직접 치는 백엔드 경로를 프론트가 프록시하는가 ----------
 // 브라우저는 항상 같은 오리진으로 요청하고 Next가 백엔드로 프록시한다(next.config.mjs).
-// 그런데 브라우저가 XHR이 아니라 전체 이동으로 도달하는 경로가 있다 — OAuth가 그렇다.
+// 그런데 브라우저가 XHR이 아니라 전체 이동으로 도달하는 경로가 있다. OAuth가 그렇다.
 //
 // 실제로 시작 경로(/oauth2/*)만 프록시하고 콜백(/login/oauth2/code/*)을 빠뜨려 배포에서
-// 404가 났다(TS-017). 로컬에서는 Next(3000)와 Spring(8080)이 같은 머신이라 드러나지 않는다 —
+// 404가 났다(TS-017). 로컬에서는 Next(3000)와 Spring(8080)이 같은 머신이라 드러나지 않는다.
 // 배포해야만 보이는 유형이라 정적으로 잡을 가치가 크다.
 const nextConfigPath = path.join(REPO_ROOT, WEB, "next.config.mjs");
 const apiYmlPath = path.join(REPO_ROOT, process.env.HARNESS_API_DIR || "apps/api",

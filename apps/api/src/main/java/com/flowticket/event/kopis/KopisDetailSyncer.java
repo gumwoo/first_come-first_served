@@ -45,7 +45,7 @@ public class KopisDetailSyncer {
     /**
      * 상세를 한 번도 못 받은 공연 수. 0이면 초기 수집이 끝났다는 뜻이다.
      *
-     * <p>{@link #syncMissingDetails()}의 대상 조건과 일부러 다르다 — 그쪽은 "오래된 것"도 넣어
+     * <p>{@link #syncMissingDetails()}의 대상 조건과 일부러 다르다. 그쪽은 "오래된 것"도 넣어
      * 순환 갱신하므로 0이 될 수 없다. 이 값은 "초기 수집 완료"를 묻는다.
      */
     public long missingDetailCount() {
@@ -63,7 +63,7 @@ public class KopisDetailSyncer {
      *
      * <p>왜 한 번에 다 하지 않나. 레이트 리밋(기본 5회/초) 때문에 1,446건이면 약 5분이
      * 걸리고, 그동안 ShedLock의 {@code lockAtMostFor=PT10M}을 잡아먹는다. 나눠서 처리하면
-     * 한 회차가 짧고, 남은 건은 다음 동기화가 이어받는다 — 오래된 순으로 고르므로
+     * 한 회차가 짧고, 남은 건은 다음 동기화가 이어받는다. 오래된 순으로 고르므로
      * 이어받기와 순환 갱신이 같은 규칙 하나로 처리된다.
      *
      * <p>회차당 300건이면 전체(약 1,446건)가 한 바퀴 도는 데 약 5일이다. 갱신 주기
@@ -93,7 +93,7 @@ public class KopisDetailSyncer {
     }
 
     /**
-     * 한 건을 채운다. 건별로 트랜잭션을 연다 — 전체를 한 트랜잭션으로 묶으면 외부 호출이
+     * 한 건을 채운다. 건별로 트랜잭션을 연다. 전체를 한 트랜잭션으로 묶으면 외부 호출이
      * 섞인 채 수 분간 커넥션을 물고 있게 된다. 커넥션은 이 클러스터에서 이미 병목이다(TS-021).
      *
      * <p>외부 호출은 트랜잭션 밖에서 끝내고, 저장만 짧게 감싼다.
@@ -105,13 +105,13 @@ public class KopisDetailSyncer {
         if (kopisId == null) {
             return false;
         }
-        // 외부 호출 — 트랜잭션 밖. 실패하면 detailSyncedAt을 남기지 않아 다음에 다시 대상이 된다.
+        // 외부 호출: 트랜잭션 밖. 실패하면 detailSyncedAt을 남기지 않아 다음에 다시 대상이 된다.
         KopisEventDetail detail = kopisClient.fetchDetail(kopisId).orElse(null);
         if (detail == null) {
             return false;
         }
-        // 쓰기는 별도 빈에 맡긴다 — 같은 빈에서 부르면 프록시를 거치지 않아 @Transactional이
-        // 조용히 적용되지 않는다(KopisDetailWriter 주석 참조).
+        // 쓰기는 별도 빈에 맡긴다. 같은 빈에서 부르면 프록시를 거치지 않아 @Transactional이
+        // 적용되지 않는다(KopisDetailWriter 주석 참조).
         return writer.apply(id, detail);
     }
 }

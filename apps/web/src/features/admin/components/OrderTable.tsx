@@ -1,7 +1,7 @@
 import type { AdminOrderSummary } from "@/features/admin/api/admin";
 import { OrderStatusPill, won, orderNo, dateTime } from "@/features/admin/components/ui";
 
-/** 운영 주문 테이블 — 대시보드 미리보기·주문 조회 페이지 공용. */
+/** 운영 주문 테이블: 대시보드 미리보기·주문 조회 페이지 공용. */
 export function OrderTable({ items }: { items: AdminOrderSummary[] }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">

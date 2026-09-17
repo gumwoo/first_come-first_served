@@ -48,7 +48,7 @@ public class KopisClient {
     private static final String METRIC = "kopis.api.requests";
 
     /**
-     * RestClient는 {@link KopisClientConfig}가 만들어 넘긴다 — 이 클래스가 직접 빌드하지 않는다.
+     * RestClient는 {@link KopisClientConfig}가 만들어 넘긴다. 이 클래스가 직접 빌드하지 않는다.
      * 타임아웃은 request factory에 붙는데, 그걸 여기서 설정하면 {@code MockRestServiceServer}가
      * 심어둔 mock factory를 덮어써 단위 테스트가 실제 네트워크로 나가버린다.
      */
@@ -67,7 +67,7 @@ public class KopisClient {
     }
 
     /**
-     * 외부 호출을 계측한다 — 실패해도 예외를 밖으로 내지 않는 구조라 지표가 없으면 보이지 않는다.
+     * 외부 호출을 계측한다. 실패해도 예외를 밖으로 내지 않는 구조라 지표가 없으면 보이지 않는다.
      *
      * <p>예: KOPIS가 모든 호출에 400 Request Blocked를 돌려줘도 폴백 경로는 에러를 내지 않아,
      * 이 지표가 없으면 실패율을 볼 수 없다.
@@ -110,7 +110,7 @@ public class KopisClient {
 
     /**
      * 읽기/연결 타임아웃인지 판별한다. 예외 체인을 훑는 이유는 request factory에 따라
-     * 감싸는 타입이 다르기 때문이다 — JDK HttpClient는 {@link HttpTimeoutException},
+     * 감싸는 타입이 다르기 때문이다. JDK HttpClient는 {@link HttpTimeoutException},
      * Simple/Apache 계열은 {@link SocketTimeoutException}을 싣는다.
      * (실제로 무엇이 실리는지는 KopisTimeoutTest가 실측으로 확인한다.)
      */
@@ -177,7 +177,7 @@ public class KopisClient {
                 return parsed.items != null ? parsed.items : Collections.<KopisEvent>emptyList();
             }, result -> result.isEmpty() ? "empty" : "success");
         } catch (InterruptedException e) {
-            // 플래그를 복구해 인터럽트를 삼키지 않는다 — 삼키면 종료 신호가 사라진다.
+            // 플래그를 복구해 인터럽트를 삼키지 않는다. 삼키면 종료 신호가 사라진다.
             //
             // 다만 이것이 배치 전체를 즉시 끝내지는 않는다. 여기서 빈 목록을 돌려주면
             // fetchListAll의 페이지 루프만 끝나고, 상위 sync()는 다음 31일 청크로 넘어간다.
@@ -221,7 +221,7 @@ public class KopisClient {
                 return Optional.of(parsed.items.get(0));
             }, result -> result.isPresent() ? "success" : "empty");
         } catch (InterruptedException e) {
-            // 목록 조회와 같은 이유로 삼키지 않는다 — 삼키면 종료 신호가 사라진다.
+            // 목록 조회와 같은 이유로 삼키지 않는다. 삼키면 종료 신호가 사라진다.
             // KopisDetailSyncer의 루프가 매 건 isInterrupted()를 보고 빠져나간다.
             Thread.currentThread().interrupt();
             log.warn("[kopis] 상세 조회 중단(인터럽트) id={}", kopisId);

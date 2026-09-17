@@ -65,7 +65,7 @@ public class RefundService {
     }
 
     /**
-     * 환불 진입. 동시 같은 idempotencyKey(더블클릭)로 UNIQUE 충돌이 나면 —
+     * 환불 진입. 동시 같은 idempotencyKey(더블클릭)로 UNIQUE 충돌이 나면:
      * 이미 다른 스레드가 처리한 것이므로 기존 결과를 멱등하게 반환.
      */
     public RefundResponse refund(Long userId, Long orderId, String reason, String idemKey) {
@@ -97,19 +97,19 @@ public class RefundService {
             throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED);
         }
 
-        // 원자 전이 PAID→CANCELLED (동시 환불 방어 — 1행이면 이 요청이 취소의 주인)
+        // 원자 전이 PAID→CANCELLED (동시 환불 방어: 1행이면 이 요청이 취소의 주인)
         int cancelled = orderRepository.markCancelled(orderId, OrderStatus.PAID);
         if (cancelled != 1) {
-            // 취소의 주인이 아니어도 실패는 아니다 — 같은 멱등키의 동시 요청이면 승자의 결과를 돌려준다.
+            // 취소의 주인이 아니어도 실패는 아니다. 같은 멱등키의 동시 요청이면 승자의 결과를 돌려준다.
             // 환불은 상태 전이가 refunds INSERT보다 먼저라 패자가 UNIQUE에 도달하지 못한다(TS-030).
             // 조건부 UPDATE가 승자의 행 락을 기다렸으므로 이 시점에는 승자 행이 이미 커밋돼 보인다.
             return refundRepository.findByIdempotencyKey(idemKey)
                     .map(r -> RefundResponse.of(r, currentStatus(orderId).name()))
-                    // 다른 멱등키로 이미 환불됐거나 취소된 주문 — 이건 진짜로 환불 불가다.
+                    // 다른 멱등키로 이미 환불됐거나 취소된 주문: 이건 진짜로 환불 불가다.
                     .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_ALLOWED));
         }
 
-        // 원 결제(APPROVED) 취소 — PG 환불
+        // 원 결제(APPROVED) 취소: PG 환불
         Payment paid = paymentRepository
                 .findFirstByOrderIdAndStatusOrderByIdDesc(orderId, PaymentStatus.APPROVED)
                 .orElse(null);
@@ -119,7 +119,7 @@ public class RefundService {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR); // 롤백 → CANCELLED 전이도 되돌림
         }
 
-        // 환불 기록 — 좌석 복구(벌크 UPDATE) 전에 flush로 확정(TS-007/010: 컨텍스트 클리어 유실 방지)
+        // 환불 기록: 좌석 복구(벌크 UPDATE) 전에 flush로 확정(TS-007/010, 컨텍스트 클리어 유실 방지)
         Refund refund = refundRepository.save(Refund.builder()
                 .orderId(orderId)
                 .paymentId(paid != null ? paid.getId() : null)

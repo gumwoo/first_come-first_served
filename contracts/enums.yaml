@@ -1,4 +1,4 @@
-# 도메인 enum 기대 계약 — BE enum / FE 타입과 diff. 변경 시 양쪽 함께 수정.
+# 도메인 enum 기대 계약: BE enum / FE 타입과 diff. 변경 시 양쪽 함께 수정.
 
 OrderStatus:
   values: [PENDING, VBANK_WAITING, PAID, FAILED, EXPIRED, CANCELLED, REFUNDED]

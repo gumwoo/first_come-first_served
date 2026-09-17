@@ -1,4 +1,4 @@
-# EKS — 클러스터 + AZ별 노드그룹 3개 + 애드온.
+# EKS: 클러스터 + AZ별 노드그룹 3개 + 애드온.
 #
 # 노드그룹을 AZ마다 분리하는 이유는 EBS다(ADR-012 §3).
 # 서브넷 3개를 가진 노드그룹 하나로 두면, 노드가 죽었을 때 ASG가 다른 AZ에 대체 노드를
@@ -35,7 +35,7 @@ resource "aws_iam_role_policy_attachment" "cluster" {
 # 클러스터
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-# 봉투 암호화 — 고객 관리형 KMS 키(CMK)를 일부러 쓰지 않는다.
+# 봉투 암호화: 고객 관리형 KMS 키(CMK)를 일부러 쓰지 않는다.
 # EKS 1.28+는 AWS 소유 키로 기본 암호화하고, CMK는 삭제 시 클러스터가 복구 불가다.
 # 근거·붙이는 방법은 platform/README.md "봉투 암호화".
 # ---------------------------------------------------------------------------
@@ -55,7 +55,7 @@ resource "aws_eks_cluster" "this" {
   role_arn = aws_iam_role.cluster.arn
   version  = var.kubernetes_version
 
-  # 2) 컨트롤플레인 로그 — 롤링 무중단 실증의 증거다.
+  # 2) 컨트롤플레인 로그: 롤링 무중단 실증의 증거다.
   # api/audit이 없으면 "무중단이었다"를 애플리케이션 로그로만 주장하게 된다. scheduler·
   # controllerManager는 파드 재배치가 왜 그렇게 일어났는지를 설명한다.
   # CloudWatch Logs 수집·보존 요금이 붙지만 데모 기간(수 시간)에는 미미하다.
@@ -131,7 +131,7 @@ resource "aws_iam_role_policy_attachment" "node" {
 }
 
 # ---------------------------------------------------------------------------
-# 노드그룹 — AZ별 1개
+# 노드그룹: AZ별 1개
 # ---------------------------------------------------------------------------
 resource "aws_eks_node_group" "this" {
   for_each = var.private_app_subnet_id_by_az
@@ -140,7 +140,7 @@ resource "aws_eks_node_group" "this" {
   node_group_name = "${var.cluster_name}-${each.key}"
   node_role_arn   = aws_iam_role.node.arn
 
-  # 이 노드그룹은 이 AZ 서브넷 하나만 쓴다 — 대체 노드가 다른 AZ로 새지 않게 한다.
+  # 이 노드그룹은 이 AZ 서브넷 하나만 쓴다. 대체 노드가 다른 AZ로 새지 않게 한다.
   subnet_ids = [each.value]
 
   instance_types = [var.node_instance_type]
@@ -184,7 +184,7 @@ resource "aws_eks_node_group" "this" {
 # `cpu: <unknown>` 상태로 스케일 판단 자체를 못 한다(TS-019). 손으로 설치하면 클러스터를
 # 재생성할 때 빠지므로 EKS Add-ons로 고정한다.
 #
-# metrics-server는 community add-on이다 — AWS가 만든 add-on(vpc-cni 등)과 달리
+# metrics-server는 community add-on이다. AWS가 만든 add-on(vpc-cni 등)과 달리
 # AWS는 설치·업데이트·삭제 같은 lifecycle만 지원하고 기능 자체는 커뮤니티가 책임진다.
 # 다만 IAM 정책이나 IRSA가 필요 없어 아래 for_each 목록에 넣는 것으로 충분하다
 # (EBS CSI를 별도 리소스로 뺀 이유가 IRSA였다).
@@ -207,7 +207,7 @@ resource "aws_eks_addon" "this" {
   depends_on = [aws_eks_node_group.this]
 }
 
-# EBS CSI는 IRSA가 필요해 따로 둔다 — Kafka 브로커의 PVC가 이 드라이버로 만들어진다.
+# EBS CSI는 IRSA가 필요해 따로 둔다. Kafka 브로커의 PVC가 이 드라이버로 만들어진다.
 resource "aws_eks_addon" "ebs_csi" {
   cluster_name             = aws_eks_cluster.this.name
   addon_name               = "aws-ebs-csi-driver"

@@ -7,7 +7,7 @@
 #
 # 여기 쓰인 메트릭 이름은 전부 실제 /actuator/prometheus 출력에서 확인한 것만 넣었다.
 # 없는 이름을 쓰면 에러가 아니라 조용히 빈 패널이 되기 때문이다.
-# 백분위 패널은 application.yml의 percentiles-histogram 설정과 한 쌍이다 —
+# 백분위 패널은 application.yml의 percentiles-histogram 설정과 한 쌍이다.
 # 그 설정 없이 적용하면 http_server_requests_seconds_bucket이 없어 패널이 비어 있게 된다.
 apiVersion: v1
 kind: ConfigMap

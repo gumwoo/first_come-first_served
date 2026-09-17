@@ -30,7 +30,7 @@ public class KopisClientConfig {
 
     /**
      * 관리자 동기화 잡에서 쓴다. 목록 조회는 rows=100까지 받아 상세보다 오래 걸릴 수 있고,
-     * 이 경로로 공연 1,446건을 수집했다 — 여기에 사용자용 타임아웃을 걸면 잘 돌던 시딩이 깨진다.
+     * 이 경로로 공연 1,446건을 수집했다. 여기에 사용자용 타임아웃을 걸면 잘 돌던 시딩이 깨진다.
      */
     @Bean
     public RestClient kopisSyncClient(RestClient.Builder builder,

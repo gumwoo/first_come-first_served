@@ -163,7 +163,7 @@ class AuthServiceTest {
 
     @Test
     void 로그아웃_access없이_refresh로_식별되면_refresh소유자를_revoke한다() {
-        // access 만료/미보유 상황 — MVC로는 재현이 번거로운 분리 이득 분기
+        // access 만료/미보유 상황: MVC로는 재현이 번거로운 분리 이득 분기
         when(jwtProvider.isValid("ref", JwtProvider.TYPE_REFRESH)).thenReturn(true);
         when(jwtProvider.getUserId("ref")).thenReturn(42L);
 

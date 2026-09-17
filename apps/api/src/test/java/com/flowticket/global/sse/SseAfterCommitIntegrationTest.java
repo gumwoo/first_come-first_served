@@ -46,7 +46,7 @@ class SseAfterCommitIntegrationTest extends IntegrationTestSupport {
 
         assertThatThrownBy(() -> new TransactionTemplate(txManager).executeWithoutResult(st -> {
             registry.broadcast(7L, "seat.held", Map.of("seatIds", List.of(1L)));
-            // 트랜잭션 안에서는 아직 나가면 안 된다 — 이 시점의 상태는 확정되지 않았다.
+            // 트랜잭션 안에서는 아직 나가면 안 된다. 이 시점의 상태는 확정되지 않았다.
             sentBeforeCommit.set(hasDelivered(registry));
             throw new IllegalStateException("강제 롤백");
         })).isInstanceOf(IllegalStateException.class);
@@ -63,7 +63,7 @@ class SseAfterCommitIntegrationTest extends IntegrationTestSupport {
         new TransactionTemplate(txManager).executeWithoutResult(st ->
                 registry.broadcast(8L, "seat.held", Map.of("seatIds", List.of(2L))));
 
-        // 미루는 것과 삼키는 것은 다르다 — 커밋된 알림은 반드시 나가야 한다.
+        // 미루는 것과 삼키는 것은 다르다. 커밋된 알림은 반드시 나가야 한다.
         verify(registry).deliverLocal(eq(8L), eq("seat.held"), any());
     }
 

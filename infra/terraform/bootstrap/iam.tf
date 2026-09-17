@@ -1,4 +1,4 @@
-# GitHub Actions OIDC — 콘솔로 먼저 만든 것들이다. apply 전에 import한다.
+# GitHub Actions OIDC: 콘솔로 먼저 만든 것들이다. apply 전에 import한다.
 #   terraform import aws_iam_openid_connect_provider.github <provider ARN>
 #   terraform import aws_iam_role.github_actions <역할 이름>
 # 절차: README.md
@@ -14,7 +14,7 @@ resource "aws_iam_openid_connect_provider" "github" {
   client_id_list = ["sts.amazonaws.com"]
 
   # AWS가 이 공급자의 인증서를 자체 검증하므로 thumbprint는 사실상 형식값이다.
-  # 값이 콘솔에서 만든 것과 다르면 import 후 plan에 diff로 뜬다 — 그때 실제 값으로 맞춘다.
+  # 값이 콘솔에서 만든 것과 다르면 import 후 plan에 diff로 뜬다. 그때 실제 값으로 맞춘다.
   thumbprint_list = var.github_oidc_thumbprints
 
   lifecycle {
@@ -23,7 +23,7 @@ resource "aws_iam_openid_connect_provider" "github" {
   }
 }
 
-# 신뢰 정책 — 누가 이 역할을 맡을 수 있는가.
+# 신뢰 정책: 누가 이 역할을 맡을 수 있는가.
 data "aws_iam_policy_document" "github_assume" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -40,7 +40,7 @@ data "aws_iam_policy_document" "github_assume" {
     }
 
     # 여기가 이 스택에서 가장 조심할 곳이다. sub를 좁히면 안전해지지만,
-    # 실제 워크플로의 ref와 어긋나면 Image 파이프라인이 조용히 인증 실패한다.
+    # 실제 워크플로의 ref와 어긋나면 Image 파이프라인이 인증에 실패한다.
     # 콘솔에 설정된 실제 값과 다르면 import 후 plan에 diff로 뜨므로 반드시 확인한다.
     condition {
       test     = "StringLike"
@@ -53,7 +53,7 @@ data "aws_iam_policy_document" "github_assume" {
 resource "aws_iam_role" "github_actions" {
   name = var.github_actions_role_name
   # IAM role description은 허용 문자 범위가 좁다(사실상 ASCII + Latin-1).
-  #    한글과 em dash가 거부되어 apply에서 ValidationError로 막혔다 — ASCII로만 쓴다.
+  #    한글과 em dash가 거부되어 apply에서 ValidationError로 막혔다. ASCII로만 쓴다.
   description        = "GitHub Actions OIDC - ECR push only"
   assume_role_policy = data.aws_iam_policy_document.github_assume.json
 
@@ -62,7 +62,7 @@ resource "aws_iam_role" "github_actions" {
   }
 }
 
-# 권한 — 무엇을 할 수 있는가. ECR push에 필요한 최소만 준다.
+# 권한: 무엇을 할 수 있는가. ECR push에 필요한 최소만 준다.
 data "aws_iam_policy_document" "ecr_push" {
   # 로그인 토큰 발급은 리소스를 특정할 수 없다(API 자체가 계정 단위).
   statement {
@@ -72,7 +72,7 @@ data "aws_iam_policy_document" "ecr_push" {
   }
 
   # 실제 push는 우리 저장소 2개로만 제한한다.
-  # GetDownloadUrlForLayer(=pull)는 넣지 않는다 — CI는 push만 하고, 노드의 이미지 pull은
+  # GetDownloadUrlForLayer(=pull)는 넣지 않는다. CI는 push만 하고, 노드의 이미지 pull은
   # EKS 노드 역할이 담당한다. 콘솔에도 없었고 그 6개로 파이프라인이 동작해 왔다.
   statement {
     sid = "EcrPush"

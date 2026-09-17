@@ -12,7 +12,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 
 /**
- * Redis TLS는 인프라와 앱이 짝을 맞춰야 한다(ADR-013) — 운영 ElastiCache는 TLS, 로컬·CI는 평문.
+ * Redis TLS는 인프라와 앱이 짝을 맞춰야 한다(ADR-013): 운영 ElastiCache는 TLS, 로컬·CI는 평문.
  * 두 방향을 각각 잡는다: 기본값은 꺼져 있는가, 스위치를 켜면 실제로 SSL이 켜지는가.
  */
 @SpringBootTest
@@ -34,7 +34,7 @@ class RedisTlsConfigIntegrationTest extends IntegrationTestSupport {
     void 환경변수로_TLS를_켤_수_있다() {
         // 운영(k8s)에서 REDIS_SSL_ENABLED=true로 주입하는 경로.
         //
-        // 러너도 컨텍스트를 만들기는 한다. 차이는 남느냐다 — 여기서 @SpringBootTest에
+        // 러너도 컨텍스트를 만들기는 한다. 차이는 남느냐다. 여기서 @SpringBootTest에
         // 프로퍼티를 덧붙이면 캐시 키가 갈려 무거운 전체 컨텍스트가 캐시에 하나 더 쌓인 채
         // 살아남는다(IMP-013 §7-2의 자원 압박). 러너는 Redis 자동 구성만 담은 작은 컨텍스트를
         // 잠깐 띄웠다 닫으므로 캐시에 아무것도 남기지 않는다.

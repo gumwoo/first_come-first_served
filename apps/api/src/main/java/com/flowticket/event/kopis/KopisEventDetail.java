@@ -3,7 +3,7 @@ package com.flowticket.event.kopis;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 
-/** KOPIS 공연상세(pblprfr/{id}) — 목록에 없는 디테일. */
+/** KOPIS 공연상세(pblprfr/{id}): 목록에 없는 디테일. */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class KopisEventDetail {
 

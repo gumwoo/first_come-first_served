@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
  * 지표 이름을 계약으로 고정한다.
  *
  * <p>왜 이름을 테스트하는가: 알림 규칙({@code k8s/monitoring/prometheusrule-flowticket.yaml})이
- * 이 이름을 문자열로 참조한다. 이름이 바뀌면 규칙은 오류 없이 그냥 발화하지 않는다 —
+ * 이 이름을 문자열로 참조한다. 이름이 바뀌면 규칙은 오류 없이 그냥 발화하지 않는다.
  * 실패가 "알림이 안 옴"으로 나타나 알아채기 어렵다.
  *
  * <p>promtool 규칙 테스트로는 이걸 못 잡는다. 규칙과 테스트에 같은 오타를 쓰면 둘 다
@@ -65,7 +65,7 @@ class OperationalMetricsTest {
 
         String scrape = registry.scrape();
 
-        // 이게 없으면 DB가 흔들릴 때 CPU·지연·HPA 판단용 지표까지 함께 사라진다 —
+        // 이게 없으면 DB가 흔들릴 때 CPU·지연·HPA 판단용 지표까지 함께 사라진다.
         // 관측을 위해 넣은 것이 관측을 없앤다.
         assertThat(scrape)
                 .as("무관한 지표는 살아 있어야 한다")

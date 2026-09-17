@@ -28,7 +28,7 @@ class ErrorResponseIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 공개_경로의_없는_주소는_404_NOT_FOUND() {
-        // 인증이 필요한 경로는 시큐리티가 먼저 401을 준다(경로 존재 여부를 노출하지 않음 — 바람직).
+        // 인증이 필요한 경로는 시큐리티가 먼저 401을 준다(경로 존재 여부를 노출하지 않음: 바람직).
         // 이 결함이 드러나는 건 공개 경로다: 시큐리티를 통과해 디스패처까지 가서
         // NoResourceFoundException → (예전엔) 500이 됐다.
         ResponseEntity<String> res =
@@ -42,7 +42,7 @@ class ErrorResponseIntegrationTest extends IntegrationTestSupport {
     void 깨진_요청본문은_400_VALIDATION_ERROR() {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        // JSON으로 파싱할 수 없는 본문 — 클라이언트 입력 문제이지 서버 오류가 아니다.
+        // JSON으로 파싱할 수 없는 본문: 클라이언트 입력 문제이지 서버 오류가 아니다.
         HttpEntity<String> body = new HttpEntity<>("{\"email\": ", headers);
 
         ResponseEntity<String> res = rest.exchange("/auth/login", HttpMethod.POST, body, String.class);

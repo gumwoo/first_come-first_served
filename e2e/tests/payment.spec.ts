@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { seedOrder } from "../helpers/seed";
 
 /**
- * P4 결제 해피패스 — Mock 게이트웨이(외부 연동 없음, 결정론).
+ * P4 결제 해피패스: Mock 게이트웨이(외부 연동 없음, 결정론).
  * 좌석 선점·주문 생성은 API로 순간이동하고, 브라우저는 결제 화면부터 결제→완료를 검증.
  */
 

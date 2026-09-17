@@ -48,7 +48,7 @@ public class SecurityConfig {
                 // CSRF: 헤더(Bearer) 기반 API는 stateless라 CSRF 영향이 작다(무관은 아님).
                 // 쿠키가 자동 전송되는 경로는 /auth/refresh·/auth/logout 뿐 → 이들은
                 // POST-only + Refresh 쿠키 SameSite=Lax로 방어한다(SameSite는 완전한
-                // 대체재가 아님 — OWASP). 운영 전환 시 쿠키 경로에 한해 SameSite=Strict
+                // 대체재가 아님: OWASP). 운영 전환 시 쿠키 경로에 한해 SameSite=Strict
                 // 또는 CSRF 토큰을 추가 검토한다(domain/auth.md).
                 .csrf(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
@@ -65,27 +65,27 @@ public class SecurityConfig {
                                         "FORBIDDEN", "권한이 없습니다.")))
                 .authorizeHttpRequests(auth -> auth
                         // actuator는 health/info만 공개, metrics·prometheus 등은 인증 필요(정보 노출 방지).
-                        // health의 하위 그룹(liveness/readiness)도 함께 열어야 한다 — K8s probe는 인증 헤더를
+                        // health의 하위 그룹(liveness/readiness)도 함께 열어야 한다. K8s probe는 인증 헤더를
                         // 붙이지 못해, 막아두면 Pod가 영원히 Ready가 되지 않는다(로컬 운영 이미지에서 401 재현).
                         // 이 두 경로는 상태 문자열(UP/DOWN)만 돌려주므로 정보 노출 위험이 없다.
                         .requestMatchers("/actuator/health", "/actuator/health/liveness",
                                 "/actuator/health/readiness", "/actuator/info").permitAll()
-                        // /actuator/prometheus만 추가로 연다 — Prometheus는 Pod IP로 직접 긁는데
+                        // /actuator/prometheus만 추가로 연다. Prometheus는 Pod IP로 직접 긁는데
                         // 스크레이프에 인증 헤더를 붙이려면 자격증명을 관측 스택에 심어야 해서, 그쪽이
                         // 오히려 노출 면이 넓다. 이 경로는 인터넷에서 도달할 수 없다: ALB Ingress는
                         // web Service만 보고(하네스 k8s 규칙 2)·3)), Next rewrites도 /api·/oauth2만
                         // 프록시한다(next.config.mjs). 즉 클러스터 내부에만 열린다.
-                        // /actuator/** 전체를 열면 안 된다 — env·configprops에 시크릿이 실린다.
+                        // /actuator/** 전체를 열면 안 된다. env·configprops에 시크릿이 실린다.
                         .requestMatchers("/actuator/prometheus").permitAll()
                         // 운영: 모든 /admin/** 은 ROLE_ADMIN 전용. 기존 admin 엔드포인트(KOPIS 동기화·좌석 시딩)도 포함.
                         .requestMatchers("/admin/**").hasRole("ADMIN")
-                        // 대기 상태는 토큰(비밀 UUID)으로 조회 — Bearer 불필요(ADR-002). /queue/** 인증보다 먼저.
+                        // 대기 상태는 토큰(비밀 UUID)으로 조회: Bearer 불필요(ADR-002). /queue/** 인증보다 먼저.
                         .requestMatchers(HttpMethod.GET, "/queue/status").permitAll()
-                        // 대기열 진입(POST)/이탈(DELETE)은 회원 — /events/** permitAll보다 먼저 매칭해야 함
+                        // 대기열 진입(POST)/이탈(DELETE)은 회원: /events/** permitAll보다 먼저 매칭해야 함
                         .requestMatchers("/events/*/queue/**", "/queue/**").authenticated()
-                        // 좌석 선점(POST)은 회원 — 좌석 조회(GET)는 /events/** permitAll로 공개
+                        // 좌석 선점(POST)은 회원: 좌석 조회(GET)는 /events/** permitAll로 공개
                         .requestMatchers(HttpMethod.POST, "/events/*/seats/hold").authenticated()
-                        // PG 웹훅은 Bearer 없이 공개 — 위조는 서비스단 secret 대조로 방어(ADR-005)
+                        // PG 웹훅은 Bearer 없이 공개: 위조는 서비스단 secret 대조로 방어(ADR-005)
                         .requestMatchers(HttpMethod.POST, "/webhooks/payments").permitAll()
                         .requestMatchers("/auth/**", "/oauth2/**", "/login/oauth2/**", "/sse/**",
                                 "/events/**", "/search", "/search/**").permitAll()

@@ -1,7 +1,7 @@
 package com.flowticket.order.gateway;
 
 /**
- * 결제 게이트웨이 포트(ADR-005). 외부 PG 의존을 인터페이스로 격리 —
+ * 결제 게이트웨이 포트(ADR-005). 외부 PG 의존을 인터페이스로 격리:
  * 테스트/E2E는 Mock, 로컬/데모는 Toss 테스트 어댑터로 교체.
  */
 public interface PaymentGateway {
@@ -10,7 +10,7 @@ public interface PaymentGateway {
     ApproveResult approve(Long orderId, int amount, String method, String provider, String idempotencyKey);
 
     /**
-     * 무통장 — 가상계좌 발급(입금은 나중에 웹훅/트리거로 확인).
+     * 무통장: 가상계좌 발급(입금은 나중에 웹훅/트리거로 확인).
      * 반환: 계좌번호 + secret. secret은 입금 웹훅(DEPOSIT_CALLBACK) 위조 검증에 쓰인다(발급 시 저장).
      */
     VbankIssue issueVbank(Long orderId, int amount);
@@ -28,7 +28,7 @@ public interface PaymentGateway {
     ApproveResult refund(String pgTid, int amount);
 
     /**
-     * 주문 기준 승인 조회(정산, ADR-011). 우리 DB에 흔적이 없어도 PG에 승인이 남아 있는지 확인한다 —
+     * 주문 기준 승인 조회(정산, ADR-011). 우리 DB에 흔적이 없어도 PG에 승인이 남아 있는지 확인한다.
      * "승인 직후 크래시로 트랜잭션이 롤백된" 미아 승인을 찾는 유일한 경로. 조회 실패는 예외가 아니라
      * {@link Inquiry#none()}으로 보수적 처리(없는 걸 있다고 하지 않는다).
      */

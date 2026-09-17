@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { seedAdmittedUser } from "../helpers/seed";
 
 /**
- * P1 예매 해피패스 — 대기열 입장 상태에서 좌석을 골라 선점까지.
+ * P1 예매 해피패스: 대기열 입장 상태에서 좌석을 골라 선점까지.
  * "순간이동"(seedAdmittedUser)으로 로그인·대기열은 API로 미리 세팅하고,
  * 브라우저는 좌석 선택 화면부터 시작(테스트 독립·속도).
  * 조건 대기 + 시맨틱/콘텐츠 셀렉터만 사용(flaky 방지).

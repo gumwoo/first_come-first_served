@@ -75,7 +75,7 @@ export default function LoginPage() {
                 <span className="h-px flex-1 bg-border" />또는<span className="h-px flex-1 bg-border" />
               </div>
 
-              {/* 소셜 로그인 — 카카오/네이버 공식 버튼 에셋 사용 */}
+              {/* 소셜 로그인: 카카오/네이버 공식 버튼 에셋 사용 */}
               <div className="space-y-2">
                 <a href="/oauth2/authorization/kakao" className="block">
                   {/* eslint-disable-next-line @next/next/no-img-element */}

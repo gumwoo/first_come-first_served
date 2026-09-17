@@ -16,7 +16,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * TS-024 회귀 — 승격 커밋이 Lua 밖으로 새지 않는지 본다.
+ * TS-024 회귀: 승격 커밋이 Lua 밖으로 새지 않는지 본다.
  *
  * <p>승격은 pop + admitcount 증가 + admitExp 등록까지 한 Lua로 확정되고,
  * {@code queue:admit:{token}} 키와 SSE 알림은 그 뒤에 붙는 부수 작업이다. admitExp 등록이
@@ -28,7 +28,7 @@ import org.springframework.test.context.TestPropertySource;
  *       카운트를 줄이는 경로(RECLAIM/LEAVE)가 둘 다 admitExp를 근거로 움직이기 때문이다.</li>
  * </ul>
  *
- * <p>{@code admit-ttl}을 넉넉히 둔다 — {@link QueueIntegrationTest}는 1초라서
+ * <p>{@code admit-ttl}을 넉넉히 둔다. {@link QueueIntegrationTest}는 1초라서
  * "만료 전인가" 판정이 초 경계에서 뒤집힐 수 있다.
  */
 @TestPropertySource(properties = {"queue.capacity=3", "queue.admit-ttl=60"})
@@ -41,7 +41,7 @@ class QueueAdmitVisibilityIntegrationTest extends IntegrationTestSupport {
 
     @Autowired EventRepository eventRepository;
 
-    /** 발급 게이트가 실재하는 ON_SALE 이벤트를 요구한다 — {@link QueueIntegrationTest} 주석 참고. */
+    /** 발급 게이트가 실재하는 ON_SALE 이벤트를 요구한다. {@link QueueIntegrationTest} 주석 참고. */
     private Long EVENT;
 
     @BeforeEach
@@ -61,7 +61,7 @@ class QueueAdmitVisibilityIntegrationTest extends IntegrationTestSupport {
         redisTemplate.delete("queue:admit:" + token);
 
         assertThat(queueService.status(token).status()).isEqualTo("ADMITTED");
-        // 좌석 게이트도 같은 규칙이어야 한다 — 한쪽만 고치면
+        // 좌석 게이트도 같은 규칙이어야 한다. 한쪽만 고치면
         // "대기열은 입장이라는데 좌석은 거절"이라는 더 나쁜 불일치가 생긴다.
         assertThat(queueService.isAdmitted(token, EVENT)).isTrue();
     }

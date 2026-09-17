@@ -28,7 +28,7 @@ public class EventService {
     private final EventRepository eventRepository;
     private final RankingService rankingService;
 
-    // KopisClient 의존이 사라졌다 — 사용자 조회 경로에서 외부 호출을 걷어낸 결과다.
+    // KopisClient 의존이 사라졌다. 사용자 조회 경로에서 외부 호출을 걷어낸 결과다.
     public EventService(EventRepository eventRepository, RankingService rankingService) {
         this.eventRepository = eventRepository;
         this.rankingService = rankingService;
@@ -50,13 +50,13 @@ public class EventService {
         return search(condition, PageRequest.of(page, size));
     }
 
-    /** 인기 공연 TOP — 누적 조회수 ZSET 상위. 데이터 없으면 ON_SALE 최신순으로 폴백. */
+    /** 인기 공연 TOP: 누적 조회수 ZSET 상위. 데이터 없으면 ON_SALE 최신순으로 폴백. */
     public List<EventSummaryResponse> popular() {
         List<EventSummaryResponse> ranked = byIdsOrdered(rankingService.topTotal(POPULAR_SIZE));
         return ranked.isEmpty() ? fallbackLatest() : ranked;
     }
 
-    /** 실시간 랭킹 — 지수감쇠 조회수 ZSET 상위. 데이터 없으면 ON_SALE 최신순으로 폴백. */
+    /** 실시간 랭킹: 지수감쇠 조회수 ZSET 상위. 데이터 없으면 ON_SALE 최신순으로 폴백. */
     public List<EventSummaryResponse> realtimeRanking() {
         List<EventSummaryResponse> ranked = byIdsOrdered(rankingService.topHot(POPULAR_SIZE));
         return ranked.isEmpty() ? fallbackLatest() : ranked;
@@ -84,7 +84,7 @@ public class EventService {
     }
 
     /**
-     * 상세 조회. DB만 읽는다 — 외부 호출이 없다.
+     * 상세 조회. DB만 읽는다. 외부 호출이 없다.
      *
      * <p>KOPIS 상세는 동기화 배치가 미리 채운다({@link com.flowticket.event.kopis.KopisDetailSyncer}).
      * 요청마다 부르면 외부 호출량이 트래픽에 비례하고 응답시간이 외부 지연에 묶인다.

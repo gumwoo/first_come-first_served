@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cluster Autoscaler 실증 — Pod가 못 들어갈 때 노드가 붙는가, 부하가 빠지면 줄어드는가.
+# Cluster Autoscaler 실증: Pod가 못 들어갈 때 노드가 붙는가, 부하가 빠지면 줄어드는가.
 #
 # 왜 이 측정이 필요한가: 평시 구성은 예산 안에 맞춘 HPA 상한이다
 # (api 7 / web 4 = 4,950m / allocatable 5,790m). 그 구성에서는 HPA가 상한까지
@@ -10,7 +10,7 @@
 # Pending을 만든 뒤, CA가 노드를 붙이는지 본다. 끝나면 원래 값으로 되돌린다.
 #
 # 측정하는 것 네 가지:
-#   1) Pending이 실제로 발생하는가          (안 생기면 예산을 못 넘긴 것 — 조건 미달)
+#   1) Pending이 실제로 발생하는가          (안 생기면 예산을 못 넘긴 것: 조건 미달)
 #   2) 노드가 늘어나는가, 몇 초 걸리는가     (EC2 부팅 + 클러스터 조인)
 #   3) Pending이 해소되는가
 #   4) 부하 제거 후 노드가 줄어드는가        (scale-down-unneeded-time 기본 10분)
@@ -96,10 +96,10 @@ if [ -z "$CA_POD" ]; then
   echo "  bring-up.sh 4단계가 설치한다." >&2
   exit 1
 fi
-# CA가 노드그룹을 인식하지 못하면 Pending이 나도 노드가 안 붙는다 — 결함이 아니라 설정 문제다.
+# CA가 노드그룹을 인식하지 못하면 Pending이 나도 노드가 안 붙는다. 결함이 아니라 설정 문제다.
 #
 # 로그 문자열로 판정하지 않는다(버전마다 바뀐다). CA가 스스로 발행하는 상태
-# ConfigMap을 읽는다 — bring-up.sh와 같은 방식이어야 두 곳이 어긋나지 않는다.
+# ConfigMap을 읽는다. bring-up.sh와 같은 방식이어야 두 곳이 어긋나지 않는다.
 CA_STATUS="$(kubectl -n kube-system get cm cluster-autoscaler-status \
   -o jsonpath='{.data.status}' 2>/dev/null || true)"
 CA_RUNNING="$(printf '%s\n' "$CA_STATUS" | awk '/^autoscalerStatus:/{print $2; exit}')"
@@ -176,7 +176,7 @@ spec:
             - { name: RUN_FOR, value: "$RUN_FOR" }
           resources:
             # 생성기가 스스로 병목이 되면 도착률을 못 채워 Pending이 안 생긴다.
-            # TS-034에서 k6가 1Gi로 OOMKilled 됐다 — 넉넉히 잡는다.
+            # TS-034에서 k6가 1Gi로 OOMKilled 됐다. 넉넉히 잡는다.
             requests: { cpu: "500m", memory: "1Gi" }
             limits: { memory: "3Gi" }
           volumeMounts: [{ name: scripts, mountPath: /scripts }]
@@ -221,7 +221,7 @@ kubectl -n kube-system logs "$CA_POD" --tail=300 2>/dev/null \
 if [ "$SKIP_DOWN" -eq 0 ]; then
   say "5/6 부하 종료 → 축소 관찰 (최대 $((DOWN_WAIT/60))분)"
   kubectl -n "$NS" delete job k6-nodescale --ignore-not-found >/dev/null
-  # HPA도 먼저 되돌린다 — 상한이 높으면 파드가 안 줄어 노드도 안 준다.
+  # HPA도 먼저 되돌린다. 상한이 높으면 파드가 안 줄어 노드도 안 준다.
   kubectl -n "$NS" patch hpa flowticket-api --type=merge \
     -p "{\"spec\":{\"maxReplicas\":$ORIG_API_MAX}}" >/dev/null
   echo "    api maxReplicas → $ORIG_API_MAX (원복). CA scale-down-unneeded-time 기본 10분"
@@ -235,7 +235,7 @@ if [ "$SKIP_DOWN" -eq 0 ]; then
     sleep 20
   done
   echo "    축소 시작: ${DOWN_AT:-관찰 못 함(${DOWN_WAIT}s 내)}"
-  # 축소가 상태 저장 워크로드를 건드렸는지 — IMP-016·017의 전제가 여기서 바뀐다.
+  # 축소가 상태 저장 워크로드를 건드렸는지: IMP-016·017의 전제가 여기서 바뀐다.
   {
     echo "# 축소 후 Kafka / PDB 상태"
     kubectl -n kafka get pods --no-headers 2>/dev/null || true

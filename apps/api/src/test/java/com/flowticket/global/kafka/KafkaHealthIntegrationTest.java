@@ -32,7 +32,7 @@ class KafkaHealthIntegrationTest {
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
-        // 배경 스케줄러 비활성 — @Scheduled는 initialDelay가 없어 컨텍스트 기동 즉시 한 번 발사되고,
+        // 배경 스케줄러 비활성: @Scheduled는 initialDelay가 없어 컨텍스트 기동 즉시 한 번 발사되고,
         // 그 UPDATE가 테스트 초기화 TRUNCATE와 데드락을 만든다. 주기를 늘리는 것으로는 못 막는다.
         r.add("flowticket.scheduling.enabled", () -> "false");
         r.add("spring.datasource.url", postgres::getJdbcUrl);

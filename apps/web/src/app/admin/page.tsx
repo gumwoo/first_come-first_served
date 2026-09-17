@@ -35,7 +35,7 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      {/* 지표 — 얇은 구분선의 절제된 요약 행 */}
+      {/* 지표: 얇은 구분선의 절제된 요약 행 */}
       {dash.isLoading ? (
         <Skeleton className="h-20 w-full rounded-lg" />
       ) : dash.isError ? (

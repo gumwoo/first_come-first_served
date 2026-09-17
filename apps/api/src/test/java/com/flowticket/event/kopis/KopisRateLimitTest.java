@@ -90,7 +90,7 @@ class KopisRateLimitTest {
     @Test
     void 목록과_상세가_같은_제한기를_공유한다() {
         // 둘이 별도 제한기를 쓰면 합산이 설정값의 2배가 되어 IP 제한을 넘긴다.
-        // 같은 인스턴스를 통과하는지 확인한다 — 목록 1 + 상세 1이면 간격이 1번 들어가야 한다.
+        // 같은 인스턴스를 통과하는지 확인한다. 목록 1 + 상세 1이면 간격이 1번 들어가야 한다.
         Fixture f = fixture(10); // 100ms 간격
         f.server().expect(requestTo(containsString("pblprfr")))
                 .andRespond(withSuccess(listXml().getBytes(StandardCharsets.UTF_8),

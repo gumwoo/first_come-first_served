@@ -2,11 +2,11 @@ import { test, expect } from "@playwright/test";
 import { loginAsAdmin, seedAdmittedUser } from "../helpers/seed";
 
 /**
- * 운영 콘솔 E2E — 권한 경계(가장 중요) + 사이드바 콘솔 스모크.
+ * 운영 콘솔 E2E: 권한 경계(가장 중요) + 사이드바 콘솔 스모크.
  * 성공: 관리자는 사이드바로 대시보드·주문·DLQ·알림·공연에 접근하고 등록·설정을 한다.
  * 실패: 비관리자/미로그인은 접근 거부.
  * 관리자 계정은 백엔드가 ADMIN_EMAIL/ADMIN_PASSWORD로 부트스트랩(CI env 주입).
- * 주의: E2E CI 잡엔 Kafka 브로커가 없어 Kafka는 '미연결', DLQ는 빈 상태 — DLQ 재처리 로직은
+ * 주의: E2E CI 잡엔 Kafka 브로커가 없어 Kafka는 '미연결', DLQ는 빈 상태다. DLQ 재처리 로직은
  *      백엔드 DlqIntegrationTest가 커버한다(브라우저로 실패 메시지 생성은 비실용적).
  */
 

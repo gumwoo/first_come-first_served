@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 결제 시도(회원, 소유자). 승인/거절 결과를 반환(거절도 200 — 재시도 가능). */
+/** 결제 시도(회원, 소유자). 승인/거절 결과를 반환(거절도 200: 재시도 가능). */
 @RestController
 public class PaymentController {
 

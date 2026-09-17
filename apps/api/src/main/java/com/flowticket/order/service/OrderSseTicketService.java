@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 주문 SSE 구독 자격 — 발급(소유자 확인)과 검증(티켓 대조).
+ * 주문 SSE 구독 자격: 발급(소유자 확인)과 검증(티켓 대조).
  *
  * <p>{@code EventSource}는 헤더를 못 붙이므로 전용 타입·주문 하나·짧은 TTL의 티켓을 URL로 싣는다.
  * TTL은 새 구독을 시작할 수 있는 창이지 스트림 수명이 아니다(ADR-017).

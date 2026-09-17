@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [main]
 
-# 같은 브랜치에 새 커밋이 오면 이전 CI는 의미가 없다 — 즉시 취소해 러너 시간을 아낀다.
+# 같은 브랜치에 새 커밋이 오면 이전 CI는 의미가 없다. 즉시 취소해 러너 시간을 아낀다.
 # 리뷰 → 수정 → push 루프에서 낭비가 컸다.
 #
 # image.yml은 일부러 다르게 잡는다(cancel-in-progress: false). 배포는 중간에 죽이면
@@ -81,7 +81,7 @@ jobs:
     name: 백엔드 (하네스 → 테스트)
     runs-on: ubuntu-latest
     needs: [changes, harness-meta]
-    # 변경 영역에 해당할 때만 실행 — main push도 예외가 아니다.
+    # 변경 영역에 해당할 때만 실행: main push도 예외가 아니다.
     # squash merge라 main의 diff는 PR의 diff와 같아, push에서 전체를 다시 돌리면 같은 검증을
     # 두 번 하게 된다. 머지 스큐는 사후 전체 실행이 아니라 브랜치 보호의 "up to date 요구"로 막는다.
     if: needs.changes.outputs.backend == 'true'
@@ -111,7 +111,7 @@ jobs:
       # 러너에 Docker가 있으므로 promtool을 따로 설치하지 않는다(버전 고정 = 결정론).
       # 이미지 ENTRYPOINT는 prometheus라 --entrypoint로 promtool을 직접 지목해야 한다.
       #
-      # 규칙만 검증하면 절반이다 — 라우트를 잘못 쓰면 알림이 엉뚱한 리시버로 가거나 아무 데도
+      # 규칙만 검증하면 절반이다. 라우트를 잘못 쓰면 알림이 엉뚱한 리시버로 가거나 아무 데도
       # 안 간다. amtool은 webhook 없이 라우팅을 판정하므로 비밀 없이 CI에서 돌릴 수 있다.
       - name: alert rules + routing (promtool / amtool)
         run: |
@@ -121,7 +121,7 @@ jobs:
           docker run --rm --entrypoint /bin/promtool -v "$PWD/build/alerts:/w" -w /w prom/prometheus:v2.53.0 test rules rule-tests.yml
           node harness/alerts/extract-alertmanager.mjs k8s/monitoring/kube-prometheus-stack.values.yaml build/alerts/alertmanager.yml
           bash harness/alerts/check-alertmanager.sh build/alerts
-      # 매니페스트가 앱 코드와 어긋나는지 — apply 전에는 무증상이라 여기서만 잡을 수 있다.
+      # 매니페스트가 앱 코드와 어긋나는지: apply 전에는 무증상이라 여기서만 잡을 수 있다.
       - name: k8s harness check
         run: node harness/k8s/check.mjs
       - name: gradle build (test 포함)
@@ -137,7 +137,7 @@ jobs:
       # 컨테이너 기동·워커 오버헤드는 개별 testcase에 귀속되지 않아 미귀속 시간으로 남는다.
       # 두 숫자의 차이가 곧 "테스트 코드 밖에서 쓰는 시간"이라 그 자체가 판단 근거다.
       #
-      # HTML 리포트는 용량이 커서 실패 시에만 올린다 — 진단용이고 시간 분석엔 XML이면 된다.
+      # HTML 리포트는 용량이 커서 실패 시에만 올린다. 진단용이고 시간 분석엔 XML이면 된다.
       - name: upload backend test results (timing)
         if: always()
         uses: actions/upload-artifact@v4
@@ -158,7 +158,7 @@ jobs:
     name: 프론트 (하네스 → lint → build)
     runs-on: ubuntu-latest
     needs: [changes, harness-meta]
-    # 변경 영역에 해당할 때만 실행(backend 잡의 주석 참고 — push도 동일하게 필터한다).
+    # 변경 영역에 해당할 때만 실행(backend 잡의 주석 참고: push도 동일하게 필터한다).
     if: needs.changes.outputs.frontend == 'true'
     steps:
       - uses: actions/checkout@v4
@@ -182,7 +182,7 @@ jobs:
       - name: lint
         working-directory: apps/web
         run: pnpm lint
-      # 단위 테스트는 build 앞에 둔다 — 실패 시 더 빨리 알고, 느린 build를 낭비하지 않는다.
+      # 단위 테스트는 build 앞에 둔다. 실패 시 더 빨리 알고, 느린 build를 낭비하지 않는다.
       # E2E와 역할이 다르다: E2E는 브라우저 전체 흐름을, 이쪽은 타이밍 로직(폴링 재예약 등)을 본다.
       - name: unit test
         working-directory: apps/web
@@ -195,7 +195,7 @@ jobs:
     name: E2E (Playwright, 풀스택)
     runs-on: ubuntu-latest
     needs: [changes, harness-meta]
-    # 변경 영역에 해당할 때만 실행(backend 잡의 주석 참고 — push도 동일하게 필터한다).
+    # 변경 영역에 해당할 때만 실행(backend 잡의 주석 참고: push도 동일하게 필터한다).
     if: needs.changes.outputs.e2e == 'true'
     services:
       postgres:
@@ -209,7 +209,7 @@ jobs:
           --health-cmd "pg_isready -U flowticket"
           --health-interval 5s --health-timeout 5s --health-retries 12
       redis:
-        image: redis:7.4 # ZPOPMIN(5.0+) 필수 — 대기열 승격 Lua (TS-002)
+        image: redis:7.4 # ZPOPMIN(5.0+) 필수: 대기열 승격 Lua (TS-002)
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
@@ -218,7 +218,7 @@ jobs:
       DB_PORT: "5432"
       DB_PASSWORD: flowticket
       JWT_SECRET: ci-e2e-secret-0123456789-0123456789-0123456789
-      # 관리자 부트스트랩(admin E2E). CI 전용 합성 픽스처 — 실 비밀 아님.
+      # 관리자 부트스트랩(admin E2E). CI 전용 합성 픽스처: 실 비밀 아님.
       ADMIN_EMAIL: admin-e2e@flowticket.local
       ADMIN_PASSWORD: e2e-admin-secret
     steps:
@@ -264,7 +264,7 @@ jobs:
       - name: build & run web
         working-directory: apps/web
         env:
-          # 대기열 폴링을 테스트 시간 밖으로 밀어낸다(10분). 운영 후보값이 아니다 —
+          # 대기열 폴링을 테스트 시간 밖으로 밀어낸다(10분). 운영 후보값이 아니다.
           # admit-ttl(300초)보다도 길어 운영에서는 성립하지 않는다. 폴링이 살아 있으면
           # SSE 재연결 복구(onopen)를 그것이 먼저 덮어버려 회귀 테스트가 성립하지 않는다.
           #
@@ -295,7 +295,7 @@ jobs:
           E2E_BASE_URL: http://localhost:3000
         run: npx playwright test
 
-      # 5) 실패 시 trace(CCTV) 아티팩트 업로드 — 에이전트 디버깅용
+      # 5) 실패 시 trace(CCTV) 아티팩트 업로드: 에이전트 디버깅용
       - name: upload playwright artifacts
         if: failure()
         uses: actions/upload-artifact@v4

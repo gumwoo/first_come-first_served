@@ -1,4 +1,4 @@
-# IRSA — 서비스 어카운트별 IAM 역할.
+# IRSA: 서비스 어카운트별 IAM 역할.
 #
 # 노드 역할에 권한을 몰아주면 그 노드의 모든 Pod가 같은 권한을 얻는다.
 # IRSA는 "이 네임스페이스의 이 서비스 어카운트"로 한정한다.
@@ -64,7 +64,7 @@ resource "aws_iam_role_policy_attachment" "ebs_csi" {
 # ---------------------------------------------------------------------------
 # Cluster Autoscaler
 # ---------------------------------------------------------------------------
-# HPA는 Pod 수만 늘린다. 노드 용량을 늘리는 건 CA다 — 둘 다 없으면
+# HPA는 Pod 수만 늘린다. 노드 용량을 늘리는 건 CA다. 둘 다 없으면
 # "HPA를 적용했다"와 "실제로 확장됐다"가 달라진다(ADR-012 §4).
 data "aws_iam_policy_document" "cluster_autoscaler" {
   statement {
@@ -94,7 +94,7 @@ data "aws_iam_policy_document" "cluster_autoscaler" {
       "autoscaling:TerminateInstanceInAutoScalingGroup",
     ]
 
-    # 이 클러스터의 노드그룹 ASG로만 제한한다 — 계정 내 다른 ASG를 건드리지 못하게.
+    # 이 클러스터의 노드그룹 ASG로만 제한한다. 계정 내 다른 ASG를 건드리지 못하게.
     condition {
       test     = "StringEquals"
       variable = "aws:ResourceTag/k8s.io/cluster-autoscaler/${var.cluster_name}"
@@ -120,7 +120,7 @@ resource "aws_iam_role_policy" "cluster_autoscaler" {
 # ---------------------------------------------------------------------------
 # 이 컨트롤러의 IAM 정책은 AWS 관리형 정책이 없고, 공식 저장소가 배포하는 JSON을
 #    그대로 쓰는 것이 표준 절차다. 손으로 옮겨 적으면 누락·오타로 Ingress 생성이
-#    조용히 실패하므로, 파일을 내려받아 두고 여기서 읽는다.
+#    실패하므로, 파일을 내려받아 두고 여기서 읽는다.
 #    받는 법: modules/eks/policies/README.md
 resource "aws_iam_role" "load_balancer_controller" {
   name               = "${var.cluster_name}-lbc"
@@ -144,7 +144,7 @@ resource "aws_iam_role_policy" "load_balancer_controller" {
 # 저장소로 SSM Parameter Store를 쓴다(Secrets Manager 아님):
 #   - Standard 파라미터 + SecureString은 저장 비용이 없다. Secrets Manager는 시크릿당 과금
 #   - 로테이션이 필요 없는 값들이라 Secrets Manager의 이점이 없다
-#   - DB 자격증명만은 예외로 이미 Secrets Manager에 있다(RDS가 마스터 암호를 관리) — 그쪽은
+#   - DB 자격증명만은 예외로 이미 Secrets Manager에 있다(RDS가 마스터 암호를 관리): 그쪽은
 #     ExternalSecret이 별도 provider로 읽는다
 #
 # 권한은 경로로 좁힌다. /flowticket/* 밖은 읽지 못한다.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 데모 데이터 시딩 — KOPIS 동기화로 공연·좌석을 채운다.
+# 데모 데이터 시딩: KOPIS 동기화로 공연·좌석을 채운다.
 #
 # 왜 스크립트인가: 클러스터를 재생성하면 RDS도 새로 만들어져 DB가 비어 있다. 그런데
 # 이 두 엔드포인트에는 화면이 없어서(백엔드만 존재), 스크립트가 없으면 사람이 매번
@@ -12,7 +12,7 @@
 #   상세: 회차당 300건 상한이라 1회로 안 끝난다(kopis.sync.detail-batch-limit).
 #         이 스크립트는 남은 건이 0이 될 때까지 반복 호출한다(아래 SEED_DETAIL_ROUNDS).
 #   좌석: 동기화가 seedSellable()로 자동 시딩하고, 아래 확인은 앞 20건만 본다.
-#         20이 임의값이 아니다 — k6의 discoverEvent()가 `size=20`에서 좌석 있는 공연을
+#         20이 임의값이 아니다. k6의 discoverEvent()가 `size=20`에서 좌석 있는 공연을
 #         고르므로(infra/k6/lib.js), 부하 측정이 보는 범위와 정확히 같다.
 #
 # 전제: kubeconfig 설정됨, 앱이 https://<도메인> 으로 응답함.
@@ -20,7 +20,7 @@ set -euo pipefail
 
 BASE="${FLOWTICKET_BASE:-https://flow-ticket.com}"
 API="$BASE/api"
-# Git Bash(Windows)는 `/`로 시작하는 인자를 Windows 경로로 바꾼다 — SSM 이름이 그 모양이라
+# Git Bash(Windows)는 `/`로 시작하는 인자를 Windows 경로로 바꾼다. SSM 이름이 그 모양이라
 # 끄지 않으면 ParameterNotFound가 난다(bootstrap.sh와 같은 이유).
 ssm() { MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "$1" --with-decryption --query 'Parameter.Value' --output text | tr -d '\r'; }
 # Git Bash의 jq는 출력 끝에 CR을 붙인다. 그대로 URL에 넣으면 경로 중간에 CR이 들어가
@@ -29,7 +29,7 @@ jqr() { jq -r "$@" | tr -d '\r'; }
 
 # ── 상세 데이터 진행 상황 관측 ──────────────────────────────────
 #
-# 개별 필드로 대신 세면 안 된다. `/events/{id}`의 runningTime이 비었는지로 세면 틀린다 —
+# 개별 필드로 대신 세면 안 된다. `/events/{id}`의 runningTime이 비었는지로 세면 틀린다.
 # Event.updateDetail()은 상세 응답에 그 필드가 없어도
 # detailSyncedAt을 찍는다. 즉 "상세는 받았는데 runningTime만 없는 공연"이 정상적으로 존재하고,
 # 그것들은 다음 회차 대상에서 빠지므로 대리값 카운터는 영원히 0에 도달하지 못한다.
@@ -89,7 +89,7 @@ echo
 [ "$ON_SALE" -gt 0 ] || { echo "8분 안에 공연이 들어오지 않았다. api 파드 로그를 확인하라" >&2; exit 1; }
 echo "    ON_SALE 공연 $ON_SALE건"
 
-# 좌석은 동기화가 자동 시딩한다(SeatSeeder). 누락분만 보조로 채운다 — 엔드포인트가 멱등이다.
+# 좌석은 동기화가 자동 시딩한다(SeatSeeder). 누락분만 보조로 채운다. 엔드포인트가 멱등이다.
 # 범위는 k6가 보는 앞 20건과 같다(위 주석 참고).
 echo "==> 좌석 확인 및 누락분 시딩 (k6가 보는 앞 20건)"
 IDS="$(curl -sS "$API/events?status=ON_SALE&size=20" --max-time 20 | jqr '.data.items[].id')"
@@ -106,12 +106,12 @@ done
 echo "    좌석 있음 ${already}건 / 보조 시딩 ${seeded}건"
 # ── 상세 데이터 채우기 ────────────────────────────────────────────
 #
-# 이건 운영 기본 동작과 다르다. 앱은 일부러 회차당 300건만 처리한다 —
+# 이건 운영 기본 동작과 다르다. 앱은 일부러 회차당 300건만 처리한다.
 # "오래된 순으로 300건씩 순환시켜 전체가 약 5일에 한 바퀴, KOPIS 호출량은 하루 300건으로 일정"
 # 이 설계 의도다(TS-033).
 #
 # 여기서 반복하는 이유는 갓 만든 클러스터는 전부 비어 있어서다. 며칠을 기다릴 수 없다.
-# 속도 제한은 지킨다(앱의 KopisRateLimiter 5회/초, KOPIS 허용은 IP당 10회/초 — IMP-018).
+# 속도 제한은 지킨다(앱의 KopisRateLimiter 5회/초, KOPIS 허용은 IP당 10회/초: IMP-018).
 # 일일 총량 제한은 확인된 바 없다.
 #
 # 끄려면: SEED_DETAIL_ROUNDS=0 bash scripts/seed-demo-data.sh
@@ -123,7 +123,7 @@ if [ "$ROUNDS" -gt 0 ]; then
     missing="$(missing_detail)"
     echo "    [$r/$ROUNDS] 상세 미수집 ${missing}건 / 전체 $(total_events)건"
     [ "$missing" -eq 0 ] && break
-    # 진행이 멈췄으면 더 돌려도 같다 — KOPIS가 그 공연들의 상세를 주지 않는 경우다.
+    # 진행이 멈췄으면 더 돌려도 같다. KOPIS가 그 공연들의 상세를 주지 않는 경우다.
     if [ "$missing" -eq "$prev" ]; then
       echo "    진행이 멈췄다(${missing}건 그대로) — 상세 조회가 반복 실패하는 공연으로 보고 중단한다"
       break

@@ -9,7 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link OutboxEvent}의 상태 전이 계약. 컨테이너 없이 도는 단위 테스트다 — 검증 대상이
+ * {@link OutboxEvent}의 상태 전이 계약. 컨테이너 없이 도는 단위 테스트다. 검증 대상이
  * 발행 파이프라인이 아니라 엔티티가 남기는 흔적이기 때문이다.
  *
  * <p>{@code lastError}의 수명이 요점이다. 일시적 실패에도 기록되므로, 지우지 않으면

@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { seedAdmittedUser, seedOrder, firstSelectable, seatTitle } from "../helpers/seed";
 
 /**
- * ADR-015 §1) 회귀 — 좌석 SSE도 초기 프레임이 있어야 재연결 후 `onopen` 재조회가 발동한다.
+ * ADR-015 §1) 회귀: 좌석 SSE도 초기 프레임이 있어야 재연결 후 `onopen` 재조회가 발동한다.
  *
  * <p>`useSeats`에는 폴링이 없어 이 경로가 유일한 복구 수단이다. SSE를 막아 이벤트를 소실시키고,
  * 풀었을 때 재연결만으로 좌석맵이 갱신되는지 본다. 초기 프레임 전송을 되돌리면 실패한다.
@@ -23,7 +23,7 @@ test("SSE가 끊긴 사이 좌석이 선점돼도 재연결하면 좌석맵이 �
   // 2) 브라우저 UI 밖에서 그 좌석을 선점해 서버 상태만 HELD로 바꾼다.
   //    seat.held 이벤트는 SSE로만 나가고, 연결이 없어 소실된다.
   //
-  //    같은 사용자의 토큰을 쓰지만 상관없다 — 이 테스트가 보는 것은 "누가 잡았나"가 아니라
+  //    같은 사용자의 토큰을 쓰지만 상관없다. 이 테스트가 보는 것은 "누가 잡았나"가 아니라
   //    UI가 모르는 사이 서버 상태가 바뀌었을 때 재연결로 따라잡는가다. 별도 사용자를
   //    만들면 가입 절차만 늘고 검증 내용은 같다.
   //    (page.request라 브라우저 라우트에 걸리지 않는다)
@@ -33,7 +33,7 @@ test("SSE가 끊긴 사이 좌석이 선점돼도 재연결하면 좌석맵이 �
   });
   expect(holdRes.ok()).toBeTruthy();
 
-  // 3) 화면은 아직 낡은 채다 — 폴링이 없으므로 스스로 갱신될 경로가 없다.
+  // 3) 화면은 아직 낡은 채다. 폴링이 없으므로 스스로 갱신될 경로가 없다.
   //    이 단언이 "지금 복구 가능한 경로가 SSE 재연결뿐"이라는 조건을 고정한다.
   await page.waitForTimeout(2000);
   await expect(page.getByTitle(title, { exact: true })).toBeEnabled();
@@ -54,7 +54,7 @@ test("SSE가 끊긴 사이 좌석이 선점돼도 재연결하면 좌석맵이 �
  * 상태 변경이라 이 결함을 재현하기에 정확한 시나리오다.
  *
  * <p>결제 대기 화면은 주문이 PAID가 되면 완료 화면으로 자동 이동한다
- * (`orders/[id]/pay/page.tsx` — `if (order?.status === "PAID") router.replace(...)`).
+ * (`orders/[id]/pay/page.tsx`: `if (order?.status === "PAID") router.replace(...)`).
  * 그 상태는 SSE 이벤트 아니면 `refresh()`로만 들어온다.
  */
 test("SSE가 끊긴 사이 입금이 확정돼도 재연결하면 완료로 넘어간다", async ({ page }) => {
@@ -76,7 +76,7 @@ test("SSE가 끊긴 사이 입금이 확정돼도 재연결하면 완료로 넘�
   });
   expect(res.ok()).toBeTruthy();
 
-  // 3) 화면은 아직 입금 대기다 — 이 훅에는 폴링이 없어 스스로 갱신될 경로가 없다.
+  // 3) 화면은 아직 입금 대기다. 이 훅에는 폴링이 없어 스스로 갱신될 경로가 없다.
   //    복구 가능한 경로가 SSE 재연결뿐이라는 조건을 고정한다.
   await page.waitForTimeout(2000);
   await expect(page).toHaveURL(new RegExp(`/orders/${orderId}/pay`));

@@ -50,7 +50,7 @@ export default function Home() {
       {/* 히어로 슬라이더(대표 공연 자동 회전) */}
       <HeroCarousel items={heroItems} />
 
-      {/* 검색창 — 검색 버튼/Enter일 때만 검색 결과 페이지로 이동 */}
+      {/* 검색창: 검색 버튼/Enter일 때만 검색 결과 페이지로 이동 */}
       <form className="mb-4 flex gap-2" onSubmit={submitSearch}>
         <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="공연명, 아티스트, 장소 검색" />
         <Button type="submit" className="shrink-0 gap-1"><Search className="h-4 w-4" /> 검색</Button>
@@ -80,7 +80,7 @@ export default function Home() {
             </>
           )}
 
-          {/* 전체/카테고리 목록 — 24개 티저 + 전체 보기(→ /search 페이지네이션) */}
+          {/* 전체/카테고리 목록: 24개 티저 + 전체 보기(→ /search 페이지네이션) */}
           <Section
             title={browsing ? `${CATEGORIES.find(([, v]) => v === category)?.[0] ?? category} 공연` : "전체 공연"}
             loading={all.isLoading}

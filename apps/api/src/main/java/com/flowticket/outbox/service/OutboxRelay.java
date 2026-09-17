@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 아웃박스 릴레이(ADR-010). PENDING 행을 오래된 순으로 Kafka에 발행하고, 발행 성공을 확인한 뒤
  * PUBLISHED로 마킹한다(publish-then-mark). 크래시로 마킹 전에 죽으면 다음 틱에 재발행되므로
- * at-least-once이고 유실이 0이다 — 중복은 소비자 멱등(eventId)이 흡수한다.
+ * at-least-once이고 유실이 0이다. 중복은 소비자 멱등(eventId)이 흡수한다.
  *
  * <p>CDC(Debezium) 대신 폴링을 쓴다: 정합성 보장은 동일하고 새 인프라가 0이라 이 규모에 맞는다.
  * 멀티 Pod에서는 ShedLock으로 한 인스턴스만 돌아 발행 순서·중복을 통제한다.
@@ -85,12 +85,12 @@ public class OutboxRelay {
                 continue;
             }
             OrderEvent event = deserialize(row);
-            if (event == null) { // 결정적 실패 — 중단하지 않고 이 aggregate만 막는다
+            if (event == null) { // 결정적 실패: 중단하지 않고 이 aggregate만 막는다
                 blocked.add(key);
                 dead++;
                 continue;
             }
-            if (!send(row, event)) { // 일시적 실패 — 남은 배치를 중단하고 다음 틱에 재시도
+            if (!send(row, event)) { // 일시적 실패: 남은 배치를 중단하고 다음 틱에 재시도
                 break;
             }
             published++;
@@ -136,7 +136,7 @@ public class OutboxRelay {
     }
 
     /**
-     * 보존기간이 지난 발행 완료 행만 정리. PENDING·실패 행은 절대 지우지 않는다(유실 방지) —
+     * 보존기간이 지난 발행 완료 행만 정리. PENDING·실패 행은 절대 지우지 않는다(유실 방지):
      * 발행 이력을 일정 기간 남겨 "언제·몇 번째 시도에 나갔는지" 운영 가시성을 준다.
      */
     @Scheduled(cron = "${outbox.purge-cron:0 0 3 * * *}")

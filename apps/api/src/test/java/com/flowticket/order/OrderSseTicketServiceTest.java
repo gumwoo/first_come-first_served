@@ -20,10 +20,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * 주문 SSE 구독 인가. {@code /sse/orders/{id}}는 인가 없이 열려 있었고 {@code id}가 순차
- * 정수라 남의 주문 상태 변화를 관찰할 수 있었다 — 그 경로를 티켓으로 닫는다.
+ * 정수라 남의 주문 상태 변화를 관찰할 수 있었다. 그 경로를 티켓으로 닫는다.
  *
  * <p>티켓이 막아야 하는 것은 셋이다: 티켓 없음, 다른 종류의 토큰,
- * 다른 주문의 티켓. 마지막이 특히 중요하다 — 대조하지 않으면 자기 주문 티켓 하나로
+ * 다른 주문의 티켓. 마지막이 특히 중요하다. 대조하지 않으면 자기 주문 티켓 하나로
  * 남의 주문을 구독할 수 있어 인가를 넣은 의미가 사라진다.
  */
 class OrderSseTicketServiceTest {
@@ -122,7 +122,7 @@ class OrderSseTicketServiceTest {
 
     /**
      * {@code init()}은 {@code @PostConstruct}라 패키지 밖에서 부를 수 없다. 테스트 때문에
-     * 접근 범위를 넓히는 대신 리플렉션으로 부른다 — 프로덕션 API를 테스트 편의로 바꾸지 않는다.
+     * 접근 범위를 넓히는 대신 리플렉션으로 부른다. 프로덕션 API를 테스트 편의로 바꾸지 않는다.
      */
     private JwtProvider newProvider(long sseTtlSeconds) {
         var provider = new JwtProvider(SECRET, 1800, 3600, sseTtlSeconds);

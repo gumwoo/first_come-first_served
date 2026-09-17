@@ -48,7 +48,7 @@ public class TossPaymentGateway implements PaymentGateway {
                 .encodeToString((secretKey + ":").getBytes(StandardCharsets.UTF_8));
     }
 
-    /** 서버 단독 승인은 Toss 카드 흐름에 없음 — 결제창 인증(confirm)이 필요. */
+    /** 서버 단독 승인은 Toss 카드 흐름에 없음: 결제창 인증(confirm)이 필요. */
     @Override
     public ApproveResult approve(Long orderId, int amount, String method, String provider, String idempotencyKey) {
         throw new BusinessException(ErrorCode.VALIDATION_ERROR); // 결제창 인증(confirm) 경로를 사용하세요
@@ -56,7 +56,7 @@ public class TossPaymentGateway implements PaymentGateway {
 
     @Override
     public VbankIssue issueVbank(Long orderId, int amount) {
-        // 실 Toss 가상계좌는 결제창 발급 흐름이 필요 — 데모는 Mock 경로 사용(웹훅 검증 로직은 동일 규약).
+        // 실 Toss 가상계좌는 결제창 발급 흐름이 필요. 데모는 Mock 경로 사용(웹훅 검증 로직은 동일 규약).
         throw new BusinessException(ErrorCode.VALIDATION_ERROR);
     }
 
@@ -112,7 +112,7 @@ public class TossPaymentGateway implements PaymentGateway {
 
     /**
      * 주문번호로 결제 조회(정산). Toss는 우리 orderId 규약으로 조회를 지원한다.
-     * 승인 상태(DONE)만 "미아 승인 후보"로 본다 — 이미 취소(CANCELED)면 정산 대상이 아니다.
+     * 승인 상태(DONE)만 "미아 승인 후보"로 본다. 이미 취소(CANCELED)면 정산 대상이 아니다.
      * 조회 실패(404 포함)는 예외로 올리지 않고 없음으로 처리한다(없는 승인을 만들어내지 않기 위해).
      */
     @Override

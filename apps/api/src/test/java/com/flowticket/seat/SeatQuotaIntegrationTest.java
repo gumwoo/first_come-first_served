@@ -56,7 +56,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   결제 후 점유 → Order    = PAID
  * </pre>
  *
- * <p>주문의 중간 상태(PENDING·VBANK_WAITING)는 세지 않는다 — 좌석을 점유 중이라면
+ * <p>주문의 중간 상태(PENDING·VBANK_WAITING)는 세지 않는다. 좌석을 점유 중이라면
  * 이미 HELD 홀드로 잡히고, 홀드가 풀린 뒤 남은 주문은 좌석을 확보하고 있지 않기 때문이다.
  *
  * <p>{@code @TestPropertySource}를 붙이지 않는다. 이 테스트에 필요한 hold-ttl(300)은
@@ -99,7 +99,7 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
     }
 
     // ------------------------------------------------------------------
-    // 1) 동시성 — check-then-act 레이스
+    // 1) 동시성: check-then-act 레이스
     // ------------------------------------------------------------------
 
     @Test
@@ -132,7 +132,7 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
         // 결제는 좌석 수를 늘리지 않고 표현 위치만 옮긴다(HELD → PAID).
         // 한도 조회가 두 문장으로 나뉘면 그 사이에 전환이 커밋돼 0매로 보일 수 있다(읽기 스큐).
         //
-        // 이 테스트는 결함 탐지용이지 회귀 가드가 아니다 — 아래 §타이밍 참고.
+        // 이 테스트는 결함 탐지용이지 회귀 가드가 아니다. 아래 §타이밍 참고.
         long user = 502L;
         String token = admittedToken(user);
         List<Long> ids = availableSeatIds(5);
@@ -151,7 +151,7 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
         // 추가 선점은 실패해야 한다.
         assertThat(success.get()).isZero();
 
-        // "추가 선점 0건"만으로는 부족하다. 결제 스레드가 조용히 실패해도 기존 4매가 HELD로
+        // "추가 선점 0건"만으로는 부족하다. 결제 스레드가 실패해도 기존 4매가 HELD로
         // 남아 좌석 수는 그대로 4가 되어 거짓 통과한다. 결제가 실제로 확정됐는지 확인한다.
         assertThat(orderRepository.findById(orderId).orElseThrow().getStatus())
                 .as("결제가 실제로 확정돼야 이 테스트가 의미를 갖는다")
@@ -199,7 +199,7 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
                 lockHeld.countDown(); // 실패해도 대기 쪽이 타임아웃까지 멈춰 있지 않게 한다
             }
         });
-        // B: 같은 사용자의 추가 선점 — A가 락을 놓을 때까지 진행되면 안 된다
+        // B: 같은 사용자의 추가 선점. A가 락을 놓을 때까지 진행되면 안 된다
         CountDownLatch holderStarted = new CountDownLatch(1);
         Thread holder = new Thread(() -> {
             holderStarted.countDown();
@@ -244,7 +244,7 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
     }
 
     // ------------------------------------------------------------------
-    // 2) 무엇을 세는가 — PAID / HELD
+    // 2) 무엇을 세는가: PAID / HELD
     // ------------------------------------------------------------------
 
     @Test
@@ -285,7 +285,7 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
         String token = admittedToken(user);
         List<Long> ids = availableSeatIds(4);
         HoldResponse held = seatService.hold(user, eventId, ids.subList(0, 3), token);
-        orderService.create(user, held.holdId()); // PENDING — 같은 좌석 3매가 양쪽에 존재
+        orderService.create(user, held.holdId()); // PENDING: 같은 좌석 3매가 양쪽에 존재
 
         // 3매만 붙들고 있으므로 1매는 더 잡을 수 있어야 한다(6매로 세면 여기서 거부된다).
         seatService.hold(user, eventId, List.of(ids.get(3)), token);
@@ -294,7 +294,7 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
     }
 
     // ------------------------------------------------------------------
-    // 3) 한도가 풀려야 하는 경우 — 과잉 차단 방지
+    // 3) 한도가 풀려야 하는 경우: 과잉 차단 방지
     // ------------------------------------------------------------------
 
     @Test
@@ -413,7 +413,7 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
      * 모든 예외를 무시하면 쿼리가 깨져 양쪽 다 오류로 끝나도 "성공 0건"이 되어
      * 거짓 통과가 난다.
      *
-     * <p>{@code BusinessException} 전체를 삼키는 것도 넓다 — {@code SOLD_OUT}이나
+     * <p>{@code BusinessException} 전체를 삼키는 것도 넓다. {@code SOLD_OUT}이나
      * {@code QUEUE_NOT_ADMITTED}로 실패해도 통과해 버린다. "실패했다"가 아니라
      * "이 이유로 실패했다"를 단언해야 나중에 실패 사유가 바뀌었을 때 드러난다.
      */
@@ -451,7 +451,7 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
     }
 
     /**
-     * 홀드만 만료시킨다(주문은 그대로). 만료 시각을 과거로 당긴 뒤 실제 sweep을 돌린다 —
+     * 홀드만 만료시킨다(주문은 그대로). 만료 시각을 과거로 당긴 뒤 실제 sweep을 돌린다.
      * 상태만 손으로 바꾸면 좌석이 HELD로 남아 현실과 달라진다(sweep은 좌석도 복구한다).
      */
     private void expireHold(Long holdId) {

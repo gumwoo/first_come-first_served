@@ -14,7 +14,7 @@ export function loadYaml(rel) {
   return yaml.load(fs.readFileSync(p, "utf8"));
 }
 
-/** 디렉터리 재귀 순회 — 확장자 필터. 없으면 빈 배열. */
+/** 디렉터리 재귀 순회: 확장자 필터. 없으면 빈 배열. */
 export function walk(relDir, exts) {
   const root = path.join(REPO_ROOT, relDir);
   const out = [];

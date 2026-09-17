@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * FlowTicket E2E — Critical User Flow만 검증. 규칙: docs/testing/e2e-rules.md
+ * FlowTicket E2E: Critical User Flow만 검증. 규칙: docs/testing/e2e-rules.md
  * P0: 스모크(홈 로드). 이후 P1(예매 해피패스)/P2(예외 흐름)로 확장.
  */
 export default defineConfig({
@@ -15,7 +15,7 @@ export default defineConfig({
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
-    trace: "retain-on-failure",      // 실패 시 CCTV(trace) — 에이전트 디버깅용
+    trace: "retain-on-failure",      // 실패 시 CCTV(trace): 에이전트 디버깅용
     screenshot: "only-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

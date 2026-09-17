@@ -100,7 +100,7 @@ class AuthIntegrationTest extends IntegrationTestSupport {
     @org.junit.jupiter.api.Timeout(60)
     void 같은_이메일로_동시에_가입해도_500이_나가지_않는다() throws Exception {
         // 사전 검사(existsByEmail)는 순차 요청만 막는다. 동시에 오면 둘 다 "없음"을 보고
-        // 각자 INSERT하고 늦은 쪽이 uq_users_email에 걸린다 — 그때 500이 나가면 안 된다.
+        // 각자 INSERT하고 늦은 쪽이 uq_users_email에 걸린다. 그때 500이 나가면 안 된다.
         // 휴대폰은 서로 달라야 uq_users_phone이 아니라 이메일 제약을 겨눈다.
         String email = "racedup@test.com";
         int threads = 4;

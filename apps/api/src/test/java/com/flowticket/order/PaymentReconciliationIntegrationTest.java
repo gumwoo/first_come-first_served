@@ -64,7 +64,7 @@ class PaymentReconciliationIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void PG에_승인이_없으면_아무것도_취소하지_않는다() {
-        // 평시(사용자가 결제하지 않고 만료) — Mock은 Inquiry.none()을 반환한다.
+        // 평시(사용자가 결제하지 않고 만료): Mock은 Inquiry.none()을 반환한다.
         saveOrder(OrderStatus.EXPIRED, LocalDateTime.now().minusHours(1));
 
         reconciliation.reconcileOrphanApprovals();
@@ -74,7 +74,7 @@ class PaymentReconciliationIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 결제완료_주문은_정산_후보가_아니다() {
-        // PAID는 승인이 남아 있는 게 정상 — 조회조차 하지 않아야 한다(정상 결제 오취소 방지).
+        // PAID는 승인이 남아 있는 게 정상: 조회조차 하지 않아야 한다(정상 결제 오취소 방지).
         Long paid = saveOrder(OrderStatus.PAID, LocalDateTime.now().minusHours(1));
 
         reconciliation.reconcileOrphanApprovals();
@@ -85,7 +85,7 @@ class PaymentReconciliationIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 유예시간_안의_최근_주문은_건드리지_않는다() {
-        // 아직 결제가 진행 중일 수 있는 구간(기본 유예 10분) — 조회 대상에서 제외.
+        // 아직 결제가 진행 중일 수 있는 구간(기본 유예 10분): 조회 대상에서 제외.
         Long recent = saveOrder(OrderStatus.PENDING, LocalDateTime.now().minusMinutes(1));
 
         reconciliation.reconcileOrphanApprovals();

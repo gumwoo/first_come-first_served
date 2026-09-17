@@ -93,7 +93,7 @@ export default function PayPage() {
           successUrl: `${origin}/orders/${orderId}/pay`,
           failUrl: `${origin}/orders/${orderId}/pay`,
         });
-        return; // 결제창으로 리다이렉트 — 복귀 시 useEffect가 확정
+        return; // 결제창으로 리다이렉트: 복귀 시 useEffect가 확정
       }
 
       const key = crypto.randomUUID();
@@ -110,7 +110,7 @@ export default function PayPage() {
         router.replace(`/orders/${orderId}/failed`);
       }
     } catch (e) {
-      // Toss 결제창은 사용자가 닫으면(취소) 예외를 던진다 — 실패가 아니므로 조용히 결제 화면 유지.
+      // Toss 결제창은 사용자가 닫으면(취소) 예외를 던진다. 실패가 아니므로 결제 화면을 그대로 둔다.
       const code = (e as { code?: string })?.code;
       if (code === "USER_CANCEL" || code === "PAY_PROCESS_CANCELED") return;
       setFailMsg("결제 처리 중 오류가 발생했습니다. 다시 시도해 주세요.");

@@ -2,7 +2,7 @@ import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeEventSource, installFakeEventSource } from "./fakeEventSource";
 
-// api 모듈을 대역으로 바꾼다 — 이 테스트가 보는 것은 네트워크가 아니라 언제 부르는가다.
+// api 모듈을 대역으로 바꾼다. 이 테스트가 보는 것은 네트워크가 아니라 언제 부르는가다.
 const getQueueStatus = vi.fn();
 vi.mock("@/features/queue/api/queue", () => ({
   issueQueueToken: vi.fn(async () => ({ token: "tok-1", status: "WAITING", rank: 5, total: 10 })),
@@ -61,7 +61,7 @@ describe("useQueue 폴링", () => {
     const { es } = await mountAndOpen();
     expect(es.readyState).toBe(FakeEventSource.OPEN);
 
-    // onopen 재조회는 폴링이 아니다 — 기준점을 여기서 다시 잡아 폴링만 본다.
+    // onopen 재조회는 폴링이 아니다. 기준점을 여기서 다시 잡아 폴링만 본다.
     marks = [];
     const base = Date.now();
     for (const ms of [2_000, 4_000, 8_000, 15_000, 15_000]) await advance(ms);
@@ -80,7 +80,7 @@ describe("useQueue 폴링", () => {
 
   /**
    * onerror에서 pollDelay 값만 되돌리고 이미 예약된 15초 타이머를 그대로 두면,
-   * SSE가 죽은 직후인데도 최대 15초 동안 폴링이 오지 않는다 —
+   * SSE가 죽은 직후인데도 최대 15초 동안 폴링이 오지 않는다.
    * 안전망이 촘촘해져야 할 바로 그 순간에 가장 성기게 된다.
    */
   it("SSE가 끊기면 이미 예약된 긴 타이머를 버리고 2초 뒤에 폴링한다", async () => {

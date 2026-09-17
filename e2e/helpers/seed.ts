@@ -1,7 +1,7 @@
 import { Page, expect } from "@playwright/test";
 
 /**
- * A기법(실제 API 재사용) 상태 빌드업 — "순간이동".
+ * A기법(실제 API 재사용) 상태 빌드업: "순간이동".
  * 매 테스트에서 로그인·대기열 UI를 반복하지 않고, 실제 백엔드 API로
  * "회원가입 → 로그인 → 대기열 입장(ADMITTED)" 상태를 미리 만든다.
  * page.request를 쓰므로 로그인 refresh 쿠키가 브라우저 컨텍스트에 저장돼,

@@ -58,7 +58,7 @@ class DlqIntegrationTest {
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
-        // 배경 스케줄러 비활성 — @Scheduled는 initialDelay가 없어 컨텍스트 기동 즉시 한 번 발사되고,
+        // 배경 스케줄러 비활성: @Scheduled는 initialDelay가 없어 컨텍스트 기동 즉시 한 번 발사되고,
         // 그 UPDATE가 테스트 초기화 TRUNCATE와 데드락을 만든다. 주기를 늘리는 것으로는 못 막는다.
         r.add("flowticket.scheduling.enabled", () -> "false");
         r.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -94,7 +94,7 @@ class DlqIntegrationTest {
 
     @Test
     void 역직렬화가_실패하는_독성_메시지도_DLQ로_간다() throws Exception {
-        // TS-020 회귀 — 역직렬화 단계의 실패도 DLQ로 가는가. 타입 헤더 없는 평문을 직접 넣는다.
+        // TS-020 회귀: 역직렬화 단계의 실패도 DLQ로 가는가. 타입 헤더 없는 평문을 직접 넣는다.
         // 토픽만으로 단언하면 다른 테스트가 비동기로 남긴 DLQ 행을 보고 거짓 통과하므로, 이 메시지 전용 표식을 쓴다.
         String marker = "poison-" + UUID.randomUUID();
 
@@ -110,7 +110,7 @@ class DlqIntegrationTest {
                 assertThat(dlqRepository.findAll())
                         .as("독성 메시지는 재시도로 해결되지 않으므로 DLT로 넘어가야 한다")
                         .anySatisfy(m -> {
-                            // 1) 원본 바이트가 그대로 실려야 한다 — JsonSerializer로 나가면
+                            // 1) 원본 바이트가 그대로 실려야 한다. JsonSerializer로 나가면
                             //    base64 JSON이 되어 이 표식이 평문으로 남지 않는다.
                             assertThat(m.getPayload())
                                     .as("DLT 값은 원본 byte[]여야 한다(직렬화기 구성 확인)")

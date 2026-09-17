@@ -1,4 +1,4 @@
-# API endpoint 기대 계약 — 컨트롤러에서 추출한 (method, path)와 diff.
+# API endpoint 기대 계약: 컨트롤러에서 추출한 (method, path)와 diff.
 # 추가/변경/삭제는 contracts + FE path fragment + 테스트와 함께(git-pr-rules §3).
 # path 변수는 {id} 형태로 정규화. (YAML flow 충돌 방지 위해 path는 따옴표)
 
@@ -64,7 +64,7 @@ endpoints:
   - { method: GET,    path: "/admin/alerts",             slice: S07 }
   - { method: PUT,    path: "/admin/alerts",             slice: S07 }
 
-  # 실시간 푸시 채널 (SSE) — events.yaml fe_subscribes 이벤트를 프론트로 전송
+  # 실시간 푸시 채널 (SSE): events.yaml fe_subscribes 이벤트를 프론트로 전송
   - { method: GET,    path: "/sse/queue/{token}",        slice: S03 }
   - { method: GET,    path: "/sse/events/{id}/seats",    slice: S04 }
   - { method: GET,    path: "/sse/orders/{id}",          slice: S05 }

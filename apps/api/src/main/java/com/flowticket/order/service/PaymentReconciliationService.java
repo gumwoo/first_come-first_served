@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service;
 /**
  * 결제 정산·보상(ADR-011). 외부 PG ↔ 내부 주문 상태의 불일치를 주기적으로 잡는다.
  *
- * <p>아웃박스(ADR-010)는 "DB에 커밋된 사실"을 밖으로 전달하는 패턴이라 이 문제를 못 닫는다 —
+ * <p>아웃박스(ADR-010)는 "DB에 커밋된 사실"을 밖으로 전달하는 패턴이라 이 문제를 못 닫는다.
  * PG 승인은 성공했는데 좌석 확정 실패·프로세스 크래시로 트랜잭션이 롤백되면 payments 행까지
  * 사라져 DB에 흔적 자체가 없기 때문이다. 그래서 흔적이 남는 주문에서 후보를 만들고,
  * PG에 직접 조회해 "우리는 미확정인데 PG엔 승인"인 미아 승인을 찾아 취소(void)한다.
@@ -52,7 +52,7 @@ public class PaymentReconciliationService {
     }
 
     /**
-     * 미아 승인 정산. 트랜잭션을 걸지 않는다 — 후보 조회 외에는 우리 DB를 바꾸지 않고, 건별로 외부 PG
+     * 미아 승인 정산. 트랜잭션을 걸지 않는다. 후보 조회 외에는 우리 DB를 바꾸지 않고, 건별로 외부 PG
      * 호출(조회·취소)을 하므로 네트워크 I/O가 DB 트랜잭션을 오래 붙잡으면 안 된다.
      */
     @Scheduled(fixedRateString = "${payment.reconcile-interval-ms:600000}",

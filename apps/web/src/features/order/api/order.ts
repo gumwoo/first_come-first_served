@@ -1,7 +1,7 @@
 import { api } from "@/lib/apiClient";
 
 // seatRow/seatCol은 주문 시점 좌석 위치 스냅샷. V17 이전 주문은 백필했으나
-// 백필되지 않은 행이 있을 수 있어 optional로 둔다 — 없으면 등급만 표시한다.
+// 백필되지 않은 행이 있을 수 있어 optional로 둔다. 없으면 등급만 표시한다.
 export type OrderItem = {
   seatId: number;
   grade: string;
@@ -122,7 +122,7 @@ export const requestRefund = (
 
 /**
  * 좌석 표기. "A석 A열 37번" 형태.
- * seatRow/seatCol은 V17 이전 주문에서 비어 있을 수 있어 있을 때만 덧붙인다 —
+ * seatRow/seatCol은 V17 이전 주문에서 비어 있을 수 있어 있을 때만 덧붙인다.
  * 없으면 예전처럼 등급만 보여주고, 화면이 깨지지 않는다.
  */
 export const seatLabel = (i: OrderItem): string => {

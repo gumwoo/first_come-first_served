@@ -35,7 +35,7 @@ public class QueueController {
         return ApiResponse.ok(queueService.status(token));
     }
 
-    /** 대기열 이탈(나가기) — 대기/입장 슬롯 정리. */
+    /** 대기열 이탈(나가기): 대기/입장 슬롯 정리. */
     @DeleteMapping("/queue/token")
     public ApiResponse<Void> leave(@RequestParam String token) {
         queueService.leave(token);

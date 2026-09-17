@@ -1,8 +1,8 @@
-# RDS PostgreSQL — 프라이빗 데이터 서브넷, 외부 노출 없음.
+# RDS PostgreSQL: 프라이빗 데이터 서브넷, 외부 노출 없음.
 #
 # 비밀번호는 RDS가 직접 관리한다(manage_master_user_password).
 # 처음에는 Terraform이 random_password로 만들어 Secrets Manager에 넣었는데,
-# 그 방식은 생성한 값이 state에 평문으로 남는다 — output으로 안 내보내도 마찬가지다.
+# 그 방식은 생성한 값이 state에 평문으로 남는다. output으로 안 내보내도 마찬가지다.
 # RDS가 관리하면 Terraform은 비밀번호를 보지도 저장하지도 않고 시크릿 ARN만 참조한다.
 # (프로젝트 규칙: 비밀은 코드·설정·state·채팅 어디에도 남기지 않는다.)
 
@@ -19,7 +19,7 @@ resource "aws_security_group" "db" {
   tags        = merge(var.tags, { Name = "${var.name}-db" })
 }
 
-# CIDR이 아니라 클러스터 SG를 출발지로 지정한다 — "이 클러스터의 노드만"이라는
+# CIDR이 아니라 클러스터 SG를 출발지로 지정한다. "이 클러스터의 노드만"이라는
 # 의도가 규칙 자체에 드러나고, 서브넷 CIDR이 바뀌어도 따라 고칠 필요가 없다.
 resource "aws_security_group_rule" "db_from_nodes" {
   type                     = "ingress"
@@ -44,7 +44,7 @@ resource "aws_db_instance" "this" {
   db_name  = var.db_name
   username = var.username
 
-  # 비밀번호를 Terraform이 만들지 않는다 — RDS가 생성·저장·교체하고
+  # 비밀번호를 Terraform이 만들지 않는다. RDS가 생성·저장·교체하고
   # Secrets Manager 시크릿을 알아서 만든다. ARN은 master_user_secret으로 노출된다.
   manage_master_user_password = true
 
@@ -54,7 +54,7 @@ resource "aws_db_instance" "this" {
 
   multi_az = var.multi_az
 
-  # 데모용 — 자동 백업을 끄고 최종 스냅샷도 남기지 않는다.
+  # 데모용: 자동 백업을 끄고 최종 스냅샷도 남기지 않는다.
   # 데이터는 Flyway 마이그레이션·KOPIS 동기화·좌석 시딩으로 기동 시 다시 채워진다.
   backup_retention_period = var.backup_retention_period
   skip_final_snapshot     = true

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 클러스터 기동 — terraform apply 이후의 모든 절차를 한 번에.
+# 클러스터 기동: terraform apply 이후의 모든 절차를 한 번에.
 #
 # 왜 스크립트인가: 문서의 명령어 목록으로는 helm 인자(IRSA ARN·VPC ID)를 손으로 채워야 하고,
 # 단계 누락(예: ArgoCD 설치)이나 순서 의존(네임스페이스가 ESO보다 먼저)을 사람 기억에 맡기게 된다.
@@ -23,7 +23,7 @@ SEED=1
 
 # ── helm 차트 버전 고정 ──────────────────────────────────────────────
 # 하나도 빠짐없이 박는다. 하나라도 floating이면 같은 커밋의 이 스크립트가 시점에 따라
-# 다른 클러스터를 만든다 — "절차를 코드로 고정한다"는 이 스크립트의 전제가 무너진다.
+# 다른 클러스터를 만든다. "절차를 코드로 고정한다"는 이 스크립트의 전제가 무너진다.
 #
 # 올릴 때: helm search repo <차트> --versions | head -5 로 확인하고 여기만 고친다.
 # 환경변수로 임시 override 할 수 있다(예: CA_CHART_VERSION=9.58.0 bash scripts/bring-up.sh).
@@ -81,10 +81,10 @@ echo "==> 4/7 cluster-autoscaler / strimzi / kube-prometheus-stack / argocd"
 # Cluster Autoscaler. IRSA 역할·ASG 태그·ignore_changes는 Terraform이 준비한다(ADR-012 §4).
 #
 # 차트 버전을 반드시 고정한다. floating으로 두면 같은 커밋의 bring-up.sh가
-# 시점에 따라 다른 것을 설치한다 — 이 스크립트의 존재 이유(절차를 코드로 고정)와 어긋난다.
+# 시점에 따라 다른 것을 설치한다. 이 스크립트의 존재 이유(절차를 코드로 고정)와 어긋난다.
 #
 # 더 중요한 것: Cluster Autoscaler는 Kubernetes 마이너 버전과 짝을 맞춰야 한다
-# (CA v1.35 → k8s 1.35). 버전을 박기만 하고 클러스터와 어긋나면 조용히 오작동한다.
+# (CA v1.35 → k8s 1.35). 버전을 박기만 하고 클러스터와 어긋나면 에러 없이 오작동한다.
 # 그래서 아래에서 차트의 appVersion과 API 서버 마이너를 대조하고, 다르면 중단한다.
 #
 # 버전은 스크립트 상단에서 한곳에 모아 선언한다($CA_CHART_VERSION).
@@ -98,7 +98,7 @@ CA_APP="$(helm show chart autoscaler/cluster-autoscaler --version "$CA_CHART_VER
   exit 1; }
 K8S_MINOR="$(kubectl version -o json 2>/dev/null | jq -r '.serverVersion.minor // empty' | tr -d '+' || true)"
 CA_MINOR="$(echo "$CA_APP" | cut -d. -f2)"
-# 못 읽었을 때 통과시키면 검사가 공허해진다 — 대조할 수 없다는 것 자체가 실패다.
+# 못 읽었을 때 통과시키면 검사가 공허해진다. 대조할 수 없다는 것 자체가 실패다.
 [ -n "$K8S_MINOR" ] || {
   echo "API 서버의 Kubernetes 마이너 버전을 읽지 못해 CA 호환성을 대조할 수 없다 — 중단한다." >&2
   echo "  확인: kubectl version -o json" >&2
@@ -113,7 +113,7 @@ fi
 echo "    cluster-autoscaler 차트 $CA_CHART_VERSION (앱 $CA_APP) ↔ k8s 1.${K8S_MINOR:-?}"
 
 # SA 이름(cluster-autoscaler)이 IRSA 신뢰 정책과 어긋나면 권한 오류가 아니라
-# "노드가 조용히 안 늘어나는" 형태로 나타난다 — LB Controller와 같은 함정이다.
+# "노드가 조용히 안 늘어나는" 형태로 나타난다. LB Controller와 같은 함정이다.
 helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
   --version "$CA_CHART_VERSION" \
   -n kube-system \
@@ -123,7 +123,7 @@ helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
   --wait --timeout 6m >/dev/null
 # 여기서 경고가 아니라 실패시킨다. CA는 선택이 아니라 기본 구성이다.
 # 경고만 하면 exit 0인데 노드 오토스케일링이 죽어 있는 클러스터가 만들어지고, 그 상태로
-# 다른 측정을 먼저 하면 조건이 조용히 오염된다(TS-034).
+# 다른 측정을 먼저 하면 조건이 오염된다(TS-034).
 CA_POD="$(kubectl -n kube-system get pod -l app.kubernetes.io/name=aws-cluster-autoscaler \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
 [ -n "$CA_POD" ] || {
@@ -189,7 +189,7 @@ echo "    ArgoCD가 앱을 동기화할 때까지 대기"
 kubectl wait --for=jsonpath='{.status.health.status}'=Healthy application/flowticket -n argocd --timeout=10m
 
 echo "==> 7/7 Route53을 새 ALB로 갱신"
-# 클러스터를 재생성하면 ALB 이름이 바뀐다 — 이 갱신을 빠뜨리면 도메인이 옛 ALB를 가리킨 채 남는다.
+# 클러스터를 재생성하면 ALB 이름이 바뀐다. 이 갱신을 빠뜨리면 도메인이 옛 ALB를 가리킨 채 남는다.
 for i in $(seq 1 40); do
   ALB="$(kubectl get ingress flowticket -n flowticket -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
   [ -n "$ALB" ] && break

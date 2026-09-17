@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
  * 경로는 {@code @SchedulerLock(name="kopis-sync")}이 걸려 있어 파드가 몇 개든 한 번에 한
  * 프로세스만 실행하기 때문이다. 두 조건 중 하나라도 깨지면 이 보장도 깨진다.
  *
- * <p>사용자 요청 경로에서 KOPIS를 부르면 안 된다 — 이 제한기 때문만이 아니다. 파드마다
+ * <p>사용자 요청 경로에서 KOPIS를 부르면 안 된다. 이 제한기 때문만이 아니다. 파드마다
  * 별도 인스턴스라 IP 총량을 못 지킬뿐더러, 더 나쁘게는 요청 스레드를 여기서 재우게 된다.
  * 외부 API가 느려질 때 톰캣 스레드가 묶여 API 전체가 멎는 실패(KopisClientConfig 참조)를
  * 방어 장치로 다시 만드는 셈이 된다.
@@ -41,7 +41,7 @@ public class KopisRateLimiter {
     /**
      * 호출 슬롯을 얻을 때까지 현재 스레드를 재운다. 배치 경로 전용이라 블로킹이 타당하다.
      *
-     * <p>인터럽트되면 상태를 복구하고 그대로 던진다 — 배치 종료 신호를 삼키면 파드가 제때
+     * <p>인터럽트되면 상태를 복구하고 그대로 던진다. 배치 종료 신호를 삼키면 파드가 제때
      * 내려가지 못한다.
      */
     public void acquire() throws InterruptedException {

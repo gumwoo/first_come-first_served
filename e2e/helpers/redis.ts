@@ -1,7 +1,7 @@
 import net from "node:net";
 
 /**
- * E2E 전용 최소 Redis 클라이언트 — 대기열 상태를 결정적으로 만들기 위한 것.
+ * E2E 전용 최소 Redis 클라이언트: 대기열 상태를 결정적으로 만들기 위한 것.
  *
  * <p>왜 필요한가: 대기 화면(WAITING)에 도달하려면 정원(기본 100)이 차 있어야 하는데,
  * 실제로 100명을 가입시키는 건 비현실적이고 `QUEUE_CAPACITY`를 낮추면 같은 백엔드를
@@ -10,9 +10,9 @@ import net from "node:net";
  *
  * <p>왜 redis-cli도 npm 클라이언트도 아닌가:
  * <ul>
- *   <li>`redis-cli` — 러너 이미지에 있는지 보장되지 않는다. 확인하려면 CI를 한 바퀴 돌려야 하고,
+ *   <li>`redis-cli`: 러너 이미지에 있는지 보장되지 않는다. 확인하려면 CI를 한 바퀴 돌려야 하고,
  *       설치 스텝을 추가하면 그 스텝이 이미지 변화에 계속 묶인다.</li>
- *   <li>npm 클라이언트 — e2e는 의존성이 `@playwright/test` 하나뿐인 독립 인프라다
+ *   <li>npm 클라이언트: e2e는 의존성이 `@playwright/test` 하나뿐인 독립 인프라다
  *       (package.json 설명). INCRBY/DECRBY 두 명령을 위해 그 원칙을 깨지 않는다.</li>
  * </ul>
  * RESP는 안정된 프로토콜이고 여기서 쓰는 명령의 응답 형식은 정수뿐이라
@@ -34,7 +34,7 @@ function encode(args: string[]): string {
 
 /**
  * 명령 1건 실행 후 연결을 닫는다. 테스트에서 몇 번 부르지 않으므로 풀링하지 않는다.
- * 지원하는 응답은 `+단순문자열` / `:정수` / `-에러`뿐 — bulk(`$`)는 파싱하지 않는다.
+ * 지원하는 응답은 `+단순문자열` / `:정수` / `-에러`뿐: bulk(`$`)는 파싱하지 않는다.
  * 필요해지면 그때 넓힌다(지금 넓히면 쓰지 않는 코드가 검증 없이 남는다).
  */
 function command(...args: string[]): Promise<string> {
@@ -66,11 +66,11 @@ function command(...args: string[]): Promise<string> {
   });
 }
 
-/** `QueueKeys.admitCount()`와 같은 형식이어야 한다 — 어긋나면 조용히 아무 효과가 없다. */
+/** `QueueKeys.admitCount()`와 같은 형식이어야 한다. 어긋나면 에러 없이 아무 효과가 없다. */
 const admitCountKey = (eventId: number) => `queue:admitcount:${eventId}`;
 
 /**
- * 지금 정원을 채워 둔 이벤트들. {@link releaseQueueCapacity}를 멱등으로 만들기 위한 것 —
+ * 지금 정원을 채워 둔 이벤트들. {@link releaseQueueCapacity}를 멱등으로 만들기 위한 것:
  * 테스트 본문에서 한 번 풀고 `finally`에서 또 부르는 형태가 자연스러운데, 아래 DECRBY는
  * 두 번 불리면 그만큼 음수로 내려간다.
  */
@@ -82,7 +82,7 @@ const filled = new Set<number>();
  * <p>승격 Lua가 `free = capacity - admitted`를 보고 `free <= 0`이면 아무도 pop하지 않는다.
  *
  * <p>SET이 아니라 INCRBY인 이유. 이 이벤트에 실제 ADMITTED 사용자가 이미 있을 수
- * 있다 — 앞선 테스트가 같은 이벤트를 골랐다면 `admitExp`에 그 토큰들이 admit-ttl(300초)
+ * 있다. 앞선 테스트가 같은 이벤트를 골랐다면 `admitExp`에 그 토큰들이 admit-ttl(300초)
  * 동안 남아 있고 `admitcount`도 그만큼이다. 거기에 SET으로 100을 덮어쓰고 나중에 DEL하면
  * 실제 카운트가 사라진다. 그러면 reclaim이 만료분 n개를 지우며 `DECRBY`할 때 키가
  * 없어 0에서 출발해 −n이 되고, 그 다음 승격은 `free = capacity − (−n)`으로
@@ -107,12 +107,12 @@ export async function fillQueueCapacity(eventId: number, capacity = 100): Promis
  * 스스로 줄어들지 않는다. 남겨두면 그 이벤트는 영구히 정원이 찬 상태가 되어
  * 뒤따르는 E2E가 전부 대기열에 막힌다.
  *
- * <p>그래서 호출부는 `finally`에 둔다 — 테스트가 중간에 실패해도 돌아야 한다.
+ * <p>그래서 호출부는 `finally`에 둔다. 테스트가 중간에 실패해도 돌아야 한다.
  * 채워두지 않은 이벤트에 대해서는 아무것도 하지 않는다(멱등).
  *
  * <p>표시를 지우는 것은 DECRBY가 성공한 뒤여야 한다. 먼저 지우면 DECRBY가 실패했을 때
  * Redis에는 +capacity가 남았는데 표시는 사라져, `finally`의 재시도가 "채운 적 없음"으로
- * 판단해 그냥 돌아간다 — 멱등을 위해 둔 장치가 복구를 막는다.
+ * 판단해 그냥 돌아간다. 멱등을 위해 둔 장치가 복구를 막는다.
  */
 export async function releaseQueueCapacity(eventId: number, capacity = 100): Promise<void> {
   if (!filled.has(eventId)) {

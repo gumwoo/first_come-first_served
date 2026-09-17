@@ -43,9 +43,9 @@ import org.testcontainers.utility.DockerImageName;
  * <p>장애는 KafkaTemplate.send가 실패하도록 스텁해 재현한다(결정적). 두 경로를 같은 장애 창에 넣고,
  * 복구 후 실제로 소비자에 도달한 건수를 세어 유실을 측정한다.
  * <ul>
- *   <li>before(naive) — 구 AFTER_COMMIT 브리지: 발행 실패를 삼킨다. 복구해도 재발행할 근거가
+ *   <li>before(naive, 구 AFTER_COMMIT 브리지): 발행 실패를 삼킨다. 복구해도 재발행할 근거가
  *       어디에도 없어 영구 유실.</li>
- *   <li>after(outbox) — 이벤트가 결제와 같은 커밋으로 DB에 남아 PENDING 유지 → 복구 후 릴레이가
+ *   <li>after(outbox): 이벤트가 결제와 같은 커밋으로 DB에 남아 PENDING 유지 → 복구 후 릴레이가
  *       재시도해 전량 발행.</li>
  * </ul>
  */
@@ -67,7 +67,7 @@ class OutboxDeliveryIntegrationTest {
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
-        // 배경 스케줄러 비활성 — @Scheduled는 initialDelay가 없어 컨텍스트 기동 즉시 한 번 발사되고,
+        // 배경 스케줄러 비활성: @Scheduled는 initialDelay가 없어 컨텍스트 기동 즉시 한 번 발사되고,
         // 그 UPDATE가 테스트 초기화 TRUNCATE와 데드락을 만든다. 주기를 늘리는 것으로는 못 막는다.
         r.add("flowticket.scheduling.enabled", () -> "false");
         r.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -150,7 +150,7 @@ class OutboxDeliveryIntegrationTest {
         try {
             failingKafka.send(KafkaConfig.ORDER_EVENTS_TOPIC, String.valueOf(event.orderId()), event);
         } catch (Exception ignored) {
-            // 결제는 이미 커밋됐고 DB가 진실원 — 알림 유실은 감수(구 설계)
+            // 결제는 이미 커밋됐고 DB가 진실원: 알림 유실은 감수(구 설계)
         }
     }
 

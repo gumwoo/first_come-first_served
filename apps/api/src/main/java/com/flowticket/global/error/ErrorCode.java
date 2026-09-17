@@ -29,7 +29,7 @@ public enum ErrorCode {
     ACCESS_TOKEN_BLACKLISTED(HttpStatus.UNAUTHORIZED, "로그아웃된 토큰입니다."),
     // 선착순 핵심
     // SOLD_OUT은 공연 잔여가 0일 때만 쓴다(docs/rules/domain/seat.md).
-    // "내가 고른 좌석을 남이 먼저 가져갔다"는 SEAT_CONFLICT — 다른 좌석은 아직 남아 있으므로
+    // "내가 고른 좌석을 남이 먼저 가져갔다"는 SEAT_CONFLICT: 다른 좌석은 아직 남아 있으므로
     // 사용자가 할 수 있는 행동(다시 고르기)이 전혀 다르다.
     SOLD_OUT(HttpStatus.CONFLICT, "매진되었습니다."),
     SEAT_CONFLICT(HttpStatus.CONFLICT, "선택하신 좌석이 방금 다른 분에게 선점되었습니다. 다른 좌석을 선택해 주세요."),
@@ -45,7 +45,7 @@ public enum ErrorCode {
     INVALID_STATE_TRANSITION(HttpStatus.CONFLICT, "허용되지 않은 상태 변경입니다."),
     // 환불
     REFUND_NOT_ALLOWED(HttpStatus.CONFLICT, "환불할 수 없는 상태입니다."),
-    // 운영(동기화) — 분산 락을 이미 다른 인스턴스/스케줄이 잡고 있을 때
+    // 운영(동기화): 분산 락을 이미 다른 인스턴스/스케줄이 잡고 있을 때
     SYNC_IN_PROGRESS(HttpStatus.CONFLICT, "이미 동기화가 진행 중입니다."),
     // 공통
     NOT_FOUND(HttpStatus.NOT_FOUND, "대상을 찾을 수 없습니다."),

@@ -1,10 +1,10 @@
-// k6 공용 헬퍼 — baseURL, 임계 기준, 대상 이벤트 자동 탐색.
+// k6 공용 헬퍼: baseURL, 임계 기준, 대상 이벤트 자동 탐색.
 // 응답은 공통 래퍼 { "data": ... } (ApiResponse). 백엔드 직접 호출(:8080, /api 프리픽스 없음).
 import http from "k6/http";
 
 export const BASE = __ENV.K6_BASE_URL || "http://localhost:8080";
 
-// performance-rules.md 목표 임계. 초과해도 실행은 계속(무릎 탐색용) — 통과/실패 표시만.
+// performance-rules.md 목표 임계. 초과해도 실행은 계속(무릎 탐색용): 통과/실패 표시만.
 export const THRESHOLDS = {
   http_req_duration: ["p(95)<300"], // 핵심 API p95 ≤ 300ms
   http_req_failed: ["rate<0.005"], // 에러율 ≤ 0.5%

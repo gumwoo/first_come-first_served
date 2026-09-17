@@ -1,4 +1,4 @@
-# kube-prometheus-stack 88.2.0 — 포트폴리오 데모용 최소 구성.
+# kube-prometheus-stack 88.2.0: 포트폴리오 데모용 최소 구성.
 #
 #   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 #   helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
@@ -21,16 +21,16 @@ alertmanager:
       # 해소 알림을 보내기까지 기다리는 시간. 스크랩 15초 기준 넉넉하다.
       resolve_timeout: 5m
     route:
-      # 같은 알림·네임스페이스는 한 묶음으로 보낸다 — 장애 하나에 메시지 10개가 오지 않게.
+      # 같은 알림·네임스페이스는 한 묶음으로 보낸다. 장애 하나에 메시지 10개가 오지 않게.
       group_by: [alertname, namespace]
       group_wait: 30s      # 첫 알림 대기(연쇄를 한 번에 묶는다)
       group_interval: 5m   # 그룹에 새 알림이 붙었을 때 재발송 간격
-      # 기본값 4h는 이 프로젝트에 맞지 않는다 — 데모 클러스터는 몇 시간만 떠 있어
+      # 기본값 4h는 이 프로젝트에 맞지 않는다. 데모 클러스터는 몇 시간만 떠 있어
       # 사실상 "한 번만 알림"이 되어 재알림 개념이 죽는다.
       repeat_interval: 1h
       receiver: slack
       routes:
-        # Watchdog은 항상 발화하는 알림이다. 용도는 하나 — 알림이 안 오는 것이
+        # Watchdog은 항상 발화하는 알림이다. 용도는 하나: 알림이 안 오는 것이
         # "평화로워서"인지 "파이프라인이 죽어서"인지 구분하는 것(Dead Man's Switch).
         # 그래서 Slack으로 보내면 안 된다(계속 울린다).
         # 운영이라면 healthchecks.io / Dead Man's Snitch 같은 외부 감시로 보내야
@@ -64,7 +64,7 @@ alertmanager:
 #
 # 오탐이 섞이면 알림 전체가 무시되므로 규칙 6개를 신중히 고른 의미가 사라진다.
 #
-# 스크랩(enabled)과 규칙(defaultRules)을 둘 다 꺼야 한다 — 앞의 것만 끄면 타깃은 사라져도
+# 스크랩(enabled)과 규칙(defaultRules)을 둘 다 꺼야 한다. 앞의 것만 끄면 타깃은 사라져도
 # 규칙은 남아 계속 울린다.
 #
 # kubeProxy·kubeEtcd는 건드리지 않는다. kube-proxy는 노드 DaemonSet이라 스크랩되고,
@@ -83,7 +83,7 @@ grafana:
   # 데모 클러스터는 수시로 내렸다 올린다. 대시보드는 차트가 기본 제공하는 것을 쓰고,
   # PVC를 잡지 않아 재설치 비용을 0으로 둔다(직접 만든 대시보드는 여기 남지 않는다).
   persistence: { enabled: false }
-  # 인터넷에 노출하지 않는다 — 접속은 kubectl port-forward로 한다.
+  # 인터넷에 노출하지 않는다. 접속은 kubectl port-forward로 한다.
   service: { type: ClusterIP }
 
 prometheus:
@@ -100,12 +100,12 @@ prometheus:
           resources: { requests: { storage: 20Gi } }
     # 차트가 심은 release 라벨이 없는 ServiceMonitor도 잡게 한다.
     # 기본값이면 selector가 `release: kube-prometheus-stack`으로 좁혀져
-    # k8s/monitoring/servicemonitor-api.yaml이 조용히 무시된다.
+    # k8s/monitoring/servicemonitor-api.yaml이 무시된다.
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
     # PrometheusRule도 같은 이유로 넓힌다. 규칙 파일에 release 라벨을 달아 두었지만,
     # helm release 이름을 다르게 설치하면 셀렉터가 어긋나 규칙이 조용히 로드되지 않는다
-    # — 실패가 오류가 아니라 "알림이 안 옴"으로 나타나 알아채기 어렵다.
+    # 실패가 오류가 아니라 "알림이 안 옴"으로 나타나 알아채기 어렵다.
     ruleSelectorNilUsesHelmValues: false
     # k6가 부하 결과를 직접 밀어 넣을 수 있게 remote write 수신을 연다.
     #   k6 run -o experimental-prometheus-rw ...

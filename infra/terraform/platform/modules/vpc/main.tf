@@ -1,4 +1,4 @@
-# VPC — 3 AZ, 계층별 서브넷 3종, AZ별 NAT.
+# VPC: 3 AZ, 계층별 서브넷 3종, AZ별 NAT.
 #
 # 설계 근거는 ADR-012, 구조는 docs/deployment/terraform-design.md §2.
 # 핵심: NAT를 AZ마다 두고 "같은 AZ의 NAT로만" 내보낸다. 교차 AZ로 라우팅하면
@@ -73,7 +73,7 @@ resource "aws_subnet" "private_data" {
 }
 
 # ---------------------------------------------------------------------------
-# NAT — AZ별 1개
+# NAT: AZ별 1개
 # ---------------------------------------------------------------------------
 
 # EIP 쿼터는 5인데 여기서 3을 쓴다. destroy에서 EIP가 남으면 다음 apply가
@@ -119,7 +119,7 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# App 서브넷은 AZ마다 라우팅 테이블을 따로 둔다 — 같은 AZ의 NAT를 가리키기 위해서다.
+# App 서브넷은 AZ마다 라우팅 테이블을 따로 둔다. 같은 AZ의 NAT를 가리키기 위해서다.
 resource "aws_route_table" "private_app" {
   for_each = local.az_index
 
@@ -142,7 +142,7 @@ resource "aws_route_table_association" "private_app" {
   route_table_id = aws_route_table.private_app[each.key].id
 }
 
-# Data 서브넷에는 기본 라우트를 넣지 않는다 — VPC 내부 통신만 가능하다.
+# Data 서브넷에는 기본 라우트를 넣지 않는다. VPC 내부 통신만 가능하다.
 # 라우팅 테이블 자체는 두는데, S3 Gateway 엔드포인트를 여기에도 연결하기 위해서다.
 resource "aws_route_table" "private_data" {
   for_each = local.az_index

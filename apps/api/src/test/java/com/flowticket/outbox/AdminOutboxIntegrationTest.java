@@ -97,7 +97,7 @@ class AdminOutboxIntegrationTest {
     void 폐기하면_aggregate_차단이_풀린다() {
         UUID poisonId = appendPoison(ORDER_BASE);
         sleepPastTimestampResolution();
-        UUID followerId = appendHealthy(ORDER_BASE); // 같은 주문 — 선행 DEAD에 막힌다
+        UUID followerId = appendHealthy(ORDER_BASE); // 같은 주문: 선행 DEAD에 막힌다
         runRelayTicks();
 
         assertThat(outboxRepository.findById(followerId).orElseThrow().getStatus())
@@ -129,7 +129,7 @@ class AdminOutboxIntegrationTest {
                 .as("되돌린 행에 지난 격리 근거가 남아 있으면 미해결로 오해한다")
                 .isNull();
 
-        // payload가 그대로이므로 릴레이는 다시 격리한다 — 되돌리기는 '고쳐졌을 때' 쓰는 수단이다.
+        // payload가 그대로이므로 릴레이는 다시 격리한다. 되돌리기는 '고쳐졌을 때' 쓰는 수단이다.
         runRelayTicks();
         assertThat(outboxRepository.findById(poisonId).orElseThrow().getStatus())
                 .as("내용이 그대로면 결과도 그대로다 — 운영자 조작이 결정적 실패를 없애지는 않는다")

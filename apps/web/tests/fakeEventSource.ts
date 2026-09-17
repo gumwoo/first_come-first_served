@@ -1,7 +1,7 @@
 /**
  * 테스트용 EventSource. jsdom에는 EventSource가 없고, 있더라도 끊김을 임의로 만들 수 없다.
  *
- * <p>이 대역이 필요한 이유가 실제 사건에서 나왔다 — 로컬에서 SSE 단절을 만들려고
+ * <p>이 대역이 필요한 이유가 실제 사건에서 나왔다. 로컬에서 SSE 단절을 만들려고
  * `page.route(...).abort()` / `context.setOffline(true)` / API 프로세스 강제 종료를 모두 시도했지만
  * 브라우저는 셋 다 단절로 인지하지 못했다(Next dev 프록시가 클라이언트 연결을 붙들었다).
  * 그래서 "끊겼을 때 무엇을 하는가"라는 계약이 검증되지 않은 채 남았고, 그 자리에 결함이 있었다.
@@ -41,13 +41,13 @@ export class FakeEventSource {
     this.onopen?.();
   }
 
-  /** 일시적 단절 — 브라우저가 스스로 재연결한다(readyState=CONNECTING). */
+  /** 일시적 단절: 브라우저가 스스로 재연결한다(readyState=CONNECTING). */
   dropTransient() {
     this.readyState = FakeEventSource.CONNECTING;
     this.onerror?.();
   }
 
-  /** 영구 실패 — 브라우저가 재연결을 포기한다(2xx가 아닌 응답 등). */
+  /** 영구 실패: 브라우저가 재연결을 포기한다(2xx가 아닌 응답 등). */
   failPermanently() {
     this.readyState = FakeEventSource.CLOSED;
     this.onerror?.();

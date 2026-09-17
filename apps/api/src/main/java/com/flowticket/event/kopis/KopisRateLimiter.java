@@ -20,8 +20,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>사용자 요청 경로에서 KOPIS를 부르면 안 된다 — 이 제한기 때문만이 아니다. 파드마다
  * 별도 인스턴스라 IP 총량을 못 지킬뿐더러, 더 나쁘게는 요청 스레드를 여기서 재우게 된다.
- * 외부 API가 느려질 때 톰캣 스레드가 묶여 API 전체가 멎는 실패를 이미 겪었다
- * (KopisClientConfig 주석 참조) — 그 실패를 방어 장치로 다시 만드는 셈이 된다.
+ * 외부 API가 느려질 때 톰캣 스레드가 묶여 API 전체가 멎는 실패(KopisClientConfig 참조)를
+ * 방어 장치로 다시 만드는 셈이 된다.
  * 그 경계는 {@code EventDetailNoExternalCallTest}가 회귀로 지킨다.
  */
 @Component

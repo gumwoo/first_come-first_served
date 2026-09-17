@@ -10,14 +10,10 @@ public interface EventRepositoryCustom {
      * 동적 필터(키워드/장르/상태/기간) + 페이징 검색.
      *
      * <p>엔티티가 아니라 요약 DTO를 돌려준다. 목록이 실제로 쓰는 컬럼은 9개인데
-     * {@code selectFrom(event)}는 엔티티의 모든 컬럼(20개)을 읽는다. V16에서 KOPIS 상세
-     * 필드(TEXT 4개)가 추가되면서 그 폭이 더 넓어졌다.
+     * {@code selectFrom(event)}는 엔티티의 모든 컬럼(20개, KOPIS 상세 TEXT 포함)을 읽는다.
      *
-     * <p>성능 회귀를 고치려는 변경이 아니다. 목록 지연이 늘어난 관측이 있었지만,
-     * {@code EXPLAIN (ANALYZE, BUFFERS)}로 확인해보니 세 가지 쿼리 형태(구엔티티 15컬럼 / 신엔티티
-     * 20컬럼 / 프로젝션 9컬럼)가 모두 0.1~0.2ms에 전부 캐시 히트였다. 즉 이 컬럼들이 그
-     * 지연의 원인이라는 근거는 없다. 그럼에도 쓰지 않는 데이터를 읽지 않는 것이 옳으므로
-     * 쿼리 형태만 정리한다.
+     * <p>성능 개선 근거로 둔 것이 아니다 — {@code EXPLAIN (ANALYZE, BUFFERS)}에서 쿼리 형태별 차이는
+     * 0.1~0.2ms였다. 쓰지 않는 데이터를 읽지 않기 위한 정리다.
      */
     Page<EventSummaryResponse> search(EventSearchCondition condition, Pageable pageable);
 }

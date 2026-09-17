@@ -23,7 +23,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 
 /**
- * 관리자 인증 게이트(S07 Phase 1): /admin/** 은 ROLE_ADMIN 전용.
+ * 관리자 인증 게이트: /admin/** 은 ROLE_ADMIN 전용.
  * 미인증→401, 일반회원(ROLE_USER)→403, 관리자(ROLE_ADMIN)→200.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

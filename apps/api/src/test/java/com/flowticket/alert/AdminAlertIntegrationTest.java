@@ -24,7 +24,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 
 /**
- * S07 운영 알림: 임계치 조회(시드 기본값)·수정, 잘못된 값 400.
+ * 운영 알림: 임계치 조회(시드 기본값)·수정, 잘못된 값 400.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class AdminAlertIntegrationTest extends IntegrationTestSupport {

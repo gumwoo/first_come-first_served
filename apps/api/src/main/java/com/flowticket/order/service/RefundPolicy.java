@@ -7,7 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * 취소 수수료 정책(S06). 공연일까지 남은 일수(D-day) 기준 기간별 수수료율(순수 함수, 테스트 가능).
+ * 취소 수수료 정책. 공연일까지 남은 일수(D-day) 기준 기간별 수수료율(순수 함수, 테스트 가능).
  * 수치는 설정으로 외부화 → 테스트에서 고정. 당일·이후(D-0 이하)는 환불 불가.
  * 공연일 미상(startDate null)이면 시점 판단 불가 → 전액 환불(수수료 0)로 보수적 처리.
  */

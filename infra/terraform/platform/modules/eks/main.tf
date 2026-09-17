@@ -53,9 +53,8 @@ resource "aws_iam_role_policy_attachment" "cluster" {
 # 다만 한번 연결하면 해제하거나 다른 키로 바꿀 수 없다는 점이 진짜 비가역성이다.
 #   https://docs.aws.amazon.com/eks/latest/userguide/enable-kms.html
 #
-# 참고: CMK를 쓸 때 kms:DescribeKey·kms:CreateGrant가 필요한 주체는 **CreateCluster를 호출하는
-# principal**(= Terraform 실행 주체)이지 클러스터 IAM 역할이 아니다. 초안은 이 권한을 클러스터
-# 역할에 붙였는데, 위치가 틀린 설계였다.
+# 참고: CMK를 쓸 때 kms:DescribeKey·kms:CreateGrant가 필요한 주체는 CreateCluster를 호출하는
+# principal(= Terraform 실행 주체)이지 클러스터 IAM 역할이 아니다.
 # ---------------------------------------------------------------------------
 
 # 로그 그룹을 먼저 만들어 보존 기간을 못 박는다. EKS가 알아서 만들게 두면 보존이
@@ -141,7 +140,6 @@ resource "aws_iam_role_policy_attachment" "node" {
   for_each = toset([
     "AmazonEKSWorkerNodePolicy",
     "AmazonEKS_CNI_Policy",
-    # ECR에서 이미지를 pull하기 위해 필요하다(Phase 2에서 올린 이미지).
     "AmazonEC2ContainerRegistryReadOnly",
   ])
 

@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 운영자 KOPIS 수동 동기화 트리거. (S07 RBAC 전까지는 인증 사용자) */
+/** 운영자 KOPIS 수동 동기화 트리거. /admin/** 이라 ROLE_ADMIN 전용. */
 @RestController
 public class KopisSyncController {
 

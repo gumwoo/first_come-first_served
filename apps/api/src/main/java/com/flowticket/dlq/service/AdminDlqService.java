@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-/** 운영 DLQ 관리(S07 Phase 4c). 적재 조회 + 재시도(원본 토픽 재발행)·폐기. */
+/** 운영 DLQ 관리. 적재 조회 + 재시도(원본 토픽 재발행)·폐기. */
 @Slf4j
 @Service
 public class AdminDlqService {

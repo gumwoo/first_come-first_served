@@ -21,11 +21,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * 판매상태 게이트 회귀 — 대기열은 Redis만 보고 있었다.
+ * 판매상태 게이트 회귀.
  *
- * <p>{@code queue:wait:{eventId}}는 eventId를 문자열로만 다뤘기 때문에, 실재하지 않는 이벤트나
- * 이미 CLOSED된 공연에도 줄을 세우고 토큰을 내줬다. 사용자는 대기가 끝난 뒤 좌석 단계에서야
- * 거절당했고, 그동안 정원(capacity) 한 자리를 실제로 점유했다.
+ * <p>{@code queue:wait:{eventId}}는 eventId를 문자열로만 다루므로, 게이트가 없으면 실재하지 않는
+ * 이벤트나 CLOSED 공연에도 줄을 세우고 토큰을 내준다. 사용자는 대기가 끝난 뒤 좌석 단계에서야
+ * 거절당하고, 그동안 정원(capacity) 한 자리를 점유한다.
  *
  * <p>게이트는 두 군데에 있고 둘 다 필요하다.
  * <ul>

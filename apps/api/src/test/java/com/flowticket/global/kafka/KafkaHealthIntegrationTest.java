@@ -15,7 +15,7 @@ import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * S07 Phase 4 (4a): 실 브로커가 있을 때 KafkaHealthService가 연결됨(true)을 보고하는지.
+ * 실 브로커가 있을 때 KafkaHealthService가 연결됨(true)을 보고하는지.
  * 브로커 부재(false) 경로는 AdminAuthIntegrationTest(dead-port)가 이미 커버한다.
  */
 @SpringBootTest

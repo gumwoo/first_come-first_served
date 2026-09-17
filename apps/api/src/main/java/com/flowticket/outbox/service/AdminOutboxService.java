@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
- * 운영 아웃박스 관리(S08). 격리된(DEAD) 행 조회 + 재발행·폐기.
+ * 운영 아웃박스 관리. 격리된(DEAD) 행 조회 + 재발행·폐기.
  *
  * <p>왜 필요한가: {@link OutboxRelay}가 결정적 실패를 DEAD로 격리하면서 "독성 행 하나가
  * 전체를 멈추는" 문제는 사라졌지만, 격리된 행은 purge되지 않고 계속 쌓인다. 창구가 없으면

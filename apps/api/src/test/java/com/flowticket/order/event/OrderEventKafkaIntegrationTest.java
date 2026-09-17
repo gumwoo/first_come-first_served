@@ -29,7 +29,7 @@ import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * S08 아웃박스(ADR-010): 아웃박스에 적재된 이벤트가 릴레이 → Kafka → consumer → SSE로 전달되고
+ * 아웃박스(ADR-010): 아웃박스에 적재된 이벤트가 릴레이 → Kafka → consumer → SSE로 전달되고
  * PUBLISHED로 마킹되는 전체 경로를 검증. 릴레이는 스케줄러 대신 직접 호출해 결정적으로 만든다.
  */
 @SpringBootTest

@@ -35,7 +35,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
- * 마이페이지 예매 조회(S06 BE-1): 본인 주문만·상태 탭·페이징, 상세 소유자 검증(403/404).
+ * 마이페이지 예매 조회: 본인 주문만·상태 탭·페이징, 상세 소유자 검증(403/404).
  */
 @SpringBootTest
 class MyOrderIntegrationTest extends IntegrationTestSupport {

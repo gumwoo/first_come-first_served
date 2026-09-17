@@ -62,8 +62,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>{@code @TestPropertySource}를 붙이지 않는다. 이 테스트에 필요한 hold-ttl(300)은
  * {@link IntegrationTestSupport}의 기본값과 같다. 같은 값이라도 다시 선언하면 병합된 프로퍼티
  * 배열이 달라져 Spring 컨텍스트가 하나 더 뜨고, 캐시된 컨텍스트마다 커넥션 풀·Redis 연결을
- * 따로 들고 있어 자원 압박이 커진다(IMP-013 §7-2). 초안이 중복 선언해 CI가 간헐적으로
- * 깨졌다 — Postgres 락 실패와 Redis 연결 리셋이 함께 났다.
+ * 따로 들고 있어 자원 압박이 커진다(IMP-013 §7-2).
  *
  * <p>만료가 필요한 테스트는 sweep을 직접 호출한다(스케줄러는 통합테스트에서 비활성).
  */

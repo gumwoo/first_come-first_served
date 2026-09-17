@@ -25,7 +25,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 
 /**
- * 운영 이벤트 관리(S07): 수동 등록(POST) → 목록/상세 노출 → 부분 수정(PATCH)로 상태 전이.
+ * 운영 이벤트 관리: 수동 등록(POST) → 목록/상세 노출 → 부분 수정(PATCH)로 상태 전이.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class AdminEventIntegrationTest extends IntegrationTestSupport {

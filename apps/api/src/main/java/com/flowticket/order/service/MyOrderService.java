@@ -23,7 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 마이페이지 예매 조회(S06). 본인 주문만 노출(소유자 검증). 목록은 탭(전체/예정/취소) 필터 + 페이징(ADR-001).
+ * 마이페이지 예매 조회. 본인 주문만 노출(소유자 검증). 목록은 탭(전체/예정/취소) 필터 + 페이징(ADR-001).
  * 공연 정보(제목/포스터/일시)는 events에서 배치 조회해 N+1을 피한다.
  */
 @Service

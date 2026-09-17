@@ -36,7 +36,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
- * 예매 취소·환불(S06 BE-2): PAID+시점 게이트에서만, 좌석 복구, 이중 환불 멱등, 소유자 검증.
+ * 예매 취소·환불: PAID+시점 게이트에서만, 좌석 복구, 이중 환불 멱등, 소유자 검증.
  */
 @SpringBootTest
 class RefundIntegrationTest extends IntegrationTestSupport {

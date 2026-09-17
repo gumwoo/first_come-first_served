@@ -9,7 +9,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** 운영 알림 임계치(S07). 단일 행(id=1). 마이그레이션 V13에서 시드된다. */
+/** 운영 알림 임계치. 단일 행(id=1). 마이그레이션 V13에서 시드된다. */
 @Entity
 @Table(name = "alert_settings")
 @Getter

@@ -37,8 +37,7 @@ public class GlobalExceptionHandler {
      * {@code MethodArgumentNotValidException}을 던진다(MockMvc로 실제 resolvedException 확인).
      *
      * <p>그래서 record만 쓰는 지금은 하위 타입만 잡아도 동작한다. 그럼에도 상위 타입으로 받는 이유는
-     * 가변 DTO가 하나라도 추가되는 순간 그쪽이 조용히 500으로 떨어지기 때문이다 —
-     * 이 핸들러가 이미 두 번 겪은 실패 모드다(NoResourceFoundException·HttpMessageNotReadableException).
+     * 가변 DTO가 하나라도 추가되는 순간 그쪽이 조용히 500으로 떨어지기 때문이다.
      * 본문 구성은 그대로다 — {@code BindException}에도 {@code getBindingResult()}가 있다.
      *
      * <p>{@code @RequestParam}에 제약을 다는 방식({@code @Validated} + {@code @Min})은 쓰지 않았다.

@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 운영 이벤트 관리(S07). /admin/** 은 SecurityConfig에서 ROLE_ADMIN 전용으로 게이트된다. */
+/** 운영 이벤트 관리. /admin/** 은 SecurityConfig에서 ROLE_ADMIN 전용으로 게이트된다. */
 @RestController
 public class AdminEventController {
 

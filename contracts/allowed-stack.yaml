@@ -19,7 +19,7 @@ backend:
     - org.flywaydb:flyway-core
     - org.flywaydb:flyway-database-postgresql
     - io.lettuce:lettuce-core
-    - io.micrometer:micrometer-registry-prometheus              # /actuator/prometheus 노출(S09 관측)
+    - io.micrometer:micrometer-registry-prometheus              # /actuator/prometheus 노출(관측)
     - net.javacrumbs.shedlock:shedlock-spring                   # 멀티 Pod @Scheduled 중복 방지
     - net.javacrumbs.shedlock:shedlock-provider-redis-spring    # ShedLock Redis lock provider
     - org.projectlombok:lombok
@@ -34,7 +34,7 @@ backend:
     - org.testcontainers:kafka
     - com.redis:testcontainers-redis
     # 알림 규칙이 참조하는 지표 이름을 실제 스크랩 출력으로 대조하기 위해.
-    # 런타임에는 이미 쓰고 있으나(runtimeOnly) 테스트 클래스패스에는 없었다.
+    # 런타임(runtimeOnly)에만 있으므로 테스트 클래스패스에 따로 둔다.
     - io.micrometer:micrometer-registry-prometheus
 
 frontend:
@@ -54,7 +54,7 @@ frontend:
     - "class-variance-authority"
     - embla-carousel-react    # 메인 히어로 슬라이더
     - "qrcode.react"          # 예매 완료 QR 모바일 티켓
-    - "@tosspayments/payment-sdk"  # 실 PG(Toss) 결제창 연동(BE-5 데모)
+    - "@tosspayments/payment-sdk"  # 실 PG(Toss) 결제창 연동(데모)
     - eslint-config-next
   # shadcn/ui는 컴포넌트 복사 방식이라 의존성으로 안 셈
   dev_allowed:

@@ -106,7 +106,6 @@ fi
 NODE_TYPE="$(kubectl get nodes -o jsonpath='{.items[0].metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "?")"
 echo "    노드 $(kubectl get nodes --no-headers | wc -l | tr -d ' ')대 / $NODE_TYPE, Cluster Autoscaler $CA_ON"
 
-# 시나리오별 대상 확정
 if [ "$SCENARIO" = "failover" ]; then
   # 라벨 셀렉터를 하나만 믿지 않는다. strimzi.io/broker-role은 Strimzi 버전에 따라
   # 없을 수 있고, 그러면 "브로커 0개"로 조용히 오판한다. pool 라벨로 폴백한다.

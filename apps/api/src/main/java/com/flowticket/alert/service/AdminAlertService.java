@@ -10,7 +10,7 @@ import com.flowticket.global.error.ErrorCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 운영 알림 임계치 조회·수정(S07). 현재 DLQ 적체와 비교해 breached 여부를 계산. */
+/** 운영 알림 임계치 조회·수정. 현재 DLQ 적체와 비교해 breached 여부를 계산. */
 @Service
 public class AdminAlertService {
 

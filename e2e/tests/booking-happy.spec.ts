@@ -20,7 +20,6 @@ test("좌석 선택 → 선택 완료 → 선점 완료", async ({ page }) => {
   await expect(availableSeat).toBeVisible();
   await availableSeat.click();
 
-  // 사이드바에 선택/합계 반영
   await expect(page.getByText("총 결제 금액")).toBeVisible();
 
   // 선택 완료 → 선점

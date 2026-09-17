@@ -3,7 +3,7 @@ package com.flowticket.admin.dto;
 import com.flowticket.event.domain.Event;
 import java.time.LocalDate;
 
-/** 운영 이벤트 목록 항목(S07). */
+/** 운영 이벤트 목록 항목. */
 public record AdminEventSummary(
         Long id,
         String title,

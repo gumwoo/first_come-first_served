@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 운영 DLQ 조회·재처리(S07 Phase 4c). /admin/** 은 SecurityConfig에서 ROLE_ADMIN 전용. */
+/** 운영 DLQ 조회·재처리. /admin/** 은 SecurityConfig에서 ROLE_ADMIN 전용. */
 @RestController
 public class AdminDlqController {
 

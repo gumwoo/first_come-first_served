@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 마이페이지 예매 조회·취소(S06, 회원 본인). 목록 탭 필터 + 페이징, 상세·환불은 소유자 검증. */
+/** 마이페이지 예매 조회·취소(회원 본인). 목록 탭 필터 + 페이징, 상세·환불은 소유자 검증. */
 @RestController
 public class MyOrderController {
 

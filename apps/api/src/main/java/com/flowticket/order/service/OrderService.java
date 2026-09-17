@@ -77,7 +77,6 @@ public class OrderService {
      * 읽기 전용 트랜잭션이 이미 열린 상태로 들어온다. 그러면 {@code createTx}의
      * {@code REQUIRED}가 새 트랜잭션을 만드는 대신 그 읽기 전용 트랜잭션에 참여해
      * (1) INSERT가 read-only 오류로 실패하고 (2) 경계가 분리되지 않아 캐치도 무의미해진다.
-     * 초안이 그렇게 작성됐고 CI에서 44개 테스트가 깨져 드러났다.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public OrderResponse create(Long userId, Long holdId) {

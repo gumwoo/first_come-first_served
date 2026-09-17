@@ -6,7 +6,7 @@ import com.flowticket.global.common.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 운영 대시보드(S07). /admin/** 은 SecurityConfig에서 ROLE_ADMIN 전용으로 게이트된다. */
+/** 운영 대시보드. /admin/** 은 SecurityConfig에서 ROLE_ADMIN 전용으로 게이트된다. */
 @RestController
 public class AdminDashboardController {
 

@@ -134,7 +134,7 @@ public class PaymentService {
     }
 
     /**
-     * 결제창(Toss 등) 인증 후 서버 확정(BE-5). 클라이언트가 받은 paymentKey로 승인 API를 호출한다.
+     * 결제창(Toss 등) 인증 후 서버 확정. 클라이언트가 받은 paymentKey로 승인 API를 호출한다.
      * 멱등키는 결제창의 paymentKey(주문당 유일)를 사용 — 동시/재요청 시 UNIQUE로 이중 승인 차단.
      */
     public PaymentResponse confirm(Long userId, Long orderId, String paymentKey) {
@@ -179,7 +179,7 @@ public class PaymentService {
         return PaymentResponse.of(payment.getId(), PaymentStatus.APPROVED.name(), currentStatus(orderId).name());
     }
 
-    /** 무통장 입금 확인(개발/데모 트리거 · 실제는 PG 웹훅 BE-5). VBANK_WAITING→PAID로 확정. */
+    /** 무통장 입금 확인(개발/데모 트리거 · 실제는 PG 웹훅). VBANK_WAITING→PAID로 확정. */
     @Transactional
     public PaymentResponse confirmVbankDeposit(Long userId, Long orderId) {
         Order order = ownedOrder(orderId, userId);
@@ -199,7 +199,7 @@ public class PaymentService {
     }
 
     /**
-     * 가상계좌 입금 웹훅(Toss DEPOSIT_CALLBACK) 처리(BE-5). 위조·재전송을 방어한다.
+     * 가상계좌 입금 웹훅(Toss DEPOSIT_CALLBACK) 처리. 위조·재전송을 방어한다.
      * - 검증: 발급 때 저장한 vbank_secret과 웹훅 secret 대조(불일치 → FORBIDDEN, HMAC 서명은 지급대행 전용).
      * - 멱등: Toss는 2xx 못 받으면 최대 7회 재전송 → 이미 PAID면 그대로 성공 응답(no-op).
      * - status가 완료(DONE)일 때만 VBANK_WAITING→PAID 확정.

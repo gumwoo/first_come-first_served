@@ -166,7 +166,7 @@ public class QueueService {
         redis.delete(QueueKeys.user(eventId, userId));
     }
 
-    /** 좌석(S04) 게이트: 이 토큰이 해당 이벤트에 입장(ADMITTED)했는가. */
+    /** 좌석 선점 게이트: 이 토큰이 해당 이벤트에 입장(ADMITTED)했는가. */
     public boolean isAdmitted(String token, Long eventId) {
         if (token == null) {
             return false;

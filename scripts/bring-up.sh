@@ -121,9 +121,9 @@ helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
   --set autoDiscovery.clusterName="$CLUSTER" \
   --set-string "rbac.serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$CA_ROLE" \
   --wait --timeout 6m >/dev/null
-# 여기서 경고가 아니라 실패시킨다. 이 PR부터 CA는 선택이 아니라 기본 구성이다.
+# 여기서 경고가 아니라 실패시킨다. CA는 선택이 아니라 기본 구성이다.
 # 경고만 하면 exit 0인데 노드 오토스케일링이 죽어 있는 클러스터가 만들어지고, 그 상태로
-# 다른 측정을 먼저 하면 조건이 조용히 오염된다(TS-034가 그렇게 나왔다).
+# 다른 측정을 먼저 하면 조건이 조용히 오염된다(TS-034).
 CA_POD="$(kubectl -n kube-system get pod -l app.kubernetes.io/name=aws-cluster-autoscaler \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
 [ -n "$CA_POD" ] || {

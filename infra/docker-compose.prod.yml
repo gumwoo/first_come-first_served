@@ -1,4 +1,4 @@
-# 운영 이미지 로컬 검증용(S09-1). IDE에서 소스를 실행하는 게 아니라 <b>실제 빌드된 이미지</b>로
+# 운영 이미지 로컬 검증용. IDE에서 소스를 실행하는 게 아니라 실제 빌드된 이미지로
 # 전체 스택을 띄워, EKS로 가기 전에 "컨테이너 안에서 동작하는가"를 먼저 확인한다.
 #
 #   docker compose -f infra/docker-compose.prod.yml up --build
@@ -84,7 +84,7 @@ services:
       context: ..
       dockerfile: apps/web/Dockerfile
       args:
-        # rewrites는 standalone 번들에 구워지므로 <b>빌드 시점</b>에 넣어야 한다(런타임 env로는 안 바뀜).
+        # rewrites는 standalone 번들에 구워지므로 빌드 시점에 넣어야 한다(런타임 env로는 안 바뀜).
         # 브라우저는 /api 상대경로로 부르고 Next 서버가 이 주소로 프록시한다.
         API_ORIGIN: http://api:8080
     image: flowticket-web:local

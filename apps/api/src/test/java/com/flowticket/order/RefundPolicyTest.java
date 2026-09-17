@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 
 /**
- * 취소 수수료 정책 순수 함수(S06). 기간별 수수료율 경계값 검증(네트워크·DB 없음).
+ * 취소 수수료 정책 순수 함수. 기간별 수수료율 경계값 검증(네트워크·DB 없음).
  * 정책: D-8↑ 0% / D-3~7 10% / D-1~2 30% / 당일·이후 환불 불가.
  */
 class RefundPolicyTest {

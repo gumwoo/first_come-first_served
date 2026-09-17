@@ -22,7 +22,7 @@ export default function CompletePage() {
   if (!order) return <main className="mx-auto max-w-lg p-10 text-center text-destructive">주문을 찾을 수 없습니다.</main>;
 
   const paid = order.status === "PAID";
-  // QR: 예매번호 기반(추후 서버 HMAC 서명 토큰으로 대체). 위조 방지는 BE-5에서.
+  // QR: 예매번호 기반(데모). 위조 방지용 서버 서명 토큰은 아직 없다.
   const ticket = `FLOWTICKET-ORDER-${order.orderId}`;
 
   return (

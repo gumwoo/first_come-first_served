@@ -13,7 +13,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 트랜잭셔널 아웃박스 행(S08, ADR-010). 비즈니스 트랜잭션과 같은 tx에서 적재되어,
+ * 트랜잭셔널 아웃박스 행(ADR-010). 비즈니스 트랜잭션과 같은 tx에서 적재되어,
  * 결제가 롤백되면 이 행도 함께 사라진다(유령 이벤트 0). 폴링 릴레이가 PENDING을 Kafka로 발행하고
  * 성공 후 PUBLISHED로 마킹한다(publish-then-mark → at-least-once, 유실 0).
  *

@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-/** 운영 이벤트 관리(S07). 수동 등록·조회·부분 수정. KOPIS 동기화 경로와 분리. */
+/** 운영 이벤트 관리. 수동 등록·조회·부분 수정. KOPIS 동기화 경로와 분리. */
 @Service
 public class AdminEventService {
 

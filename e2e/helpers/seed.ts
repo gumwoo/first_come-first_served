@@ -12,7 +12,7 @@ import { Page, expect } from "@playwright/test";
 const PASSWORD = "Test1234!";
 
 /**
- * 관리자 계정(S07). 백엔드가 기동 시 ADMIN_EMAIL/ADMIN_PASSWORD env로 부트스트랩한 계정.
+ * 관리자 계정. 백엔드가 기동 시 ADMIN_EMAIL/ADMIN_PASSWORD env로 부트스트랩한 계정.
  * CI는 합성 픽스처(ci.yml env)로 주입. 로컬 실행 시엔 같은 값을 env로 넣어야 admin 테스트가 통과.
  */
 export const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin-e2e@flowticket.local";

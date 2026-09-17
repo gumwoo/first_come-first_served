@@ -79,7 +79,7 @@ class OrderSseTicketServiceTest {
     }
 
     @Test
-    @DisplayName("티켓이 없으면 401 — EventSource가 재연결을 포기하도록")
+    @DisplayName("티켓이 없으면 401: EventSource가 재연결을 포기하도록")
     void 티켓_없음은_401() {
         assertThatThrownBy(() -> service.verify(null, MY_ORDER))
                 .isInstanceOf(BusinessException.class)
@@ -87,7 +87,7 @@ class OrderSseTicketServiceTest {
     }
 
     @Test
-    @DisplayName("다른 주문의 티켓으로는 구독할 수 없다 — 이걸 대조하지 않으면 인가가 무의미하다")
+    @DisplayName("다른 주문의 티켓으로는 구독할 수 없다. 이걸 대조하지 않으면 인가가 무의미하다")
     void 다른_주문_티켓은_거부() {
         String otherTicket = service.issue(STRANGER, OTHER_ORDER);
 
@@ -109,7 +109,7 @@ class OrderSseTicketServiceTest {
     }
 
     @Test
-    @DisplayName("구독 티켓은 API 호출용 토큰으로 쓸 수 없다 — 용도가 분리돼야 URL 노출의 값이 낮아진다")
+    @DisplayName("구독 티켓은 API 호출용 토큰으로 쓸 수 없다. 용도가 분리돼야 URL 노출의 값이 낮아진다")
     void 티켓은_access_토큰이_아니다() {
         String ticket = service.issue(OWNER, MY_ORDER);
 

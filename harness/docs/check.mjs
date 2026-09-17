@@ -21,7 +21,7 @@ const EXTRA = process.env.HARNESS_DOCS_EXTRA || "k8s"; // 루트 밖 README도 �
 // DOCS와 EXTRA가 겹칠 수 있다(fixture는 한 디렉터리를 양쪽에 준다): 중복 스캔을 막는다.
 const docFiles = [...new Set([...walk(DOCS, [".md"]), ...walk(EXTRA, [".md"])])];
 if (docFiles.length === 0) {
-  r.fail(`문서를 하나도 못 찾았다: ${DOCS}/ — 규칙이 무력화된 상태`);
+  r.fail(`문서를 하나도 못 찾았다: ${DOCS}/: 규칙이 무력화된 상태`);
   r.done();
 }
 
@@ -57,7 +57,7 @@ for (const file of docFiles) {
       const found = candidates.find((p) => fs.existsSync(p));
       if (found) {
         r.fail(
-          `없다고 단언한 대상이 실존한다: ${rel} — "${claimed}" ` +
+          `없다고 단언한 대상이 실존한다: ${rel}: "${claimed}" ` +
             `(실제: ${path.relative(REPO_ROOT, found)}). 문서를 현재 상태로 고칠 것`
         );
       }
@@ -92,7 +92,7 @@ for (const [prefix, dir] of Object.entries(DOC_DIRS)) {
   }
 }
 if (Object.keys(statusByRef).length === 0) {
-  r.fail(`문서 상태 줄을 하나도 못 읽었다 — 규칙 ⑰이 무력화된 상태`);
+  r.fail(`문서 상태 줄을 하나도 못 읽었다. 규칙 ⑰이 무력화된 상태`);
 }
 
 // 참조 바로 뒤에 붙은 미해결 표기만 본다. 마크다운 링크는 사이에 `](경로)`가 끼므로 허용한다.
@@ -154,7 +154,7 @@ for (const file of docFiles) {
         if (seen.has(key)) continue;
         seen.add(key);
         r.fail(
-          `문서 상태가 어긋난다: ${rel}:${i + 1} — ${ref}를 "${m[3]}"로 가리키는데 ` +
+          `문서 상태가 어긋난다: ${rel}:${i + 1}: ${ref}를 "${m[3]}"로 가리키는데 ` +
             `대상 문서는 "${status.trim()}"`
         );
       }

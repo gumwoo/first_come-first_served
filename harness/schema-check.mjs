@@ -43,7 +43,7 @@ for (const t of targets) {
   try {
     doc = yaml.load(fs.readFileSync(filePath, "utf8"));
   } catch (e) {
-    r.fail(`YAML 파싱 실패: ${t.file} — ${e.reason || e.message}`);
+    r.fail(`YAML 파싱 실패: ${t.file}: ${e.reason || e.message}`);
     continue;
   }
   // 2) 스키마 검증

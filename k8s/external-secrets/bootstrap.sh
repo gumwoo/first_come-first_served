@@ -6,7 +6,7 @@
 # 사람의 기억이 아니라 저장소에 남긴다.
 #
 # 왜 sed 렌더링인가: RDS 마스터 시크릿 이름은 `rds!db-<DBI resource id>` 형식이라
-# RDS를 재생성하면 바뀐다. 매니페스트에 박아두면 인프라 전체 재생성 시 조용히 깨진다.
+# RDS를 재생성하면 바뀐다. 매니페스트에 박아두면 인프라 전체 재생성 시 깨진다.
 # Terraform 출력에서 매번 읽어 채우면 사람이 이 파일을 고칠 일이 없다.
 #
 # 전제: terraform apply 완료(IRSA 역할 `<cluster>-external-secrets` 존재), kubeconfig 설정됨.
@@ -20,7 +20,7 @@ SLACK_PARAM="/flowticket/SLACK_ALERT_WEBHOOK_URL"
 
 echo "==> 1/5 RDS 마스터 시크릿 ARN 조회 (Terraform 출력)"
 RDS_SECRET_ARN="$(terraform -chdir="$TFDIR" output -raw db_secret_arn)"
-[ -n "$RDS_SECRET_ARN" ] || { echo "db_secret_arn 이 비어 있다 — terraform apply 를 먼저 하라" >&2; exit 1; }
+[ -n "$RDS_SECRET_ARN" ] || { echo "db_secret_arn 이 비어 있다. terraform apply 를 먼저 하라" >&2; exit 1; }
 echo "    $RDS_SECRET_ARN"
 
 echo "==> 2/5 ESO 설치 (helm)"

@@ -78,10 +78,8 @@ public class KopisClient {
      *   outcome   : success | empty | error
      *   cause     : none | http_400 등 | timeout | io | parse | unknown
      * </pre>
-     *
-     * <p>{@code cause}를 HTTP 상태 코드가 아니라 실패 종류로 잡은 것이 핵심이다. 상태 코드로는
-     * 200을 정상 수신하고 XML 파싱에서 깨진 경우가 "응답을 받지 못함"으로 잘못 분류된다. 실패 원인을 가르려고 만든 지표가 원인을 뭉개면 의미가 없다.
-     * 실패 지점마다 던지는 예외 타입이 다르므로 호출 구조를 바꾸지 않고 그것으로 구분한다.
+     * <p>{@code cause}는 HTTP 상태 코드가 아니라 실패 종류다. 상태 코드로는 200을 받고 XML 파싱에서
+     * 깨진 경우가 "응답을 받지 못함"으로 잘못 분류된다. 실패 지점마다 예외 타입이 달라 그것으로 구분한다.
      */
     private <T> T recorded(String operation, Call<T> call, Function<T, String> outcomeOf)
             throws Exception {

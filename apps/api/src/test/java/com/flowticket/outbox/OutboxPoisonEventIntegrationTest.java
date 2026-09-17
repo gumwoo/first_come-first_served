@@ -37,7 +37,7 @@ import org.testcontainers.utility.DockerImageName;
  * 행 하나의 내용만으로 전체가 멈추는지를 분리해 보기 위함이다. 브로커를 죽이면
  * "당연히 안 나간다"가 되어 head-of-line 차단을 증명하지 못한다.
  *
- * <p>사용자 요청은 전부 성공하고 이벤트만 조용히 멈추므로, 이 결함은 에러율에 나타나지 않는다.
+ * <p>사용자 요청은 전부 성공하고 이벤트만 멈추므로, 이 결함은 에러율에 나타나지 않는다.
  */
 @SpringBootTest
 @Testcontainers

@@ -51,7 +51,7 @@ alertmanager:
             # webhook URL 하나 = 채널 하나다. 채널을 나누려면 webhook(=비밀)이 하나 더 필요하다.
             # 규칙이 6개뿐이라 지금은 한 채널로 받고, severity는 제목으로 구분한다.
             send_resolved: true
-            title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.severity }} — {{ .CommonLabels.alertname }}'
+            title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.severity }}: {{ .CommonLabels.alertname }}'
             text: >-
               {{ range .Alerts }}*{{ .Annotations.summary }}*
               {{ .Annotations.description }}
@@ -104,7 +104,7 @@ prometheus:
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
     # PrometheusRule도 같은 이유로 넓힌다. 규칙 파일에 release 라벨을 달아 두었지만,
-    # helm release 이름을 다르게 설치하면 셀렉터가 어긋나 규칙이 조용히 로드되지 않는다
+    # helm release 이름을 다르게 설치하면 셀렉터가 어긋나 규칙이 로드되지 않는다
     # 실패가 오류가 아니라 "알림이 안 옴"으로 나타나 알아채기 어렵다.
     ruleSelectorNilUsesHelmValues: false
     # k6가 부하 결과를 직접 밀어 넣을 수 있게 remote write 수신을 연다.

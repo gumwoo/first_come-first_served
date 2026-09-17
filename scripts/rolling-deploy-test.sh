@@ -75,9 +75,9 @@ cleanup() {
     echo "==> ArgoCD 자동 동기화 복원"
     if kubectl -n "$ARGO_NS" patch application "$APP" --type=merge \
          -p "{\"spec\":{\"syncPolicy\":{\"automated\":$AUTOMATED}}}" >/dev/null 2>&1; then
-      echo "    복원됨 — ArgoCD가 Git 태그로 되돌린다(측정 종료 후이므로 결과에 영향 없음)"
+      echo "    복원됨: ArgoCD가 Git 태그로 되돌린다(측정 종료 후이므로 결과에 영향 없음)"
     else
-      echo "!!! 자동 동기화 복원 실패 — 손으로 확인하라:" >&2
+      echo "!!! 자동 동기화 복원 실패: 손으로 확인하라:" >&2
       echo "    kubectl -n $ARGO_NS get application $APP -o jsonpath='{.spec.syncPolicy}'" >&2
       rc=1
     fi
@@ -95,7 +95,7 @@ for c in kubectl aws jq python; do
   command -v "$c" >/dev/null || { echo "$c 가 없다" >&2; exit 1; }
 done
 kubectl get ns "$NS" >/dev/null 2>&1 || {
-  echo "클러스터에 $NS 네임스페이스가 없다 — scripts/bring-up.sh 먼저" >&2; exit 1; }
+  echo "클러스터에 $NS 네임스페이스가 없다. scripts/bring-up.sh 먼저" >&2; exit 1; }
 DOMAIN="$(kubectl -n "$NS" get ingress flowticket -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)"
 [ -n "$DOMAIN" ] || { echo "Ingress에서 도메인을 읽지 못했다" >&2; exit 1; }
 # 측정 전 상태가 이미 깨져 있으면 롤링 탓으로 오독하게 된다. 여기서 막는다.
@@ -103,7 +103,7 @@ CODE="$(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN" --max-time 20 |
 [ "$CODE" = "200" ] || { echo "측정 전 상태가 정상이 아니다: https://$DOMAIN → $CODE" >&2; exit 1; }
 if [ "$MODEL" = "closed" ]; then
   echo "    domain=$DOMAIN scope=$SCOPE model=closed vus=$VUS duration=$DURATION warmup=${WARMUP}s"
-  echo "    ⚠️ closed model은 응답이 늦으면 부하가 스스로 줄어든다 — 0건이 나와도 무중단의 증거가 아니다"
+  echo "    주의: closed model은 응답이 늦으면 부하가 스스로 줄어든다. 0건이 나와도 무중단의 증거가 아니다"
 else
   echo "    domain=$DOMAIN scope=$SCOPE model=open rate=$RATE duration=$DURATION warmup=${WARMUP}s"
 fi
@@ -122,7 +122,7 @@ if [ "$RESTART" -eq 1 ]; then
   # 이미지를 그대로 두고 파드만 교체하므로 태그 선택도 다이제스트 비교도 의미가 없다.
   TAG="(restart)"
   DIGEST_NOTE="이미지 동일(rollout restart)"
-  echo "    이미지 변경 없음 — rollout restart로 파드만 교체한다"
+  echo "    이미지 변경 없음: rollout restart로 파드만 교체한다"
 elif [ -z "$TAG" ]; then
   # 두 리포에 모두 있는 태그 중, 현재 돌고 있는 두 태그가 아닌 가장 최근 것.
   #
@@ -160,7 +160,7 @@ for t in $TARGETS; do
   [ "$RESTART" -eq 1 ] && break
   case "$t" in api) c="$CUR_API";; web) c="$CUR_WEB";; esac
   if [ "$TAG" = "$c" ]; then
-    echo "지정한 태그가 현재 $t 태그와 같다($TAG) — $t는 롤링되지 않는다." >&2
+    echo "지정한 태그가 현재 $t 태그와 같다($TAG): $t는 롤링되지 않는다." >&2
     echo "  --scope $SCOPE의 조건을 만족하지 못하므로 중단한다." >&2
     exit 1
   fi
@@ -183,10 +183,10 @@ for t in $TARGETS; do
   case "$t" in api) c="$CUR_API";; web) c="$CUR_WEB";; esac
   if [ "$(digest_of "$t" "$c")" = "$(digest_of "$t" "$TAG")" ]; then
     DIGEST_NOTE="$DIGEST_NOTE $t=동일"
-    echo "    ⚠️ $t 다이제스트 동일 — 레이어 캐시로 pull 지연을 재현하지 못한다"
+    echo "    주의: $t 다이제스트 동일: 레이어 캐시로 pull 지연을 재현하지 못한다"
   else
     DIGEST_NOTE="$DIGEST_NOTE $t=상이"
-    echo "    $t 다이제스트 상이 — 실제 pull이 일어난다"
+    echo "    $t 다이제스트 상이: 실제 pull이 일어난다"
   fi
 done
 DIGEST_NOTE="${DIGEST_NOTE# }"
@@ -202,9 +202,9 @@ if [ -n "$AUTOMATED" ] && [ "$AUTOMATED" != "null" ]; then
   kubectl -n "$ARGO_NS" patch application "$APP" --type=json \
     -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' >/dev/null
   RESTORE_NEEDED=1
-  echo "    중지됨(원본 보관: $AUTOMATED) — 종료 시 자동 복원"
+  echo "    중지됨(원본 보관: $AUTOMATED): 종료 시 자동 복원"
 else
-  echo "    이미 꺼져 있음 — 건드리지 않는다"
+  echo "    이미 꺼져 있음: 건드리지 않는다"
 fi
 
 # ── 3. 부하 생성기 기동 ──────────────────────────────────────────────
@@ -212,7 +212,7 @@ say "3/8 k6 Job 기동"
 EVENT_ID="$(curl -s "https://$DOMAIN/api/events?status=ON_SALE&size=20" --max-time 20 \
   | jq -r '.data.items[0].id // empty' | tr -d '\r' || true)"
 if [ -n "$EVENT_ID" ]; then echo "    대상 이벤트=$EVENT_ID"
-else echo "    이벤트 미지정 — k6가 setup()에서 탐색한다"; fi
+else echo "    이벤트 미지정: k6가 setup()에서 탐색한다"; fi
 
 kubectl -n "$NS" delete job "$JOB" --ignore-not-found >/dev/null
 kubectl -n "$NS" create configmap "$CM" \
@@ -232,7 +232,7 @@ def setenv(name, val):
     pat = r'(\{ name: %s, value: )"[^"]*"( \})' % name
     new, n = re.subn(pat, lambda m: m.group(1) + '"%s"' % val + m.group(2), s, count=1)
     if n != 1:
-        raise SystemExit("env %s 치환 실패 — k6-rolling-job.yaml의 env 형식이 바뀌었다" % name)
+        raise SystemExit("env %s 치환 실패: k6-rolling-job.yaml의 env 형식이 바뀌었다" % name)
     s = new
 
 setenv("BASE_URL", base)
@@ -257,7 +257,7 @@ sleep "$WARMUP"
 BASELINE_BAD="$(kubectl -n "$NS" logs "$K6POD" 2>/dev/null | grep -c 'NON2XX' || true)"
 echo "    롤링 전 non-2xx = $BASELINE_BAD"
 if [ "${BASELINE_BAD:-0}" -gt 0 ]; then
-  echo "    ⚠️ 롤링 전부터 실패가 있다 — 이번 측정으로 롤링을 탓할 수 없다"
+  echo "    주의: 롤링 전부터 실패가 있다. 이번 측정으로 롤링을 탓할 수 없다"
 fi
 
 # ── 5. 롤링 유발 ─────────────────────────────────────────────────────
@@ -284,7 +284,7 @@ T1="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # rollout status가 빨리 끝났다고 롤링이 없었다고 볼 수 없다. IMP-015 §4에서 6초 만에
 # 끝나 의심했고, ReplicaSet 이력으로 실제 교체를 확인했다. 그 확인을 자동화한다.
 {
-  echo "# ReplicaSet 이력 — 교체가 실제로 일어났는지"
+  echo "# ReplicaSet 이력: 교체가 실제로 일어났는지"
   for t in $TARGETS; do
     echo "## flowticket-$t"
     kubectl -n "$NS" get rs -l "app=flowticket-$t" \
@@ -317,7 +317,7 @@ cp "$WORK/k6.log" "$WORK/replicasets.txt" "$OUT/" 2>/dev/null || true
 
 SUMMARY="$(grep -o 'SUMMARY_JSON .*' "$WORK/k6.log" | tail -1 | sed 's/^SUMMARY_JSON //' || true)"
 if [ -z "$SUMMARY" ]; then
-  echo "k6 요약을 얻지 못했다 — 로그: $OUT/k6.log" >&2
+  echo "k6 요약을 얻지 못했다. 로그: $OUT/k6.log" >&2
   exit 1
 fi
 TOTAL="$(echo "$SUMMARY" | jq -r .total)"
@@ -332,7 +332,7 @@ echo "    조건·로그 $OUT/"
 echo
 
 if [ "$BAD" -gt 0 ]; then
-  echo "    실패한 요청 — 롤링 시작(T0) 기준 상대 시각:"
+  echo "    실패한 요청: 롤링 시작(T0) 기준 상대 시각:"
   T0S="$(date -u -d "$T0" +%s)"
   grep -o 'NON2XX ts=[^ ]* status=[^ ]* dur=[^ ]* err=[^ ]*' "$WORK/k6.log" | while read -r line; do
     ts="$(printf '%s\n' "$line" | sed -n 's/.*ts=\([^ ]*\).*/\1/p')"
@@ -341,12 +341,12 @@ if [ "$BAD" -gt 0 ]; then
     if [ "$d" -ge 0 ]; then echo "      T0+${d}s  $rest"; else echo "      T0${d}s  $rest"; fi
   done
   echo
-  echo "결과: 무중단 아님 — $TOTAL건 중 $BAD건 실패. 상세: $OUT/" >&2
+  echo "결과: 무중단 아님: $TOTAL건 중 $BAD건 실패. 상세: $OUT/" >&2
   exit 1
 fi
 
-echo "결과: 무중단 — $TOTAL건 전량 2xx."
+echo "결과: 무중단: $TOTAL건 전량 2xx."
 # IMP-015 §8의 판정 기준을 여기서도 되풀이한다. 결과를 부풀리는 것은 보통
 # 문서가 아니라 "성공했다"는 한 줄에서 시작한다.
-echo "  ⚠️ 이것은 이 조건(scope=$SCOPE, $RATE rps, →$TAG, $DIGEST_NOTE) 한 번의 결과다."
+echo "  주의: 이것은 이 조건(scope=$SCOPE, $RATE rps, →$TAG, $DIGEST_NOTE) 한 번의 결과다."
 echo "     IMP-015 §8의 판정 기준대로, 0건이 나왔다고 502의 원인이 규명된 것은 아니다."

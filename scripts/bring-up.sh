@@ -40,7 +40,7 @@ for c in terraform kubectl helm aws jq; do
   command -v "$c" >/dev/null || { echo "$c 가 없다" >&2; exit 1; }
 done
 if [ "$(tf state list 2>/dev/null | wc -l)" -eq 0 ]; then
-  echo "terraform state가 비어 있다 — 먼저 apply 하라(비용이 발생하므로 이 스크립트는 하지 않는다):" >&2
+  echo "terraform state가 비어 있다. 먼저 apply 하라(비용이 발생하므로 이 스크립트는 하지 않는다):" >&2
   echo "  terraform -chdir=$TFDIR apply" >&2
   exit 1
 fi
@@ -93,18 +93,18 @@ echo "==> 4/7 cluster-autoscaler / strimzi / kube-prometheus-stack / argocd"
 CA_APP="$(helm show chart autoscaler/cluster-autoscaler --version "$CA_CHART_VERSION" 2>/dev/null \
   | awk '/^appVersion:/{print $2}' | tr -d '"' || true)"
 [ -n "$CA_APP" ] || {
-  echo "cluster-autoscaler 차트 $CA_CHART_VERSION 을 찾지 못했다 — 사용 가능한 버전:" >&2
+  echo "cluster-autoscaler 차트 $CA_CHART_VERSION 을 찾지 못했다. 사용 가능한 버전:" >&2
   helm search repo autoscaler/cluster-autoscaler --versions 2>/dev/null | head -5 >&2
   exit 1; }
 K8S_MINOR="$(kubectl version -o json 2>/dev/null | jq -r '.serverVersion.minor // empty' | tr -d '+' || true)"
 CA_MINOR="$(echo "$CA_APP" | cut -d. -f2)"
 # 못 읽었을 때 통과시키면 검사가 공허해진다. 대조할 수 없다는 것 자체가 실패다.
 [ -n "$K8S_MINOR" ] || {
-  echo "API 서버의 Kubernetes 마이너 버전을 읽지 못해 CA 호환성을 대조할 수 없다 — 중단한다." >&2
+  echo "API 서버의 Kubernetes 마이너 버전을 읽지 못해 CA 호환성을 대조할 수 없다. 중단한다." >&2
   echo "  확인: kubectl version -o json" >&2
   exit 1; }
 if [ "$K8S_MINOR" != "$CA_MINOR" ]; then
-  echo "Cluster Autoscaler 버전이 클러스터와 어긋난다 — 중단한다." >&2
+  echo "Cluster Autoscaler 버전이 클러스터와 어긋난다. 중단한다." >&2
   echo "  클러스터 k8s 1.$K8S_MINOR / CA 앱 $CA_APP (차트 $CA_CHART_VERSION)" >&2
   echo "  맞는 차트를 고른 뒤 CA_CHART_VERSION 을 갱신하라:" >&2
   echo "    helm search repo autoscaler/cluster-autoscaler --versions | grep ' 1\\.$K8S_MINOR\\.'" >&2
@@ -113,7 +113,7 @@ fi
 echo "    cluster-autoscaler 차트 $CA_CHART_VERSION (앱 $CA_APP) ↔ k8s 1.${K8S_MINOR:-?}"
 
 # SA 이름(cluster-autoscaler)이 IRSA 신뢰 정책과 어긋나면 권한 오류가 아니라
-# "노드가 조용히 안 늘어나는" 형태로 나타난다. LB Controller와 같은 함정이다.
+# "노드가 안 늘어나는" 형태로 나타난다. LB Controller와 같은 함정이다.
 helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
   --version "$CA_CHART_VERSION" \
   -n kube-system \
@@ -127,7 +127,7 @@ helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
 CA_POD="$(kubectl -n kube-system get pod -l app.kubernetes.io/name=aws-cluster-autoscaler \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
 [ -n "$CA_POD" ] || {
-  echo "cluster-autoscaler 파드를 찾지 못했다 — helm 설치가 --wait로 끝났는데도 없다면 라벨을 확인하라:" >&2
+  echo "cluster-autoscaler 파드를 찾지 못했다. helm 설치가 --wait로 끝났는데도 없다면 라벨을 확인하라:" >&2
   echo "  kubectl -n kube-system get pods -l app.kubernetes.io/name=aws-cluster-autoscaler --show-labels" >&2
   exit 1; }
 # 로그 문자열로 판정하지 않는다. 로그 메시지는 버전마다 바뀐다(예: CA 1.35에는
@@ -149,11 +149,11 @@ for i in $(seq 1 12); do
 done
 CA_RUNNING="$(printf '%s\n' "${CA_STATUS:-}" | awk '/^autoscalerStatus:/{print $2; exit}')"
 [ "$CA_RUNNING" = "Running" ] || {
-  echo "cluster-autoscaler 상태가 Running이 아니다(=${CA_RUNNING:-읽지 못함}) — 중단한다." >&2
+  echo "cluster-autoscaler 상태가 Running이 아니다(=${CA_RUNNING:-읽지 못함}): 중단한다." >&2
   echo "  확인: kubectl -n kube-system get cm cluster-autoscaler-status -o jsonpath='{.data.status}'" >&2
   exit 1; }
 [ "${NG_SEEN:-0}" -gt 0 ] || {
-  echo "cluster-autoscaler가 노드그룹을 하나도 인식하지 못했다 — 중단한다." >&2
+  echo "cluster-autoscaler가 노드그룹을 하나도 인식하지 못했다. 중단한다." >&2
   echo "  IRSA 권한이나 ASG 태그(k8s.io/cluster-autoscaler/{enabled,owned}) 문제다." >&2
   echo "  확인: kubectl -n kube-system get cm cluster-autoscaler-status -o jsonpath='{.data.status}'" >&2
   echo "        kubectl -n kube-system logs $CA_POD --tail=50" >&2
@@ -195,7 +195,7 @@ for i in $(seq 1 40); do
   [ -n "$ALB" ] && break
   sleep 15
 done
-[ -n "$ALB" ] || { echo "Ingress가 ALB 주소를 받지 못했다 — alb-controller 로그를 보라" >&2; exit 1; }
+[ -n "$ALB" ] || { echo "Ingress가 ALB 주소를 받지 못했다. alb-controller 로그를 보라" >&2; exit 1; }
 ALB_ZONE="$(aws elbv2 describe-load-balancers --query "LoadBalancers[?DNSName=='$ALB'].CanonicalHostedZoneId" --output text)"
 CUR="$(aws route53 list-resource-record-sets --hosted-zone-id "$ZONE_ID" \
   --query "ResourceRecordSets[?Name=='${DOMAIN}.'&&Type=='A'].AliasTarget.DNSName" --output text)"

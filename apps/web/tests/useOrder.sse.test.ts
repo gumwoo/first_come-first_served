@@ -58,7 +58,7 @@ describe("useOrder SSE 티켓", () => {
     expect(FakeEventSource.instances).toHaveLength(0);
   });
 
-  it("일시적 단절(CONNECTING)에는 개입하지 않는다 — 브라우저 자동 재연결에 맡긴다", async () => {
+  it("일시적 단절(CONNECTING)에는 개입하지 않는다. 브라우저 자동 재연결에 맡긴다", async () => {
     await mount();
     const es = FakeEventSource.instances[0];
 
@@ -70,7 +70,7 @@ describe("useOrder SSE 티켓", () => {
     expect(es.closed).toBe(false);
   });
 
-  it("브라우저가 포기하면(CLOSED) 새 티켓으로 다시 연다 — 티켓 만료 경로", async () => {
+  it("브라우저가 포기하면(CLOSED) 새 티켓으로 다시 연다. 티켓 만료 경로", async () => {
     await mount();
     const first = FakeEventSource.instances[0];
     issueSseTicket.mockResolvedValue({ ticket: "tk-2" });
@@ -84,7 +84,7 @@ describe("useOrder SSE 티켓", () => {
     expect(first.closed).toBe(true);
   });
 
-  it("티켓 발급이 실패하면 구독을 포기한다 — 화면은 마운트 조회로 이미 채워져 있다", async () => {
+  it("티켓 발급이 실패하면 구독을 포기한다. 화면은 마운트 조회로 이미 채워져 있다", async () => {
     issueSseTicket.mockRejectedValue(new Error("401"));
 
     await mount();

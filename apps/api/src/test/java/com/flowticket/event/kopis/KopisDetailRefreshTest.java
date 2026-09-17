@@ -78,7 +78,7 @@ class KopisDetailRefreshTest extends IntegrationTestSupport {
         List<Long> ids = eventRepository.findIdsNeedingDetail(now.minusDays(7), PageRequest.ofSize(10));
 
         assertThat(ids)
-                .as("NULL 먼저, 그다음 오래된 순 — 회차당 상한이 있으므로 정렬이 곧 우선순위다")
+                .as("NULL 먼저, 그다음 오래된 순: 회차당 상한이 있으므로 정렬이 곧 우선순위다")
                 .containsExactly(never.getId(), older.getId(), newer.getId());
     }
 

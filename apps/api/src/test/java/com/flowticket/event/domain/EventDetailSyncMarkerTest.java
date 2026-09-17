@@ -25,7 +25,7 @@ class EventDetailSyncMarkerTest {
         e.updateDetail(null, "만 12세 이상", "R석 90,000원", "출연진", "줄거리", "일정");
 
         assertThat(e.getDetailSyncedAt())
-                .as("상세 호출이 성공했으므로 수집 표시는 찍혀야 한다 — 이게 없으면 매 회차 같은 공연을 다시 부른다")
+                .as("상세 호출이 성공했으므로 수집 표시는 찍혀야 한다. 이게 없으면 매 회차 같은 공연을 다시 부른다")
                 .isNotNull();
         assertThat(e.getRunningTime())
                 .as("빈 값으로 덮어쓰지 않는다(목록에서 받은 값을 지우면 안 되므로)")

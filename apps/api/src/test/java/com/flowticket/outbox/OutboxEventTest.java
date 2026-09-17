@@ -49,7 +49,7 @@ class OutboxEventTest {
                 .as("격리 근거가 없으면 운영자가 폐기/복구를 판단할 수 없다")
                 .contains("JsonParseException");
         assertThat(event.getAttempts())
-                .as("\"0회 시도인데 DEAD\"로 보이면 원인을 오해한다 — 한 번 시도했고 결과가 결정적이었다")
+                .as("\"0회 시도인데 DEAD\"로 보이면 원인을 오해한다. 한 번 시도했고 결과가 결정적이었다")
                 .isEqualTo(1);
     }
 

@@ -56,7 +56,7 @@ cleanup() {
   if [ "$rc" -ne 0 ] && [ -s "${WORK:-/nonexistent}/k6.log" ]; then
     SALVAGE="$ROOT/redis-failover-salvage-$(date -u +%Y%m%dT%H%M%SZ)"
     mkdir -p "$SALVAGE" && cp "$WORK"/*.log "$SALVAGE/" 2>/dev/null || true
-    echo "!!! 비정상 종료 — 수집된 로그를 보존했다: $SALVAGE" >&2
+    echo "!!! 비정상 종료: 수집된 로그를 보존했다: $SALVAGE" >&2
   fi
   kubectl -n "$NS" delete job "$JOB" --ignore-not-found >/dev/null 2>&1 || true
   rm -rf "$WORK"
@@ -79,7 +79,7 @@ read -r AF MAZ ST NODES <<<"$(aws elasticache describe-replication-groups --regi
   --output text 2>/dev/null || echo "? ? ? 0")"
 echo "    Redis=$RG AutomaticFailover=$AF MultiAZ=$MAZ status=$ST 노드=$NODES"
 # 자동 페일오버가 꺼져 있으면 test-failover가 거부되거나 다른 것을 재게 된다.
-[ "$AF" = "enabled" ] || { echo "AutomaticFailover가 enabled가 아니다 — 중단한다" >&2; exit 1; }
+[ "$AF" = "enabled" ] || { echo "AutomaticFailover가 enabled가 아니다. 중단한다" >&2; exit 1; }
 [ "${NODES:-0}" -ge 2 ] || { echo "노드가 ${NODES}개다. 페일오버는 2개 이상에서만 의미가 있다" >&2; exit 1; }
 NG="$(aws elasticache describe-replication-groups --region "$REGION" --replication-group-id "$RG" \
   --query 'ReplicationGroups[0].NodeGroups[0].NodeGroupId' --output text)"
@@ -105,15 +105,15 @@ for i in $(seq 1 30); do
     --output text 2>&1)"; then
     if [ -z "$REC" ] || [ "$REC" = "None" ]; then REC=""; break; fi
   else
-    echo "describe-events 실패 — 재동기화 상태를 확인할 수 없어 중단한다" >&2
+    echo "describe-events 실패: 재동기화 상태를 확인할 수 없어 중단한다" >&2
     printf '  %s\n' "$(printf '%s' "$REC" | head -c 160)" >&2
     exit 1
   fi
-  echo "    최근 5분 내 재동기화 이벤트가 있다 — 대기($((i*20))s)"
+  echo "    최근 5분 내 재동기화 이벤트가 있다. 대기($((i*20))s)"
   sleep 20
 done
 [ -z "${REC:-}" ] || {
-  echo "재동기화가 10분 넘게 계속된다 — test-failover가 거부되므로 실행하지 않는다" >&2
+  echo "재동기화가 10분 넘게 계속된다. test-failover가 거부되므로 실행하지 않는다" >&2
   echo "  마지막 이벤트: $REC" >&2
   exit 1
 }
@@ -137,7 +137,7 @@ EVENT_ID="$(http_body "$API/events?status=ON_SALE&size=20" | jq -r '.data.items[
 [ -n "$EVENT_ID" ] || { echo "ON_SALE 이벤트가 없다" >&2; exit 1; }
 QT="$(curl -sS -X POST "$API/events/$EVENT_ID/queue/token" -H "Authorization: Bearer $JWT" 2>/dev/null \
   | jq -r '.data.token // empty' | tr -d '\r')"
-[ -n "$QT" ] || { echo "대기열 토큰 발급 실패 — 응답 형식을 확인하라" >&2; exit 1; }
+[ -n "$QT" ] || { echo "대기열 토큰 발급 실패: 응답 형식을 확인하라" >&2; exit 1; }
 # 응답 형식:
 #   {"rank":0,"total":0,"etaSeconds":0,"status":"ADMITTED"}
 # 필드는 position이 아니라 rank이고, 입장 완료면 rank가 0이 된다. 그래서 rank로는
@@ -145,12 +145,12 @@ QT="$(curl -sS -X POST "$API/events/$EVENT_ID/queue/token" -H "Authorization: Be
 ST0_JSON="$(curl -sS "$API/queue/status?token=$QT" 2>/dev/null || true)"
 POS0="$(printf '%s' "$ST0_JSON" | jq -r '.data.rank // empty' | tr -d '\r')"
 STATUS0="$(printf '%s' "$ST0_JSON" | jq -r '.data.status // empty' | tr -d '\r')"
-[ -n "$STATUS0" ] || { echo "대기열 상태를 읽지 못했다 — 유실 판정 기준이 없으므로 중단한다" >&2; exit 1; }
+[ -n "$STATUS0" ] || { echo "대기열 상태를 읽지 못했다. 유실 판정 기준이 없으므로 중단한다" >&2; exit 1; }
 
 # ADMITTED가 될 때까지 기다린다. WAITING 상태로 측정을 시작하면 승격(1.5초 주기)이
 # 측정 중에 일어나 상태가 바뀌고, 그것을 유실과 구분할 수 없다.
 if [ "$STATUS0" != "ADMITTED" ]; then
-  echo "    status=$STATUS0 — ADMITTED 승격을 기다린다(최대 60초)"
+  echo "    status=$STATUS0: ADMITTED 승격을 기다린다(최대 60초)"
   for i in $(seq 1 30); do
     sleep 2
     ST0_JSON="$(http_body "$API/queue/status?token=$QT" || true)"
@@ -160,7 +160,7 @@ if [ "$STATUS0" != "ADMITTED" ]; then
   done
 fi
 [ "$STATUS0" = "ADMITTED" ] || {
-  echo "토큰이 ADMITTED가 되지 않았다(status=$STATUS0) — 유실 판정이 승격과 섞이므로 중단한다" >&2
+  echo "토큰이 ADMITTED가 되지 않았다(status=$STATUS0): 유실 판정이 승격과 섞이므로 중단한다" >&2
   exit 1; }
 echo "    event=$EVENT_ID token=${QT:0:12}… 장애 전 status=$STATUS0 rank=${POS0:-0}"
 # 이 status가 페일오버 후에도 유지되는지가 이 실험의 핵심 관찰 항목이다.
@@ -228,7 +228,7 @@ echo "    장애 전 실패+상태유실 = $BASE_BAD"
 # 기준선이 0이 아니면 장애를 탓할 수 없다. 그대로 진행하면 페일오버와 무관한 신호가
 # 결과에 섞인다. 여기서 멈춘다.
 [ "${BASE_BAD:-0}" -eq 0 ] || {
-  echo "장애 전부터 신호가 ${BASE_BAD}건 있다 — 이 측정으로는 페일오버를 탓할 수 없다. 중단한다." >&2
+  echo "장애 전부터 신호가 ${BASE_BAD}건 있다. 이 측정으로는 페일오버를 탓할 수 없다. 중단한다." >&2
   echo "  확인: kubectl -n $NS logs $K6POD | grep -E 'NON2XX|NOSTATE|STATECHANGE' | head" >&2
   exit 1; }
 
@@ -254,7 +254,7 @@ for i in $(seq 1 40); do
 done
 T1="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "    primary 전환: ${PRIMARY0:-?} → ${NEWPRIMARY:-확인못함}"
-[ -n "$NEWPRIMARY" ] || echo "    ⚠️ primary 전환을 확인하지 못했다 — 해석 시 주의"
+[ -n "$NEWPRIMARY" ] || echo "    주의: primary 전환을 확인하지 못했다. 해석 시 주의"
 
 # 페일오버 후 순번이 남아 있는가: 이 실험의 핵심
 # 여기서 죽으면 안 된다. 페일오버 직후라 응답이 JSON이 아닐 수 있고(그 자체가 관찰
@@ -265,7 +265,7 @@ if printf '%s' "$ST1_JSON" | jq -e . >/dev/null 2>&1; then
   STATUS1="$(printf '%s' "$ST1_JSON" | jq -r '.data.status // empty' | tr -d '\r')"
 else
   POS1=""; STATUS1="파싱실패"
-  echo "    ⚠️ 사후 상태 응답이 JSON이 아니다: $(printf '%s' "$ST1_JSON" | head -c 120)"
+  echo "    주의: 사후 상태 응답이 JSON이 아니다: $(printf '%s' "$ST1_JSON" | head -c 120)"
 fi
 echo "    장애 후 status=${STATUS1:-없음} rank=${POS1:-없음} (장애 전 status=$STATUS0 rank=${POS0:-0})"
 
@@ -288,7 +288,7 @@ kubectl -n "$NS" get pods -l app=flowticket-api \
   --no-headers > "$OUT/api-pods.txt" 2>/dev/null || true
 
 SUMMARY="$(grep -o 'SUMMARY_JSON .*' "$WORK/k6.log" | tail -1 | sed 's/^SUMMARY_JSON //' || true)"
-[ -n "$SUMMARY" ] || { echo "k6 요약을 얻지 못했다 — $OUT/k6.log" >&2; exit 1; }
+[ -n "$SUMMARY" ] || { echo "k6 요약을 얻지 못했다. $OUT/k6.log" >&2; exit 1; }
 TOTAL="$(echo "$SUMMARY" | jq -r .total)"
 BAD="$(echo "$SUMMARY" | jq -r .non2xx)"
 NOPOS="$(echo "$SUMMARY" | jq -r .posMissing)"
@@ -304,9 +304,9 @@ echo
 if [ "$BAD" -gt 0 ] || [ "$NOPOS" -gt 0 ]; then
   grep -oE '(NON2XX|NOPOS) ts=[^ ]*[^\n]*' "$WORK/k6.log" | tail -20 | sed 's/^/      /'
   echo
-  echo "결과: 페일오버 중 손실 — 실패 $BAD건 / 상태 유실 $NOPOS건 (총 $TOTAL). 상세: $OUT/" >&2
+  echo "결과: 페일오버 중 손실: 실패 $BAD건 / 상태 유실 $NOPOS건 (총 $TOTAL). 상세: $OUT/" >&2
   exit 1
 fi
-echo "결과: 페일오버 중 무손실 — $TOTAL건 전량 2xx, 상태 유실 0."
-echo "  ⚠️ 조건: test-failover / $RATE rps / 1회. 토큰 1개로만 관찰했으므로"
+echo "결과: 페일오버 중 무손실: $TOTAL건 전량 2xx, 상태 유실 0."
+echo "  측정 조건: test-failover / $RATE rps / 1회. 토큰 1개로만 관찰했으므로"
 echo "     '대기열 전체가 보존된다'는 뜻은 아니다."

@@ -134,7 +134,7 @@ class OrderIntegrationTest extends IntegrationTestSupport {
         pool.shutdown();
         assertThat(pool.awaitTermination(20, TimeUnit.SECONDS)).isTrue();
 
-        assertThat(unexpected).as("어떤 요청도 실패하면 안 된다 — 멱등 반환이어야 한다").isEmpty();
+        assertThat(unexpected).as("어떤 요청도 실패하면 안 된다. 멱등 반환이어야 한다").isEmpty();
         // "일부만 성공하고 나머지는 예외"여도 아래 두 단언 중 뒤엣것만으로는 통과한다.
         // 멱등을 검증하려면 모든 호출이 응답을 받았고, 그 값이 하나여야 한다.
         assertThat(created).as("모든 요청이 주문을 돌려받아야 한다").hasSize(threads);

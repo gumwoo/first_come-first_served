@@ -171,8 +171,7 @@ management:
 #      상세는 동기화 배치가 미리 받아 events 테이블에 저장한다.
 #   2) 남은 호출자(동기화)는 rate-limit-per-second로 간격을 둔다(아래).
 #
-# 그래서 KOPIS로 나가는 호출이 동기화 하나로 좁혀졌고, 목록·상세가 같은 제한기를 통과한다.
-# 이 두 가지가 함께여야 IP 총량이 통제된다. 사용자 경로가 살아 있으면 제한기만으로는 안 된다.
+# 둘이 함께여야 IP 총량이 통제된다(IMP-018).
 kopis:
   base-url: http://www.kopis.or.kr/openApi/restful
   service-key: ${KOPIS_SERVICE_KEY:}

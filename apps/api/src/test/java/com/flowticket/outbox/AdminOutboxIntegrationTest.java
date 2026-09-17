@@ -108,7 +108,7 @@ class AdminOutboxIntegrationTest {
         runRelayTicks();
 
         assertThat(outboxRepository.findById(poisonId).orElseThrow().getStatus())
-                .as("폐기한 행은 지우지 않는다 — 무엇을 포기했는지가 남아야 한다")
+                .as("폐기한 행은 지우지 않는다. 무엇을 포기했는지가 남아야 한다")
                 .isEqualTo(OutboxStatus.DISCARDED);
         assertThat(outboxRepository.findById(followerId).orElseThrow().getStatus())
                 .as("차단 사유가 사라지면 후속 이벤트는 나가야 한다")
@@ -132,7 +132,7 @@ class AdminOutboxIntegrationTest {
         // payload가 그대로이므로 릴레이는 다시 격리한다. 되돌리기는 '고쳐졌을 때' 쓰는 수단이다.
         runRelayTicks();
         assertThat(outboxRepository.findById(poisonId).orElseThrow().getStatus())
-                .as("내용이 그대로면 결과도 그대로다 — 운영자 조작이 결정적 실패를 없애지는 않는다")
+                .as("내용이 그대로면 결과도 그대로다. 운영자 조작이 결정적 실패를 없애지는 않는다")
                 .isEqualTo(OutboxStatus.DEAD);
     }
 
@@ -142,7 +142,7 @@ class AdminOutboxIntegrationTest {
         UUID pendingId = appendHealthy(ORDER_BASE); // 릴레이를 돌리지 않아 PENDING 그대로
 
         assertThatThrownBy(() -> adminOutboxService.discard(pendingId))
-                .as("브로커 장애로 밀려 있을 뿐 언젠가 나갈 이벤트다 — 개입하면 유실이 된다")
+                .as("브로커 장애로 밀려 있을 뿐 언젠가 나갈 이벤트다. 개입하면 유실이 된다")
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_STATE_TRANSITION);
     }

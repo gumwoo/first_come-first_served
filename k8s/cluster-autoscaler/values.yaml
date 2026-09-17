@@ -18,7 +18,7 @@ rbac:
     create: true
     # 이 이름은 IRSA 신뢰 정책과 정확히 일치해야 한다
     # (modules/eks/irsa.tf: system:serviceaccount:kube-system:cluster-autoscaler).
-    # 어긋나면 권한 오류가 아니라 "CA가 조용히 아무 노드도 못 붙이는" 형태로 나타난다.
+    # 어긋나면 권한 오류가 아니라 "CA가 아무 노드도 못 붙이는" 형태로 나타난다.
     name: cluster-autoscaler
     # 역할 ARN은 bring-up.sh가 terraform output에서 읽어 --set으로 넣는다.
 

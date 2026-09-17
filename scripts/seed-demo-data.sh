@@ -60,7 +60,7 @@ LOGIN_BODY="$(jq -cn --arg e "$ADMIN_EMAIL" --arg p "$ADMIN_PASSWORD" '{email:$e
 TOKEN="$(curl -sS -X POST "$API/auth/login" -H 'Content-Type: application/json' -d "$LOGIN_BODY" \
   | jqr '.data.accessToken // empty')"
 unset ADMIN_PASSWORD LOGIN_BODY
-[ -n "$TOKEN" ] || { echo "로그인 실패 — SSM의 ADMIN_EMAIL/ADMIN_PASSWORD를 확인하라" >&2; exit 1; }
+[ -n "$TOKEN" ] || { echo "로그인 실패: SSM의 ADMIN_EMAIL/ADMIN_PASSWORD를 확인하라" >&2; exit 1; }
 echo "    access token 획득"
 
 echo "==> 3/4 KOPIS 동기화 트리거"
@@ -71,9 +71,9 @@ CODE="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API/admin/sync/kopis" 
   -H "Authorization: Bearer $TOKEN" --max-time 70 || true)"
 case "$CODE" in
   200) echo "    동기화 완료 응답(200)" ;;
-  409) echo "    이미 다른 동기화가 진행 중이다(409) — 그대로 기다린다" ;;
-  504|000) echo "    504/타임아웃 — 정상이다(ALB 60초 < 동기화 3분 45초, TS-031). 계속 진행 중" ;;
-  *)   echo "    예상 밖 응답: $CODE — 아래 데이터 확인으로 판정한다" ;;
+  409) echo "    이미 다른 동기화가 진행 중이다(409): 그대로 기다린다" ;;
+  504|000) echo "    504/타임아웃: 정상이다(ALB 60초 < 동기화 3분 45초, TS-031). 계속 진행 중" ;;
+  *)   echo "    예상 밖 응답: $CODE: 아래 데이터 확인으로 판정한다" ;;
 esac
 
 echo "==> 4/4 데이터가 들어올 때까지 확인 (최대 8분)"
@@ -82,7 +82,7 @@ ON_SALE=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   ON_SALE="$(curl -sS "$API/events?status=ON_SALE&size=1" --max-time 20 | jqr '.data.total // 0')"
   [ "$ON_SALE" -gt 0 ] && break
-  printf '    ON_SALE 0건 — 대기 중…\r'
+  printf '    ON_SALE 0건: 대기 중…\r'
   sleep 15
 done
 echo
@@ -125,7 +125,7 @@ if [ "$ROUNDS" -gt 0 ]; then
     [ "$missing" -eq 0 ] && break
     # 진행이 멈췄으면 더 돌려도 같다. KOPIS가 그 공연들의 상세를 주지 않는 경우다.
     if [ "$missing" -eq "$prev" ]; then
-      echo "    진행이 멈췄다(${missing}건 그대로) — 상세 조회가 반복 실패하는 공연으로 보고 중단한다"
+      echo "    진행이 멈췄다(${missing}건 그대로): 상세 조회가 반복 실패하는 공연으로 보고 중단한다"
       break
     fi
     prev="$missing"
@@ -139,7 +139,7 @@ if [ "$ROUNDS" -gt 0 ]; then
   if [ "$final" -eq 0 ]; then
     echo "    ✓ 상세 전량 확보"
   else
-    echo "    ⚠️ 상세 미수집 ${final}건 남음 — KOPIS 상세 조회가 실패하는 공연이다" >&2
+    echo "    주의: 상세 미수집 ${final}건 남음: KOPIS 상세 조회가 실패하는 공연이다" >&2
   fi
 fi
 

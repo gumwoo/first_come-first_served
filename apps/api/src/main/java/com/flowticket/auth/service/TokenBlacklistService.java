@@ -48,7 +48,7 @@ public class TokenBlacklistService {
             return Boolean.TRUE.equals(redis.hasKey(PREFIX + accessToken));
         } catch (Exception e) {
             meterRegistry.counter(FAILURE_METRIC).increment();
-            log.warn("[auth] 블랙리스트 조회 실패 — 통과시킨다(fail-open). "
+            log.warn("[auth] 블랙리스트 조회 실패: 통과시킨다(fail-open). "
                     + "이 구간에는 로그아웃된 토큰이 남은 TTL 동안 유효하다: {}", e.toString());
             return false;
         }

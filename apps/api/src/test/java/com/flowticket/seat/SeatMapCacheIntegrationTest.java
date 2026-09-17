@@ -106,7 +106,7 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
         // 이것이 이 캐시의 대가다. 실패가 아니라 의도된 동작이고,
         // 그래서 운영 설계에는 이벤트 기반 무효화가 필요하다.
         assertThat(availableAfter)
-                .as("TTL 안에서는 낡은 좌석맵이 그대로 보인다 — 무효화가 필요한 이유")
+                .as("TTL 안에서는 낡은 좌석맵이 그대로 보인다. 무효화가 필요한 이유")
                 .isEqualTo(100);
     }
 }

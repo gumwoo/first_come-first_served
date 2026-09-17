@@ -81,7 +81,7 @@ class KopisTimeoutTest {
         Optional<KopisEventDetail> result = assertTimeoutPreemptively(
                 Duration.ofSeconds(15),
                 () -> client.fetchDetail("PF000001"),
-                "응답 없는 외부 API에 스레드가 묶였다 — 타임아웃이 걸리지 않았다");
+                "응답 없는 외부 API에 스레드가 묶였다. 타임아웃이 걸리지 않았다");
 
         // 던지지 않고 빈 값으로 degrade해야 한다(상세는 없어도 응답할 수 있다).
         assertThat(result).isEmpty();

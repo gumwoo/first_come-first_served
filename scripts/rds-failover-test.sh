@@ -64,7 +64,7 @@ read -r MULTIAZ STATUS AZ <<<"$(aws rds describe-db-instances --region "$REGION"
   --query 'DBInstances[0].[MultiAZ,DBInstanceStatus,AvailabilityZone]' --output text)"
 echo "    RDS=$DB MultiAZ=$MULTIAZ status=$STATUS az=$AZ"
 # Multi-AZ가 아니면 강제 페일오버는 그냥 재부팅이다. 다른 것을 재게 된다.
-[ "$MULTIAZ" = "True" ] || { echo "MultiAZ가 아니다 — 이 실험은 Multi-AZ 전환을 재는 것이므로 중단한다" >&2; exit 1; }
+[ "$MULTIAZ" = "True" ] || { echo "MultiAZ가 아니다. 이 실험은 Multi-AZ 전환을 재는 것이므로 중단한다" >&2; exit 1; }
 [ "$STATUS" = "available" ] || { echo "RDS 상태가 available이 아니다($STATUS)" >&2; exit 1; }
 
 DOMAIN="$(kubectl -n "$NS" get ingress flowticket -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)"
@@ -125,7 +125,7 @@ say "2/6 HikariCP 감시 시작 (1초 간격)"
 HIKARI_OK="$(kubectl -n "$NS" exec deploy/flowticket-api -c api -- \
   sh -c 'wget -qO- localhost:8080/actuator/prometheus 2>/dev/null | grep -c "^hikaricp_connections_active"' 2>/dev/null || echo 0)"
 [ "${HIKARI_OK:-0}" -gt 0 ] || {
-  echo "HikariCP 지표를 읽지 못한다 — 커넥션 풀 관찰 없이는 이 실험의 절반이 빈다. 중단한다." >&2
+  echo "HikariCP 지표를 읽지 못한다. 커넥션 풀 관찰 없이는 이 실험의 절반이 빈다. 중단한다." >&2
   echo "  확인: kubectl -n $NS exec deploy/flowticket-api -c api -- wget -qO- localhost:8080/actuator/prometheus | grep hikaricp" >&2
   exit 1; }
 # `exec deploy/...` 로 읽으면 안 된다. 매번 여러 파드 중 하나에 임의로 붙기 때문에,
@@ -185,7 +185,7 @@ for i in $(seq 1 60); do
   fi
   sleep 10
 done
-[ -n "${NEWAZ:-}${FAILOVER_EVT:-}" ] || echo "    ⚠️ AZ 전환도 failover completed 이벤트도 확인하지 못했다 — 해석 시 주의"
+[ -n "${NEWAZ:-}${FAILOVER_EVT:-}" ] || echo "    주의: AZ 전환도 failover completed 이벤트도 확인하지 못했다. 해석 시 주의"
 T1="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "    AZ 전환: $AZ → ${NEWAZ:-확인못함}  (failover completed: ${FAILOVER_EVT:-없음})"
 
@@ -208,7 +208,7 @@ kubectl -n "$NS" get pods -l app=flowticket-api \
   --no-headers > "$OUT/api-pods.txt" 2>/dev/null || true
 
 SUMMARY="$(grep -o 'SUMMARY_JSON .*' "$WORK/k6.log" | tail -1 | sed 's/^SUMMARY_JSON //' || true)"
-[ -n "$SUMMARY" ] || { echo "k6 요약을 얻지 못했다 — $OUT/k6.log" >&2; exit 1; }
+[ -n "$SUMMARY" ] || { echo "k6 요약을 얻지 못했다. $OUT/k6.log" >&2; exit 1; }
 TOTAL="$(echo "$SUMMARY" | jq -r .total)"; BAD="$(echo "$SUMMARY" | jq -r .non2xx)"
 echo
 echo "    총 요청   $TOTAL"
@@ -222,9 +222,9 @@ if [ "$BAD" -gt 0 ]; then
   echo "    실패 요청(최대 30건):"
   grep -o 'NON2XX ts=[^ ]* status=[^ ]* dur=[^ ]* err=[^ ]*' "$WORK/k6.log" | tail -30 | sed 's/^/      /'
   echo
-  echo "결과: 페일오버 중 요청 손실 — $TOTAL건 중 $BAD건. 상세: $OUT/" >&2
+  echo "결과: 페일오버 중 요청 손실: $TOTAL건 중 $BAD건. 상세: $OUT/" >&2
   exit 1
 fi
-echo "결과: 페일오버 중 무손실 — $TOTAL건 전량 2xx."
-echo "  ⚠️ 조건: RDS 강제 페일오버 / $RATE rps / 1회. 캐시가 걸린 구간이 있을 수 있으므로"
+echo "결과: 페일오버 중 무손실: $TOTAL건 전량 2xx."
+echo "  측정 조건: RDS 강제 페일오버 / $RATE rps / 1회. 캐시가 걸린 구간이 있을 수 있으므로"
 echo "     '무손실'이 곧 'DB 없이도 서비스된다'는 뜻은 아니다."

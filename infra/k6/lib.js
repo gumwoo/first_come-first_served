@@ -20,5 +20,5 @@ export function discoverEvent() {
     if (seats.length > 0) return e.id;
   }
   if (items.length > 0) return items[0].id;
-  throw new Error("ON_SALE 이벤트가 없음 — 백엔드에 이벤트/좌석 시드 필요");
+  throw new Error("ON_SALE 이벤트가 없음: 백엔드에 이벤트/좌석 시드 필요");
 }

@@ -61,13 +61,13 @@ cleanup() {
     kubectl -n "$NS" patch hpa flowticket-api --type=merge \
       -p "{\"spec\":{\"maxReplicas\":$ORIG_API_MAX}}" >/dev/null 2>&1 \
       && echo "==> HPA 상한 복원: $ORIG_API_MAX" \
-      || { echo "!!! HPA 상한 복원 실패 — 손으로 확인하라(kubectl -n $NS get hpa)" >&2; rc=1; }
+      || { echo "!!! HPA 상한 복원 실패: 손으로 확인하라(kubectl -n $NS get hpa)" >&2; rc=1; }
   fi
   if [ "$RESTORE_NEEDED" -eq 1 ]; then
     kubectl -n "$ARGO_NS" patch application "$APP" --type=merge \
       -p "{\"spec\":{\"syncPolicy\":{\"automated\":$AUTOMATED}}}" >/dev/null 2>&1 \
       && echo "==> ArgoCD 자동 동기화 복원" \
-      || { echo "!!! ArgoCD 복원 실패 — kubectl -n $ARGO_NS get application $APP -o jsonpath='{.spec.syncPolicy}'" >&2; rc=1; }
+      || { echo "!!! ArgoCD 복원 실패: kubectl -n $ARGO_NS get application $APP -o jsonpath='{.spec.syncPolicy}'" >&2; rc=1; }
   fi
   kubectl -n "$NS" delete job k6-nodescale --ignore-not-found >/dev/null 2>&1 || true
   rm -rf "$WORK"
@@ -87,7 +87,7 @@ apipods() { kubectl -n "$NS" get pods -l app=flowticket-api --no-headers 2>/dev/
 
 say "0/6 전제 확인"
 for c in kubectl aws jq; do command -v "$c" >/dev/null || { echo "$c 가 없다" >&2; exit 1; }; done
-kubectl get ns "$NS" >/dev/null 2>&1 || { echo "$NS 네임스페이스가 없다 — bring-up.sh 먼저" >&2; exit 1; }
+kubectl get ns "$NS" >/dev/null 2>&1 || { echo "$NS 네임스페이스가 없다. bring-up.sh 먼저" >&2; exit 1; }
 
 CA_POD="$(kubectl -n kube-system get pod -l app.kubernetes.io/name=aws-cluster-autoscaler \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
@@ -105,11 +105,11 @@ CA_STATUS="$(kubectl -n kube-system get cm cluster-autoscaler-status \
 CA_RUNNING="$(printf '%s\n' "$CA_STATUS" | awk '/^autoscalerStatus:/{print $2; exit}')"
 NG="$(printf '%s\n' "$CA_STATUS" | grep -cE '^  name: ' || true)"
 [ "$CA_RUNNING" = "Running" ] || {
-  echo "CA 상태가 Running이 아니다(=${CA_RUNNING:-읽지 못함}) — 중단한다." >&2
+  echo "CA 상태가 Running이 아니다(=${CA_RUNNING:-읽지 못함}): 중단한다." >&2
   echo "  확인: kubectl -n kube-system get cm cluster-autoscaler-status -o jsonpath='{.data.status}'" >&2
   exit 1; }
 [ "${NG:-0}" -gt 0 ] || {
-  echo "CA가 노드그룹을 하나도 인식하지 못했다 — ASG 태그(k8s.io/cluster-autoscaler/*)를 확인하라" >&2
+  echo "CA가 노드그룹을 하나도 인식하지 못했다. ASG 태그(k8s.io/cluster-autoscaler/*)를 확인하라" >&2
   exit 1; }
 
 NODE_TYPE="$(kubectl get nodes -o jsonpath='{.items[0].metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "?")"
@@ -117,7 +117,7 @@ N0="$(nodes)"
 echo "    CA=$CA_POD ($CA_RUNNING, 노드그룹 ${NG}개)  노드 ${N0}대 / $NODE_TYPE"
 # t3는 버스터블이라 지속 부하에서 CPU 크레딧이 개입한다(ADR-012 §5, TS-034).
 case "$NODE_TYPE" in
-  t3.*|t4g.*) echo "    ⚠️ 버스터블 인스턴스다 — 결과에 CPU 크레딧이 섞인다. loadtest.tfvars로 apply할 것";;
+  t3.*|t4g.*) echo "    주의: 버스터블 인스턴스다. 결과에 CPU 크레딧이 섞인다. loadtest.tfvars로 apply할 것";;
 esac
 
 DOMAIN="$(kubectl -n "$NS" get ingress flowticket -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)"
@@ -144,7 +144,7 @@ ORIG_API_MAX="$(kubectl -n "$NS" get hpa flowticket-api -o jsonpath='{.spec.maxR
 kubectl -n "$NS" patch hpa flowticket-api --type=merge \
   -p "{\"spec\":{\"maxReplicas\":$API_MAX}}" >/dev/null
 echo "    api maxReplicas $ORIG_API_MAX → $API_MAX (×300m = $((API_MAX*300))m)"
-echo "    ⚠️ 이 값은 노드 예산을 일부러 넘긴다. 종료 시 $ORIG_API_MAX 으로 되돌린다"
+echo "    주의: 이 값은 노드 예산을 일부러 넘긴다. 종료 시 $ORIG_API_MAX 으로 되돌린다"
 
 # ── 3. 부하 ─────────────────────────────────────────────────────────
 say "3/6 부하 투입 (${RATE} rps, $RUN_FOR)"
@@ -259,18 +259,18 @@ echo
 
 # 종료 코드는 "측정을 돌렸다"가 아니라 "CA가 동작했다"의 판정이어야 한다.
 if [ "$MAX_PENDING" -eq 0 ]; then
-  echo "판정: **조건 미달** — Pending이 한 번도 생기지 않았다." >&2
+  echo "판정: 조건 미달: Pending이 한 번도 생기지 않았다." >&2
   echo "  예산을 넘기지 못한 것이다. --api-max 를 올리거나 --rate 를 올려 다시 하라." >&2
-  echo "  (HPA가 상한까지 올라가지 못했을 수도 있다 — api파드 열을 확인하라)" >&2
+  echo "  (HPA가 상한까지 올라가지 못했을 수도 있다. api파드 열을 확인하라)" >&2
   exit 1
 fi
 if [ "$NMAX" -le "$N0" ]; then
-  echo "판정: **CA 미동작** — Pending이 최대 ${MAX_PENDING}개 생겼는데 노드가 늘지 않았다." >&2
+  echo "판정: CA 미동작: Pending이 최대 ${MAX_PENDING}개 생겼는데 노드가 늘지 않았다." >&2
   echo "  확인: 노드그룹 max_size, ASG 태그, CA 로그($OUT/ca-scaleup.log)" >&2
   exit 1
 fi
-echo "판정: CA 동작 확인 — Pending 최대 ${MAX_PENDING}개, 노드 $N0 → $NMAX"
+echo "판정: CA 동작 확인: Pending 최대 ${MAX_PENDING}개, 노드 $N0 → $NMAX"
 [ -n "$NODE_UP_AT" ] && echo "  노드 증가까지 ${NODE_UP_AT}s"
 [ -n "$RESOLVED_AT" ] && echo "  Pending 해소까지 ${RESOLVED_AT}s"
-echo "  ⚠️ 1회 측정이다. 그리고 이것은 **HPA 상한을 일부러 올린 조건**이며,"
+echo "  주의: 1회 측정이다. 그리고 이것은 HPA 상한을 일부러 올린 조건이며,"
 echo "     평시 구성(api $ORIG_API_MAX)에서는 예산 안에 들어가 CA가 발동하지 않는다."

@@ -22,7 +22,7 @@ variable "ecr_keep_last_images" {
 variable "ecr_untagged_expire_days" {
   description = <<-EOT
     태그 없는 이미지를 며칠 뒤 정리할지. 같은 SHA로 재푸시하면(workflow_dispatch 재실행)
-    이전 이미지가 태그를 잃고 남는다 — 그것들은 태그로 참조할 수 없어 롤백에 쓸 수 없다.
+    이전 이미지가 태그를 잃고 남는다. 그것들은 태그로 참조할 수 없어 롤백에 쓸 수 없다.
     0으로 두면 이 규칙을 끈다.
   EOT
   type        = number
@@ -57,15 +57,12 @@ variable "github_oidc_subjects" {
   description = <<-EOT
     이 역할을 맡을 수 있는 GitHub 워크플로의 sub 조건(StringLike).
 
-    **main 브랜치로 한정한다.** 이전에는 `repo:<owner>/<repo>:*` 였는데, 그러면 이 저장소의
-    모든 브랜치·태그·PR이 역할을 맡아 ECR에 push할 수 있다.
+    main 브랜치로 한정한다. `repo:<owner>/<repo>:*`로 두면 모든 브랜치·태그·PR이 역할을 맡아
+    ECR에 push할 수 있다. 실제 sub 값은 CloudTrail의 AssumeRoleWithWebIdentity 이벤트로 확인했다
+    (image.yml의 workflow_run·workflow_dispatch 모두 `...:ref:refs/heads/main`).
 
-    좁히기 전에 **CloudTrail의 AssumeRoleWithWebIdentity 이벤트로 실제 sub를 확인**했다
-    (14건 전부 `...:ref:refs/heads/main`). image.yml은 workflow_run(main)과 workflow_dispatch로
-    도는데 둘 다 같은 값이었다 — 추측이 아니라 기록으로 확인한 뒤 좁혔다.
-
-    ⚠️ 나중에 다른 브랜치나 태그에서 이미지를 내보내야 하면 여기에 조건을 **추가**해야 한다.
-    빠뜨리면 워크플로가 인증 실패하는데, 증상이 "권한 없음"이라 원인을 찾기 번거롭다.
+    다른 브랜치나 태그에서 이미지를 내보내야 하면 여기에 조건을 추가해야 한다.
+    빠뜨리면 워크플로가 인증에 실패하고, 증상이 "권한 없음"이라 원인을 찾기 번거롭다.
   EOT
   type        = list(string)
   default     = ["repo:gumwoo/first_come-first_served:ref:refs/heads/main"]

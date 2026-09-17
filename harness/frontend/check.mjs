@@ -157,7 +157,7 @@ for (const file of apiFnFiles) {
       (f) => f !== file && new RegExp(`\\b${name}\\b`).test(read(f))
     );
     if (!usedElsewhere) {
-      r.fail(`미사용 API 함수(死코드): ${name} (${rel}) — 호출처 없음. 쓰거나 제거/ALLOW 등록`);
+      r.fail(`미사용 API 함수(死코드): ${name} (${rel}): 호출처 없음. 쓰거나 제거/ALLOW 등록`);
     }
   }
 }
@@ -181,16 +181,16 @@ for (const file of tsFiles) {
   const hasPolling = /setInterval\s*\(/.test(src);
 
   if (hasResync || hasPolling) {
-    if (allow) r.fail(`불필요한 예외 주석: ${rel} — 복구 경로가 있는데 allow-sse-no-resync가 달려 있음`);
+    if (allow) r.fail(`불필요한 예외 주석: ${rel}: 복구 경로가 있는데 allow-sse-no-resync가 달려 있음`);
     continue;
   }
   if (!allow) {
     r.fail(
-      `SSE 복구 경로 없음: ${rel} — onopen 재조회 또는 폴링 중 하나는 필수. ` +
+      `SSE 복구 경로 없음: ${rel}: onopen 재조회 또는 폴링 중 하나는 필수. ` +
         `구독 공백에 지나간 이벤트는 다시 오지 않아 화면이 고착된다(TS-012)`
     );
   } else if (!allow[1]) {
-    r.fail(`예외 사유 누락: ${rel} — "// harness:allow-sse-no-resync: <사유>" 형식으로 근거를 적을 것`);
+    r.fail(`예외 사유 누락: ${rel}: "// harness:allow-sse-no-resync: <사유>" 형식으로 근거를 적을 것`);
   }
 }
 

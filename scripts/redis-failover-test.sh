@@ -4,6 +4,7 @@
 # ADR-012 §10의 Redis Multi-AZ 실증. 관찰 항목(terraform-design): 대기열 순번 보존, SSE 재연결, 유실 범위.
 #
 # 좌석 조회(/events/{id}/seats)는 대기열 Redis 자료구조를 타지 않으므로, Redis가 진실원인 경로를 때린다.
+#   POST /events/{id}/queue/token  → 대기열 진입(Redis ZSet 쓰기)
 #   GET  /queue/status?token=...   → 순번 조회(Redis ZSet 읽기)
 #
 # RDS 페일오버와 같이 하지 않는다. 원인이 섞인다.
@@ -36,7 +37,7 @@ while [ $# -gt 0 ]; do
     --rate)     RATE="$2"; shift 2;;
     --duration) DURATION="$2"; shift 2;;
     --warmup)   WARMUP="$2"; shift 2;;
-    -h|--help)  sed -n '2,17p' "$0"; exit 0;;
+    -h|--help)  sed -n '2,18p' "$0"; exit 0;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2;;
   esac
 done

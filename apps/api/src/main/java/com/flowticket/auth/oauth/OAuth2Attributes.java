@@ -29,7 +29,7 @@ public record OAuth2Attributes(String email, String name) {
                 String nickname = profile != null ? (String) profile.get("nickname") : null;
                 String email = (String) account.get("email");
                 if (email == null) {
-                    // 이메일 미동의/미보유 → 식별 불가
+                    // 이메일 미동의/미보유면 식별할 수 없다
                     throw new OAuth2AuthenticationException(new OAuth2Error("email_required"));
                 }
                 yield new OAuth2Attributes(email, nickname);

@@ -7,15 +7,15 @@ import org.springframework.test.context.TestPropertySource;
 /**
  * DB·Redis를 쓰는 통합테스트의 공통 베이스(Kafka 없음).
  *
- * <p>컨테이너만 공유해서는 절반만 빨라진다. Spring 컨텍스트 캐시 키에는
- * {@code @DynamicPropertySource} 메서드 집합이 들어가므로, 클래스마다 자기 메서드를 선언하면
+ * 컨테이너만 공유해서는 절반만 빨라진다. Spring 컨텍스트 캐시 키에는
+ * @DynamicPropertySource 메서드 집합이 들어가므로, 클래스마다 자기 메서드를 선언하면
  * 값이 같아도 매번 새 컨텍스트가 뜬다. 그래서 이 메서드를 상속해 같은 커스터마이저를 공유한다.
  *
- * <p>튜닝 값은 {@code @TestPropertySource}로 둔다. 하위 클래스가 같은 키를 다시 선언하면
+ * 튜닝 값은 @TestPropertySource로 둔다. 하위 클래스가 같은 키를 다시 선언하면
  * 그 값이 우선하므로(상속 병합), 예외적인 테스트만 필요한 항목을 덮어쓸 수 있다.
- * (반대로 여기서 동적 프로퍼티로 넣으면 하위의 {@code @TestPropertySource}가 이기지 못한다.)
+ * (반대로 여기서 동적 프로퍼티로 넣으면 하위의 @TestPropertySource가 이기지 못한다.)
  *
- * <p>기본값은 애플리케이션 기본값과 같게 맞춰(capacity 100·hold-ttl 300·max-per-user 4) 동작 변화가 없고,
+ * 기본값은 애플리케이션 기본값과 같게 맞춰(capacity 100·hold-ttl 300·max-per-user 4) 동작 변화가 없고,
  * 스케줄러 주기만 크게 잡아 배경 워커가 테스트에 끼어들지 않게 한다.
  */
 @TestPropertySource(properties = {

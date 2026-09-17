@@ -124,7 +124,7 @@ class KopisClientTest {
     @Test
     void fetchListAll_가득찬_페이지는_계속_부족하면_중단한다() {
         Fixture f = fixture();
-        // page1: rows(2)만큼 가득 → 다음 페이지 요청, page2: 1건(부족) → 중단
+        // page1은 rows(2)만큼 가득 차 다음 페이지를 요청하고, page2는 1건이라 중단한다
         f.server().expect(requestTo(containsString("pblprfr")))
                 .andRespond(withSuccess(listXml(2).getBytes(StandardCharsets.UTF_8), MediaType.APPLICATION_XML));
         f.server().expect(requestTo(containsString("pblprfr")))

@@ -40,7 +40,7 @@ public class KopisClient {
     private final MeterRegistry meterRegistry;
     /**
      * 동기화 경로에만 적용한다. 사용자 요청 경로(fetchDetail)에 쓰면 요청 스레드를 재우게 되어,
-     * 외부 지연이 톰캣 스레드를 묶는 실패를 방어 장치로 재현하는 꼴이 된다({@link KopisRateLimiter}).
+     * 외부 지연이 톰캣 스레드를 묶는 실패를 방어 장치로 재현하는 꼴이 된다(KopisRateLimiter).
      */
     private final KopisRateLimiter rateLimiter;
 
@@ -48,8 +48,8 @@ public class KopisClient {
     private static final String METRIC = "kopis.api.requests";
 
     /**
-     * RestClient는 {@link KopisClientConfig}가 만들어 넘긴다. 이 클래스가 직접 빌드하지 않는다.
-     * 타임아웃은 request factory에 붙는데, 그걸 여기서 설정하면 {@code MockRestServiceServer}가
+     * RestClient는 KopisClientConfig가 만들어 넘긴다. 이 클래스가 직접 빌드하지 않는다.
+     * 타임아웃은 request factory에 붙는데, 그걸 여기서 설정하면 MockRestServiceServer가
      * 심어둔 mock factory를 덮어써 단위 테스트가 실제 네트워크로 나가버린다.
      */
     public KopisClient(@Qualifier("kopisDetailClient") RestClient detailClient,
@@ -69,16 +69,14 @@ public class KopisClient {
     /**
      * 외부 호출을 계측한다. 실패해도 예외를 밖으로 내지 않는 구조라 지표가 없으면 보이지 않는다.
      *
-     * <p>예: KOPIS가 모든 호출에 400 Request Blocked를 돌려줘도 폴백 경로는 에러를 내지 않아,
+     * 예: KOPIS가 모든 호출에 400 Request Blocked를 돌려줘도 폴백 경로는 에러를 내지 않아,
      * 이 지표가 없으면 실패율을 볼 수 없다.
      *
-     * <p>태그는 셋으로 제한한다(카디널리티).
-     * <pre>
+     * 태그는 셋으로 제한한다(카디널리티).
      *   operation : detail | list
      *   outcome   : success | empty | error
      *   cause     : none | http_400 등 | timeout | io | parse | unknown
-     * </pre>
-     * <p>{@code cause}는 HTTP 상태 코드가 아니라 실패 종류다. 상태 코드로는 200을 받고 XML 파싱에서
+     * cause는 HTTP 상태 코드가 아니라 실패 종류다. 상태 코드로는 200을 받고 XML 파싱에서
      * 깨진 경우가 "응답을 받지 못함"으로 잘못 분류된다. 실패 지점마다 예외 타입이 달라 그것으로 구분한다.
      */
     private <T> T recorded(String operation, Call<T> call, Function<T, String> outcomeOf)
@@ -108,9 +106,9 @@ public class KopisClient {
 
     /**
      * 읽기/연결 타임아웃인지 판별한다. 예외 체인을 훑는 이유는 request factory에 따라
-     * 감싸는 타입이 다르기 때문이다. JDK HttpClient는 {@link HttpTimeoutException},
-     * Simple/Apache 계열은 {@link SocketTimeoutException}을 싣는다.
-     * (실제로 무엇이 실리는지는 KopisTimeoutTest가 실측으로 확인한다.)
+     * 감싸는 타입이 다르기 때문이다. JDK HttpClient는 HttpTimeoutException,
+     * Simple/Apache 계열은 SocketTimeoutException을 싣는다.
+     * (어떤 예외가 실리는지는 KopisTimeoutTest가 확인한다.)
      */
     private static boolean timedOut(Throwable e) {
         for (Throwable t = e; t != null; t = t.getCause()) {
@@ -149,7 +147,7 @@ public class KopisClient {
     /**
      * 공연목록 조회(기간/페이지). 실패 시 빈 목록 반환(동기화는 best-effort).
      *
-     * <p>동기화 배치 전용이므로 호출 전에 레이트 리밋을 통과한다. 90일을 31일 청크로
+     * 동기화 배치 전용이므로 호출 전에 레이트 리밋을 통과한다. 90일을 31일 청크로
      * 나누면 청크 3개 × 최대 10페이지 = 최대 30회 연속 호출이고, 간격 없이 쏘면
      * KOPIS의 IP 제한(1초 10회)을 넘길 수 있다.
      */
@@ -194,10 +192,10 @@ public class KopisClient {
     /**
      * 공연상세 조회(관람시간/연령/가격 등). 실패 시 empty.
      *
-     * <p>호출자는 동기화 배치뿐이라 여기서 제한기를 건다(요청 스레드를 재울 일이 없다).
+     * 호출자는 동기화 배치뿐이라 여기서 제한기를 건다(요청 스레드를 재울 일이 없다).
      * 걸지 않으면 상세 배치가 응답 속도만큼(약 80ms → 초당 12회) 나가 IP 제한(1초 10회)을 넘긴다.
      *
-     * <p>목록과 같은 제한기 인스턴스를 쓰므로 list + detail 합산이 설정값 이하로 유지된다.
+     * 목록과 같은 제한기 인스턴스를 쓰므로 list + detail 합산이 설정값 이하로 유지된다.
      */
     public Optional<KopisEventDetail> fetchDetail(String kopisId) {
         try {

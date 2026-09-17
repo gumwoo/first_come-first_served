@@ -20,10 +20,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * 상세 동기화 대상 선정 규칙을 고정한다.
  *
- * <p>{@code detailSyncedAt IS NULL}만 대상으로 삼으면 한 번 채운 공연은 다시 보지 않아,
+ * detailSyncedAt IS NULL만 대상으로 삼으면 한 번 채운 공연은 다시 보지 않아,
  * KOPIS에서 가격·출연진·공연시간이 바뀌어도 우리 값이 무한히 낡는다.
  *
- * <p>규칙은 둘이다. 미수집(NULL)과 오래된 것을 함께 고르고, 오래된 순(NULL 먼저)으로
+ * 규칙은 둘이다. 미수집(NULL)과 오래된 것을 함께 고르고, 오래된 순(NULL 먼저)으로
  * 정렬한다. 회차당 상한이 있으므로 정렬이 곧 우선순위다.
  */
 @SpringBootTest
@@ -40,7 +40,7 @@ class KopisDetailRefreshTest extends IntegrationTestSupport {
     /**
      * 과거 시각의 상세 동기화 상태를 만든다.
      *
-     * <p>{@code updateDetail()}은 항상 {@code now()}를 찍으므로 도메인 API로는 과거를 만들 수 없다.
+     * updateDetail()은 항상 now()를 찍으므로 도메인 API로는 과거를 만들 수 없다.
      * 그렇다고 운영 저장소에 테스트 전용 메서드를 넣지는 않는다. 그 자리에서 직접 UPDATE 한다.
      */
     private Event saved(String kopisId, LocalDateTime detailSyncedAt) {
@@ -85,7 +85,7 @@ class KopisDetailRefreshTest extends IntegrationTestSupport {
     /**
      * 목록 동기화가 상세 동기화의 결과를 지우면 안 된다.
      *
-     * <p>목록 동기화가 {@code runningTime}·{@code ageLimit}을 null로 덮으면, {@code detailSyncedAt}은
+     * 목록 동기화가 runningTime·ageLimit을 null로 덮으면, detailSyncedAt은
      * 그대로라 갱신 주기(7일)가 지나기 전엔 다시 채워지지도 않는다.
      */
     @Test

@@ -12,10 +12,9 @@ import org.springframework.stereotype.Component;
 /**
  * order-events 소비 → 실시간 SSE 전달. Kafka가 이벤트 백본, SSE는 마지막 홉(브라우저 push).
  *
- * <p>아웃박스 릴레이는 at-least-once라 같은 이벤트가 재발행될 수 있다(ADR-010). 그래서 eventId로
- * Redis SETNX 멱등을 건다. SSE 전달은 중복의 업무 영향이 작고 영구적인 처리 감사가 필요 없어
- * 경량 SETNX를 택했다. 금전·재고를 변경하는 소비자였다면 processed_events 테이블을 비즈니스
- * 트랜잭션과 묶었을 것이다.
+ * 아웃박스 릴레이는 at-least-once라 같은 이벤트가 재발행될 수 있어 eventId로 Redis SETNX 멱등을 건다
+ * (ADR-010). SSE 전달은 중복의 영향이 작아 경량 방식을 쓴다. 금전·재고를 바꾸는 소비자라면
+ * processed_events 테이블을 비즈니스 트랜잭션과 묶어야 한다.
  */
 @Slf4j
 @Component
@@ -42,7 +41,7 @@ public class OrderEventConsumer {
         try {
             orderSse.broadcast(event.orderId(), event.type(), Map.of("orderId", event.orderId()));
         } catch (RuntimeException e) {
-            // 처리 실패 → 예약을 풀어 재시도가 실제로 다시 처리되게 한다.
+            // 처리에 실패하면 예약을 풀어 재시도가 실제로 다시 처리되게 한다.
             // 안 풀면 재시도가 "중복"으로 통과해 DLQ 적재 경로(ADR-008)가 무력화된다.
             release(key);
             throw e;
@@ -52,7 +51,7 @@ public class OrderEventConsumer {
     /**
      * 이 이벤트를 처음 처리하는지 예약(SETNX). eventId가 없는 메시지(직접 발행 등)는 멱등 대상 아님.
      *
-     * <p>Redis 장애는 fail-open: 멱등 저장소가 죽었다고 소비를 실패시키면 재시도·DLQ로
+     * Redis 장애는 fail-open: 멱등 저장소가 죽었다고 소비를 실패시키면 재시도·DLQ로
      * 실시간 알림 전체가 멈춘다. SSE는 중복 피해가 작으므로 경고만 남기고 전달을 진행한다.
      */
     private boolean reserve(String key) {

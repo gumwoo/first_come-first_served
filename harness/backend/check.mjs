@@ -305,7 +305,7 @@ for (const file of javaFiles) {
 }
 
 // ---------- 12. Flyway 버전 유일성 ----------
-// 같은 버전 번호(V6__* 두 개 등)는 Flyway가 실패시키는 지뢰 → 정적으로 미리 차단.
+// 같은 버전 번호(V6__* 두 개 등)는 Flyway가 실패시키므로 정적으로 미리 막는다.
 const versionSeen = new Map();
 for (const file of migrationFiles) {
   const base = path.basename(file);
@@ -320,9 +320,8 @@ for (const file of migrationFiles) {
 }
 
 // ---------- 13. 구현된 이벤트는 실제로 발행돼야 함 ----------
-// events.yaml의 implemented(= 완료 슬라이스가 발행해야 하는 이벤트)가 백엔드 소스에
-// 문자열로 존재하는지 확인. 계약엔 선언했는데 발행부가 없는 "미구현 stale"을 잡는다.
-// (미구현 이벤트는 implemented에 넣지 않으므로 걸리지 않음 = 미구현 허용 철학 유지.)
+// events.yaml의 implemented 이벤트가 백엔드 소스에 문자열로 존재하는지 확인한다.
+// 계약에만 있고 발행부가 없는 경우를 잡는다. 미구현 이벤트는 implemented에 넣지 않으므로 걸리지 않는다.
 const eventsContract = loadYaml("contracts/events.yaml");
 const publishSet = new Set(eventsContract.publishes ?? []);
 const allJavaSrc = javaFiles.map((f) => read(f)).join("\n");
@@ -380,14 +379,9 @@ for (const file of migrationFiles) {
 }
 
 // ---------- 15. 존재하지 않는 문서 번호 참조(끊어진 근거) ----------
-// 코드 주석에 "TS-014", "ADR-012", "IMP-013" 같은 번호를 적어 두는 것은 이 저장소의 습관이다.
-// 근거를 코드 옆에 두면 나중에 "왜 이렇게 했나"를 되짚을 수 있기 때문이다.
-//
-// 문제는 번호를 먼저 적고 문서를 나중에 쓰는 순서다. 문서가 없으면 읽는 사람은 근거를
-// 찾아가려다 빈손으로 돌아온다.
-// 근거를 가리키는 척하는 주석은 근거가 없는 것보다 나쁘다(찾는 시간까지 쓰게 만든다).
-//
-// 컴파일·테스트는 주석을 보지 않으므로 정적으로만 잡을 수 있다.
+// 코드 주석이 가리키는 TS-/ADR-/IMP- 번호의 문서가 실제로 있는지 확인한다.
+// 번호를 먼저 적고 문서를 나중에 쓰면 근거를 찾아갈 수 없는 참조가 남는다.
+// 컴파일·테스트는 주석을 보지 않으므로 정적으로 잡는다.
 const DOC_DIRS = {
   TS: "docs/troubleshooting",
   ADR: "docs/decisions",
@@ -487,7 +481,7 @@ const NON_APP_HEADROOM = 20;
 {
   // 경로는 반드시 REPO_ROOT 기준으로 만든다. CI는 `harness/`에서 실행하므로
   // 저장소 상대 경로를 그대로 fs에 넘기면 cwd 기준으로 풀려 파일을 못 찾고,
-  // 그러면 규칙이 실패가 아니라 건너뛰어진다(거짓 안전). 실제로 그렇게 통과했다.
+  // 그러면 규칙이 실패가 아니라 건너뛰어진다(거짓 안전).
   // fixture가 k8s 쪽 값을 갈아끼울 수 있게 열어둔다(maxSurge 항이 실제로 계산에 들어가는지 검증).
   const K8S = process.env.HARNESS_K8S_DIR || "k8s/base";
   const hpaFile = path.join(REPO_ROOT, K8S, "api-hpa.yaml");
@@ -561,8 +555,8 @@ const NON_APP_HEADROOM = 20;
 const HTTP_DIRECT_RE = /RestClient\s*\.\s*(builder|create)\s*\(/;
 const HTTP_INJECTED_RE = /RestClient\s*\.\s*Builder/;
 const BUILD_CALL_RE = /\.\s*build\s*\(\s*\)/;
-// 주석을 걷어내고 본다. 원문에서 `requestFactory(`를 찾으면 javadoc에 그 단어가 있다는
-// 이유만으로 통과한다(위반 fixture가 실제로 그렇다). 주석에 이름을 언급하는 것과 실제로 호출하는 것은 다르다.
+// 주석을 걷어내고 본다. 원문에서 `requestFactory(`를 찾으면 javadoc에 그 단어만 있어도 통과한다
+// (위반 fixture가 그런 형태다).
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 for (const file of javaFiles) {
   const code = stripComments(read(file));

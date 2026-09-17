@@ -23,8 +23,8 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 검증 실패 → 400. 하위 타입({@code MethodArgumentNotValidException})이 아니라 {@code BindException}으로
-     * 받는다. 가변 DTO가 추가되면 그쪽은 {@code BindException}을 던져 500으로 떨어진다(api-rules.md §4).
+     * 검증 실패 → 400. 하위 타입(MethodArgumentNotValidException)이 아니라 BindException으로
+     * 받는다. 가변 DTO가 추가되면 그쪽은 BindException을 던져 500으로 떨어진다(api-rules.md §4).
      */
     @ExceptionHandler(BindException.class)
     public ResponseEntity<ErrorResponse> handleValidation(BindException e) {
@@ -53,13 +53,11 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 존재하지 않는 경로 → 404. 매핑이 없으면 정적 리소스 처리로 넘어가 {@code NoResourceFoundException}이
-     * 나는데, 이걸 안 잡으면 아래 fallback이 500 + 스택트레이스 ERROR 로그로 처리한다.
-     * 오탈자·봇 스캔 같은 정상적인 "없는 주소" 요청이 서버 오류로 보고되고 로그를 채우는 문제가 있었다.
-     * (계약상으로도 NOT_FOUND=404다. 500은 우리 error-codes.yaml과 어긋난다.)
+     * 존재하지 않는 경로 → 404. 매핑이 없으면 NoResourceFoundException이 나고, 잡지 않으면
+     * fallback이 500 + ERROR 로그로 처리해 오탈자·봇 스캔이 서버 오류로 보고된다.
      *
-     * <p>인증이 필요한 경로는 시큐리티가 먼저 401을 주므로 여기까지 오지 않는다(경로 존재 여부를
-     * 노출하지 않는 편이 낫다). 이 처리가 실제로 필요한 건 공개 경로(events·queue 등)다.
+     * 인증이 필요한 경로는 시큐리티가 먼저 401을 주므로 여기까지 오지 않는다.
+     * 이 처리가 필요한 건 공개 경로(events·queue 등)다.
      */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException e) {
@@ -70,8 +68,7 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 본문이 JSON으로 읽히지 않음(깨진 인코딩·형식 오류) → 400. 클라이언트 입력 문제이므로 서버 오류가 아니다.
-     * 실제로 운영 이미지 검증 중 잘못된 인코딩으로 보낸 요청이 500으로 응답되는 것을 확인해 분리했다.
+     * 본문이 JSON으로 읽히지 않음(깨진 인코딩·형식 오류) → 400. 클라이언트 입력 문제다.
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException e) {

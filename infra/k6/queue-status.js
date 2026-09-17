@@ -1,8 +1,7 @@
 // 대기열 상태 폴링 부하: Redis를 실제로 타는 경로.
 //
-// 왜 별도 스크립트인가: rolling-availability.js는 `/events/{id}/seats`를 때리는데, 그 경로는
-// DB와 캐시를 타지 대기열 Redis 자료구조를 타지 않는다. Redis 페일오버를 재려면
-// Redis가 진실원인 경로를 때려야 유실 범위까지 볼 수 있다.
+// rolling-availability.js가 때리는 `/events/{id}/seats`는 대기열 Redis 자료구조를 타지 않는다.
+// Redis 페일오버의 유실 범위를 보려면 Redis가 진실원인 경로를 때려야 한다.
 //   /queue/status?token=... → QueueService.status() → Redis ZSet 순번 조회
 //
 // 실패한 요청 하나하나의 시각을 남긴다(rolling-availability.js와 같은 이유): 페일오버는
@@ -78,7 +77,7 @@ export default function (data) {
   // 상태 변화를 전부 유실로 세면 안 된다. 대기열은 1.5초마다 WAITING → ADMITTED로
   // 정상 승격한다.
   //
-  // 유실은 한 방향뿐이다. 이미 입장한 토큰이 자리를 잃는 것.
+  // 유실은 이미 입장한 토큰이 자리를 잃는 경우 하나다.
   //   WAITING  → ADMITTED : 정상 승격
   //   ADMITTED → 그 외    : 슬롯 상실 = 유실
   if (EXPECT_STATUS === "ADMITTED" && st !== "ADMITTED") {

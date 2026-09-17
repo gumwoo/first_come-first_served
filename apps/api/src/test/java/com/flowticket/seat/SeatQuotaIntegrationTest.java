@@ -47,15 +47,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * 1인 구매 한도(seat.max-per-user)의 정합성.
  *
- * <p>1인 한도는 단일 행에 표현되지 않는 집계 규칙이라 조건부 UPDATE로 지켜지지 않는다.
- * 무엇을 세는지(HELD 홀드 + PAID 주문)와 직렬화 방식은 {@code SeatQuotaRepository}·TS-013.
+ * 1인 한도는 단일 행에 표현되지 않는 집계 규칙이라 조건부 UPDATE로 지켜지지 않는다.
+ * 무엇을 세는지(HELD 홀드 + PAID 주문)와 직렬화 방식은 SeatQuotaRepository·TS-013.
  *
- * <p>{@code @TestPropertySource}를 붙이지 않는다. 이 테스트에 필요한 hold-ttl(300)은
- * {@link IntegrationTestSupport}의 기본값과 같다. 같은 값이라도 다시 선언하면 병합된 프로퍼티
+ * @TestPropertySource를 붙이지 않는다. 이 테스트에 필요한 hold-ttl(300)은
+ * IntegrationTestSupport의 기본값과 같다. 같은 값이라도 다시 선언하면 병합된 프로퍼티
  * 배열이 달라져 Spring 컨텍스트가 하나 더 뜨고, 캐시된 컨텍스트마다 커넥션 풀·Redis 연결을
  * 따로 들고 있어 자원 압박이 커진다(IMP-013 §7-2).
  *
- * <p>만료가 필요한 테스트는 sweep을 직접 호출한다(스케줄러는 통합테스트에서 비활성).
+ * 만료가 필요한 테스트는 sweep을 직접 호출한다(스케줄러는 통합테스트에서 비활성).
  */
 @SpringBootTest
 class SeatQuotaIntegrationTest extends IntegrationTestSupport {
@@ -98,9 +98,8 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
         // 3매 보유 상태에서 서로 다른 1매를 동시에 요청하면, 한 쪽만 성공해야 한다.
         // 한도 검사가 읽기→검사→행위로 나뉘어 있으면 둘 다 3+1=4를 통과해 5매가 된다.
         //
-        // 성격: 결함 탐지용이지 회귀 가드가 아니다. 시작 래치는 두 스레드를 같이
-        // 출발시킬 뿐이라, T1이 커밋까지 끝낸 뒤 T2가 읽으면 결함이 있어도 통과한다.
-        // 실제로 이 테스트는 수정 전 CI에서 결함을 잡았지만, 앞으로도 잡는다는 보장은 없다.
+        // 결함 탐지용이지 회귀 가드가 아니다. 시작 래치는 두 스레드를 같이 출발시킬 뿐이라,
+        // T1이 커밋까지 끝낸 뒤 T2가 읽으면 결함이 있어도 통과한다.
         // 회귀는 아래 `직렬화_락이_같은_사용자의_동시_선점을_대기시킨다`가 결정적으로 지킨다.
         long user = 501L;
         String token = admittedToken(user);
@@ -399,13 +398,13 @@ class SeatQuotaIntegrationTest extends IntegrationTestSupport {
     /**
      * 동시 실행 헬퍼.
      *
-     * <p>예상 밖 예외를 삼키지 않는다. 기대하는 실패는 오직
-     * {@link ErrorCode#MAX_PER_USER_EXCEEDED} 하나이고, 그 외는 전부 모아서 테스트를 실패시킨다.
+     * 예상 밖 예외를 삼키지 않는다. 기대하는 실패는 오직
+     * ErrorCode.MAX_PER_USER_EXCEEDED 하나이고, 그 외는 전부 모아서 테스트를 실패시킨다.
      * 모든 예외를 무시하면 쿼리가 깨져 양쪽 다 오류로 끝나도 "성공 0건"이 되어
      * 거짓 통과가 난다.
      *
-     * <p>{@code BusinessException} 전체를 삼키는 것도 넓다. {@code SOLD_OUT}이나
-     * {@code QUEUE_NOT_ADMITTED}로 실패해도 통과해 버린다. "실패했다"가 아니라
+     * BusinessException 전체를 삼키는 것도 넓다. SOLD_OUT이나
+     * QUEUE_NOT_ADMITTED로 실패해도 통과해 버린다. "실패했다" 대신
      * "이 이유로 실패했다"를 단언해야 나중에 실패 사유가 바뀌었을 때 드러난다.
      */
     private AtomicInteger concurrent(int threads, IndexedOp op) throws Exception {

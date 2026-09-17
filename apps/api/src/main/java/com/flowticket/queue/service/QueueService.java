@@ -118,14 +118,14 @@ public class QueueService {
     /**
      * 판매 중인 공연인지 확인한다. 대기열 진입의 첫 관문이다.
      *
-     * <p>이 검사가 없으면 API를 직접 쳐서 DRAFT·PAUSED·CLOSED 공연이나 존재하지 않는 eventId로도
+     * 이 검사가 없으면 API를 직접 쳐서 DRAFT·PAUSED·CLOSED 공연이나 존재하지 않는 eventId로도
      * 토큰을 받고, 좌석 선점·주문·결제까지 이어갈 수 있다.
      *
-     * <p>존재 검사가 특히 중요하다. {@code ISSUE_LUA}가 {@code SADD queue:active-events}를 하고
+     * 존재 검사가 특히 중요하다. ISSUE_LUA가 SADD queue:active-events를 하고
      * 승격 워커가 그 집합을 1.5초마다 순회하므로, 임의의 id로 발급을 반복하면 Redis 키와
      * 순회 대상이 무한히 쌓인다.
      *
-     * <p>진입 경로에 DB 조회가 하나 늘어난다. PK 단건이라 싸지만 공짜는 아니다.
+     * 진입 경로에 DB 조회가 하나 늘어난다. PK 단건이라 싸지만 공짜는 아니다.
      * 스파이크(정원의 30배 도착)에서는 그만큼의 조회가 더 발생한다. 측정하지 않았다.
      */
     private void requireBookable(Long eventId) {

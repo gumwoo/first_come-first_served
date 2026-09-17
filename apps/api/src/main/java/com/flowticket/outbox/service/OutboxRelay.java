@@ -25,7 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
  * PUBLISHED로 마킹한다(publish-then-mark). 크래시로 마킹 전에 죽으면 다음 틱에 재발행되므로
  * at-least-once이고 유실이 0이다. 중복은 소비자 멱등(eventId)이 흡수한다.
  *
- * <p>CDC(Debezium) 대신 폴링을 쓴다: 정합성 보장은 동일하고 새 인프라가 0이라 이 규모에 맞는다.
+ * CDC(Debezium) 대신 폴링을 쓴다: 정합성 보장은 동일하고 새 인프라가 0이라 이 규모에 맞는다.
  * 멀티 Pod에서는 ShedLock으로 한 인스턴스만 돌아 발행 순서·중복을 통제한다.
  */
 @Slf4j
@@ -55,7 +55,7 @@ public class OutboxRelay {
     /**
      * 미발행분을 배치로 발행. 실패를 두 종류로 나눈다(TS-032).
      *
-     * <p>일시적 실패(브로커 다운 등)는 PENDING을 유지하고 남은 배치를 중단한다.
+     * 일시적 실패(브로커 다운 등)는 PENDING을 유지하고 남은 배치를 중단한다.
      * 결정적 실패(payload 역직렬화 불가)는 그 행만 DEAD로 격리하고, 같은 aggregate의 후속은 보류한다.
      * 시도 횟수만으로는 DEAD로 보내지 않는다.
      */

@@ -31,7 +31,7 @@ class SchedulerLockIntegrationTest extends IntegrationTestSupport {
         Optional<SimpleLock> first = lockProvider.lock(cfg);
         assertThat(first).isPresent();                       // 첫 Pod 획득
 
-        // 다른 Pod가 같은 틱에 잡으려 하면(락 보유 중) 실패 → 중복 실행 안 됨
+        // 다른 Pod가 같은 틱에 잡으려 하면(락 보유 중) 실패해 중복 실행되지 않는다
         assertThat(lockProvider.lock(cfg)).isEmpty();
 
         first.get().unlock();                                // 실행 종료 → 해제(lockAtLeastFor=0)

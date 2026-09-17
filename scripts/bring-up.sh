@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 클러스터 기동: terraform apply 이후의 모든 절차를 한 번에.
 #
-# 왜 스크립트인가: 문서의 명령어 목록으로는 helm 인자(IRSA ARN·VPC ID)를 손으로 채워야 하고,
-# 단계 누락(예: ArgoCD 설치)이나 순서 의존(네임스페이스가 ESO보다 먼저)을 사람 기억에 맡기게 된다.
+# 문서의 명령어 목록으로는 helm 인자(IRSA ARN·VPC ID)를 손으로 채워야 하고, 단계 누락(예: ArgoCD 설치)이나
+# 순서 의존(네임스페이스가 ESO보다 먼저)을 사람 기억에 맡기게 되어 절차를 스크립트로 고정한다.
 #
 # terraform apply는 일부러 포함하지 않는다. 비용이 발생하고 되돌리기 어려운 유일한
 # 단계라 의식적인 행위로 남긴다(ADR-012 비용 통제). state가 비어 있으면 여기서 멈춘다.
@@ -121,7 +121,7 @@ helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
   --set autoDiscovery.clusterName="$CLUSTER" \
   --set-string "rbac.serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$CA_ROLE" \
   --wait --timeout 6m >/dev/null
-# 여기서 경고가 아니라 실패시킨다. CA는 선택이 아니라 기본 구성이다.
+# 여기서 경고 대신 실패시킨다. CA는 기본 구성이다.
 # 경고만 하면 exit 0인데 노드 오토스케일링이 죽어 있는 클러스터가 만들어지고, 그 상태로
 # 다른 측정을 먼저 하면 조건이 오염된다(TS-034).
 CA_POD="$(kubectl -n kube-system get pod -l app.kubernetes.io/name=aws-cluster-autoscaler \
@@ -222,10 +222,8 @@ for i in $(seq 1 20); do
   sleep 15
 done
 echo "    https://$DOMAIN → $CODE"
-# 여기서 반드시 실패시켜야 한다. 이 스크립트가 주장하는 것은 "기동 절차"가 아니라
-# "기동 절차 + 확인"이고, 종료 코드 0은 그 확인까지 통과했다는 뜻이어야 한다.
-# 그러지 않으면 --no-seed 경로에서 5분 내내 502가 나도 0으로 끝난다(뒤에 시딩이 없으므로
-# 아무도 눈치채지 못한다).
+# 여기서 실패시킨다. 종료 코드 0은 기동 후 확인까지 통과했다는 뜻이어야 한다.
+# 그러지 않으면 --no-seed 경로에서 502가 계속 나도 0으로 끝난다(뒤에 시딩이 없어 드러나지 않는다).
 if [ "$CODE" != "200" ]; then
   echo "기동 확인 실패: https://$DOMAIN → HTTP $CODE (5분 대기 후에도 200이 아니다)" >&2
   echo "  확인할 것: kubectl get pods -n flowticket / ALB 타깃 헬스 / Route53 전파" >&2

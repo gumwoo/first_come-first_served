@@ -86,7 +86,7 @@ public class EventService {
     /**
      * 상세 조회. DB만 읽는다. 외부 호출이 없다.
      *
-     * <p>KOPIS 상세는 동기화 배치가 미리 채운다({@link com.flowticket.event.kopis.KopisDetailSyncer}).
+     * KOPIS 상세는 동기화 배치가 미리 채운다(com.flowticket.event.kopis.KopisDetailSyncer).
      * 요청마다 부르면 외부 호출량이 트래픽에 비례하고 응답시간이 외부 지연에 묶인다.
      * 아직 못 받은 공연은 해당 필드가 null이다.
      */

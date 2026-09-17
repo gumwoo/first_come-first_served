@@ -114,15 +114,13 @@ public class Event {
     /**
      * KOPIS 목록 동기화가 갱신하는 메타. 목록 응답에 있는 필드만 다룬다.
      *
-     * <p>{@code runningTime}·{@code ageLimit}은 여기서 건드리지 않는다. 그 둘은 KOPIS
+     * runningTime·ageLimit은 여기서 건드리지 않는다. 그 둘은 KOPIS
      * 상세 응답에만 있어, 여기서 덮어쓰면 상세 동기화가 채운 값을 목록 동기화가 지운다
-     * ({@code detailSyncedAt}은 그대로라 갱신 주기가 지나기 전까지 다시 채워지지도 않는다).
+     * (detailSyncedAt은 그대로라 갱신 주기가 지나기 전까지 다시 채워지지도 않는다).
      *
-     * <p>그래서 목록/상세의 필드 책임을 분리한다.
-     * <pre>
+     * 그래서 목록/상세의 필드 책임을 분리한다.
      *   목록 → title · venue · region · genre · posterUrl · 기간 · status
      *   상세 → runningTime · ageLimit · priceText · castInfo · synopsis · scheduleText
-     * </pre>
      */
     public void updateFromSync(String title, String venue, String region, String genre,
                                String posterUrl, LocalDate startDate, LocalDate endDate,
@@ -141,11 +139,11 @@ public class Event {
     }
 
     /**
-     * KOPIS 상세 동기화 결과 반영. 목록에도 있는 {@code runningTime}·{@code ageLimit}은
+     * KOPIS 상세 동기화 결과 반영. 목록에도 있는 runningTime·ageLimit은
      * 상세 쪽이 더 정확할 때만(비어 있지 않을 때만) 덮어쓴다. 상세 응답에 해당 필드가 없다고
      * 목록에서 받아둔 값을 지우면 안 된다.
      *
-     * <p>{@code detailSyncedAt}을 항상 갱신하는 것이 중요하다. 이 값이 NULL인 건만 다음 동기화
+     * detailSyncedAt을 항상 갱신하는 것이 중요하다. 이 값이 NULL인 건만 다음 동기화
      * 대상이 되므로, 갱신하지 않으면 매번 같은 공연을 다시 호출한다.
      */
     public void updateDetail(String runningTime, String ageLimit, String priceText,

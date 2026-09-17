@@ -52,7 +52,7 @@ export default function QueuePage() {
   }
 
   if (phase === "admitted") {
-    // "입장 완료" 화면을 그리지 않고 중립 로딩만 표시 → 좌석 선택으로 자동 이동 시 깜빡임 없음.
+    // "입장 완료" 화면을 그리지 않고 중립 로딩만 표시해 좌석 선택으로 자동 이동 시 깜빡임 없음.
     return <main className="mx-auto max-w-5xl p-10 text-center text-muted-foreground">좌석 선택 화면으로 이동 중…</main>;
   }
 

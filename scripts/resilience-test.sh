@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 # 장애 주입 실증: 브로커 강제 종료(IMP-016) / 노드 드레인(IMP-017)을 부하 중에 재현한다.
 #
-# 왜 다시 재는가: 두 측정 모두 Cluster Autoscaler가 없는 상태에서 잰 값이다.
-# CA를 도입하면 scale-down이 상태 저장 워크로드를 옮길 수 있어(ADR-012 §한계,
-# terraform-design "CA와 상태 저장 워크로드") 전제가 바뀐다. 그래서 CA 도입과
-# 재측정은 한 묶음이다. 도입만 하고 재지 않으면 기존 수치가 낡는다.
-#
-# 왜 스크립트인가: 손으로 돌린 측정은 같은 조건으로 재현할 수 없다(TS-035).
-# 절차를 코드로 고정한다.
+# 두 측정은 Cluster Autoscaler가 없는 상태에서 잰 값이다. CA의 scale-down은 상태 저장 워크로드를
+# 옮길 수 있어(ADR-012 §한계) 전제가 바뀌므로 CA 도입 후 다시 잰다. 같은 조건으로 재현하도록
+# 절차를 스크립트로 둔다(TS-035).
 #
 # 사용:
 #   bash scripts/resilience-test.sh --scenario failover   # 브로커 1대 강제 종료
@@ -15,8 +11,7 @@
 #   bash scripts/resilience-test.sh --scenario drain --rate 25 --duration 4m
 #   bash scripts/resilience-test.sh --scenario drain --expect-no-ca   # CA 없는 기준선
 #
-# 종료 코드: 부하 중 5xx가 1건이라도 나면 non-zero. "실험을 돌렸다"가 아니라
-# "장애 중에도 요청이 떨어지지 않았다"가 이 스크립트의 주장이다.
+# 종료 코드: 부하 중 5xx가 1건이라도 나면 non-zero.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,7 +35,7 @@ while [ $# -gt 0 ]; do
     --warmup)   WARMUP="$2"; shift 2;;
     # CA 없는 기준선을 일부러 잴 때만. 기본은 CA가 없으면 중단한다.
     --expect-no-ca) EXPECT_NO_CA=1; shift;;
-    -h|--help)  sed -n '2,20p' "$0"; exit 0;;
+    -h|--help)  sed -n '2,14p' "$0"; exit 0;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2;;
   esac
 done
@@ -80,10 +75,9 @@ DOMAIN="$(kubectl -n "$NS" get ingress flowticket -o jsonpath='{.spec.rules[0].h
 CODE="$(http_code "https://$DOMAIN")"
 [ "$CODE" = "200" ] || { echo "측정 전 상태가 정상이 아니다: https://$DOMAIN → $CODE" >&2; exit 1; }
 
-# CA 유무는 이 측정의 조건 그 자체다. 기록만 하고 통과시키면, CA 없이 돌린 결과가
-# "CA 도입 후 재측정"으로 잘못 채택된다. 그건 IMP-016·017을 한 번 더 잰 것일 뿐이다.
-# 그래서 어느 조건을 재는지 반드시 선언하게 하고, 실제와 다르면 중단한다.
-# 기본은 "CA 있음"이고, CA 없는 기준선을 일부러 잴 때만 --expect-no-ca 를 준다.
+# CA 유무는 이 측정의 조건이다. CA 없이 돌린 결과가 "CA 도입 후 재측정"으로 잘못 쓰이지 않도록
+# 어느 조건을 재는지 선언하게 하고, 실제와 다르면 중단한다.
+# 기본은 "CA 있음"이고, CA 없는 기준선을 잴 때만 --expect-no-ca 를 준다.
 CA_AVAIL="$(kubectl -n kube-system get deploy -l app.kubernetes.io/name=aws-cluster-autoscaler \
   -o jsonpath='{.items[0].status.availableReplicas}' 2>/dev/null || true)"
 if [ "${CA_AVAIL:-0}" -gt 0 ] 2>/dev/null; then CA_ON="있음"; else CA_ON="없음"; fi
@@ -211,7 +205,7 @@ fi
 # ── 4. 회복 관찰 ────────────────────────────────────────────────────
 say "4/6 회복 관찰"
 if [ "$SCENARIO" = "failover" ]; then
-  # ISR이 줄었다가 돌아오는지가 핵심이다. 쓰기가 지속되는지는 5xx로 본다.
+  # ISR이 줄었다가 돌아오는지 보고, 쓰기가 지속되는지는 5xx로 본다.
   for i in $(seq 1 30); do
     R="$(kubectl -n "$KNS" get pods -l "$BSEL" --no-headers 2>/dev/null | awk '$2=="1/1"' | wc -l | tr -d ' ')"
     printf "    +%-4s 준비된 브로커 %s\n" "$((i*10))s" "$R"

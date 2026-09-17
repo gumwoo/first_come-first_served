@@ -89,7 +89,7 @@ jobs:
       - uses: actions/checkout@v4
       # gradle-wrapper.jar는 저장소에 커밋되는 바이너리다. 리뷰어가 내용을 읽고 검증할 수
       # 없으므로, Gradle이 공식 배포한 jar의 체크섬과 대조해 CI가 대신 판정한다.
-      # (바꿔치기된 wrapper jar는 실제로 알려진 공급망 공격 경로다.)
+      # (바꿔치기된 wrapper jar는 알려진 공급망 공격 경로다.)
       - uses: gradle/actions/wrapper-validation@v4
       - uses: actions/setup-node@v4
         with:
@@ -106,12 +106,12 @@ jobs:
         run: npm ci
       - name: backend harness check
         run: node harness/backend/check.mjs
-      # 알림 규칙 검증. 규칙을 썼다가 아니라 규칙이 실제로 발화한다를 확인한다.
+      # 알림 규칙 검증. 규칙이 실제로 발화하는지 확인한다.
       # promtool은 PrometheusRule(CR)을 모르므로 규칙 본문만 떼어 평문 규칙 파일로 변환한 뒤 넣는다.
-      # 러너에 Docker가 있으므로 promtool을 따로 설치하지 않는다(버전 고정 = 결정론).
+      # 러너에 Docker가 있으므로 promtool을 따로 설치하지 않는다(버전 고정).
       # 이미지 ENTRYPOINT는 prometheus라 --entrypoint로 promtool을 직접 지목해야 한다.
       #
-      # 규칙만 검증하면 절반이다. 라우트를 잘못 쓰면 알림이 엉뚱한 리시버로 가거나 아무 데도
+      # 라우팅도 함께 검증한다. 라우트를 잘못 쓰면 알림이 엉뚱한 리시버로 가거나 아무 데도
       # 안 간다. amtool은 webhook 없이 라우팅을 판정하므로 비밀 없이 CI에서 돌릴 수 있다.
       - name: alert rules + routing (promtool / amtool)
         run: |

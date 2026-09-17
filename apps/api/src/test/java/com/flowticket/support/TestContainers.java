@@ -9,16 +9,11 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * 비-Kafka 통합테스트가 공유하는 컨테이너(싱글톤).
  *
- * <p>{@code @Container}는 클래스 단위 수명이라 클래스마다 컨테이너 세트가 뜨고 내려간다.
- * 여기서는 {@code @Container} 없이 static 초기화로 직접 기동해 JVM 수명 동안 공유한다
- * (정리는 Testcontainers Ryuk이 담당). Kafka 테스트는 각자 띄운다. 아래 문단 참고.
+ * @Container는 클래스마다 컨테이너를 띄우고 내리므로, static 초기화로 기동해 JVM 수명 동안 공유한다
+ * (정리는 Testcontainers Ryuk). 데이터 격리는 테스트별 초기화로 지킨다.
  *
- * <p>데이터 격리는 컨테이너 재기동이 아니라 테스트별 초기화로 지킨다.
- * "컨테이너 수명은 길게, 데이터 상태는 매번 초기화".
- *
- * <p>Kafka 테스트는 공유 대상이 아니다. 토픽·컨슈머 그룹·오프셋이 얽혀(다른 클래스가 남긴
- * 메시지를 새 그룹이 earliest부터 다시 소비) 실패 원인이 불투명해진다. 수가 적어 각자 브로커를
- * 띄우는 편이 명확하다.
+ * Kafka 테스트는 공유하지 않는다. 다른 클래스가 남긴 메시지를 새 컨슈머 그룹이 earliest부터 다시
+ * 소비해 실패 원인이 불투명해지므로, 각자 브로커를 띄운다.
  */
 public final class TestContainers {
 
@@ -68,9 +63,9 @@ public final class TestContainers {
     /**
      * 모든 테스트 앞에서 상태를 비운다. 컨테이너를 공유하는 대신 데이터는 매번 초기화한다.
      *
-     * <p>테이블별 {@code deleteAll()}로는 부족했다: JPA가 삭제를 지연 플러시하면서 다른 테스트가 남긴
+     * 테이블별 deleteAll()로는 부족했다: JPA가 삭제를 지연 플러시하면서 다른 테스트가 남긴
      * 자식 행(seats·orders 등) 때문에 FK 위반이 뒤늦게 터졌다. 의존 순서를 신경 쓰지 않도록
-     * {@code TRUNCATE ... CASCADE}로 한 번에 비운다.
+     * TRUNCATE ... CASCADE로 한 번에 비운다.
      * 단 마이그레이션이 시드하는 테이블(alert_settings)은 지우면 기본값이 사라지므로 제외한다.
      */
     public static void reset(javax.sql.DataSource dataSource,
@@ -88,7 +83,7 @@ public final class TestContainers {
      * 기본값(lock_timeout=0)에서는 무기한 대기라 다음 클래스가 멈추고, 진짜 원인과
      * 무관한 테스트가 실패한 것처럼 보인다. 그래서 시간을 끊고 그 순간의 세션 목록을 박제한다.
      *
-     * <p>상대 세션이 "waits"면 데드락(살아 있는 DML, 예: 스케줄러 스윕)이고, idle in transaction이면
+     * 상대 세션이 "waits"면 데드락(살아 있는 DML, 예: 스케줄러 스윕)이고, idle in transaction이면
      * 누수된 트랜잭션이다. 스냅샷은 실패한 뒤에 찍히므로 락을 쥐던 세션이 그 사이 정리됐을 수 있다.
      */
     private static void truncateAll(javax.sql.DataSource dataSource) {

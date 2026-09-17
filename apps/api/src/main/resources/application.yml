@@ -11,14 +11,12 @@ spring:
     username: ${DB_USERNAME:flowticket}
     password: ${DB_PASSWORD:flowticket}
     hikari:
-      # 이 값은 혼자 정할 수 없다. HPA 최대 파드 수와 곱해져 DB 한도와 겨룬다.
+      # HPA 최대 파드 수와 곱해서 DB 한도 안에 들어와야 한다.
       #
       #   maxReplicas × maximum-pool-size + 앱 외 세션 + 여유 ≤ max_connections − reserved
       #
-      # 두 값이 각자 합리적이어도 곱이 한도를 넘으면 확장된 파드가 기동에 실패한다(TS-021).
-      #
-      # 실측상 부하 중 pending은 0, active도 파드당 0~1이라 이 워크로드는 풀을 거의 쓰지 않는다.
-      # 하네스 backend 규칙 17이 이 곱을 검사한다.
+      # 곱이 한도를 넘으면 확장된 파드가 기동에 실패한다(TS-021). 하네스 backend 규칙 17이 검사한다.
+      # 부하 중 pending 0, active 파드당 0~1로 이 워크로드는 풀을 거의 쓰지 않는다.
       maximum-pool-size: ${DB_POOL_MAX:5}
   jpa:
     hibernate:
@@ -161,17 +159,10 @@ management:
 # KOPIS OPEN API 이용 제한 (공식)
 #   - 목록 조회 날짜 범위: 요청당 최대 31일
 #   - 페이지당 조회 건수: 최대 100건
-#   - IP 제한: 1초당 10회 초과 시 서비스가 중지된다
+#   - IP 제한: 1초당 10회 초과 시 서비스 중지(429가 아니라 차단이라 시딩도 못 한다)
 #
-# 마지막 항목이 특히 중요하다. 429가 아니라 차단이고, 막히면 시딩 자체를 못 한다.
-#
-# 그래서 두 가지를 함께 둔다.
-#   1) 사용자 요청 경로에서는 KOPIS를 호출하지 않는다. 제한이 아니라 제거다.
-#      (요청 스레드를 재우면 외부 지연이 API 전체를 멎게 한다)
-#      상세는 동기화 배치가 미리 받아 events 테이블에 저장한다.
-#   2) 남은 호출자(동기화)는 rate-limit-per-second로 간격을 둔다(아래).
-#
-# 둘이 함께여야 IP 총량이 통제된다(IMP-018).
+# 사용자 요청 경로에서는 KOPIS를 호출하지 않고(상세는 동기화 배치가 events에 저장),
+# 동기화는 rate-limit-per-second로 간격을 둔다(아래). 둘이 함께여야 IP 총량이 지켜진다(IMP-018).
 kopis:
   base-url: http://www.kopis.or.kr/openApi/restful
   service-key: ${KOPIS_SERVICE_KEY:}

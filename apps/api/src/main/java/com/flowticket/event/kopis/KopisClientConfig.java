@@ -12,7 +12,7 @@ import org.springframework.web.client.RestClient;
 /**
  * KOPIS 호출용 RestClient 두 개. 타임아웃을 반드시 건다.
  *
- * <p>이 이미지의 RestClient는 JDK HttpClient로 떨어져 타임아웃 기본값이 없다. 응답 없는 KOPIS가
+ * 이 이미지의 RestClient는 JDK HttpClient로 떨어져 타임아웃 기본값이 없다. 응답 없는 KOPIS가
  * 톰캣 스레드를 묶어도 readiness는 UP이라 K8s가 빼주지 않는다(TS-028).
  * detail은 사용자가 기다리므로 짧게, sync는 배치라 넉넉히 준다.
  */

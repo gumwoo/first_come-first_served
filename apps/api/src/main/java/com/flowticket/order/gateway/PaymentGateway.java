@@ -30,7 +30,7 @@ public interface PaymentGateway {
     /**
      * 주문 기준 승인 조회(정산, ADR-011). 우리 DB에 흔적이 없어도 PG에 승인이 남아 있는지 확인한다.
      * "승인 직후 크래시로 트랜잭션이 롤백된" 미아 승인을 찾는 유일한 경로. 조회 실패는 예외가 아니라
-     * {@link Inquiry#none()}으로 보수적 처리(없는 걸 있다고 하지 않는다).
+     * Inquiry.none()으로 보수적 처리(없는 걸 있다고 하지 않는다).
      */
     Inquiry inquire(Long orderId);
 

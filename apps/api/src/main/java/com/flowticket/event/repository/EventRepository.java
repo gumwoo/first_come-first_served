@@ -45,7 +45,7 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
 
     /**
      * 상세를 한 번도 못 받은 공연 수("초기 수집이 끝났는가"). 순환 갱신 대상과 달리 NULL만 센다.
-     * {@code runningTime} 같은 개별 필드로 대신 세면 틀린다(TS-033).
+     * runningTime 같은 개별 필드로 대신 세면 틀린다(TS-033).
      */
     long countByKopisIdIsNotNullAndDetailSyncedAtIsNull();
 

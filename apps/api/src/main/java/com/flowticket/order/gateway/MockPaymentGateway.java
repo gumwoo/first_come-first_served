@@ -22,7 +22,7 @@ public class MockPaymentGateway implements PaymentGateway {
 
     @Override
     public VbankIssue issueVbank(Long orderId, int amount) {
-        // secret은 발급 때 저장 → 입금 웹훅 검증에 사용. 결정론(테스트가 대조 가능).
+        // secret은 발급 때 저장해 입금 웹훅 검증에 쓴다. 결정론(테스트가 대조 가능).
         return new VbankIssue("MOCK-VBANK-" + orderId, "MOCK-SECRET-" + orderId);
     }
 

@@ -38,7 +38,7 @@ class QueueIntegrationTest extends IntegrationTestSupport {
 
     /**
      * 발급 전 판매상태 게이트가 있으므로 실재하는 ON_SALE 이벤트가 필요하다.
-     * (게이트 자체의 회귀는 {@link QueueSaleStateIntegrationTest}가 본다)
+     * (게이트 자체의 회귀는 QueueSaleStateIntegrationTest가 본다)
      */
     private Long EVENT;
 

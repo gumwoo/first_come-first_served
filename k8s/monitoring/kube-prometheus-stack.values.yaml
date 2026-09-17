@@ -104,14 +104,14 @@ prometheus:
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
     # PrometheusRule도 같은 이유로 넓힌다. 규칙 파일에 release 라벨을 달아 두었지만,
-    # helm release 이름을 다르게 설치하면 셀렉터가 어긋나 규칙이 로드되지 않는다
-    # 실패가 오류가 아니라 "알림이 안 옴"으로 나타나 알아채기 어렵다.
+    # helm release 이름을 다르게 설치하면 셀렉터가 어긋나 규칙이 로드되지 않고,
+    # 오류가 아니라 "알림이 안 옴"으로만 나타난다.
     ruleSelectorNilUsesHelmValues: false
     # k6가 부하 결과를 직접 밀어 넣을 수 있게 remote write 수신을 연다.
     #   k6 run -o experimental-prometheus-rw ...
     #
-    # 왜 필요한가: 부하 시험에서 클라이언트 지표와 서버 지표를 같은 시간축에서 봐야 한다.
-    # k6 p95와 앱 히스토그램이 크게 다를 때 병목이 앱 앞단(web·ALB)인지 바로 가를 수 있다.
+    # 부하 시험에서 클라이언트 지표와 서버 지표를 같은 시간축에서 본다. k6 p95와 앱 히스토그램이
+    # 크게 다를 때 병목이 앱 앞단(web·ALB)인지 가를 수 있다.
     #
     # 이걸 켜면 k6의 RPS·p95·실패율이 파드 CPU·HPA 파드 수·DB 커넥션과 한 대시보드에 뜬다.
     enableRemoteWriteReceiver: true

@@ -46,8 +46,8 @@ public class AuthService {
     /**
      * 회원가입. 이메일·휴대폰 중복은 동시 가입이어도 409로 돌려준다.
      *
-     * <p>사전 검사를 통과한 동시 요청은 UNIQUE 위반으로 끝나고, 어느 제약인지는 다시 조회해 가른다.
-     * {@code NOT_SUPPORTED}여야 캐치가 트랜잭션 밖에 있다(domain/auth.md §1, TS-014).
+     * 사전 검사를 통과한 동시 요청은 UNIQUE 위반으로 끝나고, 어느 제약인지는 다시 조회해 가른다.
+     * NOT_SUPPORTED여야 캐치가 트랜잭션 밖에 있다(domain/auth.md §1, TS-014).
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void signup(SignupRequest req) {

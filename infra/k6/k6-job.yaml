@@ -1,8 +1,7 @@
 # 클러스터 안에서 k6를 돌리는 Job.
 #
-# 왜 안에서 도는가: 로컬에서 https://flow-ticket.com으로 쏘면 인터넷 RTT와 TLS 핸드셰이크가
-# 측정값에 섞이고, 집 회선이 먼저 포화되면 서버가 아니라 내 네트워크를 측정하게 된다.
-# 클러스터 안에서 Service(http://flowticket-api)로 직접 쏘면 그 변수가 사라진다.
+# 로컬에서 공인 도메인으로 쏘면 인터넷 RTT·TLS 핸드셰이크와 집 회선 포화가 측정값에 섞인다.
+# 클러스터 안에서 Service(http://flowticket-api)로 직접 쏴 그 변수를 없앤다.
 #
 # 사용법:
 #   kubectl create configmap k6-scripts -n flowticket \

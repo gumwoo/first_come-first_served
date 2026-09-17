@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # RDS 강제 페일오버 중 앱의 거동을 측정한다.
 #
-# 왜 필요한가: ADR-012 §10이 Multi-AZ를 A(실증) 범주에 넣었다. "켜 두기만 하는 것이
-# 아니라 눌러 보고 앱의 거동을 측정한다". terraform-design도 관찰 항목을 표로 지정해 두었다.
+# ADR-012 §10은 Multi-AZ를 켜 두기만 하지 않고 실제로 눌러 앱의 거동을 재는 항목으로 둔다.
+# 관찰 항목은 terraform-design의 표를 따른다.
 #
 # 측정 대상은 "AWS가 페일오버에 성공했는가"가 아니다. 그건 AWS가 보장한다.
 # 재는 것은 앱이 그 구간을 어떻게 통과하는가다(terraform-design의 관찰 표).
@@ -34,7 +34,7 @@ while [ $# -gt 0 ]; do
     --rate)     RATE="$2"; shift 2;;
     --duration) DURATION="$2"; shift 2;;
     --warmup)   WARMUP="$2"; shift 2;;
-    -h|--help)  sed -n '2,22p' "$0"; exit 0;;
+    -h|--help)  sed -n '2,18p' "$0"; exit 0;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2;;
   esac
 done

@@ -133,7 +133,7 @@ export default function EventDetailPage() {
   );
 }
 
-/** priceText는 자유텍스트(무료/미정/등급표기 등)라 신뢰 불가 → 참고용 문구로만, 무의미하면 숨김. */
+/** priceText는 자유텍스트(무료/미정/등급표기 등)라 신뢰할 수 없어 참고용 문구로만 쓰고, 무의미하면 숨김. */
 function showOriginalPrice(priceText: string | null | undefined): priceText is string {
   if (!priceText) return false;
   const t = priceText.trim();

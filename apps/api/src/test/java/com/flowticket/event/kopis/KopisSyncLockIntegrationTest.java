@@ -20,8 +20,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 
 /**
- * KOPIS 동기화 락이 수동 경로까지 막는지 검증. 예전엔 {@code @SchedulerLock}이 스케줄 메서드에만
- * 붙어 있어 수동 API가 호출하는 {@code sync()}는 락을 우회했고, 자동/수동 동기화가 겹칠 수 있었다.
+ * KOPIS 동기화 락이 수동 경로까지 막는지 검증. 예전엔 @SchedulerLock이 스케줄 메서드에만
+ * 붙어 있어 수동 API가 호출하는 sync()는 락을 우회했고, 자동/수동 동기화가 겹칠 수 있었다.
  * 이제 락이 공통 진입점에 있으므로 락이 이미 잡혀 있으면 호출 자체가 건너뛰어진다(null 반환).
  */
 @SpringBootTest
@@ -52,7 +52,7 @@ class KopisSyncLockIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 락이_비어있으면_수동_동기화가_실행된다() {
-        // 선점 없음 → 본문 실행(외부 호출은 목이라 0건). null이 아니어야 한다.
+        // 선점이 없으면 본문을 실행한다(외부 호출은 목이라 0건). null이 아니어야 한다.
         Integer result = kopisSyncService.sync();
 
         assertThat(result).as("락을 잡을 수 있으면 실행되고 건수를 반환한다").isNotNull();

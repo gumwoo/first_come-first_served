@@ -39,9 +39,8 @@ data "aws_iam_policy_document" "github_assume" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # 여기가 이 스택에서 가장 조심할 곳이다. sub를 좁히면 안전해지지만,
-    # 실제 워크플로의 ref와 어긋나면 Image 파이프라인이 인증에 실패한다.
-    # 콘솔에 설정된 실제 값과 다르면 import 후 plan에 diff로 뜨므로 반드시 확인한다.
+    # sub를 좁히면 안전해지지만, 실제 워크플로의 ref와 어긋나면 Image 파이프라인이 인증에 실패한다.
+    # 콘솔에 설정된 값과 다르면 import 후 plan에 diff로 뜨므로 반드시 확인한다.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"

@@ -5,10 +5,8 @@
 # 검증하지 못한 것: 이미지 태그 변경 + web·api 동시 롤링 → 168건 중 502 1건.
 # 이 스크립트는 후자를 §3과 같은 부하(25 rps)에서, 표본을 키워 재현한다.
 #
-# 왜 스크립트인가: IMP-015의 측정은 손으로 돌렸다("병렬 6워커, 약 25 req/s"). 그래서
-#   1) 같은 조건으로 다시 돌릴 수 없고,
-#   2) 클러스터를 띄운 뒤에야 절차를 만들게 되어 비용이 붙는 시간에 실수가 난다(TS-034).
-# 절차를 코드로 고정해 두면 재현이 "다시 실행"이 된다.
+# IMP-015의 측정은 손으로 돌려 같은 조건으로 다시 돌릴 수 없었고, 클러스터를 띄운 뒤 절차를 만들면
+# 비용이 붙는 시간에 실수가 난다(TS-034). 그래서 절차를 스크립트로 고정한다.
 #
 # 사용:
 #   bash scripts/rolling-deploy-test.sh                 # 직전 ECR 이미지로 web+api 동시 롤링
@@ -16,8 +14,7 @@
 #   bash scripts/rolling-deploy-test.sh --scope web     # web 단독(IMP-015 §3 조건 재현)
 #   bash scripts/rolling-deploy-test.sh --rate 25 --duration 4m --warmup 45
 #
-# 종료 코드: 5xx가 1건이라도 있으면 non-zero. 이 스크립트가 주장하는 것은
-# "측정을 돌렸다"가 아니라 "무중단이었다"이고, 종료 코드가 그 판정이어야 한다.
+# 종료 코드: 5xx가 1건이라도 있으면 non-zero(무중단 여부 판정).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,7 +49,7 @@ while [ $# -gt 0 ]; do
     # 측정기가 못 본 것일 수 있다. 두 모델을 대조하기 위한 플래그다.
     --closed)   MODEL=closed; shift;;
     --vus)      VUS="$2"; shift 2;;
-    -h|--help)  sed -n '2,22p' "$0"; exit 0;;
+    -h|--help)  sed -n '2,17p' "$0"; exit 0;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2;;
   esac
 done
@@ -167,7 +164,7 @@ for t in $TARGETS; do
 done
 echo "    롤링 대상 태그=$TAG"
 
-# 정직하게 기록한다. 이 태그가 현재와 다른 다이제스트여야 이미지 pull이 실제로 일어난다.
+# 이 태그가 현재와 다른 다이제스트여야 이미지 pull이 실제로 일어난다.
 # 같은 내용에 다른 태그만 단 것이면 레이어가 캐시돼 pull이 즉시 끝나고, 우리가 의심하는
 # "pull 지연 → Ready 지연" 경로를 재현하지 못한다. 그 경우 결과는 조건 미달로 읽어야 한다.
 #
@@ -281,8 +278,8 @@ for t in $TARGETS; do
 done
 T1="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# rollout status가 빨리 끝났다고 롤링이 없었다고 볼 수 없다. IMP-015 §4에서 6초 만에
-# 끝나 의심했고, ReplicaSet 이력으로 실제 교체를 확인했다. 그 확인을 자동화한다.
+# rollout status가 빨리 끝났다고 롤링이 없었다고 볼 수 없다. ReplicaSet 이력으로 실제 교체를 확인한다
+# (IMP-015 §4).
 {
   echo "# ReplicaSet 이력: 교체가 실제로 일어났는지"
   for t in $TARGETS; do
@@ -346,7 +343,6 @@ if [ "$BAD" -gt 0 ]; then
 fi
 
 echo "결과: 무중단: $TOTAL건 전량 2xx."
-# IMP-015 §8의 판정 기준을 여기서도 되풀이한다. 결과를 부풀리는 것은 보통
-# 문서가 아니라 "성공했다"는 한 줄에서 시작한다.
+# IMP-015 §8의 판정 기준을 결과 출력에도 함께 남긴다(1회 측정이라는 조건을 빠뜨리지 않기 위해).
 echo "  주의: 이것은 이 조건(scope=$SCOPE, $RATE rps, →$TAG, $DIGEST_NOTE) 한 번의 결과다."
 echo "     IMP-015 §8의 판정 기준대로, 0건이 나왔다고 502의 원인이 규명된 것은 아니다."

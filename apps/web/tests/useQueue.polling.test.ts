@@ -2,7 +2,7 @@ import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeEventSource, installFakeEventSource } from "./fakeEventSource";
 
-// api 모듈을 대역으로 바꾼다. 이 테스트가 보는 것은 네트워크가 아니라 언제 부르는가다.
+// api 모듈을 대역으로 바꾼다. 이 테스트는 호출 시점만 본다.
 const getQueueStatus = vi.fn();
 vi.mock("@/features/queue/api/queue", () => ({
   issueQueueToken: vi.fn(async () => ({ token: "tok-1", status: "WAITING", rank: 5, total: 10 })),
@@ -40,7 +40,7 @@ describe("useQueue 폴링", () => {
   /**
    * 토큰 발급 → EventSource 생성까지 진행시킨다.
    *
-   * <p>`vi.waitFor`가 아니라 `advanceTimersByTimeAsync(0)`을 쓰는 이유: waitFor는 폴링을
+   * `vi.waitFor`가 아니라 `advanceTimersByTimeAsync(0)`을 쓰는 이유: waitFor는 폴링을
    * 기다리느라 가짜 시간을 50ms 단위로 밀어 첫 폴링 간격이 1950ms로 관측된다.
    * 여기서 재려는 것은 주기이지 마운트 지연이 아니므로 시간을 소비하지 않고 마이크로태스크만 비운다.
    */

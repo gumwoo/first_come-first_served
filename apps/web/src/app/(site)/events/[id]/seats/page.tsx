@@ -64,7 +64,7 @@ export default function SeatSelectPage() {
     return () => clearTimeout(t);
   }, [remain, held, id, router]);
 
-  // 선점 만료 카운트다운(hold.expiresAt 기준). 0이면 선점 해제 → 만료 화면.
+  // 선점 만료 카운트다운(hold.expiresAt 기준). 0이면 선점을 해제하고 만료 화면으로.
   useEffect(() => {
     if (!held) return;
     const tick = () => {
@@ -159,7 +159,7 @@ export default function SeatSelectPage() {
     } catch {
       /* 이미 만료/해제됐을 수 있음: 무시하고 좌석 선택으로 복귀 */
     }
-    // 같은 경로라 router 이동으론 상태가 안 풀림 → 상태를 직접 초기화하고 최신 재고 반영.
+    // 같은 경로라 router 이동으론 상태가 안 풀려 직접 초기화하고 최신 재고 반영.
     setHeld(null);
     setSelected([]);
     setErrorMsg(null);

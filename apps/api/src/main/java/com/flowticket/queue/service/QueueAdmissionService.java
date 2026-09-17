@@ -46,7 +46,7 @@ public class QueueAdmissionService {
             return popped
             """;
 
-    // score<=now 만료분을 제거하고 카운트를 그만큼 감소 → 원자적. 반환 만료 토큰 목록
+    // score<=now 만료분을 제거하고 카운트를 그만큼 감소(원자적). 반환 만료 토큰 목록
     private static final String RECLAIM_LUA = """
             local expired = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
             local n = #expired

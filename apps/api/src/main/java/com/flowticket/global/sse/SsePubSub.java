@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
  * 들고 있는 Pod가 다르면 알림이 누락된다. 그래서 브로드캐스트를 Redis pub/sub 채널로 발행하고,
  * 모든 Pod가 구독해 각자 로컬 SSE로 전달한다(자기 자신 포함, 단일 전달 경로).
  *
- * <p>Kafka(내구성 이벤트 백본)를 대체하는 게 아니라 "Pod 간 마지막 홉 팬아웃" 단계다.
+ * Kafka(내구성 이벤트 백본)를 대체하지 않는다. Pod 간 마지막 홉 팬아웃만 맡는다.
  * best-effort(미저장) 성격이 "SSE는 보조·DB가 진실원(ADR-008)"과 일치.
  */
 @Slf4j
@@ -28,7 +28,7 @@ public class SsePubSub {
     /** 팬아웃 봉투: key=대상 식별자(eventId/orderId/token 문자열), event=SSE 이벤트명, data=페이로드. */
     public record Envelope(String key, String event, Object data) {}
 
-    /** 이벤트를 채널로 발행 → 구독 중인 모든 Pod가 로컬 전달. 발행 실패는 격리(SSE는 best-effort). */
+    /** 이벤트를 채널로 발행하면 구독 중인 모든 Pod가 로컬로 전달한다. 발행 실패는 격리(SSE는 best-effort). */
     public void publish(String channel, String key, String event, Object data) {
         try {
             redis.convertAndSend(channel, mapper.writeValueAsString(new Envelope(key, event, data)));

@@ -107,7 +107,7 @@ public class SeatService {
                 return objectMapper.readValue(hit, SeatMapResponse.class);
             }
         } catch (Exception e) {
-            log.warn("[seat] 좌석맵 캐시 읽기 실패 event={} — DB로 폴백: {}", eventId, e.getMessage());
+            log.warn("[seat] 좌석맵 캐시 읽기 실패 event={}: DB로 폴백: {}", eventId, e.getMessage());
         }
         SeatMapResponse fresh = self.getObject().loadSeatMap(eventId);
         try {

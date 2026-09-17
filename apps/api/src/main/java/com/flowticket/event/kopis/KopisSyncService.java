@@ -112,7 +112,7 @@ public class KopisSyncService {
     public void scheduledSync() {
         Integer n = self.getObject().sync();
         if (n == null) {
-            log.info("[kopis] 다른 인스턴스/수동 실행이 동기화 중 — 이번 스케줄은 건너뜀");
+            log.info("[kopis] 다른 인스턴스/수동 실행이 동기화 중: 이번 스케줄은 건너뜀");
             return;
         }
         log.info("[kopis] 스케줄 동기화 {}건", n);

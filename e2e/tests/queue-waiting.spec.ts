@@ -13,10 +13,7 @@ import { fillQueueCapacity, releaseQueueCapacity } from "../helpers/redis";
  * ADR-015 1)(onopen 재동기화)의 회귀 테스트가 이 위에 올라간다.
  * 그래서 여기서는 두 가지만 본다: 정원을 채우면 막히는가, 비우면 풀리는가.
  *
- * <p>뒷정리가 선택이 아니다. reclaim은 `queue:admitexp:<eventId>`에 있는 만료 토큰
- * 수만큼만 `DECRBY`하는데 여기서 얹은 몫은 대응하는 토큰이 없으므로 스스로 줄어들지
- * 않는다. 남기면 그 이벤트는 영구히 정원이 찬 상태가 되어 뒤따르는 E2E가 막힌다.
- * 그래서 모든 조작을 `try/finally`로 감싼다.
+ * <p>뒷정리가 필수라 모든 조작을 `try/finally`로 감싼다. 남기면 그 이벤트가 영구히 정원이 찬 상태가 된다.
  *
  * <p>fixture는 값을 덮어쓰지 않고 더했다 빼는 방식이다. 이유는 `helpers/redis.ts` 참고.
  */

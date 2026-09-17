@@ -96,7 +96,7 @@ describe("useQueue 폴링", () => {
     expect(marks.length).toBe(before + 1);
   });
 
-  it("끊긴 뒤에는 2초 간격을 유지한다 — 다시 붙기 전까지 폴링이 유일한 복구 경로다", async () => {
+  it("끊긴 뒤에는 2초 간격을 유지한다. 다시 붙기 전까지 폴링이 유일한 복구 경로다", async () => {
     const { es } = await mountAndOpen();
     for (const ms of [2_000, 4_000, 8_000, 15_000]) await advance(ms);
     es.dropTransient();

@@ -59,7 +59,7 @@ cleanup() {
   if [ -n "$CORDONED" ]; then
     kubectl uncordon "$CORDONED" >/dev/null 2>&1 \
       && echo "==> uncordon: $CORDONED" \
-      || { echo "!!! uncordon 실패 — kubectl uncordon $CORDONED" >&2; rc=1; }
+      || { echo "!!! uncordon 실패: kubectl uncordon $CORDONED" >&2; rc=1; }
   fi
   kubectl -n "$NS" delete job "$JOB" --ignore-not-found >/dev/null 2>&1 || true
   rm -rf "$WORK"
@@ -90,14 +90,14 @@ if [ "${CA_AVAIL:-0}" -gt 0 ] 2>/dev/null; then CA_ON="있음"; else CA_ON="없�
 
 if [ "$EXPECT_NO_CA" -eq 1 ]; then
   [ "$CA_ON" = "없음" ] || {
-    echo "--expect-no-ca 로 실행했는데 Cluster Autoscaler가 동작 중이다(available=$CA_AVAIL) — 중단한다." >&2
+    echo "--expect-no-ca 로 실행했는데 Cluster Autoscaler가 동작 중이다(available=$CA_AVAIL): 중단한다." >&2
     echo "  CA 없는 기준선을 재려는 것이라면 먼저 내려야 한다." >&2
     exit 1; }
-  echo "    ⚠️ CA 없는 기준선을 잰다(--expect-no-ca). 이 결과는 CA 도입 후의 근거가 아니다"
+  echo "    주의: CA 없는 기준선을 잰다(--expect-no-ca). 이 결과는 CA 도입 후의 근거가 아니다"
 else
   [ "$CA_ON" = "있음" ] || {
-    echo "Cluster Autoscaler가 동작하지 않는다 — 중단한다." >&2
-    echo "  이 스크립트의 목적은 **CA 도입 후** IMP-016·017 재측정이다. 지금 돌리면" >&2
+    echo "Cluster Autoscaler가 동작하지 않는다. 중단한다." >&2
+    echo "  이 스크립트의 목적은 CA 도입 후 IMP-016·017 재측정이다. 지금 돌리면" >&2
     echo "  기존 값을 한 번 더 재는 것이고, 결과가 'CA 도입 후 근거'로 잘못 채택된다." >&2
     echo "  확인: kubectl -n kube-system get deploy -l app.kubernetes.io/name=aws-cluster-autoscaler" >&2
     echo "  CA 없는 기준선을 일부러 재려면: --expect-no-ca" >&2
@@ -126,7 +126,7 @@ if [ "$SCENARIO" = "failover" ]; then
     echo "브로커가 ${BROKERS}개다. min.insync=2 환경에서 1대를 죽이는 실험은 3대 이상에서만 의미가 있다" >&2
     exit 1; }
   TARGET="$(kubectl -n "$KNS" get pods -l "$BSEL" -o jsonpath='{.items[0].metadata.name}')"
-  echo "    브로커 ${BROKERS}대 — 대상 $TARGET"
+  echo "    브로커 ${BROKERS}대: 대상 $TARGET"
 else
   # 파드가 가장 많은 노드를 고른다. 빈 노드를 드레인하면 아무것도 증명하지 못한다.
   TARGET="$(kubectl -n "$NS" get pods -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' \
@@ -193,7 +193,7 @@ say "2/6 워밍업 ${WARMUP}s (장애 전 기준선)"
 sleep "$WARMUP"
 BASE_BAD="$(kubectl -n "$NS" logs "$K6POD" 2>/dev/null | grep -c 'NON2XX' || true)"
 echo "    장애 전 non-2xx = $BASE_BAD"
-[ "${BASE_BAD:-0}" -eq 0 ] || echo "    ⚠️ 장애 전부터 실패가 있다 — 이번 측정으로 장애를 탓할 수 없다"
+[ "${BASE_BAD:-0}" -eq 0 ] || echo "    주의: 장애 전부터 실패가 있다. 이번 측정으로 장애를 탓할 수 없다"
 
 # ── 3. 장애 주입 ────────────────────────────────────────────────────
 say "3/6 장애 주입"
@@ -248,7 +248,7 @@ mkdir -p "$OUT"; cp "$WORK/k6.log" "$OUT/" 2>/dev/null || true
   echo "--- nodes"; kubectl get nodes --no-headers 2>/dev/null || true; } > "$OUT/after.txt"
 
 SUMMARY="$(grep -o 'SUMMARY_JSON .*' "$WORK/k6.log" | tail -1 | sed 's/^SUMMARY_JSON //' || true)"
-[ -n "$SUMMARY" ] || { echo "k6 요약을 얻지 못했다 — $OUT/k6.log" >&2; exit 1; }
+[ -n "$SUMMARY" ] || { echo "k6 요약을 얻지 못했다. $OUT/k6.log" >&2; exit 1; }
 TOTAL="$(echo "$SUMMARY" | jq -r .total)"
 BAD="$(echo "$SUMMARY" | jq -r .non2xx)"
 echo
@@ -262,9 +262,9 @@ if [ "$BAD" -gt 0 ]; then
   echo "    실패한 요청:"
   grep -o 'NON2XX ts=[^ ]* status=[^ ]* dur=[^ ]* err=[^ ]*' "$WORK/k6.log" | tail -30 | sed 's/^/      /'
   echo
-  echo "결과: 장애 중 요청 손실 — $TOTAL건 중 $BAD건 실패. 상세: $OUT/" >&2
+  echo "결과: 장애 중 요청 손실: $TOTAL건 중 $BAD건 실패. 상세: $OUT/" >&2
   exit 1
 fi
-echo "결과: 장애 중 무손실 — $TOTAL건 전량 2xx."
-echo "  ⚠️ 조건: $SCENARIO / $RATE rps / Cluster Autoscaler $CA_ON / 1회 측정."
-echo "     CA 유무는 이 측정의 전제다 — 바뀌면 다시 재야 한다."
+echo "결과: 장애 중 무손실: $TOTAL건 전량 2xx."
+echo "  측정 조건: $SCENARIO / $RATE rps / Cluster Autoscaler $CA_ON / 1회 측정."
+echo "     CA 유무는 이 측정의 전제다. 바뀌면 다시 재야 한다."

@@ -90,7 +90,7 @@ class PaginationValidationTest {
     }
 
     @Test
-    @DisplayName("상한을 넘는 size는 400 — 무제한 조회를 경계에서 막는다")
+    @DisplayName("상한을 넘는 size는 400: 무제한 조회를 경계에서 막는다")
     void 과도한_size는_400() throws Exception {
         mvc.perform(get("/admin/dlq").param("size", "1000000").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
@@ -98,7 +98,7 @@ class PaginationValidationTest {
     }
 
     @Test
-    @DisplayName("size=0도 막는다 — PageRequest가 거부하는 값이다")
+    @DisplayName("size=0도 막는다. PageRequest가 거부하는 값이다")
     void size_0은_400() throws Exception {
         mvc.perform(get("/admin/dlq").param("size", "0").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest());
@@ -114,7 +114,7 @@ class PaginationValidationTest {
     }
 
     @Test
-    @DisplayName("파라미터를 생략하면 기본값이 쓰인다 — 기존 호출자의 계약이 바뀌지 않는다")
+    @DisplayName("파라미터를 생략하면 기본값이 쓰인다. 기존 호출자의 계약이 바뀌지 않는다")
     void 생략시_기본값() throws Exception {
         mvc.perform(get("/admin/dlq").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());

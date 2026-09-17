@@ -41,7 +41,7 @@ export const options = {
 };
 
 export function setup() {
-  if (!TOKEN) throw new Error("QUEUE_TOKEN이 비었다 — 오케스트레이터가 발급해 넘겨야 한다");
+  if (!TOKEN) throw new Error("QUEUE_TOKEN이 비었다. 오케스트레이터가 발급해 넘겨야 한다");
   return { token: TOKEN };
 }
 

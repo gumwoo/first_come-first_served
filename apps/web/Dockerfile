@@ -29,7 +29,7 @@ ENV API_ORIGIN=$API_ORIGIN
 # NEXT_PUBLIC_* 는 브라우저 번들에 문자열로 구워지므로 런타임 주입이 원리적으로 불가능하다.
 # k8s Secret에 넣어도 아무 효과가 없다. 그래서 여기서 받는다.
 #
-# 비어 있으면 조용히 기능이 바뀐다: pay/page.tsx가 `TOSS_CLIENT_KEY`가 있을 때만 결제창
+# 비어 있으면 에러 없이 기능이 바뀐다: pay/page.tsx가 `TOSS_CLIENT_KEY`가 있을 때만 결제창
 # 인증 경로를 타고, 없으면 결제창 없이 confirm으로 빠진다. 에러가 아니라 다른 흐름이라
 # 배포 후에도 눈치채기 어렵다. 하네스 규칙 6)이 ARG 누락을 막는다.
 #

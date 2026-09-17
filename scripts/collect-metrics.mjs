@@ -50,12 +50,12 @@ function fmt(v, unit = "") {
 
 function main() {
   if (!fs.existsSync(BENCH)) {
-    console.log("benchmarks/ 없음 — 수집 대상 없음(틀만 동작).");
+    console.log("benchmarks/ 없음: 수집 대상 없음(틀만 동작).");
     return;
   }
   const files = fs.readdirSync(BENCH).filter((f) => f.endsWith(".json"));
   if (files.length === 0) {
-    console.log("벤치 결과 JSON 없음 — 측정 후 다시 실행하세요(틀만 동작).");
+    console.log("벤치 결과 JSON 없음: 측정 후 다시 실행하세요(틀만 동작).");
     return;
   }
 
@@ -85,7 +85,7 @@ function main() {
     fs.writeFileSync(metricsPath, updated);
     console.log(`✓ METRICS.md PERF 블록 갱신 (${rows.length / 3} topic)`);
   } else {
-    console.log("METRICS.md에 <!-- AUTO:PERF:START/END --> 마커 없음 — 갱신 생략.");
+    console.log("METRICS.md에 <!-- AUTO:PERF:START/END --> 마커 없음: 갱신 생략.");
   }
 }
 

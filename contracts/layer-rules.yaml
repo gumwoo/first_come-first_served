@@ -14,7 +14,7 @@ backend:
   rules:
     - "@Transactional은 service 패키지에만 허용"
     - "controller가 엔티티 타입을 반환 타입으로 사용 금지 (*Response만)"
-    - "필드 주입(@Autowired 필드) 금지 — 생성자 주입"
+    - "필드 주입(@Autowired 필드) 금지: 생성자 주입"
 
 frontend:
   root: apps/web/src
@@ -24,4 +24,4 @@ frontend:
     - { from: "components/**",    not_import: "lib/apiClient", reason: "fetch는 features/*/api·hooks에서만" }
   rules:
     - "API 호출 path는 features/*/api 에서만 정의"
-    - "외부 API(KOPIS 등) 직접 호출 금지 — 항상 우리 BE 경유"
+    - "외부 API(KOPIS 등) 직접 호출 금지: 항상 우리 BE 경유"

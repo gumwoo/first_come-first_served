@@ -3,7 +3,7 @@
 // 왜 필요한가: 매니페스트는 앱과 따로 작성돼 이런 불일치가 생긴다.
 //   1) 존재하지 않는 환경변수(NEXT_PUBLIC_API_BASE_URL)를 주입: 앱은 API_ORIGIN을 읽는다
 //   2) ALB에서 /api를 API Service로 직결: Spring에는 /api 접두어가 없어 전부 404
-// 둘 다 apply 전에는 아무 증상이 없고, apply하면 조용히 깨진다. 정적으로만 잡을 수 있다.
+// 둘 다 apply 전에는 아무 증상이 없고, apply하면 그때 깨진다. 정적으로만 잡을 수 있다.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -17,7 +17,7 @@ const WEB = process.env.HARNESS_WEB_DIR || "apps/web";
 
 const manifests = walk(K8S, [".yaml", ".yml"]);
 if (manifests.length === 0) {
-  r.fail(`매니페스트를 하나도 못 찾았다: ${K8S}/ — 규칙이 무력화된 상태`);
+  r.fail(`매니페스트를 하나도 못 찾았다: ${K8S}/: 규칙이 무력화된 상태`);
   r.done();
 }
 
@@ -35,7 +35,7 @@ for (const f of [...walk(WEB + "/src", [".ts", ".tsx"]), ...walk(WEB, [".mjs"])]
 const ENV_ALLOWLIST = new Set(["TZ", "JAVA_OPTS", "NODE_ENV", "PORT", "HOSTNAME"]);
 
 if (appEnv.size === 0) {
-  r.fail("앱이 읽는 환경변수를 하나도 못 읽었다 — 규칙이 무력화된 상태");
+  r.fail("앱이 읽는 환경변수를 하나도 못 읽었다. 규칙이 무력화된 상태");
 }
 
 // ---------- 매니페스트에서 주입하는 이름 수집 ----------
@@ -56,7 +56,7 @@ for (const file of manifests) {
     if (appEnv.has(name) || ENV_ALLOWLIST.has(name)) continue;
     r.fail(
       `앱이 읽지 않는 환경변수: ${rel} → ${name}. ` +
-        `application.yml의 \${${name}} 이나 process.env.${name} 이 없다 — 이름 오타이거나 죽은 설정이다`
+        `application.yml의 \${${name}} 이나 process.env.${name} 이 없다. 이름 오타이거나 죽은 설정이다`
     );
   }
 
@@ -84,7 +84,7 @@ for (const file of manifests) {
   // exposure에 metrics·prometheus가 포함돼 있어 인터넷에 관측 데이터가 열린다.
   // ALB 헬스체크는 타깃그룹이 Pod IP로 직접 검사하므로 이 규칙은 애초에 필요 없다.
   if (/\bkind:\s*Ingress\b/.test(raw) && /^\s*-?\s*path:\s*\/actuator/m.test(raw)) {
-    r.fail(`Ingress에 /actuator 공개 경로: ${rel} — metrics·prometheus가 외부로 열린다`);
+    r.fail(`Ingress에 /actuator 공개 경로: ${rel}: metrics·prometheus가 외부로 열린다`);
   }
 }
 
@@ -100,7 +100,7 @@ for (const file of manifests) {
     if (re.test(raw)) {
       r.fail(
         `빌드 시점 값을 런타임 env로 주입: ${rel} → ${name}. ` +
-          `Next rewrites는 standalone 번들로 구워져 런타임에 바뀌지 않는다 — ` +
+          `Next rewrites는 standalone 번들로 구워져 런타임에 바뀌지 않는다. ` +
           `.github/workflows/image.yml의 build-args에서 정한다`
       );
     }
@@ -133,7 +133,7 @@ if (fs.existsSync(imageWorkflow)) {
     // 포트가 틀린 경우만 잡으면 이 구멍이 남는다.
     if (!svcPorts.has(host)) {
       r.fail(
-        `image.yml의 API_ORIGIN이 존재하지 않는 Service를 가리킨다: http://${host} — ` +
+        `image.yml의 API_ORIGIN이 존재하지 않는 Service를 가리킨다: http://${host}: ` +
           `${K8S}/에 그런 이름의 Service가 없다(알고 있는 것: ${[...svcPorts.keys()].join(", ") || "없음"})`
       );
       continue;
@@ -141,7 +141,7 @@ if (fs.existsSync(imageWorkflow)) {
     const expected = svcPorts.get(host);
     if (port && port !== expected) {
       r.fail(
-        `image.yml의 API_ORIGIN 포트가 Service와 불일치: http://${host}:${port} — ` +
+        `image.yml의 API_ORIGIN 포트가 Service와 불일치: http://${host}:${port}: ` +
           `Service ${host}는 ${expected}만 연다(targetPort는 클라이언트가 붙는 포트가 아니다)`
       );
     }
@@ -165,7 +165,7 @@ if (fs.existsSync(webDockerfile)) {
   for (const name of used) {
     if (new RegExp("^\\s*ARG\\s+" + name + "\\b", "m").test(dockerfile)) continue;
     r.fail(
-      `브라우저 빌드 값에 ARG 누락: ${name} — 코드가 읽는데 ${WEB}/Dockerfile에 ARG가 없다. ` +
+      `브라우저 빌드 값에 ARG 누락: ${name}: 코드가 읽는데 ${WEB}/Dockerfile에 ARG가 없다. ` +
         `NEXT_PUBLIC_*는 번들에 구워져 런타임 주입이 불가능하다(빈 값이면 에러 없이 다른 흐름으로 빠진다)`
     );
   }
@@ -186,7 +186,7 @@ const apiDeploy = manifests.find((f) => {
   return /\bkind:\s*Deployment\b/.test(raw) && /name:\s*flowticket-api\b/.test(raw);
 });
 if (!apiDeploy) {
-  r.fail("flowticket-api Deployment를 못 찾았다 — 규칙 ⑦이 무력화된 상태");
+  r.fail("flowticket-api Deployment를 못 찾았다. 규칙 ⑦이 무력화된 상태");
 } else {
   const raw = read(apiDeploy);
   const rel = path.relative(REPO_ROOT, apiDeploy);
@@ -196,12 +196,12 @@ if (!apiDeploy) {
     r.fail(
       `API 컨테이너에 TZ가 고정돼 있지 않다: ${rel}. ` +
         `엔티티는 LocalDateTime.now()(시스템 존)로 시각을 만들고 응답도 같은 존으로 오프셋을 ` +
-        `붙인다 — 존이 흔들리면 이미 저장된 행의 절대 시각이 이동한다. env에 {name: TZ, value: UTC} 필요`
+        `붙인다. 존이 흔들리면 이미 저장된 행의 절대 시각이 이동한다. env에 {name: TZ, value: UTC} 필요`
     );
   } else if (tz[1] !== "UTC") {
     r.fail(
       `API 컨테이너 TZ가 UTC가 아니다: ${rel} → ${tz[1]}. ` +
-        `DB에는 UTC 벽시계가 쌓여 있어 존을 바꾸면 기존 행이 그 시차만큼 어긋난다 — ` +
+        `DB에는 UTC 벽시계가 쌓여 있어 존을 바꾸면 기존 행이 그 시차만큼 어긋난다. ` +
         `Instant/timestamptz 전환을 Expand-Contract로 먼저 해야 한다`
     );
   }
@@ -235,7 +235,7 @@ for (const { doc } of docs) {
   if (t?.kind === "Deployment" && t.name) hpaTargets.add(t.name);
 }
 if (hpaTargets.size === 0) {
-  r.fail("HPA를 하나도 못 찾았다 — 규칙 ⑧이 무력화된 상태");
+  r.fail("HPA를 하나도 못 찾았다. 규칙 ⑧이 무력화된 상태");
 }
 
 for (const { doc, file } of docs) {
@@ -245,7 +245,7 @@ for (const { doc, file } of docs) {
   r.fail(
     `HPA가 소유하는 Deployment에 replicas가 있다: ${path.relative(REPO_ROOT, file)} ` +
       `→ ${doc.metadata.name} (replicas: ${doc.spec.replicas}). ArgoCD가 sync할 때마다 HPA가 정한 ` +
-      `파드 수를 이 값으로 덮어쓴다 — 부하 중 스케일아웃이 취소된다. 필드를 지우고 하한은 HPA의 ` +
+      `파드 수를 이 값으로 덮어쓴다. 부하 중 스케일아웃이 취소된다. 필드를 지우고 하한은 HPA의 ` +
       `minReplicas에 맡겨라(ignoreDifferences로는 sync를 막지 못하는 것을 실측했다)`
   );
 }
@@ -264,7 +264,7 @@ if (fs.existsSync(ES_DIR)) {
   const bootstrapPath = path.join(ES_DIR, "bootstrap.sh");
   if (!fs.existsSync(bootstrapPath)) {
     r.fail(
-      `ExternalSecret 적용 경로 없음: ${K8S}/external-secrets/bootstrap.sh 가 없다 — ` +
+      `ExternalSecret 적용 경로 없음: ${K8S}/external-secrets/bootstrap.sh 가 없다. ` +
         `이 디렉터리는 ArgoCD 대상이 아니라 스크립트로만 적용된다`
     );
   } else {
@@ -275,7 +275,7 @@ if (fs.existsSync(ES_DIR)) {
       if (!/^\s*kind:\s*ExternalSecret\s*$/m.test(src)) continue;
       if (!bootstrap.includes(name)) {
         r.fail(
-          `ExternalSecret이 적용되지 않는다: ${K8S}/external-secrets/${name} — ` +
+          `ExternalSecret이 적용되지 않는다: ${K8S}/external-secrets/${name}: ` +
             `bootstrap.sh가 이 파일을 apply하지 않는다. ArgoCD는 overlays만 보므로 ` +
             `여기 없으면 클러스터에 영영 들어가지 않는다(Secret 없음 → 마운트하는 파드가 기동 실패)`
         );

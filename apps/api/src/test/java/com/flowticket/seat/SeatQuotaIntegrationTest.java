@@ -47,17 +47,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * 1인 구매 한도(seat.max-per-user)의 정합성.
  *
- * <p>좌석 자체의 초과판매는 조건부 UPDATE가 막지만, 1인 한도는 단일 행에 표현되지 않는
- * 집계 규칙이라 같은 방식으로 지켜지지 않는다. 한도가 세는 대상은 "이 사용자가 이 공연에서
- * 실제로 붙들고 있는 서로 다른 좌석"이며, 점유의 진실원은 두 곳이다:
- *
- * <pre>
- *   결제 전 점유 → SeatHold = HELD
- *   결제 후 점유 → Order    = PAID
- * </pre>
- *
- * <p>주문의 중간 상태(PENDING·VBANK_WAITING)는 세지 않는다. 좌석을 점유 중이라면
- * 이미 HELD 홀드로 잡히고, 홀드가 풀린 뒤 남은 주문은 좌석을 확보하고 있지 않기 때문이다.
+ * <p>1인 한도는 단일 행에 표현되지 않는 집계 규칙이라 조건부 UPDATE로 지켜지지 않는다.
+ * 무엇을 세는지(HELD 홀드 + PAID 주문)와 직렬화 방식은 {@code SeatQuotaRepository}·TS-013.
  *
  * <p>{@code @TestPropertySource}를 붙이지 않는다. 이 테스트에 필요한 hold-ttl(300)은
  * {@link IntegrationTestSupport}의 기본값과 같다. 같은 값이라도 다시 선언하면 병합된 프로퍼티

@@ -69,7 +69,7 @@ export function setup() {
     const map = http.get(`${BASE}/events/${e.id}/seats`);
     if ((map.json("data.seats") || []).length > 0) return { eventId: String(e.id) };
   }
-  throw new Error("좌석이 있는 ON_SALE 이벤트가 없다 — scripts/seed-demo-data.sh 먼저");
+  throw new Error("좌석이 있는 ON_SALE 이벤트가 없다. scripts/seed-demo-data.sh 먼저");
 }
 
 export default function (data) {

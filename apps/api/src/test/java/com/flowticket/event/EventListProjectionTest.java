@@ -74,7 +74,7 @@ class EventListProjectionTest extends IntegrationTestSupport {
 
         assertThat(page.getContent()).hasSize(5);
         assertThat(stats().getEntityLoadCount())
-                .as("목록은 필요한 컬럼만 SELECT해야 한다 — selectFrom(event)로 되돌리면 여기서 잡힌다")
+                .as("목록은 필요한 컬럼만 SELECT해야 한다. selectFrom(event)로 되돌리면 여기서 잡힌다")
                 .isZero();
     }
 

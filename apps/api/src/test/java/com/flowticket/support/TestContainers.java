@@ -101,7 +101,7 @@ public final class TestContainers {
                             st.execute(TRUNCATE_ALL);
                         } catch (java.sql.SQLException e) {
                             throw new IllegalStateException(
-                                    "테스트 초기화 TRUNCATE 실패 — 백그라운드 스케줄러 DML과의 데드락이 가장 유력하다.\n"
+                                    "테스트 초기화 TRUNCATE 실패: 백그라운드 스케줄러 DML과의 데드락이 가장 유력하다.\n"
                                             + "(누수된 트랜잭션이 원인이라면 아래 목록에 idle in transaction으로 나타난다)\n"
                                             + blockers(st), e);
                         } finally {

@@ -117,7 +117,7 @@ for (const file of javaFiles) {
       for (const sub of subPaths) {
         const full = join(base, sub);
         if (full === null) {
-          r.fail(`endpoint 경로를 정적 추출 불가(상수 참조 등): ${method} in ${path.relative(REPO_ROOT, file)} — 리터럴 경로 사용 권장`);
+          r.fail(`endpoint 경로를 정적 추출 불가(상수 참조 등): ${method} in ${path.relative(REPO_ROOT, file)}: 리터럴 경로 사용 권장`);
           continue;
         }
         const key = `${method} ${full}`;
@@ -262,7 +262,7 @@ for (const file of javaFiles) {
 
   // (b) actuator 전체(/actuator/**) permitAll 금지: metrics/prometheus 정보 노출.
   if (/["']\/actuator\/\*\*["']/.test(src) && /permitAll/.test(src)) {
-    r.fail(`actuator 전체 permitAll 금지(정보 노출): ${rel} — health/info만 공개`);
+    r.fail(`actuator 전체 permitAll 금지(정보 노출): ${rel}: health/info만 공개`);
   }
 }
 
@@ -313,7 +313,7 @@ for (const file of migrationFiles) {
   if (!vm) continue;
   const v = vm[1];
   if (versionSeen.has(v)) {
-    r.fail(`Flyway 버전 중복: V${v} (${base} ↔ ${versionSeen.get(v)}) — 새 버전 번호 사용`);
+    r.fail(`Flyway 버전 중복: V${v} (${base} ↔ ${versionSeen.get(v)}): 새 버전 번호 사용`);
   } else {
     versionSeen.set(v, base);
   }
@@ -365,17 +365,17 @@ for (const file of migrationFiles) {
 
   if (!hits.length) {
     // 쓰지도 않으면서 예외만 달아 둔 주석은 다음 사람을 오해시킨다.
-    if (allow) r.fail(`불필요한 예외 주석: ${base} — 파괴적 DDL이 없는데 allow-destructive-ddl이 달려 있음`);
+    if (allow) r.fail(`불필요한 예외 주석: ${base}: 파괴적 DDL이 없는데 allow-destructive-ddl이 달려 있음`);
     continue;
   }
   if (!allow) {
     r.fail(
-      `파괴적 DDL: ${base} — ${hits.join(", ")}. 롤링 배포 중 구버전 Pod가 깨진다. ` +
+      `파괴적 DDL: ${base}: ${hits.join(", ")}. 롤링 배포 중 구버전 Pod가 깨진다. ` +
         `Expand-Contract로 나누거나, 불가피하면 "-- harness:allow-destructive-ddl: <사유>" 주석으로 승인`
     );
   } else if (!allow[1]) {
     // 예외를 열어 주되 근거는 반드시 남게 한다.
-    r.fail(`예외 사유 누락: ${base} — "-- harness:allow-destructive-ddl: <사유>" 형식으로 근거를 적을 것`);
+    r.fail(`예외 사유 누락: ${base}: "-- harness:allow-destructive-ddl: <사유>" 형식으로 근거를 적을 것`);
   }
 }
 
@@ -409,9 +409,9 @@ for (const [prefix, dir] of Object.entries(DOC_DIRS)) {
     }
   }
   // 목록이 비면 이 규칙은 모든 참조를 끊어진 것으로 보거나(오탐 폭발) 아무것도 못 잡는다.
-  // 조용히 무력화되는 쪽이 더 위험하므로 그 상태 자체를 실패로 만든다.
+  // 모르게 무력화되는 쪽이 더 위험하므로 그 상태 자체를 실패로 만든다.
   if (nums.size === 0) {
-    r.fail(`문서 번호를 하나도 못 읽었다: ${dir} — 규칙 15가 무력화된 상태`);
+    r.fail(`문서 번호를 하나도 못 읽었다: ${dir}: 규칙 15가 무력화된 상태`);
   }
   existingDocs[prefix] = nums;
 }
@@ -460,7 +460,7 @@ if (dtoWithLocalDateTime.length > 0) {
       `응답 DTO가 LocalDateTime을 노출하는데 오프셋 직렬화기가 없다 ` +
         `(${dtoWithLocalDateTime.slice(0, 3).join(", ")}${dtoWithLocalDateTime.length > 3 ? " 외" : ""}). ` +
         `타임존 없이 나가면 브라우저가 자기 로컬로 해석해 서버-클라이언트 시차만큼 어긋난다 ` +
-        `— 에러가 아니라 조용히 다른 화면으로 빠진다(좌석 선점 즉시 만료)`
+        `에러가 아니라 다른 화면으로 빠진다(좌석 선점 즉시 만료)`
     );
   }
 }
@@ -497,7 +497,7 @@ const NON_APP_HEADROOM = 20;
 
   // application.yml이 없는 fixture도 있으므로 그것만 선택적으로 다룬다(없으면 기본값 10).
   if (!fs.existsSync(hpaFile) || !fs.existsSync(rdsVars) || !fs.existsSync(depFile)) {
-    r.fail("커넥션 상한 검사 대상 파일을 못 찾았다(api-hpa.yaml / api-deployment.yaml / rds variables.tf) — 규칙이 무력화된 상태");
+    r.fail("커넥션 상한 검사 대상 파일을 못 찾았다(api-hpa.yaml / api-deployment.yaml / rds variables.tf): 규칙이 무력화된 상태");
   } else {
     const maxReplicas = Number(read(hpaFile).match(/^\s*maxReplicas:\s*(\d+)/m)?.[1]);
     // 설정이 없으면 HikariCP 기본값 10이다. "안 정한 것"도 정해진 값으로 취급해야 한다.
@@ -517,11 +517,11 @@ const NON_APP_HEADROOM = 20;
     const maxConn = DB_MAX_CONNECTIONS[cls];
 
     if (!maxReplicas || !cls) {
-      r.fail("커넥션 상한 검사에 필요한 값을 못 읽었다(maxReplicas/instance_class) — 규칙이 무력화된 상태");
+      r.fail("커넥션 상한 검사에 필요한 값을 못 읽었다(maxReplicas/instance_class): 규칙이 무력화된 상태");
     } else if (maxConn === undefined) {
       r.fail(
         `RDS 인스턴스 클래스 ${cls}의 max_connections를 모른다. ` +
-          `harness/backend/check.mjs의 DB_MAX_CONNECTIONS에 **실측값**을 추가할 것 ` +
+          `harness/backend/check.mjs의 DB_MAX_CONNECTIONS에 실측값을 추가할 것 ` +
           `(pg_settings 조회. 공식 없이 추정하지 말 것)`
       );
     } else {
@@ -533,7 +533,7 @@ const NON_APP_HEADROOM = 20;
         r.fail(
           `DB 커넥션 상한 초과: (maxReplicas ${maxReplicas} + maxSurge ${maxSurge}) × pool ${pool} = ${demand} > ` +
             `가용 ${budget} (${cls} max_connections ${maxConn} − reserved ${reserved} − 앱외여유 ${NON_APP_HEADROOM}). ` +
-            `maxUnavailable=0이라 롤링 중 ${peakPods}개가 공존한다 — 그 순간 뒤쪽 파드가 커넥션을 ` +
+            `maxUnavailable=0이라 롤링 중 ${peakPods}개가 공존한다. 그 순간 뒤쪽 파드가 커넥션을 ` +
             `얻지 못해 기동에 실패한다(TS-021)`
         );
       }
@@ -572,7 +572,7 @@ for (const file of javaFiles) {
   // 주입받은 빌더를 그대로 쓰는 파일이라도, 타임아웃은 어딘가에서 반드시 걸려야 한다.
   if (code.includes("requestFactory(")) continue;
   r.fail(
-    `외부 HTTP 클라이언트에 타임아웃이 없다: ${path.relative(REPO_ROOT, file)} — ` +
+    `외부 HTTP 클라이언트에 타임아웃이 없다: ${path.relative(REPO_ROOT, file)}: ` +
       `RestClient를 만들면서 requestFactory(...)로 connect/read 타임아웃을 주지 않았다. ` +
       `기본값이 없어 무한 대기가 되고, 트랜잭션 안이면 DB 커넥션까지 묶인다(TS-028)`
   );
@@ -601,7 +601,7 @@ for (const f of javaFiles) {
   const m = read(f).match(PAGING_PARAM_RE);
   if (m) {
     r.fail(
-      `페이징 파라미터를 검증 없이 받는다: ${path.relative(REPO_ROOT, f)} — "${m[1]}". ` +
+      `페이징 파라미터를 검증 없이 받는다: ${path.relative(REPO_ROOT, f)}: "${m[1]}". ` +
         `@Valid @ModelAttribute PageQuery 로 받을 것(음수 page가 500이 된다)`
     );
   }
@@ -616,7 +616,7 @@ for (const f of javaFiles) {
 //
 // 문제는 한쪽만 올려도 아무 일도 일어나지 않는다는 것이다. CI는 계속 통과하고,
 // 로컬에서만 다른 Gradle이 돌아 "내 PC에서는 되는데"가 만들어진다. 빌드 재현성이
-// 조용히 깨지는 전형적인 경로라 정적으로 묶는다.
+// 모르게 깨지는 전형적인 경로라 정적으로 묶는다.
 const wrapperProps = path.join(REPO_ROOT, API, "gradle/wrapper/gradle-wrapper.properties");
 if (fs.existsSync(wrapperProps)) {
   const distUrl = read(wrapperProps).match(/distributionUrl=.*?gradle-([0-9][^-]*)-(?:bin|all)\.zip/);
@@ -624,7 +624,7 @@ if (fs.existsSync(wrapperProps)) {
   // 아래 비교가 통째로 건너뛰어지고, 규칙은 검사하는 척만 하며 통과한다.
   if (!distUrl) {
     r.fail(
-      `gradle-wrapper.properties에서 Gradle 버전을 읽지 못했다: ${path.relative(REPO_ROOT, wrapperProps)} — ` +
+      `gradle-wrapper.properties에서 Gradle 버전을 읽지 못했다: ${path.relative(REPO_ROOT, wrapperProps)}: ` +
         `distributionUrl 형식이 바뀌었다면 harness/backend/check.mjs의 20번 규칙도 함께 고칠 것 ` +
         `(지금 상태로는 버전 드리프트를 못 잡는다)`
     );
@@ -640,15 +640,15 @@ if (fs.existsSync(wrapperProps)) {
     // setup-gradle이 아예 없으면 CI가 wrapper를 쓰도록 바뀐 것이므로 대조할 대상이 없다. 건너뛴다.
     if (ci.includes("setup-gradle") && ciVers.length === 0) {
       r.fail(
-        `ci.yml에서 setup-gradle의 gradle-version을 읽지 못했다 — 형식이 바뀌었다면 ` +
+        `ci.yml에서 setup-gradle의 gradle-version을 읽지 못했다. 형식이 바뀌었다면 ` +
           `harness/backend/check.mjs의 20번 규칙도 함께 고칠 것(지금 상태로는 버전 드리프트를 못 잡는다)`
       );
     }
     for (const v of new Set(ciVers)) {
       if (v !== wrapperVer) {
         r.fail(
-          `Gradle 버전이 어긋난다: wrapper=${wrapperVer} / ci.yml setup-gradle=${v} — ` +
-            `gradle-wrapper.properties와 .github/workflows/ci.yml을 **함께** 올릴 것. ` +
+          `Gradle 버전이 어긋난다: wrapper=${wrapperVer} / ci.yml setup-gradle=${v}: ` +
+            `gradle-wrapper.properties와 .github/workflows/ci.yml을 함께 올릴 것. ` +
             `한쪽만 바꾸면 CI는 통과하는데 로컬 ./gradlew만 다른 버전으로 돈다`
         );
       }

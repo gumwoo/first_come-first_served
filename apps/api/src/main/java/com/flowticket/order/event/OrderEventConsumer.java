@@ -62,7 +62,7 @@ public class OrderEventConsumer {
         try {
             return !Boolean.FALSE.equals(redis.opsForValue().setIfAbsent(key, "1", DEDUP_TTL));
         } catch (RuntimeException e) {
-            log.warn("[outbox] 멱등 저장소 장애 — 중복을 허용하고 전달 진행: {}", e.toString());
+            log.warn("[outbox] 멱등 저장소 장애: 중복을 허용하고 전달 진행: {}", e.toString());
             return true;
         }
     }

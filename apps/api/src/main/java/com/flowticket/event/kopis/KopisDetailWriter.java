@@ -9,7 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>왜 별도 빈인가. {@link KopisDetailSyncer} 안에 이 메서드를 두면 같은 빈에서
  * 자기 자신을 호출하게 되어(self-invocation) 프록시를 거치지 않고, {@code @Transactional}이
- * 조용히 적용되지 않는다({@code KopisSyncService}는 같은 문제를 self 주입으로 푼다).
+ * 적용되지 않는다({@code KopisSyncService}는 같은 문제를 self 주입으로 푼다).
  * 여기서는 호출자가 비트랜잭션이라 협력자를 분리하는 편이 단순하다.
  *
  * <p>트랜잭션 범위를 한 건으로 좁게 유지하는 것도 의도다. 상세 수집 전체를 한 트랜잭션으로

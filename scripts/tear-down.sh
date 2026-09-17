@@ -70,7 +70,7 @@ echo "==> 0/7 ArgoCD Application 삭제"
 if have_cluster; then
   kubectl delete application flowticket -n argocd --timeout=180s 2>/dev/null || true
 else
-  echo "    클러스터에 접근할 수 없다 — k8s 단계를 건너뛴다"
+  echo "    클러스터에 접근할 수 없다. k8s 단계를 건너뛴다"
 fi
 
 if have_cluster; then
@@ -109,7 +109,7 @@ if [ ! -s "$OWNED_VOLS" ]; then
   echo "    소유 볼륨 목록이 없다(클러스터 접근 불가). 자동 삭제하지 않는다."
   CAND="$(aws ec2 describe-volumes --filters Name=status,Values=available     --query "Volumes[?Tags[?Key=='kubernetes.io/created-for/pvc/name']].[VolumeId,Size,Tags[?Key=='kubernetes.io/created-for/pvc/name']|[0].Value]"     --output text 2>/dev/null | tr -d '')"
   if [ -n "$CAND" ]; then
-    echo "    ⚠️ 쿠버네티스가 만든 미사용 볼륨이 있다. **소유를 확인한 뒤** 직접 지워라:" >&2
+    echo "    주의: 쿠버네티스가 만든 미사용 볼륨이 있다. 소유를 확인한 뒤 직접 지워라:" >&2
     echo "$CAND" | sed 's/^/      /' >&2
   else
     echo "    미사용 볼륨 없음"
@@ -156,7 +156,7 @@ clean_untracked() {
       --query 'Vpcs[].VpcId' --output text 2>/dev/null | tr -d '\r')"
     count="$(echo $vpcs | wc -w)"
     if [ "$count" -ne 1 ]; then
-      echo "Project=flowticket VPC가 ${count}개다 — 삭제 대상을 확정할 수 없어 중단한다" >&2
+      echo "Project=flowticket VPC가 ${count}개다. 삭제 대상을 확정할 수 없어 중단한다" >&2
       [ "$count" -gt 1 ] && echo "  후보: $vpcs" >&2
       return 1
     fi
@@ -177,7 +177,7 @@ clean_untracked() {
     if aws ec2 delete-network-interface --network-interface-id "$e" >/dev/null 2>&1; then
       echo "    ENI 삭제 $e (aws-K8S-*)"; n=$((n+1))
     else
-      echo "    ⚠️ ENI 삭제 실패 $e" >&2
+      echo "    주의: ENI 삭제 실패 $e" >&2
     fi
   done
   [ "$n" -eq 0 ] && echo "    VPC CNI 고아 ENI 없음"
@@ -207,7 +207,7 @@ clean_untracked() {
     if aws ec2 delete-security-group --group-id "$s" >/dev/null 2>&1; then
       echo "    SG 삭제 $s (eks-cluster-sg-${CLUSTER}-*)"; m=$((m+1))
     else
-      echo "    ⚠️ SG 삭제 실패 $s (다른 SG가 참조 중일 수 있다)" >&2
+      echo "    주의: SG 삭제 실패 $s (다른 SG가 참조 중일 수 있다)" >&2
     fi
   done
   [ "$m" -eq 0 ] && echo "    EKS 생성 보안그룹 없음"
@@ -226,7 +226,7 @@ clean_untracked() {
 echo "==> 5/7 terraform destroy"
 DESTROY_RC=0
 if [ "$(tf state list 2>/dev/null | wc -l)" -eq 0 ]; then
-  echo "    state가 비어 있다 — 건너뛴다"
+  echo "    state가 비어 있다. 건너뛴다"
 else
   # 파이프를 쓰지 않는다. `| tail` 을 붙이면 종료 코드가 tail의 것이 되어
   # 실패한 destroy가 성공으로 보인다.
@@ -242,7 +242,7 @@ echo "==> 6/7 terraform이 모르는 VPC 잔여 정리"
 #   1) VPC CNI가 남긴 고아 ENI (aws-K8S-i-...)
 #   2) EKS가 만든 보안그룹 (eks-cluster-sg-flowticket-...)
 if [ "$DESTROY_RC" -eq 0 ]; then
-  echo "    destroy가 성공했다 — 건너뛴다"
+  echo "    destroy가 성공했다. 건너뛴다"
 else
   if clean_untracked; then
     echo "    destroy 재시도"
@@ -252,7 +252,7 @@ else
   fi
 fi
 [ "$DESTROY_RC" -ne 0 ] && {
-  echo "destroy가 실패했다 — 위 오류를 보고 잔여를 직접 정리하라" >&2; audit; exit 1; }
+  echo "destroy가 실패했다. 위 오류를 보고 잔여를 직접 정리하라" >&2; audit; exit 1; }
 
 echo "==> 7/7"
 if audit; then
@@ -260,6 +260,6 @@ if audit; then
   echo "완료. 잔여 없음."
 else
   echo
-  echo "⚠️ 위에 0이 아닌 항목이 있다. 과금이 계속되므로 직접 확인하라." >&2
+  echo "주의: 위에 0이 아닌 항목이 있다. 과금이 계속되므로 직접 확인하라." >&2
   exit 1
 fi

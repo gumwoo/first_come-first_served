@@ -27,7 +27,7 @@ variable "route_table_ids" {
 
 variable "enabled" {
   description = <<-EOT
-    엔드포인트 전체 on/off. NAT가 있으므로 꺼도 시스템은 동작한다 —
+    엔드포인트 전체 on/off. NAT가 있으므로 꺼도 시스템은 동작한다.
     비용/복잡도를 줄이고 싶을 때 false로 둔다.
   EOT
   type        = bool

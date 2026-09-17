@@ -6,7 +6,7 @@
 # 관측 스택을 재설치해도 되살아난다(Grafana는 persistence를 끈 상태다).
 #
 # 여기 쓰인 메트릭 이름은 전부 실제 /actuator/prometheus 출력에서 확인한 것만 넣었다.
-# 없는 이름을 쓰면 에러가 아니라 조용히 빈 패널이 되기 때문이다.
+# 없는 이름을 쓰면 에러가 아니라 빈 패널이 되기 때문이다.
 # 백분위 패널은 application.yml의 percentiles-histogram 설정과 한 쌍이다.
 # 그 설정 없이 적용하면 http_server_requests_seconds_bucket이 없어 패널이 비어 있게 된다.
 apiVersion: v1
@@ -19,7 +19,7 @@ metadata:
 data:
   flowticket.json: |
     {
-      "title": "FlowTicket — API / Kafka / 런타임",
+      "title": "FlowTicket: API / Kafka / 런타임",
       "uid": "flowticket-api",
       "timezone": "browser",
       "refresh": "30s",
@@ -55,7 +55,7 @@ data:
         },
         {
           "type": "timeseries", "title": "응답시간 백분위 (p50 / p95 / p99)",
-          "description": "파드별 버킷을 sum by(le)로 먼저 합친 뒤 계산해 서비스 전체 값이 된다 — 백분위는 파드끼리 평균낼 수 없다. 왼쪽 요청률과 **함께** 봐야 한다: 요청이 적으면 p99는 최악의 한두 건이 좌우해 크게 출렁인다. actuator는 Prometheus 스크레이프 트래픽이라 제외했다.",
+          "description": "파드별 버킷을 sum by(le)로 먼저 합친 뒤 계산해 서비스 전체 값이 된다. 백분위는 파드끼리 평균낼 수 없다. 왼쪽 요청률과 **함께** 봐야 한다: 요청이 적으면 p99는 최악의 한두 건이 좌우해 크게 출렁인다. actuator는 Prometheus 스크레이프 트래픽이라 제외했다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
           "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
@@ -76,7 +76,7 @@ data:
         },
         {
           "type": "timeseries", "title": "상한(10s) 초과 요청률",
-          "description": "maximum-expected-value를 넘은 요청은 +Inf 버킷에 뭉쳐 백분위를 복구할 수 없다. 실제로 상한이 2s였을 때 300 VU 부하에서 8.1%가 넘어가 p95가 \"정확히 2000ms\"로 찍혔다 — 측정값이 아니라 더 못 잰다는 표시였다. 그래서 10s로 올렸다. 이 선이 0에서 뜨면 다시 올려야 한다는 신호다.",
+          "description": "maximum-expected-value를 넘은 요청은 +Inf 버킷에 뭉쳐 백분위를 복구할 수 없다. 그러면 p95가 상한값 그대로(예: \"정확히 2000ms\") 찍혀 측정값처럼 보인다. 이 선이 0에서 뜨면 상한을 올려야 한다는 신호다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
           "gridPos": { "h": 7, "w": 12, "x": 0, "y": 9 },
           "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
@@ -101,7 +101,7 @@ data:
           ]
         },
         {
-          "type": "row", "title": "Kafka — TS-020이 보이게 하는 자리",
+          "type": "row", "title": "Kafka: TS-020이 보이게 하는 자리",
           "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 }
         },
         {
@@ -132,7 +132,7 @@ data:
         },
         {
           "type": "timeseries", "title": "마지막 리밸런스 이후 경과",
-          "description": "값이 자꾸 0으로 떨어지면 리밸런스가 반복되는 것 — 컨슈머가 안정적으로 붙어 있지 못한 상태다.",
+          "description": "값이 자꾸 0으로 떨어지면 리밸런스가 반복되는 것: 컨슈머가 안정적으로 붙어 있지 못한 상태다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
           "gridPos": { "h": 9, "w": 6, "x": 18, "y": 17 },
           "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
@@ -186,7 +186,7 @@ data:
         },
         {
           "type": "timeseries", "title": "DB 커넥션 (active / pending)",
-          "description": "pending이 서면 풀이 말랐다는 뜻 — 커넥션 대기가 곧 응답 지연이 된다.",
+          "description": "pending이 서면 풀이 말랐다는 뜻: 커넥션 대기가 곧 응답 지연이 된다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
           "gridPos": { "h": 8, "w": 8, "x": 0, "y": 35 },
           "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
@@ -236,7 +236,7 @@ data:
         },
         {
           "type": "timeseries", "title": "KOPIS 호출률 (결과별)",
-          "description": "실패해도 예외가 밖으로 나가지 않고 축약 응답으로 degrade하므로, 이 지표가 없으면 실패가 보이지 않는다. 실제로 상세 조회가 100% 400(Request Blocked)인데 사용자도 우리도 몰랐다. cause는 실패 **종류**다 — http_400(차단) / timeout(응답 없음) / io(연결 실패) / parse(200은 받았는데 XML이 깨짐). 대응이 각각 다르므로 뭉치면 안 된다.",
+          "description": "실패해도 예외가 밖으로 나가지 않고 축약 응답으로 degrade하므로, 이 지표가 없으면 실패가 보이지 않는다. cause는 실패 종류다. http_400(차단) / timeout(응답 없음) / io(연결 실패) / parse(200은 받았는데 XML이 깨짐). 대응이 각각 다르므로 뭉치면 안 된다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
           "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
@@ -249,7 +249,7 @@ data:
         },
         {
           "type": "timeseries", "title": "KOPIS 평균 지연 (operation별)",
-          "description": "이 선이 올라가면 우리 /events/{id} p95도 같이 올라간다 — 외부 호출이 사용자 요청 경로에 있기 때문이다. 두 그래프를 나란히 보면 원인이 우리 안인지 밖인지 바로 갈린다.",
+          "description": "동기화 배치가 느려지는 원인이 KOPIS 쪽인지 본다. 사용자 /events/{id}는 KOPIS를 호출하지 않으므로 이 선과 함께 오르면 안 된다(IMP-018).",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
           "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },

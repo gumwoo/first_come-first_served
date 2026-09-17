@@ -58,17 +58,9 @@ public class KopisDetailSyncer {
     }
 
     /**
-     * 상세를 채우고 갱신한다. 미수집(NULL)과 오래된 것(stale)을 함께 대상으로 삼되,
-     * 한 번에 {@code detail-batch-limit}건까지만 처리한다.
-     *
-     * <p>왜 한 번에 다 하지 않나. 레이트 리밋(기본 5회/초) 때문에 1,446건이면 약 5분이
-     * 걸리고, 그동안 ShedLock의 {@code lockAtMostFor=PT10M}을 잡아먹는다. 나눠서 처리하면
-     * 한 회차가 짧고, 남은 건은 다음 동기화가 이어받는다. 오래된 순으로 고르므로
-     * 이어받기와 순환 갱신이 같은 규칙 하나로 처리된다.
-     *
-     * <p>회차당 300건이면 전체(약 1,446건)가 한 바퀴 도는 데 약 5일이다. 갱신 주기
-     * ({@code detail-refresh-after-days}, 기본 7일)를 그보다 짧게 잡으면 대상이 계속 쌓여
-     * 밀리므로, 두 값은 함께 봐야 한다.
+     * 상세를 채우고 갱신한다. 미수집(NULL)과 오래된 것을 함께 대상으로 삼되, 한 번에
+     * {@code detail-batch-limit}건까지만 처리한다. 레이트 리밋 때문에 전량이면 ShedLock
+     * {@code lockAtMostFor}를 잡아먹으므로 나눠서 이어받는다. 순환 주기와 갱신 주기의 관계는 TS-033.
      *
      * @return 이번 회차에 채운 건수
      */
@@ -81,7 +73,7 @@ public class KopisDetailSyncer {
         int filled = 0;
         for (Long id : ids) {
             if (Thread.currentThread().isInterrupted()) {
-                log.warn("[kopis] 상세 동기화 중단(인터럽트) — {}건 처리 후", filled);
+                log.warn("[kopis] 상세 동기화 중단(인터럽트): {}건 처리 후", filled);
                 break;
             }
             if (syncOne(id)) {

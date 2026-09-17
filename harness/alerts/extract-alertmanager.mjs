@@ -23,7 +23,7 @@ if (!cfg) {
   process.exit(1);
 }
 if (doc.alertmanager.enabled !== true) {
-  console.error("alertmanager.enabled 가 true가 아니다 — 설정만 있고 뜨지 않는다");
+  console.error("alertmanager.enabled 가 true가 아니다. 설정만 있고 뜨지 않는다");
   process.exit(1);
 }
 

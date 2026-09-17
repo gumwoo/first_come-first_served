@@ -104,7 +104,7 @@ public class OutboxRelay {
             return mapper.readValue(row.getPayload(), OrderEvent.class);
         } catch (Exception e) {
             row.markDead(e.toString());
-            log.error("[outbox] payload 해석 불가 — 격리(DEAD) id={} type={} aggregateId={}: {}",
+            log.error("[outbox] payload 해석 불가: 격리(DEAD) id={} type={} aggregateId={}: {}",
                     row.getId(), row.getType(), row.getAggregateId(), e.toString());
             return null;
         }

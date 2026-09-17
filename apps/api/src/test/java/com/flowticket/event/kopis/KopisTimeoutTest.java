@@ -26,13 +26,13 @@ import org.junit.jupiter.api.Test;
  * 톰캣 스레드가 영원히 묶인다. 스레드 풀이 마르면 이 엔드포인트뿐 아니라 API 전체가
  * 멎는데, readiness는 DB·Redis만 보므로 파드는 UP으로 남고 K8s가 빼주지도 않는다.
  *
- * <p>MockRestServiceServer로는 이걸 못 잡는다 — 실제 소켓이 아니라 요청을 가로채기 때문에
+ * <p>MockRestServiceServer로는 이걸 못 잡는다. 실제 소켓이 아니라 요청을 가로채기 때문에
  * 타임아웃 설정 자체가 관여하지 않는다. 그래서 받기만 하고 아무것도 쓰지 않는 소켓을
  * 직접 띄운다.
  */
 class KopisTimeoutTest {
 
-    /** 연결은 받아주지만 응답을 절대 쓰지 않는 서버 — "느린 외부 API"를 흉내낸다. */
+    /** 연결은 받아주지만 응답을 절대 쓰지 않는 서버: "느린 외부 API"를 흉내낸다. */
     private ServerSocket silentServer;
     private ExecutorService accepter;
 
@@ -44,7 +44,7 @@ class KopisTimeoutTest {
             while (!silentServer.isClosed()) {
                 try {
                     Socket s = silentServer.accept();
-                    // 응답을 쓰지 않는다. 소켓은 열어둔 채 방치 — read timeout이 유일한 탈출구다.
+                    // 응답을 쓰지 않는다. 소켓은 열어둔 채 방치: read timeout이 유일한 탈출구다.
                     s.getInputStream().read();
                 } catch (IOException ignored) {
                     return;
@@ -87,7 +87,7 @@ class KopisTimeoutTest {
         assertThat(result).isEmpty();
 
         // 타임아웃이 cause=timeout으로 분류되는지 실측으로 확인한다.
-        // request factory가 어떤 예외를 싣는지는 문서로 단정하지 않고 여기서 판정한다 —
+        // request factory가 어떤 예외를 싣는지는 문서로 단정하지 않고 여기서 판정한다.
         // 분류가 틀리면 이 단언이 깨지면서 알려준다(io나 unknown으로 새면 원인 구분이 무의미해진다).
         Timer timer = meters.find("kopis.api.requests")
                 .tag("operation", "detail").tag("outcome", "error").tag("cause", "timeout").timer();

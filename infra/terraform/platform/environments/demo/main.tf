@@ -1,7 +1,7 @@
-# FlowTicket 데모 환경 — 유일한 환경이다.
+# FlowTicket 데모 환경: 유일한 환경이다.
 #
 # 상시 운영하지 않는다: 필요할 때 apply → 실증·촬영 → destroy(ADR-012 §8).
-# destroy는 순서가 있다 — Ingress(ALB) → Kafka CR/PVC → EBS 확인 → terraform destroy.
+# destroy는 순서가 있다. Ingress(ALB) → Kafka CR/PVC → EBS 확인 → terraform destroy.
 # 순서를 어기면 VPC 삭제가 막히거나 EBS·EIP가 남아 과금이 계속된다.
 
 locals {

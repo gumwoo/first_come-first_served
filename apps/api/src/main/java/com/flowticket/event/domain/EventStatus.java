@@ -15,7 +15,7 @@ public enum EventStatus {
      * <p>ON_SALE 하나뿐이다. 나머지는 각각 이유가 있다.
      * <pre>
      *   DRAFT      아직 공개하지 않은 공연
-     *   SCHEDULED  공연예정 — 판매 시작 전(KOPIS "공연예정" 매핑, docs/rules/domain/event.md)
+     *   SCHEDULED  공연예정: 판매 시작 전(KOPIS "공연예정" 매핑, docs/rules/domain/event.md)
      *   PAUSED     운영자가 판매를 중지
      *   SOLD_OUT   매진
      *   CLOSED     종료

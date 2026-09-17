@@ -25,7 +25,7 @@ import jakarta.persistence.EntityManagerFactory;
  *
  * <p>목록이 쓰는 컬럼은 9개인데 {@code selectFrom(event)}는 엔티티의 모든 컬럼(20개)을 읽는다.
  *
- * <p>이 테스트는 성능을 단언하지 않는다 — 읽는 컬럼 수만 고정한다.
+ * <p>이 테스트는 성능을 단언하지 않는다. 읽는 컬럼 수만 고정한다.
  *
  * <p>이 테스트는 Hibernate 통계의 엔티티 로드 수를 본다. 프로젝션이면 0이고,
  * {@code selectFrom(event)}로 되돌리면 로드 수가 올라가 실패한다.
@@ -57,7 +57,7 @@ class EventListProjectionTest extends IntegrationTestSupport {
         stats().clear();
     }
 
-    /** 통계가 실제로 동작하는지 먼저 확인한다 — 안 켜져 있으면 위 단언이 무의미해진다. */
+    /** 통계가 실제로 동작하는지 먼저 확인한다. 안 켜져 있으면 위 단언이 무의미해진다. */
     @Test
     void 통계가_켜져있다_엔티티_조회는_카운트에_잡힌다() {
         eventRepository.findAll();

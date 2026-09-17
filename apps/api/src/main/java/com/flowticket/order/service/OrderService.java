@@ -125,7 +125,7 @@ public class OrderService {
             orderItemRepository.save(OrderItem.builder()
                     .orderId(order.getId()).seatId(s.getId())
                     .grade(s.getGrade()).price(priceMap.getOrDefault(s.getGrade(), 0))
-                    // 좌석 위치도 주문 시점 값으로 굳힌다(가격과 같은 이유 — ADR-004).
+                    // 좌석 위치도 주문 시점 값으로 굳힌다(가격과 같은 이유: ADR-004).
                     .seatRow(s.getSeatRow()).seatCol(s.getSeatCol()).build());
         }
         return order;

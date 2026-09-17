@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
  * 들고 있는 Pod가 다르면 알림이 누락된다. 그래서 브로드캐스트를 Redis pub/sub 채널로 발행하고,
  * 모든 Pod가 구독해 각자 로컬 SSE로 전달한다(자기 자신 포함, 단일 전달 경로).
  *
- * <p>Kafka(내구성 이벤트 백본)를 대체하는 게 아니라 "Pod 간 마지막 홉 팬아웃" 단계다 —
+ * <p>Kafka(내구성 이벤트 백본)를 대체하는 게 아니라 "Pod 간 마지막 홉 팬아웃" 단계다.
  * best-effort(미저장) 성격이 "SSE는 보조·DB가 진실원(ADR-008)"과 일치.
  */
 @Slf4j

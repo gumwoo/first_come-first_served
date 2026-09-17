@@ -29,7 +29,7 @@ import org.testcontainers.utility.DockerImageName;
  * 아웃박스 릴레이의 독성 행(poison row) 실패 모드 재현.
  *
  * <p>{@link OutboxRelay#publishPending()}은 한 건이라도 실패하면 남은 배치를 중단한다. 그 판단은
- * 일시적 실패(브로커 다운)에는 옳다 — 순서를 지키고 다음 틱에 재시도하면 복구된다.
+ * 일시적 실패(브로커 다운)에는 옳다. 순서를 지키고 다음 틱에 재시도하면 복구된다.
  * 그러나 결정적 실패(payload 역직렬화 불가)에는 성립하지 않는다. 다음 틱에도 같은 행이
  * {@code findByStatusOrderByCreatedAtAsc}의 맨 앞에 다시 오므로 영원히 같은 자리에서 멈춘다.
  *
@@ -45,7 +45,7 @@ class OutboxPoisonEventIntegrationTest {
 
     /** 뒤따르는 정상 이벤트 수. */
     private static final int HEALTHY = 3;
-    /** 릴레이 틱 반복 횟수 — "다음 틱에 재시도하면 복구된다"가 성립하는지 보려면 여러 번 돌려야 한다. */
+    /** 릴레이 틱 반복 횟수: "다음 틱에 재시도하면 복구된다"가 성립하는지 보려면 여러 번 돌려야 한다. */
     private static final int TICKS = 5;
     private static final long ORDER_BASE = 7_000_000L;
 
@@ -59,7 +59,7 @@ class OutboxPoisonEventIntegrationTest {
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
-        // 배경 스케줄러 비활성 — 릴레이 틱을 테스트가 직접 돌려 결정적으로 만든다.
+        // 배경 스케줄러 비활성: 릴레이 틱을 테스트가 직접 돌려 결정적으로 만든다.
         r.add("flowticket.scheduling.enabled", () -> "false");
         r.add("spring.datasource.url", postgres::getJdbcUrl);
         r.add("spring.datasource.username", postgres::getUsername);
@@ -102,7 +102,7 @@ class OutboxPoisonEventIntegrationTest {
 
         runRelayTicks();
 
-        // 본질 계약은 "더 이상 릴레이 후보가 아니다"이다 — 몇 번 시도했는지가 아니라.
+        // 본질 계약은 "더 이상 릴레이 후보가 아니다"이다. 몇 번 시도했는지가 아니라.
         List<OutboxEvent> candidates =
                 outboxRepository.findByStatusOrderByCreatedAtAsc(OutboxStatus.PENDING, PageRequest.of(0, 100));
         assertThat(candidates)
@@ -114,7 +114,7 @@ class OutboxPoisonEventIntegrationTest {
         assertThat(poison.getStatus())
                 .as("격리 상태로 남아야 운영자가 원인을 보고 판단할 수 있다(삭제하지 않는다)")
                 .isEqualTo(OutboxStatus.DEAD);
-        // 부가 검증 — 시도 횟수 자체는 구현에 따라 달라질 수 있다(결정적 실패는 1회로 판정 가능).
+        // 부가 검증: 시도 횟수 자체는 구현에 따라 달라질 수 있다(결정적 실패는 1회로 판정 가능).
         assertThat(poison.getAttempts())
                 .as("시도 횟수에 상한이 없으면 운영자가 개입할 때까지 무한히 증가한다")
                 .isLessThan(TICKS);
@@ -140,8 +140,8 @@ class OutboxPoisonEventIntegrationTest {
 
         appendPoison(blockedOrder);
         sleepPastTimestampResolution();
-        UUID followerId = appendHealthy(blockedOrder); // 같은 주문의 후속 — 앞이 못 나갔으니 보류
-        UUID otherId = appendHealthy(otherOrder);      // 다른 주문 — 영향받을 이유가 없다
+        UUID followerId = appendHealthy(blockedOrder); // 같은 주문의 후속: 앞이 못 나갔으니 보류
+        UUID otherId = appendHealthy(otherOrder);      // 다른 주문: 영향받을 이유가 없다
 
         runRelayTicks();
 

@@ -79,7 +79,7 @@ export function EventStatusPill({ status }: { status: string }) {
 
 export const eventStatusLabel = (status: string) => EVENT_STATUS[status]?.label ?? status;
 
-/** 운영 페이지 공통 헤더 — 타이틀·설명 + 우측 액션 슬롯. */
+/** 운영 페이지 공통 헤더: 타이틀·설명 + 우측 액션 슬롯. */
 export function PageHeader({ title, desc, actions }: { title: string; desc?: string; actions?: ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-border pb-4">

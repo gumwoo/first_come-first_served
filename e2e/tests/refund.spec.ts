@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { seedPaidOrder, seedOrder, seedAdmittedUser } from "../helpers/seed";
 
 /**
- * 취소·환불 E2E — Mock 게이트웨이(결정론). 시드 이벤트 공연일이 D+30이라 환불은 전액 허용.
+ * 취소·환불 E2E: Mock 게이트웨이(결정론). 시드 이벤트 공연일이 D+30이라 환불은 전액 허용.
  * 결제까지 API로 순간이동하고, 브라우저는 마이페이지→환불→완료를 검증.
  */
 

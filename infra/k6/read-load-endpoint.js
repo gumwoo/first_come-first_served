@@ -1,4 +1,4 @@
-// 엔드포인트 단일 조회 부하 — read-load-rate.js(50:30:20 혼합)의 짝이다.
+// 엔드포인트 단일 조회 부하: read-load-rate.js(50:30:20 혼합)의 짝이다.
 //
 // 왜 필요한가: 혼합 부하로는 "어느 엔드포인트가 비용을 얼마나 먹는지"를 못 가른다.
 // 캐시로 얻을 수 있는 개선의 상한은 캐시 가능한 경로가 전체 비용에서 차지하는 비율이고
@@ -17,7 +17,7 @@
 // benchmarks/phase1-saturation 기준 전 구간 통과 구간(550까지 0% 실패)의 안쪽이다.
 //
 // 워밍업은 별도 실행이다(측정 요약에 섞이지 않게). 프로토콜은
-// docs/testing/cache-experiment-plan.md 참고 — read-load-rate.js로 300 rps·45초 선행.
+// docs/testing/cache-experiment-plan.md 참고: read-load-rate.js로 300 rps·45초 선행.
 //
 // 옵션 이름에 K6_ 접두사를 쓰지 않는다. K6_DURATION 등은 k6 자신의 환경변수 옵션이라
 // scenarios 설정을 통째로 덮어쓴다.
@@ -37,7 +37,7 @@ const ENDPOINTS = {
 };
 
 // browsing = 좌석맵을 뺀 나머지. 0단계(엔드포인트 단일)가 아니라 2단계 B 시나리오용이다.
-// 혼합의 원래 비중이 list:detail = 30:20 이므로 그 상대 비율(60:40)을 보존한다 —
+// 혼합의 원래 비중이 list:detail = 30:20 이므로 그 상대 비율(60:40)을 보존한다.
 // 임의로 50:50을 쓰면 A 시나리오와 비교가 성립하지 않는다.
 const BROWSING_LIST_SHARE = 0.6;
 
@@ -78,7 +78,7 @@ export function setup() {
 }
 
 export default function (data) {
-  // 태그는 실제로 때린 엔드포인트로 단다 — browsing 실행에서도 list/detail이 갈려 보여야
+  // 태그는 실제로 때린 엔드포인트로 단다. browsing 실행에서도 list/detail이 갈려 보여야
   // 나중에 "어느 쪽이 비용을 먹었나"를 되짚을 수 있다.
   const key = pick();
   const res = http.get(ENDPOINTS[key](data.eventId), { tags: { ep: key } });

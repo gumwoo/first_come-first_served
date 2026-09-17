@@ -14,7 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>트랜잭션 범위를 한 건으로 좁게 유지하는 것도 의도다. 상세 수집 전체를 한 트랜잭션으로
  * 묶으면 외부 호출이 섞인 채 수 분간 DB 커넥션을 물고 있게 되는데, 커넥션은 이 클러스터에서
- * 이미 병목이다(TS-021 — 파드 × 풀 크기가 RDS 한도를 넘겼다).
+ * 이미 병목이다(TS-021: 파드 × 풀 크기가 RDS 한도를 넘겼다).
  */
 @Component
 public class KopisDetailWriter {

@@ -9,7 +9,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 /**
  * "상세를 받았는가"의 판정 기준을 고정한다.
  *
- * <p>왜 이 테스트가 있나: {@code runningTime}이 비었는지로 진행 상황을 대신 세면 틀린다 —
+ * <p>왜 이 테스트가 있나: {@code runningTime}이 비었는지로 진행 상황을 대신 세면 틀린다.
  * {@link Event#updateDetail}은 상세 응답에 그 필드가 없어도 {@code detailSyncedAt}을 찍는다.
  * 그래서 "상세는 받았는데 runningTime만 없는 공연"이 정상적으로 존재하고, 대리값으로 세면
  * 그것들이 영원히 "미수집"으로 남아 완료 판정이 되지 않는다.
@@ -21,7 +21,7 @@ class EventDetailSyncMarkerTest {
     void 상세_수집_표시는_runningTime과_무관하다() {
         Event e = new Event();
 
-        // KOPIS 상세에 공연시간이 없는 경우 — 나머지는 정상 수집됐다.
+        // KOPIS 상세에 공연시간이 없는 경우: 나머지는 정상 수집됐다.
         e.updateDetail(null, "만 12세 이상", "R석 90,000원", "출연진", "줄거리", "일정");
 
         assertThat(e.getDetailSyncedAt())

@@ -54,14 +54,14 @@ public class OutboxEvent {
     private LocalDateTime publishedAt;
 
     /**
-     * 마지막 시도의 실패 원인. 성공하면 비운다 — 남겨두면 PUBLISHED인데 오류가 붙어 있는
+     * 마지막 시도의 실패 원인. 성공하면 비운다. 남겨두면 PUBLISHED인데 오류가 붙어 있는
      * 모순된 상태가 되어 운영자가 "발행됐는데 아직 문제가 있나"로 읽는다.
      */
     @Column(name = "last_error", columnDefinition = "text")
     private String lastError;
 
     /**
-     * id를 호출자가 정한다 — 같은 UUID를 payload 안(eventId)에도 넣어 행 PK == 소비자 멱등 키를
+     * id를 호출자가 정한다. 같은 UUID를 payload 안(eventId)에도 넣어 행 PK == 소비자 멱등 키를
      * 맞추기 위함. 릴레이는 payload를 그대로 발행하므로 재발행돼도 소비자가 동일 키로 중복을 흡수한다.
      */
     public OutboxEvent(UUID id, String aggregateType, Long aggregateId, String type, String payload) {
@@ -75,7 +75,7 @@ public class OutboxEvent {
         this.createdAt = LocalDateTime.now();
     }
 
-    /** 발행 성공 — 반드시 Kafka send 성공을 확인한 뒤 호출(publish-then-mark). */
+    /** 발행 성공: 반드시 Kafka send 성공을 확인한 뒤 호출(publish-then-mark). */
     public void markPublished() {
         this.status = OutboxStatus.PUBLISHED;
         this.publishedAt = LocalDateTime.now();
@@ -84,7 +84,7 @@ public class OutboxEvent {
     }
 
     /**
-     * 일시적 발행 실패 — PENDING을 유지해 다음 틱에 재시도. 시도 횟수는 운영 가시성용.
+     * 일시적 발행 실패: PENDING을 유지해 다음 틱에 재시도. 시도 횟수는 운영 가시성용.
      * 브로커·네트워크 장애가 여기 해당하며, 시도 횟수만으로 DEAD로 넘기지 않는다.
      *
      * <p>여기서 남긴 원인은 다음 시도가 성공하면 지워진다({@link #markPublished()}).
@@ -95,10 +95,10 @@ public class OutboxEvent {
     }
 
     /**
-     * 결정적 실패 — 재시도해도 결과가 같으므로 릴레이 후보에서 뺀다. payload를 해석할 수
+     * 결정적 실패: 재시도해도 결과가 같으므로 릴레이 후보에서 뺀다. payload를 해석할 수
      * 없어 애초에 Kafka로 보낼 객체를 만들지 못하는 경우다.
      *
-     * <p>시도 횟수도 함께 올린다. "0회 시도인데 DEAD"로 보이면 운영자가 원인을 오해한다 —
+     * <p>시도 횟수도 함께 올린다. "0회 시도인데 DEAD"로 보이면 운영자가 원인을 오해한다.
      * 실제로는 한 번 시도했고 그 결과가 결정적이었다.
      */
     public void markDead(String reason) {
@@ -108,11 +108,11 @@ public class OutboxEvent {
     }
 
     /**
-     * 운영자 판단 — 다시 발행 대상으로 되돌린다(DEAD → PENDING).
+     * 운영자 판단: 다시 발행 대상으로 되돌린다(DEAD → PENDING).
      *
      * <p>payload를 고치는 기능은 일부러 제공하지 않는다. 운영자가 이벤트 내용을 편집할 수
      * 있으면 그것은 복구가 아니라 위조다. 이 경로가 유효한 실제 상황은 소비할 쪽이 배포로
-     * 고쳐진 경우다 — 스키마가 맞춰졌으면 같은 payload가 이제 해석된다.
+     * 고쳐진 경우다. 스키마가 맞춰졌으면 같은 payload가 이제 해석된다.
      *
      * <p>되돌린 뒤에도 정렬 키(createdAt)는 그대로라 원래 순서 자리로 돌아간다.
      */
@@ -123,10 +123,10 @@ public class OutboxEvent {
     }
 
     /**
-     * 운영자 판단 — 이 이벤트의 발행을 포기한다(DEAD → DISCARDED).
+     * 운영자 판단: 이 이벤트의 발행을 포기한다(DEAD → DISCARDED).
      *
      * <p>같은 aggregate의 후속 이벤트가 다시 흐른다. 릴레이는 DEAD만 차단 사유로 보므로,
-     * 폐기는 "이 이벤트는 영영 안 나간다는 것을 받아들인다"는 선언이기도 하다. 행은 지우지 않는다 —
+     * 폐기는 "이 이벤트는 영영 안 나간다는 것을 받아들인다"는 선언이기도 하다. 행은 지우지 않는다.
      * 무엇을 포기했는지가 남아야 나중에 추적할 수 있다.
      */
     public void discard() {
@@ -136,7 +136,7 @@ public class OutboxEvent {
 
     /**
      * PENDING 행에는 두 전이를 허용하지 않는다. 브로커 장애로 밀려 있을 뿐 언젠가 나갈 이벤트라,
-     * 운영자가 개입할 대상이 아니다 — 개입해야 하는 것은 릴레이가 스스로 못 푸는 DEAD뿐이다.
+     * 운영자가 개입할 대상이 아니다. 개입해야 하는 것은 릴레이가 스스로 못 푸는 DEAD뿐이다.
      */
     private void requireDead(String action) {
         if (this.status != OutboxStatus.DEAD) {

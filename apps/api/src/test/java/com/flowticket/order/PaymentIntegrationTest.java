@@ -176,7 +176,7 @@ class PaymentIntegrationTest extends IntegrationTestSupport {
         assertThatThrownBy(() -> paymentService.pay(60L, c.orderId(), "card", null, "OK-" + c.orderId()))
                 .isInstanceOf(BusinessException.class);
 
-        // 롤백으로 주문은 PAID로 확정되지 않음(PENDING 유지) — "PAID인데 좌석 없음" 방지
+        // 롤백으로 주문은 PAID로 확정되지 않음(PENDING 유지): "PAID인데 좌석 없음" 방지
         assertThat(orderRepository.findById(c.orderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(seatRepository.findById(c.seatId()).orElseThrow().getStatus()).isEqualTo(SeatStatus.AVAILABLE);
         assertThat(holdRepository.findById(c.holdId()).orElseThrow().getStatus()).isEqualTo(SeatHoldStatus.EXPIRED);

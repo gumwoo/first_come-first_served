@@ -33,7 +33,7 @@ class KopisSyncLockIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 락이_이미_잡혀있으면_수동_동기화는_실행되지_않는다() {
-        // 다른 인스턴스(또는 새벽 스케줄)가 동기화 중인 상황을 재현 — 같은 락 이름을 선점.
+        // 다른 인스턴스(또는 새벽 스케줄)가 동기화 중인 상황을 재현: 같은 락 이름을 선점.
         LockConfiguration held = new LockConfiguration(
                 Instant.now(), "kopis-sync", Duration.ofSeconds(30), Duration.ZERO);
         Optional<SimpleLock> lock = lockProvider.lock(held);

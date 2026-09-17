@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # RDS 강제 페일오버 중 앱의 거동을 측정한다.
 #
-# 왜 필요한가: ADR-012 §10이 Multi-AZ를 A(실증) 범주에 넣었다 — "켜 두기만 하는 것이
+# 왜 필요한가: ADR-012 §10이 Multi-AZ를 A(실증) 범주에 넣었다. "켜 두기만 하는 것이
 # 아니라 눌러 보고 앱의 거동을 측정한다". terraform-design도 관찰 항목을 표로 지정해 두었다.
 #
 # 측정 대상은 "AWS가 페일오버에 성공했는가"가 아니다. 그건 AWS가 보장한다.
 # 재는 것은 앱이 그 구간을 어떻게 통과하는가다(terraform-design의 관찰 표).
-#   커넥션 풀 — HikariCP가 끊긴 커넥션을 버리고 재연결하는가, 고갈되는가
-#   오류 형태 — 5xx인가 타임아웃 누적인가
-#   중단 시간 — 쓰기 불가 구간의 실제 길이
-#   자동 복구 — 스스로 정상화되는가, Pod 재시작이 필요한가
+#   커넥션 풀: HikariCP가 끊긴 커넥션을 버리고 재연결하는가, 고갈되는가
+#   오류 형태: 5xx인가 타임아웃 누적인가
+#   중단 시간: 쓰기 불가 구간의 실제 길이
+#   자동 복구: 스스로 정상화되는가, Pod 재시작이 필요한가
 #
 # Redis 페일오버와 같이 하지 않는다. 원인이 섞인다. 각각 별도 실험이다.
 #
@@ -63,7 +63,7 @@ read -r MULTIAZ STATUS AZ <<<"$(aws rds describe-db-instances --region "$REGION"
   --db-instance-identifier "$DB" \
   --query 'DBInstances[0].[MultiAZ,DBInstanceStatus,AvailabilityZone]' --output text)"
 echo "    RDS=$DB MultiAZ=$MULTIAZ status=$STATUS az=$AZ"
-# Multi-AZ가 아니면 강제 페일오버는 그냥 재부팅이다 — 다른 것을 재게 된다.
+# Multi-AZ가 아니면 강제 페일오버는 그냥 재부팅이다. 다른 것을 재게 된다.
 [ "$MULTIAZ" = "True" ] || { echo "MultiAZ가 아니다 — 이 실험은 Multi-AZ 전환을 재는 것이므로 중단한다" >&2; exit 1; }
 [ "$STATUS" = "available" ] || { echo "RDS 상태가 available이 아니다($STATUS)" >&2; exit 1; }
 
@@ -75,7 +75,7 @@ CODE="$(http_code "https://$DOMAIN")"
 # ── 1. 부하 (DB를 실제로 타는 경로) ─────────────────────────────────
 say "1/6 부하 기동 (${RATE} rps)"
 # 좌석 조회는 DB를 탄다(IMP-015 §3이 같은 이유로 이 엔드포인트를 골랐다).
-# 캐시가 걸리는 구간이 있으므로 "DB 장애가 곧 5xx"는 아니다 — 그것 자체가 관찰 대상이다.
+# 캐시가 걸리는 구간이 있으므로 "DB 장애가 곧 5xx"는 아니다. 그것 자체가 관찰 대상이다.
 EVENT_ID="$(http_body "https://$DOMAIN/api/events?status=ON_SALE&size=20" \
   | jq -r '.data.items[0].id // empty' | tr -d '\r' || true)"
 kubectl -n "$NS" delete job "$JOB" --ignore-not-found >/dev/null
@@ -174,7 +174,7 @@ for i in $(seq 1 60); do
     --db-instance-identifier "$DB" --query 'DBInstances[0].[DBInstanceStatus,AvailabilityZone]' \
     --output text 2>/dev/null || echo "? ?")"
   # DBInstanceStatus=available 만 보고 끝내지 않는다. available이 된 시점에도 AZ 필드가
-  # 아직 옛 값일 수 있어 "전환 안 됨"으로 오판한다 — failover completed 이벤트로 확인한다.
+  # 아직 옛 값일 수 있어 "전환 안 됨"으로 오판한다. failover completed 이벤트로 확인한다.
   EVT="$(aws rds describe-events --region "$REGION" --source-identifier "$DB" \
     --source-type db-instance --duration 30 \
     --query "Events[?contains(Message,'failover completed')].Date" --output text 2>/dev/null || true)"
@@ -202,7 +202,7 @@ mkdir -p "$OUT"; cp "$WORK/k6.log" "$WORK/hikari.log" "$OUT/" 2>/dev/null || tru
   echo "rate=$RATE duration=$DURATION baseline_non2xx=$BASE_BAD"
   echo "failover: $T0 -> available by $T1"
 } > "$OUT/conditions.txt"
-# 앱이 스스로 정상화됐는지 — Pod 재시작이 필요했다면 restartCount가 오른다.
+# 앱이 스스로 정상화됐는지: Pod 재시작이 필요했다면 restartCount가 오른다.
 kubectl -n "$NS" get pods -l app=flowticket-api \
   -o custom-columns=NAME:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount,READY:.status.containerStatuses[0].ready \
   --no-headers > "$OUT/api-pods.txt" 2>/dev/null || true

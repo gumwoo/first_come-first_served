@@ -63,7 +63,7 @@ export const LoadTestStatus = [
 ] as const;
 export type LoadTestStatus = (typeof LoadTestStatus)[number];
 
-// FE가 구독하는 실시간 이벤트 — contracts/events.yaml fe_subscribes 와 일치
+// FE가 구독하는 실시간 이벤트: contracts/events.yaml fe_subscribes 와 일치
 export const SUBSCRIBED_EVENTS = [
   "order.paid",
   "order.failed",

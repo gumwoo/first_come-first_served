@@ -107,7 +107,7 @@ class RefundIdempotencyIntegrationTest extends IntegrationTestSupport {
     void 동시_더블클릭_같은키는_전부_같은_환불결과를_받는다() throws Exception {
         // IMP-009 after: idempotency_key UNIQUE + 조건부 전이 + 충돌 시 기존 결과 반환
         //
-        // 결제 쪽과 같은 구멍이 있었다 — `catch (Exception ignored)`로 삼키고 DB 최종 상태만 봐서,
+        // 결제 쪽과 같은 구멍이 있었다. `catch (Exception ignored)`로 삼키고 DB 최종 상태만 봐서,
         // 1건만 성공하고 9건이 터져도 통과했다. 환불은 금액이 실려 있어 더 나쁘다:
         // 더블클릭한 사용자가 에러를 보면 "환불이 안 됐다"고 판단해 다시 누르거나 문의한다.
         // 자세한 근거는 PaymentIdempotencyIntegrationTest의 같은 테스트 주석 참고.
@@ -135,7 +135,7 @@ class RefundIdempotencyIntegrationTest extends IntegrationTestSupport {
                 .containsOnly(responses.get(0).refundAmount());
         assertThat(responses).extracting(RefundResponse::fee).containsOnly(responses.get(0).fee());
 
-        // 응답의 orderStatus는 단언하지 않는다 — refundTx의 중복 감지 경로가 이미 로드한
+        // 응답의 orderStatus는 단언하지 않는다. refundTx의 중복 감지 경로가 이미 로드한
         // Order 엔티티(1차 캐시)를 쓰기 때문에 먼저 커밋한 스레드의 REFUNDED가 안 실릴 수 있다.
         // 강제하면 간헐 실패한다. 실제 정합성은 아래 DB 최종 상태로 본다.
 

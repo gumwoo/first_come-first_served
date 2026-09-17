@@ -21,8 +21,8 @@ import org.springframework.test.context.TestPropertySource;
  * 좌석맵 캐시(실험 스위치)의 동작과 대가를 함께 고정한다.
  *
  * <p>이 캐시는 성능 상한을 재기 위한 것이지 운영 최종 설계가 아니다
- * ({@code SeatService.getSeats} 주석). 그 판단의 근거가 되는 사실 —
- * TTL 동안 좌석 상태 변경이 보이지 않는다 — 을 테스트로 박아둔다.
+ * ({@code SeatService.getSeats} 주석). 그 판단의 근거가 되는 사실,
+ * "TTL 동안 좌석 상태 변경이 보이지 않는다"를 테스트로 박아둔다.
  * 나중에 이벤트 기반 무효화를 붙이면 이 테스트가 바뀌어야 하고, 그때 이 대가가
  * 해소됐다는 것이 드러난다.
  */
@@ -80,7 +80,7 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
      * Hikari 커넥션 획득 누적 횟수.
      *
      * <p>지표가 없으면 실패시킨다. null일 때 0을 돌려주면 before·after가 모두 0이 되어
-     * 계측기가 없어도 테스트가 통과한다 — 이 테스트의 주장("캐시 hit은 커넥션을 빌리지
+     * 계측기가 없어도 테스트가 통과한다. 이 테스트의 주장("캐시 hit은 커넥션을 빌리지
      * 않는다")을 증명할 수단이 사라졌는데 초록불이 되는 것이라, 회귀 테스트로서 의미가 없다.
      */
     private long acquireCount() {
@@ -97,7 +97,7 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
                 .filter(s -> "AVAILABLE".equals(s.status())).count();
         assertThat(availableBefore).isEqualTo(100);
 
-        // DB에서 직접 바꾼다 — 캐시를 거치지 않는 변경이라 무효화가 없으면 보이지 않는다.
+        // DB에서 직접 바꾼다. 캐시를 거치지 않는 변경이라 무효화가 없으면 보이지 않는다.
         jdbc.update("update seats set status='HELD' where event_id=?", eventId);
 
         long availableAfter = seatService.getSeats(eventId).seats().stream()

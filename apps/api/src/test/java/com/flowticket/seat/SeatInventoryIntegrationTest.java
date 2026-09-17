@@ -157,7 +157,7 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
         String token = admittedToken(7L, eventId);
         assertThat(seatService.hold(7L, eventId, List.of(aSeatId), token).seatIds()).containsExactly(aSeatId);
 
-        // 이 좌석은 뺏겼지만 나머지 99석은 남아 있다 — 매진이 아니다.
+        // 이 좌석은 뺏겼지만 나머지 99석은 남아 있다. 매진이 아니다.
         assertThatThrownBy(() -> seatService.hold(7L, eventId, List.of(aSeatId), token))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.SEAT_CONFLICT);
@@ -165,7 +165,7 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 잔여가_0일_때만_SOLD_OUT이다() {
-        // 위 테스트와 쌍이다. 같은 "선점 실패"라도 잔여가 0이면 매진, 아니면 경합 —
+        // 위 테스트와 쌍이다. 같은 "선점 실패"라도 잔여가 0이면 매진, 아니면 경합:
         // 이 둘이 갈리지 않으면 SEAT_CONFLICT 분리가 의미가 없다.
         String token = admittedToken(9L, eventId);
         jdbc.update("update seats set status='SOLD' where event_id=?", eventId); // 전석 소진
@@ -197,13 +197,13 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
         Thread.sleep(1500); // hold-ttl(1s) 경과 → sweep 대상(여전히 HELD)
 
         TransactionTemplate tx = new TransactionTemplate(txManager);
-        // 결제tx: 레이스에서 승리 — 좌석 HELD→SOLD, 홀드 HELD→CONVERTED (둘 다 조건부 성공, 커밋)
+        // 결제 tx(레이스 승리): 좌석 HELD→SOLD, 홀드 HELD→CONVERTED (둘 다 조건부 성공, 커밋)
         tx.executeWithoutResult(s -> {
             assertThat(seatRepository.sellSeats(List.of(aSeatId), SeatStatus.SOLD, SeatStatus.HELD)).isEqualTo(1);
             assertThat(holdRepository.convertHold(holdId)).isEqualTo(1);
         });
 
-        // sweep tx(별도): 뒤늦게 실행하는 복구 쿼리(SeatHoldExpiryService와 동일) — 조건부 가드로 0행
+        // sweep tx(별도): 뒤늦게 실행하는 복구 쿼리(SeatHoldExpiryService와 동일), 조건부 가드로 0행
         int[] swept = tx.execute(s -> new int[] {
             seatRepository.releaseSeats(List.of(aSeatId), SeatStatus.AVAILABLE, SeatStatus.HELD),
             holdRepository.expireHolds(List.of(holdId)),
@@ -230,7 +230,7 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
             assertThat(seatRepository.sellSeats(List.of(aSeatId), SeatStatus.SOLD, SeatStatus.HELD)).isEqualTo(1);
             assertThat(holdRepository.convertHold(holdId)).isEqualTo(1);
         });
-        reset(sse); // 그 전(선점 등)의 브로드캐스트는 관심 밖 — sweep이 유발하는 것만 검증
+        reset(sse); // 그 전(선점 등)의 브로드캐스트는 관심 밖: sweep이 유발하는 것만 검증
 
         expiryService.sweepExpired();
 
@@ -241,7 +241,7 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
     @Test
     void 선점_해제는_좌석과_홀드_상태를_함께_되돌린다() {
         // 회귀 방지: releaseSeats(@Modifying clearAutomatically)가 컨텍스트를 비워
-        // hold.release()가 detached로 유실되던 버그 — 좌석은 풀리는데 홀드가 HELD로 남음.
+        // hold.release()가 detached로 유실되던 버그: 좌석은 풀리는데 홀드가 HELD로 남음.
         String token = admittedToken(20L, eventId);
         HoldResponse held = seatService.hold(20L, eventId, List.of(aSeatId), token);
         assertThat(seatStatus(aSeatId)).isEqualTo("HELD");

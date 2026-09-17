@@ -1,12 +1,12 @@
 # FlowTicket API 운영 이미지.
-# 빌드 컨텍스트는 저장소 루트(.dockerignore를 한 곳에서 관리) — `docker build -f apps/api/Dockerfile .`
+# 빌드 컨텍스트는 저장소 루트(.dockerignore를 한 곳에서 관리): `docker build -f apps/api/Dockerfile .`
 #
 # 멀티스테이지: 빌드에는 Gradle·소스·APT가 필요하지만 실행에는 JRE와 jar만 있으면 된다.
 # 두 단계를 나누면 최종 이미지에 빌드 도구가 남지 않아 크기와 공격면이 함께 줄어든다.
 
 # ── 1단계: 빌드 ───────────────────────────────────────────────
 # 래퍼 스크립트(gradlew)가 저장소에 없어 CI와 동일하게 gradle 이미지를 쓴다.
-# 버전은 gradle-wrapper.properties(8.10.2)와 맞춘다 — 빌드 재현성.
+# 버전은 gradle-wrapper.properties(8.10.2)와 맞춘다. 빌드 재현성.
 FROM gradle:8.10.2-jdk17 AS builder
 
 # gradle 이미지는 비루트 `gradle` 유저로 동작한다 → 소유권을 맞춰 복사해야 빌드 산출물을 쓸 수 있다.
@@ -16,7 +16,7 @@ COPY --chown=gradle:gradle apps/api/settings.gradle.kts apps/api/build.gradle.kt
 RUN gradle dependencies --no-daemon --quiet || true
 
 COPY --chown=gradle:gradle apps/api/src ./src
-# 테스트는 CI(Testcontainers)가 담당한다 — 이미지 빌드가 도커 인 도커를 요구하지 않도록 제외.
+# 테스트는 CI(Testcontainers)가 담당한다. 이미지 빌드가 도커 인 도커를 요구하지 않도록 제외.
 RUN gradle bootJar --no-daemon -x test
 
 # ── 2단계: 실행 ───────────────────────────────────────────────

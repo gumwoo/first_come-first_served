@@ -1,10 +1,10 @@
-# ECR — 콘솔로 먼저 만든 저장소다. apply 전에 import해야 한다.
+# ECR: 콘솔로 먼저 만든 저장소다. apply 전에 import해야 한다.
 #   terraform import 'aws_ecr_repository.this["api"]' flowticket-api
 #   terraform import 'aws_ecr_repository.this["web"]' flowticket-web
 # 절차: README.md
 #
 # import 후 첫 plan은 콘솔 기본값과 아래 선언의 차이를 보여준다. 그 diff를 눈으로
-# 확인하고 적용하는 것이 이 스택의 목적이다 — 지금까지 콘솔 설정이 코드에 없었다.
+# 확인하고 적용하는 것이 이 스택의 목적이다. 지금까지 콘솔 설정이 코드에 없었다.
 
 locals {
   ecr_repositories = {
@@ -20,7 +20,7 @@ resource "aws_ecr_repository" "this" {
 
   # 기본값은 MUTABLE이다. image.yml을 workflow_dispatch로 재실행하면 같은 SHA 태그를
   # 다시 push하는데(실제로 ECR 저장소 리전 문제로 재실행한 적이 있다) IMMUTABLE이면 실패한다.
-  # 즉 재실행 시 덮어쓰기가 실제로 일어난다 — 다만 서로 다른 커밋이 같은 태그를 쓰는
+  # 즉 재실행 시 덮어쓰기가 실제로 일어난다. 다만 서로 다른 커밋이 같은 태그를 쓰는
   # 일은 없으므로(태그 = git SHA) 태그 재사용 위험은 제한적이다. 재실행 가능성을 택했다.
   image_tag_mutability = var.ecr_image_tag_mutability
 
@@ -48,7 +48,7 @@ resource "aws_ecr_lifecycle_policy" "this" {
   # 그만큼 줄어든다.
   #
   # 태그 없는 이미지는 같은 SHA를 다시 push할 때 생긴다(image.yml workflow_dispatch 재실행).
-  # 태그로 참조할 수 없으므로 롤백에 쓸 수 없다 — 남겨 둘 이유가 없다.
+  # 태그로 참조할 수 없으므로 롤백에 쓸 수 없다. 남겨 둘 이유가 없다.
   policy = jsonencode({
     rules = concat(
       var.ecr_untagged_expire_days > 0 ? [{

@@ -63,7 +63,7 @@ class OrderIntegrationTest extends IntegrationTestSupport {
 
     @BeforeEach
     void seed() {
-        // 테스트 격리 — FK 순서대로 정리(order_items→orders→hold_items→holds→seats→prices→events)
+        // 테스트 격리: FK 순서대로 정리(order_items→orders→hold_items→holds→seats→prices→events)
         orderItemRepository.deleteAll();
         orderRepository.deleteAll();
         holdItemRepository.deleteAll();

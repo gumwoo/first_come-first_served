@@ -11,7 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 
-// 취소 수수료 정책(백엔드 RefundPolicy 기본값 미러 — 서버가 최종 권위, FE는 예상 안내).
+// 취소 수수료 정책(백엔드 RefundPolicy 기본값 미러: 서버가 최종 권위, FE는 예상 안내).
 const FEE_TIERS = [
   { label: "공연 8일 전까지", rate: 0 },
   { label: "3~7일 전", rate: 10 },

@@ -59,7 +59,7 @@ public class AuthService {
     }
 
     /**
-     * 제약 위반의 정체를 밝힌다. 우리가 아는 두 UNIQUE가 아니면 원 예외를 그대로 올린다 —
+     * 제약 위반의 정체를 밝힌다. 우리가 아는 두 UNIQUE가 아니면 원 예외를 그대로 올린다.
      * NOT NULL·FK 위반까지 409로 뭉뚱그리면 진짜 버그가 정상 응답으로 숨는다.
      */
     private RuntimeException duplicateOf(SignupRequest req, DataIntegrityViolationException e) {

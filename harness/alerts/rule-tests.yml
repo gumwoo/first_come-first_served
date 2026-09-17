@@ -1,11 +1,11 @@
-# promtool 규칙 테스트 — 알림이 실제로 발화하는가/안 하는가를 시계열을 직접 만들어 판정한다.
+# promtool 규칙 테스트: 알림이 실제로 발화하는가/안 하는가를 시계열을 직접 만들어 판정한다.
 # Prometheus 서버도 클러스터도 부하도 필요 없다.
 #
 # 이 테스트가 잡지 못하는 것: 지표 이름 오타. 규칙과 테스트에 같은 이름을 쓰면 둘 다
 # 통과한다. 그쪽은 렌더링된 스크랩 출력과 대조하는 백엔드 테스트가 맡는다
 # (apps/api/src/test/java/com/flowticket/global/metrics/OperationalMetricsTest.java).
 #
-# 음성 케이스(`exp_alerts: []`)만 두면 공허하게 통과한다 — alertname에 오타가 있으면
+# 음성 케이스(`exp_alerts: []`)만 두면 공허하게 통과한다. alertname에 오타가 있으면
 # 규칙을 못 찾아 알림이 0건이 되고, 그게 기대값과 일치해 버린다. 그래서 음성 케이스가 있는
 # alertname마다 같은 이름을 쓰는 양성 케이스를 짝지었다. 이름이 틀리면 양성 쪽이 깨진다.
 #
@@ -63,7 +63,7 @@ tests:
       - eval_time: 10m
         alertname: FlowticketOutboxDeadRows
         exp_alerts:
-          # max()가 by 없이 집계하므로 시계열 라벨은 모두 떨어진다 — 규칙이 붙인 것만 남는다.
+          # max()가 by 없이 집계하므로 시계열 라벨은 모두 떨어진다. 규칙이 붙인 것만 남는다.
           - exp_labels:
               severity: warning
             exp_annotations:

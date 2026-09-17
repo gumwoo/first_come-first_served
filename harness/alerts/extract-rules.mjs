@@ -2,7 +2,7 @@
 //
 // 왜 필요한가: promtool은 CR을 모른다. `apiVersion/kind/metadata`가 붙어 있으면
 // "unknown field"로 거부한다. 그렇다고 규칙을 두 벌로 관리하면 한쪽만 고쳐지는 드리프트가
-// 생긴다 — CR을 단일 출처로 두고 검증 시점에 변환한다.
+// 생긴다. CR을 단일 출처로 두고 검증 시점에 변환한다.
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";

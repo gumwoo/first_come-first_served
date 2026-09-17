@@ -1,11 +1,11 @@
-// 대기열 상태 폴링 부하 — Redis를 실제로 타는 경로.
+// 대기열 상태 폴링 부하: Redis를 실제로 타는 경로.
 //
 // 왜 별도 스크립트인가: rolling-availability.js는 `/events/{id}/seats`를 때리는데, 그 경로는
 // DB와 캐시를 타지 대기열 Redis 자료구조를 타지 않는다. Redis 페일오버를 재려면
 // Redis가 진실원인 경로를 때려야 유실 범위까지 볼 수 있다.
 //   /queue/status?token=... → QueueService.status() → Redis ZSet 순번 조회
 //
-// 실패한 요청 하나하나의 시각을 남긴다(rolling-availability.js와 같은 이유) — 페일오버는
+// 실패한 요청 하나하나의 시각을 남긴다(rolling-availability.js와 같은 이유): 페일오버는
 // 짧은 창에서 일어나므로 집계값으로는 보이지 않는다.
 //
 // 실행은 scripts/redis-failover-test.sh가 한다.
@@ -58,12 +58,12 @@ export default function (data) {
     return;
   }
   // 200이어도 대기열 상태가 사라질 수 있다. Redis 복제는 비동기라 최근 쓰기가 유실될 수
-  // 있고, 그때 "요청은 성공했는데 대기열에서 사라진" 상태가 된다 — ADR-012가 말한 유실이다.
+  // 있고, 그때 "요청은 성공했는데 대기열에서 사라진" 상태가 된다. ADR-012가 말한 유실이다.
   //
   // 응답 형식:
   //   {"rank":0,"total":0,"etaSeconds":0,"status":"ADMITTED"}
   // 필드는 `position`이 아니라 rank이고, 입장 완료(ADMITTED)면 rank가 0이 된다.
-  // 그래서 rank로는 유실을 판정할 수 없다 — status가 신호다.
+  // 그래서 rank로는 유실을 판정할 수 없다. status가 신호다.
   let st = null;
   try {
     st = res.json("data.status");
@@ -78,7 +78,7 @@ export default function (data) {
   // 상태 변화를 전부 유실로 세면 안 된다. 대기열은 1.5초마다 WAITING → ADMITTED로
   // 정상 승격한다.
   //
-  // 유실은 한 방향뿐이다 — 이미 입장한 토큰이 자리를 잃는 것.
+  // 유실은 한 방향뿐이다. 이미 입장한 토큰이 자리를 잃는 것.
   //   WAITING  → ADMITTED : 정상 승격
   //   ADMITTED → 그 외    : 슬롯 상실 = 유실
   if (EXPECT_STATUS === "ADMITTED" && st !== "ADMITTED") {

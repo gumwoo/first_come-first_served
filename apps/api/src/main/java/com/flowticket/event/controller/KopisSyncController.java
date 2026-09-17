@@ -22,7 +22,7 @@ public class KopisSyncController {
 
     /**
      * 수동 동기화. 스케줄 동기화와 같은 분산 락을 통과하므로, 이미 다른 실행이 진행 중이면
-     * ShedLock이 호출을 건너뛰어 null이 돌아온다 → 조용히 "0건 처리"로 보이지 않도록 409로 알린다.
+     * ShedLock이 호출을 건너뛰어 null이 돌아온다 → "0건 처리"로 오인되지 않도록 409로 알린다.
      */
     @PostMapping("/admin/sync/kopis")
     public ApiResponse<Map<String, Integer>> sync() {
@@ -36,7 +36,7 @@ public class KopisSyncController {
     /**
      * 상세 동기화 진행 상황. 기동 스크립트가 "초기 수집이 끝났는가"를 판정하는 데 쓴다.
      *
-     * <p>읽기 전용이라는 점이 중요하다 — 이전 스크립트는 진행 여부를 확인하려고
+     * <p>읽기 전용이라는 점이 중요하다. 이전 스크립트는 진행 여부를 확인하려고
      * {@code POST /admin/sync/kopis}를 다시 호출했는데, 409가 아니면 그 호출이 새 동기화를
      * 시작해버린다. 관측이 상태를 바꾸면 안 된다.
      */

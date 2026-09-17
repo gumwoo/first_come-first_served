@@ -132,17 +132,17 @@ export default function SeatSelectPage() {
       const result = await seatApi.holdSeats(id, selected, queueToken, accessToken);
       setHeld(result);
     } catch (e) {
-      // SOLD_OUT은 공연 잔여가 0일 때만 온다 — 이때만 매진 화면으로 보낸다.
+      // SOLD_OUT은 공연 잔여가 0일 때만 온다. 이때만 매진 화면으로 보낸다.
       // 고른 좌석만 뺏긴 SEAT_CONFLICT는 아래 else로 떨어져 좌석맵을 갱신하고 다시 고르게 한다.
       if (e instanceof ApiError && e.code === "SOLD_OUT") {
         router.replace(`/events/${id}/sold-out`);
       } else if (e instanceof ApiError && e.code === "QUEUE_NOT_ADMITTED") {
         router.replace(`/events/${id}/queue`);
       } else if (e instanceof ApiError && e.code === "MAX_PER_USER_EXCEEDED") {
-        // 이미 보유한 선점 + 이번 선택이 한도를 넘음 — 선택은 유지하고 안내만.
+        // 이미 보유한 선점 + 이번 선택이 한도를 넘음: 선택은 유지하고 안내만.
         setErrorMsg(e.message || `1인 최대 ${MAX_PER_USER}매까지 예매할 수 있습니다.`);
       } else {
-        // HOLD_EXPIRED / 이미 선점된 좌석 등 — 최신 재고로 갱신하고 선택 초기화 후 안내.
+        // HOLD_EXPIRED / 이미 선점된 좌석 등: 최신 재고로 갱신하고 선택 초기화 후 안내.
         setErrorMsg(e instanceof ApiError ? e.message : "선점에 실패했습니다. 다시 시도해 주세요.");
         await refresh();
         setSelected([]);
@@ -157,7 +157,7 @@ export default function SeatSelectPage() {
     try {
       await seatApi.releaseHold(held.holdId, accessToken);
     } catch {
-      /* 이미 만료/해제됐을 수 있음 — 무시하고 좌석 선택으로 복귀 */
+      /* 이미 만료/해제됐을 수 있음: 무시하고 좌석 선택으로 복귀 */
     }
     // 같은 경로라 router 이동으론 상태가 안 풀림 → 상태를 직접 초기화하고 최신 재고 반영.
     setHeld(null);
@@ -197,7 +197,7 @@ export default function SeatSelectPage() {
               <p className="mt-1 text-sm text-muted-foreground">제한 시간 내 결제를 완료해 주세요.</p>
             </div>
 
-            {/* 결제 제한 카운트다운 — 선착순 핵심 */}
+            {/* 결제 제한 카운트다운: 선착순 핵심 */}
             <div className={`mt-5 flex items-center justify-between rounded-lg border px-4 py-3 ${
               urgent ? "border-destructive/40 bg-destructive/10" : "border-primary/30 bg-primary/5"}`}>
               <span className="flex items-center gap-1.5 text-sm text-muted-foreground">

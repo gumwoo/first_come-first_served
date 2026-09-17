@@ -1,5 +1,5 @@
-# 비밀이 아닌 설정만 둔다. 시크릿(JWT_SECRET·DB_PASSWORD·OAuth 키 등)은 여기 절대 넣지 않는다
-# — Secret 참조로만 주입한다(secret.md 참고).
+# 비밀이 아닌 설정만 둔다. 시크릿(JWT_SECRET·DB_PASSWORD·OAuth 키 등)은 여기 절대 넣지 않는다.
+# Secret 참조로만 주입한다(secret.md 참고).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -25,12 +25,12 @@ data:
 
   # ── 종료 유예 ─────────────────────────────────────────────────
   # 애플리케이션이 진행 중 요청을 마칠 시간. terminationGracePeriodSeconds보다 작아야
-  # 한다 — 크면 앱이 끝나기 전에 SIGKILL이 온다(무중단 배포가 깨지는 흔한 지점).
+  # 한다. 크면 앱이 끝나기 전에 SIGKILL이 온다(무중단 배포가 깨지는 흔한 지점).
   SHUTDOWN_TIMEOUT: "30s"
 
   # ── 좌석맵 캐시 (실험 스위치) ───────────────────────────────
   # 성능 실험용 스위치다(IMP-020). 0 = 끔.
-  # 켜지 않는 이유는 성능이 아니라 정확성이다 — 이벤트 기반 무효화가 없어 TTL 동안 이미
+  # 켜지 않는 이유는 성능이 아니라 정확성이다. 이벤트 기반 무효화가 없어 TTL 동안 이미
   # 선점된 좌석이 AVAILABLE로 보인다. 운영으로 올리려면 그것부터 만든다(IMP-020 §다음).
   SEAT_MAP_CACHE_TTL_MS: "0"
 

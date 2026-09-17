@@ -1,7 +1,7 @@
 // 문서 하네스: 문서가 저장소의 현재 상태를 반대로 설명하는 것을 잡는다.
 //
 // 왜 필요한가: 이 저장소에는 이미 문서 관련 규칙이 둘 있다(백엔드 규칙 9) 스키마 문서 존재,
-// 규칙 15) 끊어진 문서 참조). 그런데 둘 다 방향이 "코드 → 문서"다 — 코드가 가리키는 문서가
+// 규칙 15) 끊어진 문서 참조). 그런데 둘 다 방향이 "코드 → 문서"다. 코드가 가리키는 문서가
 // 있느냐만 본다. 이 하네스는 반대 방향, 즉 문서가 코드의 상태를 단언하는 경우를 본다
 // (예: "아직 없다"고 적힌 리소스가 실존, "(미수정)"으로 가리킨 TS가 이미 해결).
 //
@@ -18,7 +18,7 @@ const r = new Reporter("docs");
 const DOCS = process.env.HARNESS_DOCS_DIR || "docs";
 const EXTRA = process.env.HARNESS_DOCS_EXTRA || "k8s"; // 루트 밖 README도 대상
 
-// DOCS와 EXTRA가 겹칠 수 있다(fixture는 한 디렉터리를 양쪽에 준다) — 중복 스캔을 막는다.
+// DOCS와 EXTRA가 겹칠 수 있다(fixture는 한 디렉터리를 양쪽에 준다): 중복 스캔을 막는다.
 const docFiles = [...new Set([...walk(DOCS, [".md"]), ...walk(EXTRA, [".md"])])];
 if (docFiles.length === 0) {
   r.fail(`문서를 하나도 못 찾았다: ${DOCS}/ — 규칙이 무력화된 상태`);
@@ -49,7 +49,7 @@ for (const file of docFiles) {
 
     for (const m of line.matchAll(PATHISH)) {
       const claimed = m[1];
-      // 문서 기준 상대경로와 저장소 루트 기준을 모두 시도한다 — 어느 쪽으로 적어도 잡히게.
+      // 문서 기준 상대경로와 저장소 루트 기준을 모두 시도한다. 어느 쪽으로 적어도 잡히게.
       const candidates = [
         path.join(REPO_ROOT, claimed),
         path.join(path.dirname(file), claimed),
@@ -69,7 +69,7 @@ for (const file of docFiles) {
 //
 // 한 문서가 다른 문서를 "(미수정)"으로 가리키는데 그 문서 머리말이 `상태: 해결`이면
 // 둘 중 하나는 거짓이다. 양쪽 다 정형 필드라 기계로 대조할 수 있다.
-// DOCS 기준으로 잡는다 — 고정 경로로 두면 fixture가 실제 docs/를 읽어 격리가 깨진다.
+// DOCS 기준으로 잡는다. 고정 경로로 두면 fixture가 실제 docs/를 읽어 격리가 깨진다.
 const DOC_DIRS = {
   TS: `${DOCS}/troubleshooting`,
   ADR: `${DOCS}/decisions`,
@@ -112,7 +112,7 @@ const DONE_TOKENS = /해결|완료|Resolved|Done|Accepted/i;
  * 이 대조는 명백한 모순일 때만 실패한다.
  *
  * 상태 줄은 한 문장에 끝난 것과 안 끝난 것을 함께 담는 경우가 많다.
- *   TS-018  "원인 규명 완료 — 수정은 하지 않음"   ← 규명은 끝, 수정은 안 함
+ *   TS-018  "원인 규명 완료: 수정은 하지 않음"   ← 규명은 끝, 수정은 안 함
  *   ADR-011 "구현 완료 · 통합테스트 통과 / 실 PG 실증은 미실시"
  * 이런 줄은 참조 쪽의 "(보류)" "(미실시)"와 서로 맞는 말이다. '완료'만 보면 둘 다 오탐이
  * 되고, 오탐을 내는 규칙은 곧 꺼지므로 없느니만 못하다.
@@ -122,7 +122,7 @@ const DONE_TOKENS = /해결|완료|Resolved|Done|Accepted/i;
  * "대상은 완전히 끝났는데 참조는 아직 안 끝났다고 말하는" 명백한 드리프트다.
  */
 function contradicts(statusLine) {
-  if (OPEN_TOKENS.test(statusLine)) return false; // 부분 완료 — 미해결 표기와 양립
+  if (OPEN_TOKENS.test(statusLine)) return false; // 부분 완료: 미해결 표기와 양립
   return DONE_TOKENS.test(statusLine);
 }
 
@@ -133,7 +133,7 @@ for (const file of docFiles) {
   read(file)
     .split("\n")
     .forEach((raw, i) => {
-      // 코드블록과 인라인 코드는 인용이다 — 과거 상태를 증거로 옮겨 적는 자리라
+      // 코드블록과 인라인 코드는 인용이다. 과거 상태를 증거로 옮겨 적는 자리라
       // 현재 상태에 대한 단언으로 볼 수 없다. TS-025가 드리프트를 표에 인용했다가
       // 이 규칙에 걸렸고, 그때 이 예외를 넣었다.
       if (/^\s*```/.test(raw)) {
@@ -143,7 +143,7 @@ for (const file of docFiles) {
       if (inFence) return;
       // 사각지대: 참조 자체를 백틱으로 감싸면(`TS-024` (미수정)) 여기서 함께 지워져
       // 검사되지 않는다. 인용을 단언으로 오인하지 않기 위해 재현율을 내준 것이며,
-      // 문서 작성 방식이 링크형에서 백틱형으로 바뀌면 조용히 우회된다([[TS-025]] §4).
+      // 문서 작성 방식이 링크형에서 백틱형으로 바뀌면 우회된다(TS-025 §4).
       const line = raw.replace(/`[^`]*`/g, ""); // 인라인 코드 제거
       for (const m of line.matchAll(REF_THEN_MARK)) {
         const ref = `${m[1].toUpperCase()}-${m[2]}`;

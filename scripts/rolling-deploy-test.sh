@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 롤링 배포 무중단 측정 — IMP-015 §8의 미검증 조건을 재현한다.
+# 롤링 배포 무중단 측정: IMP-015 §8의 미검증 조건을 재현한다.
 #
 # IMP-015가 검증한 것: 이미지 동일 + web 단독 롤링 → 3,600건 5xx 0.
 # 검증하지 못한 것: 이미지 태그 변경 + web·api 동시 롤링 → 168건 중 502 1건.
@@ -46,10 +46,10 @@ while [ $# -gt 0 ]; do
     --warmup)   WARMUP="$2"; shift 2;;
     --scope)    SCOPE="$2"; shift 2;;
     # 이미지를 바꾸지 않고 파드만 교체한다(IMP-015 §3이 쓴 rollout restart와 같은 조건).
-    # 요인 분리용 — "이미지 변경"과 "동시 롤링" 중 어느 쪽이 502를 만드는지 가른다.
+    # 요인 분리용: "이미지 변경"과 "동시 롤링" 중 어느 쪽이 502를 만드는지 가른다.
     --restart)  RESTART=1; shift;;
     # IMP-015 §3의 "병렬 6워커"를 재현한다. closed의 0건은 무중단의 증거가 아니라
-    # 측정기가 못 본 것일 수 있다 — 두 모델을 대조하기 위한 플래그다.
+    # 측정기가 못 본 것일 수 있다. 두 모델을 대조하기 위한 플래그다.
     --closed)   MODEL=closed; shift;;
     --vus)      VUS="$2"; shift 2;;
     -h|--help)  sed -n '2,22p' "$0"; exit 0;;
@@ -70,7 +70,7 @@ RESTORE_NEEDED=0
 cleanup() {
   rc=$?
   # 자동 동기화 복원은 무슨 일이 있어도 해야 한다. 여기서 빠지면 클러스터가 GitOps
-  # 밖에 남는다 — 그게 정확히 TS-021 §6-1에서 며칠짜리 드리프트를 만든 상태다.
+  # 밖에 남는다. 그게 정확히 TS-021 §6-1에서 며칠짜리 드리프트를 만든 상태다.
   if [ "$RESTORE_NEEDED" -eq 1 ]; then
     echo "==> ArgoCD 자동 동기화 복원"
     if kubectl -n "$ARGO_NS" patch application "$APP" --type=merge \
@@ -172,7 +172,7 @@ echo "    롤링 대상 태그=$TAG"
 # "pull 지연 → Ready 지연" 경로를 재현하지 못한다. 그 경우 결과는 조건 미달로 읽어야 한다.
 #
 # 롤링 대상 전부를 확인한다. api만 보면, api는 새 이미지인데 web은 같은 다이제스트인
-# 경우를 놓친다 — web 쪽에서는 pull 지연 가설이 재현되지 않는데도 "확인함"으로 남는다.
+# 경우를 놓친다. web 쪽에서는 pull 지연 가설이 재현되지 않는데도 "확인함"으로 남는다.
 digest_of() {
   aws ecr describe-images --repository-name "flowticket-$1" --region "$REGION" \
     --image-ids imageTag="$2" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || echo "?"
@@ -281,7 +281,7 @@ for t in $TARGETS; do
 done
 T1="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# rollout status가 빨리 끝났다고 롤링이 없었다고 볼 수 없다 — IMP-015 §4에서 6초 만에
+# rollout status가 빨리 끝났다고 롤링이 없었다고 볼 수 없다. IMP-015 §4에서 6초 만에
 # 끝나 의심했고, ReplicaSet 이력으로 실제 교체를 확인했다. 그 확인을 자동화한다.
 {
   echo "# ReplicaSet 이력 — 교체가 실제로 일어났는지"
@@ -293,7 +293,7 @@ T1="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   done
 } | tee "$WORK/replicasets.txt"
 
-# 생성기가 스스로 병목이었는지 — TS-034에 대한 답을 미리 확보한다.
+# 생성기가 스스로 병목이었는지: TS-034에 대한 답을 미리 확보한다.
 # 이게 없으면 "생성기 탓 아니냐"는 반박에 답할 수 없다.
 kubectl top pod -n "$NS" "$K6POD" --no-headers 2>/dev/null | sed 's/^/    생성기 사용량: /' \
   || echo "    생성기 사용량: 기록 실패(metrics-server 확인)"

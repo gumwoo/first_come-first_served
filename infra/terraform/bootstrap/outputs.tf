@@ -1,5 +1,5 @@
 # platform이 terraform_remote_state로 읽는 값들.
-# 민감값은 여기로 내보내지 않는다 — state 파일은 평문이다.
+# 민감값은 여기로 내보내지 않는다. state 파일은 평문이다.
 
 output "hosted_zone_id" {
   description = "Registrar가 만든 Zone을 data로 읽어 전달한다(Terraform이 소유하지 않음)."

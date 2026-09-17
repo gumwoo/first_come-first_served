@@ -90,7 +90,7 @@ class MyOrderIntegrationTest extends IntegrationTestSupport {
 
         assertThat(res.total()).isEqualTo(2);
         assertThat(res.items()).allSatisfy(s -> assertThat(s.eventTitle()).isEqualTo("마이페이지 테스트"));
-        // 최신순(id 내림차순) — 두 번째로 만든 주문이 먼저
+        // 최신순(id 내림차순): 두 번째로 만든 주문이 먼저
         assertThat(res.items().get(0).orderId()).isGreaterThan(res.items().get(1).orderId());
     }
 
@@ -132,7 +132,7 @@ class MyOrderIntegrationTest extends IntegrationTestSupport {
         long user = 56L;
         Long paid = order(user);
         paymentService.pay(user, paid, "card", null, "OK-" + paid);
-        order(user); // PENDING(미결제) — 실제 예매 아니므로 전체에서 제외
+        order(user); // PENDING(미결제): 실제 예매 아니므로 전체에서 제외
 
         PageResponse<MyOrderSummary> res = myOrderService.list(user, null, 0, 20);
 

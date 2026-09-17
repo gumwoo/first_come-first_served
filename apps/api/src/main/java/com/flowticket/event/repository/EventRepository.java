@@ -18,11 +18,11 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
 
     /**
      * 동기화 배치의 기존 여부를 한 번에 조회(IMP-012). 항목마다 findByKopisId를 부르면
-     * N건에 SELECT N번이 나간다 — 수집분 전체를 한 쿼리로 읽어 메모리에서 신규/기존을 가른다.
+     * N건에 SELECT N번이 나간다. 수집분 전체를 한 쿼리로 읽어 메모리에서 신규/기존을 가른다.
      */
     List<Event> findAllByKopisIdIn(Collection<String> kopisIds);
 
-    /** 운영 이벤트 목록 — 최신순 페이징. */
+    /** 운영 이벤트 목록: 최신순 페이징. */
     Page<Event> findAllByOrderByIdDesc(Pageable pageable);
 
     /** 좌석 시딩 대상: 판매 가능 상태의 이벤트 id (자동 시딩). */
@@ -30,7 +30,7 @@ public interface EventRepository extends JpaRepository<Event, Long>, EventReposi
     List<Long> findIdsByStatusIn(@Param("statuses") Collection<EventStatus> statuses);
 
     /**
-     * 상세를 받아야 할 공연 id — 미수집(NULL)과 오래된 것을 오래된 순(NULL 먼저)으로 고른다.
+     * 상세를 받아야 할 공연 id: 미수집(NULL)과 오래된 것을 오래된 순(NULL 먼저)으로 고른다.
      * 회차당 상한으로 순환시키는 이유와 알려진 한계(영구 실패 공연이 많으면 뒤가 굶음)는 TS-033.
      * 엔티티가 아니라 id만 뽑아, 건별 외부 호출 동안 영속성 컨텍스트에 남기지 않는다.
      */

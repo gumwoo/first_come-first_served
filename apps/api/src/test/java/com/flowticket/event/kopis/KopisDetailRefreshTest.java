@@ -23,7 +23,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * <p>{@code detailSyncedAt IS NULL}만 대상으로 삼으면 한 번 채운 공연은 다시 보지 않아,
  * KOPIS에서 가격·출연진·공연시간이 바뀌어도 우리 값이 무한히 낡는다.
  *
- * <p>규칙은 둘이다 — 미수집(NULL)과 오래된 것을 함께 고르고, 오래된 순(NULL 먼저)으로
+ * <p>규칙은 둘이다. 미수집(NULL)과 오래된 것을 함께 고르고, 오래된 순(NULL 먼저)으로
  * 정렬한다. 회차당 상한이 있으므로 정렬이 곧 우선순위다.
  */
 @SpringBootTest
@@ -41,7 +41,7 @@ class KopisDetailRefreshTest extends IntegrationTestSupport {
      * 과거 시각의 상세 동기화 상태를 만든다.
      *
      * <p>{@code updateDetail()}은 항상 {@code now()}를 찍으므로 도메인 API로는 과거를 만들 수 없다.
-     * 그렇다고 운영 저장소에 테스트 전용 메서드를 넣지는 않는다 — 그 자리에서 직접 UPDATE 한다.
+     * 그렇다고 운영 저장소에 테스트 전용 메서드를 넣지는 않는다. 그 자리에서 직접 UPDATE 한다.
      */
     private Event saved(String kopisId, LocalDateTime detailSyncedAt) {
         Event e = eventRepository.saveAndFlush(
@@ -96,7 +96,7 @@ class KopisDetailRefreshTest extends IntegrationTestSupport {
         e.updateDetail("120분", "만 12세 이상", "전석 30,000원", "출연진", "줄거리", "매일 19시");
         eventRepository.saveAndFlush(e);
 
-        // 다음날 목록 동기화 — 목록에는 runningTime·ageLimit이 없다
+        // 다음날 목록 동기화: 목록에는 runningTime·ageLimit이 없다
         e.updateFromSync("바뀐 제목", "올림픽홀", "서울특별시", "대중음악",
                 "http://p.jpg", LocalDate.now(), LocalDate.now().plusDays(1), EventStatus.ON_SALE);
         eventRepository.saveAndFlush(e);

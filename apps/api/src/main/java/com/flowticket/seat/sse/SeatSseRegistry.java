@@ -51,12 +51,12 @@ public class SeatSseRegistry implements MessageListener {
             emitter.complete();
         });
         emitter.onError(e -> remove.run());
-        // 연결 직후 1회 전송 — 없으면 onopen이 불리지 않는다. 이 스트림은 폴링이 없어
+        // 연결 직후 1회 전송: 없으면 onopen이 불리지 않는다. 이 스트림은 폴링이 없어
         // onopen 재조회가 재연결 복구의 유일한 수단이다(ADR-015 ①, TS-012). 하트비트와는 별개다.
         try {
             emitter.send(SseEmitter.event().comment("open"));
         } catch (Exception e) {
-            remove.run(); // 구독 시작도 못 한 연결 — 남기면 이후 전송이 계속 실패한다
+            remove.run(); // 구독 시작도 못 한 연결: 남기면 이후 전송이 계속 실패한다
             log.debug("SSE 초기 프레임 전송 실패 eventId={}", eventId, e);
         }
         return emitter;
@@ -65,7 +65,7 @@ public class SeatSseRegistry implements MessageListener {
     /**
      * 이벤트 구독자 전체로 push. 멀티 Pod 팬아웃을 위해 Redis로 발행(미배선 시 로컬 폴백).
      *
-     * <p>트랜잭션이 열려 있으면 커밋 후로 미룬다 — 롤백된 상태를 알리지 않기 위해서다.
+     * <p>트랜잭션이 열려 있으면 커밋 후로 미룬다. 롤백된 상태를 알리지 않기 위해서다.
      * 호출부마다 챙기면 언젠가 빠지므로 팬아웃 입구인 여기서 한 번에 보장한다({@link AfterCommit}).
      */
     public void broadcast(Long eventId, String event, Object data) {
@@ -78,7 +78,7 @@ public class SeatSseRegistry implements MessageListener {
         });
     }
 
-    /** 이 Pod의 로컬 구독자에게만 전달(연결 없으면 무시 — 폴링/재조회가 커버). */
+    /** 이 Pod의 로컬 구독자에게만 전달(연결 없으면 무시: 폴링/재조회가 커버). */
     public void deliverLocal(Long eventId, String event, Object data) {
         Set<SseEmitter> set = byEvent.get(eventId);
         if (set == null) {

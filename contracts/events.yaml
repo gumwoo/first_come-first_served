@@ -1,4 +1,4 @@
-# Kafka 이벤트 계약 — BE 발행 목록 ↔ FE 구독 목록 diff.
+# Kafka 이벤트 계약: BE 발행 목록 ↔ FE 구독 목록 diff.
 # 이벤트명 규약: <aggregate>.<past-tense>  (예: order.paid)
 
 topics:
@@ -42,7 +42,7 @@ fe_subscribes:
   - queue.expired
   - payment.vbank.deposited
 
-# 실시간 UI에 반드시 필요한 이벤트 — FE가 구독을 빠뜨리면 하네스 실패.
+# 실시간 UI에 반드시 필요한 이벤트: FE가 구독을 빠뜨리면 하네스 실패.
 # (fe_subscribes ⊇ required_fe_subscribes 검증)
 required_fe_subscribes:
   - queue.admitted        # 입장 허용 → 좌석선택 이동에 필수
@@ -53,7 +53,7 @@ required_fe_subscribes:
 
 # 이미 구현되어 백엔드가 "실제로 발행"해야 하는 이벤트(슬라이스 완료분).
 # 하네스가 백엔드 소스에서 각 이벤트명 문자열 발행부를 찾지 못하면 실패.
-# (publishes ⊇ implemented. 미구현 이벤트는 여기 넣지 않는다 — 계약 선언만은 허용.)
+# (publishes ⊇ implemented. 미구현 이벤트는 여기 넣지 않는다. 계약 선언만은 허용.)
 implemented:
   - seat.held
   - seat.hold.released

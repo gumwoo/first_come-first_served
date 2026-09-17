@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { seedAdmittedUser, firstSelectable, seatTitle } from "../helpers/seed";
 
 /**
- * P2 예외 흐름 — 과거 수동으로 잡던 버그를 회귀 테스트로 박제.
+ * P2 예외 흐름: 과거 수동으로 잡던 버그를 회귀 테스트로 박제.
  * 조건 대기 + 시맨틱/콘텐츠 셀렉터만 사용(flaky 방지).
  */
 
@@ -42,10 +42,10 @@ test("1인 최대 초과 시 안내 배너가 뜬다", async ({ page }) => {
   await expect(page.getByText("1인 구매 가능 수량")).toBeVisible();
 });
 
-// 좌석 경합: 고른 좌석을 남이 먼저 가져가도 매진이 아니다 — 다른 좌석은 남아 있다.
+// 좌석 경합: 고른 좌석을 남이 먼저 가져가도 매진이 아니다. 다른 좌석은 남아 있다.
 //
 // 이 테스트는 원래 "매진 화면으로 이동"을 기대했다. 서버가 부분 선점 실패를 전부
-// SOLD_OUT으로 뭉뚱그렸기 때문인데, 그게 곧 버그였다 — 99석이 남았는데도 사용자를
+// SOLD_OUT으로 뭉뚱그렸기 때문인데, 그게 곧 버그였다. 99석이 남았는데도 사용자를
 // 매진 화면으로 보내 예매를 포기시켰다. 서버가 SEAT_CONFLICT를 분리하면서 기대 동작을
 // "좌석 선택 화면에 남아 안내 + 좌석맵 갱신"으로 바꾼다.
 test("고른 좌석을 뺏기면 매진이 아니라 다시 고르게 한다", async ({ page }) => {
@@ -65,7 +65,7 @@ test("고른 좌석을 뺏기면 매진이 아니라 다시 고르게 한다", a
 
   await page.getByRole("button", { name: "선택 완료" }).click();
 
-  // 매진 화면으로 튕기지 않는다 — 여기 남아 다시 고를 수 있어야 한다.
+  // 매진 화면으로 튕기지 않는다. 여기 남아 다시 고를 수 있어야 한다.
   await expect(page.getByText(/다른 좌석을 선택해 주세요/)).toBeVisible();
   await expect(page).not.toHaveURL(new RegExp(`/events/${eventId}/sold-out`));
   // 좌석맵이 갱신돼 뺏긴 좌석은 더 이상 고를 수 없다.

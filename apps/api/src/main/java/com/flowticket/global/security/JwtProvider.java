@@ -44,7 +44,7 @@ public class JwtProvider {
     /**
      * SSE 구독 전용 티켓. {@code EventSource}는 요청 헤더를 붙일 수 없어 자격증명을 URL로 실어야
      * 하는데, access token을 그대로 URL에 두면 접근 로그·리퍼러에 전체 권한 자격증명이 남는다.
-     * 그래서 단일 주문 구독에만 쓸 수 있는 별도 타입을 만든다 — {@link #isValid}가 type을
+     * 그래서 단일 주문 구독에만 쓸 수 있는 별도 타입을 만든다. {@link #isValid}가 type을
      * 대조하므로 이 티켓으로는 API를 호출할 수 없고, access token으로는 구독할 수 없다.
      */
     public static final String TYPE_SSE = "sse";

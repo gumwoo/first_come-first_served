@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# 장애 주입 실증 — 브로커 강제 종료(IMP-016) / 노드 드레인(IMP-017)을 부하 중에 재현한다.
+# 장애 주입 실증: 브로커 강제 종료(IMP-016) / 노드 드레인(IMP-017)을 부하 중에 재현한다.
 #
 # 왜 다시 재는가: 두 측정 모두 Cluster Autoscaler가 없는 상태에서 잰 값이다.
 # CA를 도입하면 scale-down이 상태 저장 워크로드를 옮길 수 있어(ADR-012 §한계,
 # terraform-design "CA와 상태 저장 워크로드") 전제가 바뀐다. 그래서 CA 도입과
-# 재측정은 한 묶음이다 — 도입만 하고 재지 않으면 기존 수치가 조용히 낡는다.
+# 재측정은 한 묶음이다. 도입만 하고 재지 않으면 기존 수치가 낡는다.
 #
 # 왜 스크립트인가: 손으로 돌린 측정은 같은 조건으로 재현할 수 없다(TS-035).
 # 절차를 코드로 고정한다.
@@ -54,7 +54,7 @@ CORDONED=""
 
 cleanup() {
   rc=$?
-  # 드레인한 노드를 cordon 상태로 두면 다음 측정의 스케줄링 예산이 조용히 줄어든다.
+  # 드레인한 노드를 cordon 상태로 두면 다음 측정의 스케줄링 예산이 줄어든다.
   # 그 상태에서 "노드가 안 늘었다"를 관찰하면 CA 결함으로 오독하게 된다.
   if [ -n "$CORDONED" ]; then
     kubectl uncordon "$CORDONED" >/dev/null 2>&1 \
@@ -81,7 +81,7 @@ CODE="$(http_code "https://$DOMAIN")"
 [ "$CODE" = "200" ] || { echo "측정 전 상태가 정상이 아니다: https://$DOMAIN → $CODE" >&2; exit 1; }
 
 # CA 유무는 이 측정의 조건 그 자체다. 기록만 하고 통과시키면, CA 없이 돌린 결과가
-# "CA 도입 후 재측정"으로 잘못 채택된다 — 그건 IMP-016·017을 한 번 더 잰 것일 뿐이다.
+# "CA 도입 후 재측정"으로 잘못 채택된다. 그건 IMP-016·017을 한 번 더 잰 것일 뿐이다.
 # 그래서 어느 조건을 재는지 반드시 선언하게 하고, 실제와 다르면 중단한다.
 # 기본은 "CA 있음"이고, CA 없는 기준선을 일부러 잴 때만 --expect-no-ca 를 준다.
 CA_AVAIL="$(kubectl -n kube-system get deploy -l app.kubernetes.io/name=aws-cluster-autoscaler \
@@ -108,8 +108,8 @@ echo "    노드 $(kubectl get nodes --no-headers | wc -l | tr -d ' ')대 / $NOD
 
 if [ "$SCENARIO" = "failover" ]; then
   # 라벨 셀렉터를 하나만 믿지 않는다. strimzi.io/broker-role은 Strimzi 버전에 따라
-  # 없을 수 있고, 그러면 "브로커 0개"로 조용히 오판한다. pool 라벨로 폴백한다.
-  # (이 클러스터는 controller/broker 겸용 pool "dual-role" 하나다 — k8s/kafka/kafka.yaml)
+  # 없을 수 있고, 그러면 "브로커 0개"로 오판한다. pool 라벨로 폴백한다.
+  # (이 클러스터는 controller/broker 겸용 pool "dual-role" 하나다. k8s/kafka/kafka.yaml)
   BSEL="strimzi.io/broker-role=true"
   BROKERS="$(kubectl -n "$KNS" get pods -l "$BSEL" --no-headers 2>/dev/null | wc -l | tr -d ' ')"
   if [ "${BROKERS:-0}" -eq 0 ]; then

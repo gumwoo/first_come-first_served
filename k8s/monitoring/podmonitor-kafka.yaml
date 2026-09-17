@@ -1,4 +1,4 @@
-# Kafka 메트릭 수집 — 브로커(JMX Exporter)와 Kafka Exporter(Consumer Lag).
+# Kafka 메트릭 수집: 브로커(JMX Exporter)와 Kafka Exporter(Consumer Lag).
 #
 # ServiceMonitor가 아니라 PodMonitor인 이유: Strimzi가 만드는 Service는 브로커 전체를
 # 대표하는 bootstrap/brokers 서비스라 메트릭 포트를 노출하지 않는다. 반면 메트릭은 브로커
@@ -31,7 +31,7 @@ spec:
         - sourceLabels: [__meta_kubernetes_pod_label_strimzi_io_pod_name]
           targetLabel: broker
 ---
-# Consumer Lag 전용. 브로커 JMX에는 lag이 없다 — 컨슈머 그룹의 커밋 오프셋과 로그 끝
+# Consumer Lag 전용. 브로커 JMX에는 lag이 없다. 컨슈머 그룹의 커밋 오프셋과 로그 끝
 # 오프셋의 차이라 별도 수집기가 계산해야 한다.
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor

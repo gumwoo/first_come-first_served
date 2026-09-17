@@ -29,8 +29,8 @@ import org.springframework.test.context.TestPropertySource;
  *
  * <p>게이트는 두 군데에 있고 둘 다 필요하다.
  * <ul>
- *   <li>{@code QueueService.issue()} — 애초에 줄을 세우지 않는다.</li>
- *   <li>{@code SeatService.hold()} — 발급 이후 상태가 바뀌는 창을 막는다. admit-ttl이 300초라
+ *   <li>{@code QueueService.issue()}: 애초에 줄을 세우지 않는다.</li>
+ *   <li>{@code SeatService.hold()}: 발급 이후 상태가 바뀌는 창을 막는다. admit-ttl이 300초라
  *       운영자가 PAUSED로 내려도 이미 발급된 토큰은 그만큼 살아 있다.</li>
  * </ul>
  */
@@ -62,8 +62,8 @@ class QueueSaleStateIntegrationTest extends IntegrationTestSupport {
      */
     @Test
     void 판매중이_아니면_발급이_거절된다() {
-        // values()를 도는 것이 핵심이다 — 나중에 상태가 추가돼도 이 테스트가 자동으로 커버한다.
-        // 목록을 손으로 나열하면 새 상태가 조용히 게이트를 빠져나간다.
+        // values()를 도는 것이 핵심이다. 나중에 상태가 추가돼도 이 테스트가 자동으로 커버한다.
+        // 목록을 손으로 나열하면 새 상태가 게이트를 빠져나간다.
         for (EventStatus status : EventStatus.values()) {
             if (status == EventStatus.ON_SALE) {
                 continue;

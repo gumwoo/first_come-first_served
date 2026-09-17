@@ -56,7 +56,7 @@ public class QueueSseRegistry implements MessageListener {
         try {
             emitter.send(SseEmitter.event().comment("open"));
         } catch (Exception e) {
-            // 구독 시작도 못 한 연결이다 — 맵에 남기면 이후 전송이 계속 실패한다.
+            // 구독 시작도 못 한 연결이다. 맵에 남기면 이후 전송이 계속 실패한다.
             emitters.remove(token);
             log.debug("SSE 초기 프레임 전송 실패 token={}", token, e);
         }
@@ -66,7 +66,7 @@ public class QueueSseRegistry implements MessageListener {
     /**
      * 해당 토큰 연결로 이벤트 push. 멀티 Pod 팬아웃을 위해 Redis로 발행(미배선 시 로컬 폴백).
      *
-     * <p>트랜잭션이 열려 있으면 커밋 후로 미룬다 — 롤백된 상태를 알리지 않기 위해서다.
+     * <p>트랜잭션이 열려 있으면 커밋 후로 미룬다. 롤백된 상태를 알리지 않기 위해서다.
      * 호출부마다 챙기면 언젠가 빠지므로 팬아웃 입구인 여기서 한 번에 보장한다({@link AfterCommit}).
      */
     public void send(String token, String event, Object data) {
@@ -79,7 +79,7 @@ public class QueueSseRegistry implements MessageListener {
         });
     }
 
-    /** 이 Pod의 로컬 연결로만 전달(연결 없으면 무시 — 폴링 폴백이 커버). */
+    /** 이 Pod의 로컬 연결로만 전달(연결 없으면 무시: 폴링 폴백이 커버). */
     public void deliverLocal(String token, String event, Object data) {
         SseEmitter emitter = emitters.get(token);
         if (emitter == null) {

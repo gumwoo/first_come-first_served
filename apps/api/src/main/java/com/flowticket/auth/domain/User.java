@@ -66,7 +66,7 @@ public class User {
         this.createdAt = LocalDateTime.now();
     }
 
-    /** 소셜 계정 여부 — passwordHash 격리 불변식 확인용. */
+    /** 소셜 계정 여부: passwordHash 격리 불변식 확인용. */
     public boolean isSocial() {
         return provider != AuthProvider.local;
     }

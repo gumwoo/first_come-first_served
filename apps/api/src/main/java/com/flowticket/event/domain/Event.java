@@ -81,7 +81,7 @@ public class Event {
     @Column(name = "schedule_text", columnDefinition = "text")
     private String scheduleText;
 
-    /** NULL이면 상세를 아직 못 받은 것 — 동기화가 다음 차례에 다시 시도한다. */
+    /** NULL이면 상세를 아직 못 받은 것: 동기화가 다음 차례에 다시 시도한다. */
     @Column(name = "detail_synced_at")
     private LocalDateTime detailSyncedAt;
 
@@ -142,7 +142,7 @@ public class Event {
 
     /**
      * KOPIS 상세 동기화 결과 반영. 목록에도 있는 {@code runningTime}·{@code ageLimit}은
-     * 상세 쪽이 더 정확할 때만(비어 있지 않을 때만) 덮어쓴다 — 상세 응답에 해당 필드가 없다고
+     * 상세 쪽이 더 정확할 때만(비어 있지 않을 때만) 덮어쓴다. 상세 응답에 해당 필드가 없다고
      * 목록에서 받아둔 값을 지우면 안 된다.
      *
      * <p>{@code detailSyncedAt}을 항상 갱신하는 것이 중요하다. 이 값이 NULL인 건만 다음 동기화

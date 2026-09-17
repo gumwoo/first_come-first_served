@@ -39,7 +39,7 @@ public class OrderItem {
     private int price;
 
     /**
-     * 좌석 위치 스냅샷(ADR-004). seats를 조인하지 않는 이유는 grade·price와 같다 —
+     * 좌석 위치 스냅샷(ADR-004). seats를 조인하지 않는 이유는 grade·price와 같다.
      * 좌석 배치가 바뀌어도 과거 예매의 표기는 그대로여야 한다.
      * V17 이전 주문은 백필했으나, 백필 실패분을 대비해 nullable로 둔다.
      */

@@ -1,7 +1,7 @@
 name: Image
 
 # 이미지는 "테스트를 통과한 커밋"에서만 나가야 한다(ADR-009). 그래서 push가 아니라
-# CI 워크플로가 성공으로 끝났을 때 이어서 돈다 — push 트리거면 CI와 병렬로 돌아
+# CI 워크플로가 성공으로 끝났을 때 이어서 돈다. push 트리거면 CI와 병렬로 돌아
 # 테스트가 깨진 커밋의 이미지도 ECR에 올라간다.
 on:
   workflow_run:
@@ -11,13 +11,13 @@ on:
   # 최초 검증·재시도용(파이프라인만 확인하고 싶을 때).
   workflow_dispatch:
 
-# CI와 일부러 다르게 잡는다 — cancel-in-progress를 켜지 않는다.
+# CI와 일부러 다르게 잡는다. cancel-in-progress를 켜지 않는다.
 # 배포를 중간에 죽이면 "이미지는 ECR에 올라갔는데 태그 커밋은 안 된" 상태가 남는다.
 # false면 실행 중인 것은 끝까지 가고, 대기 중인 것은 가장 최신만 남는다(오래된 pending 교체).
 #
 # 이것만으로 stale 배포 역전이 막히지 않는다. GitHub은 같은 concurrency group의
 # 실행 순서를 보장하지 않는다고 명시한다. concurrency는 동시 실행 창을 줄일 뿐이고,
-# "내가 쓰려는 SHA가 이미 배포된 것보다 오래됐는가"는 판별하지 못한다 —
+# "내가 쓰려는 SHA가 이미 배포된 것보다 오래됐는가"는 판별하지 못한다.
 # 그건 bump-tag의 조상 검사가 한다. 상세: TS-029
 concurrency:
   group: image-${{ github.ref }}
@@ -27,7 +27,7 @@ concurrency:
 permissions:
   id-token: write
   # 기본은 읽기만. write가 실제로 필요한 건 bump-tag 하나뿐이라 그 잡에만 준다
-  # (잡 레벨 permissions는 이 블록을 대체하므로 bump-tag는 id-token을 받지 않는다 — 필요 없다).
+  # (잡 레벨 permissions는 이 블록을 대체하므로 bump-tag는 id-token을 받지 않는다. 필요 없다).
   contents: read
 
 env:
@@ -35,7 +35,7 @@ env:
 
 jobs:
   # 시크릿은 job-level if에서 참조할 수 없어(컨텍스트 미제공), 별도 잡에서 존재 여부를 출력한다.
-  # 포크·시크릿 미설정 환경에서 AWS 단계가 실패하지 않고 조용히 건너뛰게 하는 가드.
+  # 포크·시크릿 미설정 환경에서 AWS 단계가 실패하지 않고 건너뛰게 하는 가드.
   guard:
     name: 전제 확인 (시크릿·변경 영역)
     runs-on: ubuntu-latest
@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # workflow_run 이벤트의 기본 checkout은 트리거 워크플로의 커밋이 아니다 — head_sha를 명시.
+          # workflow_run 이벤트의 기본 checkout은 트리거 워크플로의 커밋이 아니다. head_sha를 명시.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 2
       - id: check
@@ -62,7 +62,7 @@ jobs:
           fi
 
           # workflow_run에는 paths 필터를 걸 수 없어, 이미지에 영향 있는 변경인지 직접 판별한다.
-          # (문서만 고친 머지에 이미지 빌드를 돌리지 않기 위함 — CI의 paths 필터와 같은 취지)
+          # (문서만 고친 머지에 이미지 빌드를 돌리지 않기 위함: CI의 paths 필터와 같은 취지)
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # main에서만 허용한다. 이 워크플로의 산출물은 main의 배포 태그이므로
             # feature 브랜치에서 돌리면 머지되지 않은 커밋이 배포 대상이 된다.
@@ -137,7 +137,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       # 빌드 전에 값을 확인한다. ARG가 선언돼 있어도 값이 비면 빌드는 그냥 성공하고,
-      # 결제창이 뜨지 않는 이미지가 조용히 ECR로 나간다 — 에러가 아니라 다른 흐름으로 빠지기
+      # 결제창이 뜨지 않는 이미지가 조용히 ECR로 나간다. 에러가 아니라 다른 흐름으로 빠지기
       # 때문에 배포 후에도 눈치채기 어렵다. 하네스 규칙 6)은 ARG의 존재만 보므로
       # 이 구멍은 여기서만 막을 수 있다.
       - name: 빌드 인자 확인 (빈 값이면 조용히 기능이 빠진다)
@@ -167,14 +167,14 @@ jobs:
           # 접두어를 떼지 않아 Spring이 404를 낸다).
           #
           # NEXT_PUBLIC_TOSS_CLIENT_KEY도 같은 이유로 빌드 시점 값이다(브라우저 번들에 구워짐).
-          # 공개 키라 시크릿이 아니다 — repository variable로 둔다.
+          # 공개 키라 시크릿이 아니다. repository variable로 둔다.
           # 이 변수가 비어 있으면 빌드는 성공하지만 토스 결제창이 뜨지 않고 결제창 없는
           # 경로로 빠진다. 에러가 아니라 다른 흐름이라 배포 후에도 눈치채기 어렵다.
           #   설정: 저장소 Settings → Secrets and variables → Actions → Variables
           #
-          # 값은 k8s Service DNS다. 포트를 붙이지 않는다 — Service는 80을 열고 targetPort
+          # 값은 k8s Service DNS다. 포트를 붙이지 않는다. Service는 80을 열고 targetPort
           # 8080으로 넘긴다. :8080을 붙이면 Service가 안 여는 포트라 연결이 거부된다.
-          # (주석은 build-args 블록 밖에 둔다 — 안에 넣으면 인자로 전달된다.)
+          # (주석은 build-args 블록 밖에 둔다. 안에 넣으면 인자로 전달된다.)
           build-args: |
             API_ORIGIN=${{ vars.API_ORIGIN || 'http://flowticket-api' }}
             NEXT_PUBLIC_TOSS_CLIENT_KEY=${{ vars.NEXT_PUBLIC_TOSS_CLIENT_KEY }}
@@ -229,7 +229,7 @@ jobs:
           CURRENT=$(grep -oE 'newTag: [0-9a-f]{40}' "$F" | head -1 | awk '{print $2}')
           echo "빌드 SHA=$SHA / 현재 태그=$CURRENT"
 
-          # ⓪ 빌드 SHA가 main 히스토리에 포함되는가 — 4상태보다 먼저 본다.
+          # ⓪ 빌드 SHA가 main 히스토리에 포함되는가: 4상태보다 먼저 본다.
           # 최신 main에서 딴 feature 커밋은 태그의 후손이라 ③으로 통과해 버린다(TS-029).
           MAIN=$(git rev-parse --verify origin/main 2>/dev/null || true)
           if [ -z "$MAIN" ]; then
@@ -266,7 +266,7 @@ jobs:
         run: |
           SHA="${{ needs.guard.outputs.sha }}"
           F=k8s/overlays/demo-local/kustomization.yaml
-          # newTag 값만 교체(40자 hex). 역참조를 쓰지 않는다 — 치환문에 그대로 다시 쓰면 되고,
+          # newTag 값만 교체(40자 hex). 역참조를 쓰지 않는다. 치환문에 그대로 다시 쓰면 되고,
           # 역참조는 여러 겹의 이스케이프를 거치며 깨지기 쉽다.
           sed -i -E "s|newTag: [0-9a-f]{40}|newTag: ${SHA}|g" "$F"
           if git diff --quiet -- "$F"; then
@@ -286,7 +286,7 @@ jobs:
           git commit -m "chore(deploy): 이미지 태그 ${{ needs.guard.outputs.sha }} [skip ci]"
           # 빌드가 도는 동안 main이 움직였을 수 있다. 리베이스 후 재시도한다(최대 3회).
           # 그 사이 다른 워크플로가 더 새 태그를 썼다면 같은 줄이 바뀌어 리베이스가 충돌하고
-          # 여기서 실패한다 — 조용히 덮이지 않는다(위 stale 가드와 이중 방어).
+          # 여기서 실패한다. 모르는 사이에 덮이지 않는다(위 stale 가드와 이중 방어).
           for i in 1 2 3; do
             if git push origin main; then exit 0; fi
             echo "푸시 실패 — main을 리베이스하고 재시도($i/3)"

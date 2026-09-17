@@ -15,15 +15,15 @@ import org.springframework.data.repository.query.Param;
 
 public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> {
 
-    /** 릴레이 배치 — 미발행분을 오래된 순(적재 순서 = 발행 순서). ix_outbox_pending 부분 인덱스 사용. */
+    /** 릴레이 배치: 미발행분을 오래된 순(적재 순서 = 발행 순서). ix_outbox_pending 부분 인덱스 사용. */
     List<OutboxEvent> findByStatusOrderByCreatedAtAsc(OutboxStatus status, Pageable pageable);
 
-    /** 운영/테스트 — 미발행 적체 수(브로커 장애 관측). */
+    /** 운영/테스트: 미발행 적체 수(브로커 장애 관측). */
     long countByStatus(OutboxStatus status);
 
     /**
      * 선행 이벤트가 DEAD로 격리된 aggregate 목록. 릴레이가 매 틱 조회해 같은 aggregate의 후속
-     * 이벤트를 보류하는 데 쓴다 — 앞선 이벤트가 나가지 못했는데 뒤 이벤트만 나가면 소비자가
+     * 이벤트를 보류하는 데 쓴다. 앞선 이벤트가 나가지 못했는데 뒤 이벤트만 나가면 소비자가
      * 인과를 거꾸로 본다(예: PAID를 못 본 채 REFUNDED부터 수신).
      *
      * <p>키를 문자열로 합치는 이유: aggregateType과 aggregateId를 쌍으로 비교해야 하는데
@@ -33,14 +33,14 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
     @Query("select concat(o.aggregateType, ':', o.aggregateId) from OutboxEvent o where o.status = :dead")
     Set<String> findBlockedAggregateKeys(@Param("dead") OutboxStatus dead);
 
-    /** 운영 조회 — 최신순 페이징. */
+    /** 운영 조회: 최신순 페이징. */
     Page<OutboxEvent> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
-    /** 운영 조회 — 상태 필터, 최신순. 기본 관심사는 DEAD다. */
+    /** 운영 조회: 상태 필터, 최신순. 기본 관심사는 DEAD다. */
     Page<OutboxEvent> findByStatusOrderByCreatedAtDesc(OutboxStatus status, Pageable pageable);
 
     /**
-     * purge 스윕 — 발행 완료 후 보존기간이 지난 행만 삭제.
+     * purge 스윕: 발행 완료 후 보존기간이 지난 행만 삭제.
      * PENDING·미발행 행은 대상에서 제외한다(유실 방지). status 가드가 있어 하네스 규칙도 만족.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)

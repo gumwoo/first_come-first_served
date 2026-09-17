@@ -31,7 +31,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
     // kafka
     implementation("org.springframework.kafka:spring-kafka")
-    // shedlock — 멀티 Pod에서 @Scheduled 중복 실행 방지(Redis lock provider)
+    // shedlock: 멀티 Pod에서 @Scheduled 중복 실행 방지(Redis lock provider)
     implementation("net.javacrumbs.shedlock:shedlock-spring:5.16.0")
     implementation("net.javacrumbs.shedlock:shedlock-provider-redis-spring:5.16.0")
     // querydsl (jakarta)
@@ -52,10 +52,10 @@ dependencies {
     // lombok
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
-    // monitoring — actuator만으로는 /actuator/prometheus가 뜨지 않는다(레지스트리 필요).
+    // monitoring: actuator만으로는 /actuator/prometheus가 뜨지 않는다(레지스트리 필요).
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
-    // 지표 이름은 알림 규칙이 문자열로 참조하는 계약이다 — 렌더링된 스크랩 출력과 대조하려면
+    // 지표 이름은 알림 규칙이 문자열로 참조하는 계약이다. 렌더링된 스크랩 출력과 대조하려면
     // 테스트 클래스패스에도 있어야 한다(OperationalMetricsTest).
     testImplementation("io.micrometer:micrometer-registry-prometheus")
     // test
@@ -72,7 +72,7 @@ tasks.withType<Test> {
 
     // 기본 콘솔 출력은 예외의 클래스명과 줄번호만 찍는다. 메시지는 build/test-results XML에만
     // 남아, CI 로그만 보는 상황에서는 사라진 것과 같다. 실제로 TRUNCATE 실패 진단(pg_stat_activity
-    // 덤프)을 심어 놓고도 CI에서 그 내용을 읽지 못했다 — 간헐적 실패라 재현해서 다시 볼 수도 없다.
+    // 덤프)을 심어 놓고도 CI에서 그 내용을 읽지 못했다. 간헐적 실패라 재현해서 다시 볼 수도 없다.
     testLogging {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
@@ -84,7 +84,7 @@ tasks.withType<Test> {
     // 기본은 꺼져 있다. CI가 느린 이유를 재려고 한 번씩만 켠다.
     //
     // 왜 필요한가: `:test` wall-clock의 대부분이 JUnit XML의 testcase 시간에 귀속되지 않는다.
-    // 그 안에 무엇이 있는지는 XML로 알 수 없다 —
+    // 그 안에 무엇이 있는지는 XML로 알 수 없다.
     // Spring 컨텍스트 초기화·Testcontainers 기동·lifecycle·워커 오버헤드가 섞여 있다.
     //
     // 어노테이션이 아니라 시스템 프로퍼티로 켠다. @TestPropertySource를 추가하면

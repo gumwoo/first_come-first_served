@@ -205,7 +205,7 @@ class QueueIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 입장상태에서_재발급하면_같은_토큰이_유지된다() {
-        // 상태기계 분기: ADMITTED 토큰은 재발급 시 그대로 재사용(1인1토큰) — 죽은 토큰만 새로 발급.
+        // 상태기계 분기: ADMITTED 토큰은 재발급 시 그대로 재사용(1인1토큰), 죽은 토큰만 새로 발급.
         String t1 = queueService.issue(50L, EVENT).token();
         admissionService.admit(EVENT);
         assertThat(redisTemplate.hasKey("queue:admit:" + t1)).isTrue();

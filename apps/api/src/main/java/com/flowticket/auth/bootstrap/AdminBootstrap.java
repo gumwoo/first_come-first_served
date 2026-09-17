@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 관리자 계정 부트스트랩. 가입 API는 ROLE_USER만 강제하므로, 관리자는 여기서 생성한다.
- * 자격증명은 환경변수(ADMIN_EMAIL / ADMIN_PASSWORD)로만 주입 — 코드·설정에 하드코딩하지 않는다.
+ * 자격증명은 환경변수(ADMIN_EMAIL / ADMIN_PASSWORD)로만 주입: 코드·설정에 하드코딩하지 않는다.
  * 둘 다 설정됐고 해당 이메일 계정이 없을 때만 1회 생성(멱등). 미설정 시(테스트/키 없는 환경) no-op.
  */
 @Component

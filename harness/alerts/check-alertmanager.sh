@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Alertmanager 설정 검증 — webhook 없이, 클러스터 없이 라우팅을 판정한다.
+# Alertmanager 설정 검증: webhook 없이, 클러스터 없이 라우팅을 판정한다.
 #
 # 왜 필요한가: 규칙(promtool)은 검증하는데 라우팅은 아무도 보지 않았다. 규칙이 옳아도
 # 라우트를 잘못 쓰면 알림이 엉뚱한 리시버로 가거나 아무 데도 안 간다. 배포 전에는 증상이 없다.
@@ -41,10 +41,10 @@ expect_route() {
 
 # Watchdog은 반드시 버려야 한다. 여기가 깨지면 Slack이 계속 울린다.
 expect_route "null"  alertname=Watchdog
-# 나머지는 severity와 무관하게 한 채널로 간다(채널 1개 설계 — webhook 하나 = 채널 하나).
+# 나머지는 severity와 무관하게 한 채널로 간다(채널 1개 설계: webhook 하나 = 채널 하나).
 expect_route "slack" alertname=FlowticketHighServerErrorRate severity=critical
 expect_route "slack" alertname=FlowticketOutboxDeadRows severity=warning
-# 라벨이 없는 알림도 기본 라우트로 떨어져야 한다 — 조용히 사라지면 안 된다.
+# 라벨이 없는 알림도 기본 라우트로 떨어져야 한다. 그냥 사라지면 안 된다.
 expect_route "slack" alertname=SomethingUnexpected
 
 [ "$fail" -eq 0 ] || { echo "라우팅이 기대와 다르다" >&2; exit 1; }

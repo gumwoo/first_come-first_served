@@ -1,4 +1,4 @@
-# 계층 경계 규칙 — import 정적 검사. 위반 시 하네스 실패.
+# 계층 경계 규칙: import 정적 검사. 위반 시 하네스 실패.
 
 backend:
   base_package: com.flowticket

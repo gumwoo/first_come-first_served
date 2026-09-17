@@ -1,11 +1,11 @@
-# 알림 규칙. 6개로 시작한다 — 도입 실패의 가장 흔한 원인이 "처음에 다 켜서 소음이
+# 알림 규칙. 6개로 시작한다. 도입 실패의 가장 흔한 원인이 "처음에 다 켜서 소음이
 # 되는 것"이고, 이 저장소는 이미 "알림이 없다"를 세 문서에 한계로 적었다(TS-032·ADR-008·ADR-016).
 # 반대로 소음을 만들면 결과가 같다: 아무도 안 본다.
 #
-# 채택 기준은 하나다 — "이 알림을 받으면 사람이 지금 무엇을 하는가?"에 답이 있는가.
+# 채택 기준은 하나다. "이 알림을 받으면 사람이 지금 무엇을 하는가?"에 답이 있는가.
 # 답이 "나중에 본다"면 그건 알림이 아니라 대시보드다. 그래서 뺀 것:
-#   * p99 지연 급증  — 5xx와 겹쳐 울린다. 필요해지면 억제 규칙과 함께 넣는다
-#   * HPA max 도달   — 용량 신호지 사건이 아니다. 대시보드가 맞다
+#   * p99 지연 급증: 5xx와 겹쳐 울린다. 필요해지면 억제 규칙과 함께 넣는다
+#   * HPA max 도달: 용량 신호지 사건이 아니다. 대시보드가 맞다
 #
 # 모든 규칙에 `for:`와 `runbook_url`을 단다. 전자는 플래핑을 막고, 후자가 없으면 받는 사람이
 # 무엇을 해야 할지 모른다. 이 저장소는 TS/ADR 문서가 그대로 runbook 역할을 한다.
@@ -19,7 +19,7 @@ metadata:
   namespace: monitoring
   labels:
     # kube-prometheus-stack의 ruleSelector가 이 라벨로 규칙을 고른다.
-    # 빠지면 파일이 적용돼도 Prometheus가 로드하지 않는다 — 조용히 아무 일도 안 일어난다.
+    # 빠지면 파일이 적용돼도 Prometheus가 로드하지 않는다. 그리고 아무 경고도 없다.
     release: kube-prometheus-stack
 spec:
   groups:
@@ -61,7 +61,7 @@ spec:
             runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-032-outbox-poison-row-head-of-line.md"
 
         - alert: FlowticketOutboxBacklog
-          # 브로커 장애의 직접 신호다. 복구되면 스스로 줄어들므로 for를 길게 잡는다 —
+          # 브로커 장애의 직접 신호다. 복구되면 스스로 줄어들므로 for를 길게 잡는다.
           # 짧으면 정상적인 순간 적체에도 울린다.
           expr: max(flowticket_outbox_events{job="flowticket-api",status="PENDING"}) > 500
           for: 10m
@@ -82,7 +82,7 @@ spec:
             runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-020-kafka-poison-pill-infinite-retry.md"
 
         - alert: FlowticketConsumerLag
-          # 클라이언트(api)가 내보내는 lag을 쓴다 — kafka-exporter 배선에 의존하지 않는다.
+          # 클라이언트(api)가 내보내는 lag을 쓴다. kafka-exporter 배선에 의존하지 않는다.
           expr: max(kafka_consumer_fetch_manager_records_lag{job="flowticket-api"}) > 1000
           for: 5m
           labels: { severity: warning }
@@ -96,7 +96,7 @@ spec:
       rules:
         - alert: FlowticketBlacklistCheckFailing
           # Redis 장애 중 로그아웃된 토큰이 남은 TTL 동안 통과한다(ADR-016의 의도된 트레이드오프).
-          # 요청은 전부 200이라 에러율에 나타나지 않는다 — 이 지표만이 유일한 신호다.
+          # 요청은 전부 200이라 에러율에 나타나지 않는다. 이 지표만이 유일한 신호다.
           expr: sum(rate(auth_blacklist_check_failures_total{job="flowticket-api"}[5m])) > 0
           for: 5m
           labels: { severity: warning }

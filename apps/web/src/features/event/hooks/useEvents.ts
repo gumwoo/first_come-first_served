@@ -9,7 +9,7 @@ export function useRealtimeRanking() {
   return useQuery({
     queryKey: ["events", "ranking", "realtime"],
     queryFn: eventApi.getRealtimeRanking,
-    refetchInterval: 60_000, // 실시간 — 1분마다 갱신
+    refetchInterval: 60_000, // 실시간: 1분마다 갱신
   });
 }
 

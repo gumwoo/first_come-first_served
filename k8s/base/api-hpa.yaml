@@ -1,5 +1,5 @@
 # HPA는 CPU만 기준으로 삼는다. Kafka 컨슈머 랙으로 오토스케일하는 것은 이 프로젝트에서
-# 억지다 — 컨슈머 작업이 가벼워 랙이 CPU를 따라가지 않는다(aws-eks-deploy-plan.md §0).
+# 억지다. 컨슈머 작업이 가벼워 랙이 CPU를 따라가지 않는다(aws-eks-deploy-plan.md §0).
 # api·web 두 티어 모두 HPA 대상이다(→ web-hpa.yaml).
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -12,7 +12,7 @@ spec:
   # 600 rps 실측에서 api는 병목이 아니었다(서버 p95 15ms, Hikari pending 0). 노드 allocatable
   # 안에서 api·web이 동시에 최대로 갈 수 없어 여유를 web에 넘긴다. TS-021 커넥션 상한: 7×5=35.
   #
-  # 7은 성능상 충분하다고 판단한 값이 아니라 예산에 들어가는 최대값이다 —
+  # 7은 성능상 충분하다고 판단한 값이 아니라 예산에 들어가는 최대값이다.
   # api 7×300 + web 4×300 + 기타 1,650 = 4,950m / allocatable 5,790m (식은 web-hpa.yaml).
   maxReplicas: 7
   metrics:
@@ -22,7 +22,7 @@ spec:
         target: { type: Utilization, averageUtilization: 60 }
   behavior:
     scaleUp:
-      # 선착순 트래픽은 계단식으로 들어온다 — 천천히 늘리면 스파이크를 못 받는다.
+      # 선착순 트래픽은 계단식으로 들어온다. 천천히 늘리면 스파이크를 못 받는다.
       stabilizationWindowSeconds: 0
     scaleDown:
       # 반대로 축소는 느리게. 빨리 줄이면 다음 파도에 다시 확장하느라 진동한다(flapping).

@@ -34,7 +34,7 @@ public class KopisUpserter {
      * 호출해 N건에 SELECT N번이 나갔다. 또한 KOPIS 응답에 같은 kopisId가 중복으로 들어오면 한 배치에서
      * INSERT가 두 번 나가 UNIQUE 위반이 되므로, 배치 내 중복은 먼저 제거한다(뒤 항목이 최신).
      *
-     * @return 유효 항목(kopisId·title 보유) 중 신규/갱신으로 처리한 건수 —
+     * @return 유효 항목(kopisId·title 보유) 중 신규/갱신으로 처리한 건수:
      *         "새로 추가된 공연 수"가 아니라 처리한 항목 수다.
      */
     @Transactional
@@ -60,7 +60,7 @@ public class KopisUpserter {
 
             Event found = existing.get(k.kopisId);
             if (found != null) {
-                // runningTime·ageLimit은 넘기지 않는다 — 목록 응답에 없는 필드이고,
+                // runningTime·ageLimit은 넘기지 않는다. 목록 응답에 없는 필드이고,
                 // null을 넘기면 상세 동기화가 채운 값을 지운다(Event.updateFromSync 주석).
                 found.updateFromSync(k.title, k.venue, k.region, k.genre,
                         k.posterUrl, start, end, status);

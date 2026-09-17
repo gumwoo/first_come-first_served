@@ -9,7 +9,7 @@
 # 롤링 배포 surge까지 보면 여유가 얇다. 둘 다 maxSurge=1 / maxUnavailable=0 이므로
 # 최악의 경우(양쪽이 최대 상태에서 동시에 롤링) +600m이 더 붙는다.
 #   4,950 + 600 = 5,550m / 5,790m  → 남는 여유 240m
-# 다른 Pod의 requests가 조금만 늘어도 바로 빡빡해진다 — 새 워크로드를 얹기 전에 이 계산을
+# 다른 Pod의 requests가 조금만 늘어도 바로 빡빡해진다. 새 워크로드를 얹기 전에 이 계산을
 # 다시 해야 한다.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -26,11 +26,11 @@ spec:
         name: cpu
         # api와 같은 기준을 쓴다. requests 300m 기준 180m을 넘으면 확장.
         # 실측상 600 rps에서 web은 파드당 약 0.59 core를 썼다. 4파드로도 타깃(180m)에
-        # 도달하지 못하고 상한에 붙을 가능성이 높다 — 그때는 노드 추가 없이는 더 못 늘린다.
+        # 도달하지 못하고 상한에 붙을 가능성이 높다. 그때는 노드 추가 없이는 더 못 늘린다.
         target: { type: Utilization, averageUtilization: 60 }
   behavior:
     scaleUp:
-      # api와 같은 이유 — 선착순 트래픽은 계단식으로 들어온다.
+      # api와 같은 이유: 선착순 트래픽은 계단식으로 들어온다.
       stabilizationWindowSeconds: 0
     scaleDown:
       stabilizationWindowSeconds: 300

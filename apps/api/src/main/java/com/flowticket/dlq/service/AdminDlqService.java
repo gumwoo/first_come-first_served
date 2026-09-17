@@ -50,7 +50,7 @@ public class AdminDlqService {
 
     /**
      * 원본 토픽으로 재발행 후 RETRIED 표시. 재발행된 메시지가 소비에서 또 실패하면 다시
-     * DLT로 적재된다(정상 — 그건 이 경로가 아니라 컨슈머 에러 핸들러가 처리한다).
+     * DLT로 적재된다(정상: 그건 이 경로가 아니라 컨슈머 에러 핸들러가 처리한다).
      *
      * <p>브로커 확인 전에 RETRIED로 바꾸지 않는다. {@code send()}는 비동기라, 확인 없이 마킹하면
      * 커밋 뒤에 온 브로커 실패를 아무도 보지 못해 DB는 "재처리됨"인데 메시지는 유실되고
@@ -58,7 +58,7 @@ public class AdminDlqService {
      *
      * <p>발행이 실패하면 예외로 트랜잭션이 롤백돼 상태가 그대로 남고, 운영자가 다시 시도할 수 있다.
      * 반대로 발행 성공 후 커밋이 실패하면 중복 발행이 되는데, 컨슈머가 {@code eventId} 멱등을
-     * 갖고 있어(ADR-010) 흡수된다 — 아웃박스와 같은 at-least-once 교환이다.
+     * 갖고 있어(ADR-010) 흡수된다. 아웃박스와 같은 at-least-once 교환이다.
      */
     @Transactional
     public void retry(Long id) {

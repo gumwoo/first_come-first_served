@@ -1,4 +1,4 @@
-// 조회 부하 — 도착률 고정(open model). read-load.js(VU 고정, closed model)의 짝이다.
+// 조회 부하: 도착률 고정(open model). read-load.js(VU 고정, closed model)의 짝이다.
 //
 // 왜 둘 다 필요한가: closed model은 서버가 느려지면 한 VU의 사이클이 길어져 부하가 스스로
 // 줄어든다. 그래서 포화점을 지나쳐도 그래프가 완만해 보이고 무릎이 흐려진다.

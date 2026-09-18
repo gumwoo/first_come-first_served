@@ -71,8 +71,7 @@ tasks.withType<Test> {
     useJUnitPlatform()
 
     // 기본 콘솔 출력은 예외의 클래스명과 줄번호만 찍는다. 메시지는 build/test-results XML에만
-    // 남아, CI 로그만 보는 상황에서는 사라진 것과 같다. 실제로 TRUNCATE 실패 진단(pg_stat_activity
-    // 덤프)을 심어 놓고도 CI에서 그 내용을 읽지 못했다. 간헐적 실패라 재현해서 다시 볼 수도 없다.
+    // 남아 CI 로그로는 볼 수 없고, 간헐적 실패는 재현해서 다시 볼 수도 없다.
     testLogging {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
@@ -81,15 +80,12 @@ tasks.withType<Test> {
     }
 
     // ── 측정 모드(-PciTiming) ─────────────────────────────────────────────
-    // 기본은 꺼져 있다. CI가 느린 이유를 재려고 한 번씩만 켠다.
+    // 기본은 꺼져 있다. CI가 느린 이유를 잴 때만 켠다.
+    // `:test` 시간의 대부분이 JUnit XML의 testcase에 귀속되지 않아(컨텍스트 초기화·컨테이너 기동 등)
+    // 로그로 그 안을 본다.
     //
-    // 왜 필요한가: `:test` wall-clock의 대부분이 JUnit XML의 testcase 시간에 귀속되지 않는다.
-    // 그 안에 무엇이 있는지는 XML로 알 수 없다.
-    // Spring 컨텍스트 초기화·Testcontainers 기동·lifecycle·워커 오버헤드가 섞여 있다.
-    //
-    // 어노테이션이 아니라 시스템 프로퍼티로 켠다. @TestPropertySource를 추가하면
-    // 그 자체가 Spring 컨텍스트 캐시 키를 바꿔 측정 대상이 달라진다. 시스템 프로퍼티는
-    // 캐시 키에 들어가지 않으므로 관측이 대상을 건드리지 않는다.
+    // 어노테이션이 아니라 시스템 프로퍼티로 켠다. @TestPropertySource는 Spring 컨텍스트
+    // 캐시 키를 바꿔 측정 대상 자체가 달라진다.
     //
     // 보고 싶은 것:
     //   · "cache statistics: [size=N, hitCount=X, missCount=Y]" → 실제 컨텍스트 생성 수

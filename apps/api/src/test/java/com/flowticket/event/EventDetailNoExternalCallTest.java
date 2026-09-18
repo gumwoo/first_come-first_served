@@ -19,7 +19,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 /**
  * 사용자 상세 조회가 외부 API를 호출하지 않는다는 것을 회귀로 고정한다.
  *
- * <p>"상세가 비어 있으면 그때 불러오자"는 lazy cache로 되돌리면 외부 호출량이 다시 트래픽에
+ * "상세가 비어 있으면 그때 불러오자"는 lazy cache로 되돌리면 외부 호출량이 다시 트래픽에
  * 비례하고 KOPIS 이용 제한(IP당 1초 10회)을 넘긴다. 그래서 호출이 0회임을 단언한다.
  */
 @SpringBootTest

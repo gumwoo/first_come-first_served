@@ -17,7 +17,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
  * 조회수 랭킹 검증(Testcontainers Redis). 핵심 불변식:
- * 인기(누적)와 실시간(감쇠)은 같은 조회를 다른 집계로 → 결과가 달라질 수 있다.
+ * 인기(누적)와 실시간(감쇠)은 같은 조회를 다른 집계라 결과가 달라질 수 있다.
  */
 @SpringBootTest
 class RankingIntegrationTest extends IntegrationTestSupport {

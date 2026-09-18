@@ -63,7 +63,7 @@ test("결제 거절 → 실패 화면 + 재시도 복귀", async ({ page }) => {
 test("결제 제한시간 만료 → 만료 안내", async ({ page }) => {
   const { orderId, eventId } = await seedOrder(page);
   const past = new Date(Date.now() - 60_000).toISOString();
-  // 주문 조회를 만료된 상태로 가로챔 → 타이머 0 → 만료 UI
+  // 주문 조회를 만료된 상태로 가로채 타이머 0과 만료 UI를 만든다
   await page.route(`**/api/orders/${orderId}`, (route) =>
     route.fulfill({
       status: 200,

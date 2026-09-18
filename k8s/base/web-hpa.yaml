@@ -1,7 +1,5 @@
-# web 수평 확장.
-#
-# 왜 필요한가: 600 rps 실측에서 첫 실패 지점이 web 티어였다(ALB → web target 구간,
-# ELB_5XX == TargetConnectionError, Target_5XX 0). api만 늘려도 앞단 web이 막으면 502가 난다.
+# web 수평 확장. 600 rps 실측에서 첫 실패 지점이 web 티어였다(ALB → web target 구간,
+# ELB_5XX == TargetConnectionError, Target_5XX 0). api만 늘려도 앞단 web이 막히면 502가 난다.
 #
 # 노드 예산: allocatable 5,790m 안에서 api·web이 동시에 최대로 갈 수 없다.
 #   api 7×300 + web 4×300 + 기타 1,650 = 4,950m (85%)

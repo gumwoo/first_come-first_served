@@ -201,7 +201,7 @@ public class PaymentService {
     /**
      * 가상계좌 입금 웹훅(Toss DEPOSIT_CALLBACK) 처리. 위조·재전송을 방어한다.
      * - 검증: 발급 때 저장한 vbank_secret과 웹훅 secret 대조(불일치 → FORBIDDEN, HMAC 서명은 지급대행 전용).
-     * - 멱등: Toss는 2xx 못 받으면 최대 7회 재전송 → 이미 PAID면 그대로 성공 응답(no-op).
+     * - 멱등: Toss는 2xx 못 받으면 최대 7회 재전송하므로, 이미 PAID면 그대로 성공 응답(no-op).
      * - status가 완료(DONE)일 때만 VBANK_WAITING→PAID 확정.
      * tossOrderId는 결제창 규약 "FLOWTICKET-ORDER-{id}".
      */
@@ -214,7 +214,7 @@ public class PaymentService {
         Payment payment = paymentRepository
                 .findFirstByOrderIdAndStatusOrderByIdDesc(orderId, PaymentStatus.READY)
                 .orElse(null);
-        // 이미 확정됐거나(READY 없음=PAID) 재전송 → 멱등 no-op
+        // 이미 확정됐거나(READY 없음=PAID) 재전송이면 멱등 no-op
         if (payment == null || order.getStatus() != OrderStatus.VBANK_WAITING) {
             return;
         }
@@ -272,7 +272,7 @@ public class PaymentService {
                 throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
             }
             // 아웃박스 적재(ADR-010): 이 트랜잭션과 같은 커밋에 이벤트를 남긴다.
-            // 롤백되면 행도 사라져 유령 이벤트 0, 커밋되면 반드시 남아 릴레이가 재시도로 발행 → 유실 0.
+            // 롤백되면 행도 사라져 유령 이벤트 0, 커밋되면 반드시 남아 릴레이가 재시도로 발행한다(유실 0).
             // (구 AFTER_COMMIT 발행은 커밋 후 크래시/브로커 다운 시 이벤트가 영구 유실됐다.)
             appendOutbox("order.paid", order.getId());
         }

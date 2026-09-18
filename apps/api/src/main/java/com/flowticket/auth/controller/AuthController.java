@@ -93,7 +93,7 @@ public class AuthController {
             @AuthenticationPrincipal Long userId,
             @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
-        // HTTP 파싱만 컨트롤러 몫: "Bearer " 접두어 제거 → 토큰 오케스트레이션은 서비스에 위임.
+        // HTTP 파싱만 컨트롤러 몫: "Bearer " 접두어 제거까지. 토큰 오케스트레이션은 서비스에 위임한다.
         String accessToken = (authorization != null && authorization.startsWith("Bearer "))
                 ? authorization.substring(7)
                 : null;

@@ -52,11 +52,8 @@ public class KopisSyncService {
 
     /**
      * 상세 동기화 진행 상황. 기동 스크립트가 "초기 수집이 끝났는가"를 판단하는 데 쓴다.
-     *
-     * <p>왜 필요한가: 상세는 회차당 상한(300)만큼만 처리되므로 갓 만든 클러스터에서는 여러 번
-     * 돌려야 한다. 그런데 {@code detailSyncedAt}이 어떤 API로도 나가지 않아, 밖에서는
-     * 개별 필드({@code runningTime})가 비었는지로 대신 셀 수밖에 없었다. 그 대리값은 틀리다.
-     * {@code Event.updateDetail()}은 그 필드가 없어도 {@code detailSyncedAt}을 찍기 때문이다.
+     * 상세는 회차당 상한(300)만큼만 처리되므로 여러 번 돌려야 하고, runningTime 같은 개별 필드로는
+     * 진행을 셀 수 없다(TS-033).
      */
     @Transactional(readOnly = true)
     public KopisSyncStatusResponse status() {
@@ -68,7 +65,7 @@ public class KopisSyncService {
     /**
      * 오늘 ~ +syncDays 공연 동기화. 31일 청크로 분할·페이지 끝까지 수집 후 upsert(멱등).
      *
-     * <p>락은 이 공통 진입점에 건다. 예전엔 {@code scheduledSync()}에만 붙어 있어 수동 API가
+     * 락은 이 공통 진입점에 건다. 예전엔 scheduledSync()에만 붙어 있어 수동 API가
      * 이 메서드를 직접 호출하면 락을 우회했고, 스케줄 동기화와 수동 동기화가 겹칠 수 있었다
      * (KOPIS 중복 호출·동시 upsert 경합). 이제 어느 경로든 같은 락을 통과한다.
      *
@@ -105,8 +102,8 @@ public class KopisSyncService {
     }
 
     /**
-     * 매일 새벽 4시 자동 동기화. 락은 {@link #sync()}에 있으므로 프록시를 거쳐 호출한다.
-     * {@code this.sync()}로 부르면 self-invocation이라 AOP가 적용되지 않아 락을 우회한다.
+     * 매일 새벽 4시 자동 동기화. 락은 sync()에 있으므로 프록시를 거쳐 호출한다.
+     * this.sync()로 부르면 self-invocation이라 AOP가 적용되지 않아 락을 우회한다.
      */
     @Scheduled(cron = "0 0 4 * * *")
     public void scheduledSync() {

@@ -137,7 +137,7 @@ class AuthIntegrationTest extends IntegrationTestSupport {
 
         assertThat(unexpected).isEmpty();
         assertThat(statuses).hasSize(threads);
-        // 경합이 실제로 일어났는지는 타이밍에 달렸다. 그래서 "409가 나왔다"가 아니라
+        // 경합이 실제로 일어났는지는 타이밍에 달려 있어, "409가 나왔다" 대신
         // 어떤 경우에도 성립해야 하는 것을 단언한다: 정확히 하나만 가입되고, 500은 없다.
         assertThat(statuses).as("중복 가입은 서버 오류가 아니다. 500이 있으면 안 된다")
                 .doesNotContain(500);
@@ -154,7 +154,7 @@ class AuthIntegrationTest extends IntegrationTestSupport {
         ResponseEntity<JsonNode> rot2 = refreshWithCookie(r1);   // → r2, r0는 직전에서 밀려남
         assertThat(rot2.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        // r0는 이제 현재도 직전도 아님 → 탈취로 간주
+        // r0는 이제 현재도 직전도 아니므로 탈취로 간주
         ResponseEntity<JsonNode> reused = refreshWithCookie(r0);
         assertThat(reused.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(reused.getBody().get("error").get("code").asText()).isEqualTo("REFRESH_TOKEN_REUSED");
@@ -206,7 +206,7 @@ class AuthIntegrationTest extends IntegrationTestSupport {
         rest.postForEntity("/auth/signup", body(Map.of("email", email, "password", "Password1!",
                 "name", "n", "phone", phone, "termsAccepted", true)), String.class);
 
-        // remember=false 로그인 → 세션 쿠키(Max-Age 없음)
+        // remember=false 로그인이면 세션 쿠키(Max-Age 없음)
         ResponseEntity<JsonNode> login = rest.postForEntity("/auth/login",
                 body(Map.of("email", email, "password", "Password1!", "remember", false)), JsonNode.class);
         assertThat(rawRefreshCookie(login)).doesNotContainIgnoringCase("Max-Age");

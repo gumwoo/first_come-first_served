@@ -12,8 +12,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /**
  * 주문 상태 푸시(SSE).
  *
- * <p>Bearer가 아니라 구독 티켓으로 인가한다. {@code EventSource}가 헤더를 붙이지 못하기
- * 때문이다. 발급은 {@code POST /orders/{id}/sse-ticket}(Bearer 필요)이 한다.
+ * Bearer가 아니라 구독 티켓으로 인가한다. EventSource가 헤더를 붙이지 못하기
+ * 때문이다. 발급은 POST /orders/{id}/sse-ticket(Bearer 필요)이 한다.
  */
 @RestController
 public class OrderSseController {

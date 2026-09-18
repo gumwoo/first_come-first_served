@@ -17,7 +17,7 @@ import lombok.NoArgsConstructor;
  * 결제가 롤백되면 이 행도 함께 사라진다(유령 이벤트 0). 폴링 릴레이가 PENDING을 Kafka로 발행하고
  * 성공 후 PUBLISHED로 마킹한다(publish-then-mark → at-least-once, 유실 0).
  *
- * <p>id(UUID)는 소비자 멱등 키로도 쓰인다(`dedup:order-event:{id}`).
+ * id(UUID)는 소비자 멱등 키로도 쓰인다(`dedup:order-event:{id}`).
  */
 @Entity
 @Table(name = "outbox_events")
@@ -87,7 +87,7 @@ public class OutboxEvent {
      * 일시적 발행 실패: PENDING을 유지해 다음 틱에 재시도. 시도 횟수는 운영 가시성용.
      * 브로커·네트워크 장애가 여기 해당하며, 시도 횟수만으로 DEAD로 넘기지 않는다.
      *
-     * <p>여기서 남긴 원인은 다음 시도가 성공하면 지워진다({@link #markPublished()}).
+     * 여기서 남긴 원인은 다음 시도가 성공하면 지워진다(markPublished()).
      */
     public void markAttemptFailed(String reason) {
         this.attempts++;
@@ -95,11 +95,8 @@ public class OutboxEvent {
     }
 
     /**
-     * 결정적 실패: 재시도해도 결과가 같으므로 릴레이 후보에서 뺀다. payload를 해석할 수
-     * 없어 애초에 Kafka로 보낼 객체를 만들지 못하는 경우다.
-     *
-     * <p>시도 횟수도 함께 올린다. "0회 시도인데 DEAD"로 보이면 운영자가 원인을 오해한다.
-     * 실제로는 한 번 시도했고 그 결과가 결정적이었다.
+     * 결정적 실패: payload를 해석할 수 없어 재시도해도 결과가 같으므로 릴레이 후보에서 뺀다.
+     * 시도 횟수도 함께 올린다("0회 시도인데 DEAD"로 보이지 않게).
      */
     public void markDead(String reason) {
         this.attempts++;
@@ -110,11 +107,8 @@ public class OutboxEvent {
     /**
      * 운영자 판단: 다시 발행 대상으로 되돌린다(DEAD → PENDING).
      *
-     * <p>payload를 고치는 기능은 일부러 제공하지 않는다. 운영자가 이벤트 내용을 편집할 수
-     * 있으면 그것은 복구가 아니라 위조다. 이 경로가 유효한 실제 상황은 소비할 쪽이 배포로
-     * 고쳐진 경우다. 스키마가 맞춰졌으면 같은 payload가 이제 해석된다.
-     *
-     * <p>되돌린 뒤에도 정렬 키(createdAt)는 그대로라 원래 순서 자리로 돌아간다.
+     * payload 수정 기능은 두지 않는다(운영자가 이벤트 내용을 바꾸면 위조가 된다). 소비 쪽이 배포로
+     * 고쳐져 같은 payload가 해석되는 경우에 쓴다. 정렬 키(createdAt)는 그대로라 원래 순서로 돌아간다.
      */
     public void requeue() {
         requireDead("재발행");
@@ -125,7 +119,7 @@ public class OutboxEvent {
     /**
      * 운영자 판단: 이 이벤트의 발행을 포기한다(DEAD → DISCARDED).
      *
-     * <p>같은 aggregate의 후속 이벤트가 다시 흐른다. 릴레이는 DEAD만 차단 사유로 보므로,
+     * 같은 aggregate의 후속 이벤트가 다시 흐른다. 릴레이는 DEAD만 차단 사유로 보므로,
      * 폐기는 "이 이벤트는 영영 안 나간다는 것을 받아들인다"는 선언이기도 하다. 행은 지우지 않는다.
      * 무엇을 포기했는지가 남아야 나중에 추적할 수 있다.
      */
@@ -136,7 +130,7 @@ public class OutboxEvent {
 
     /**
      * PENDING 행에는 두 전이를 허용하지 않는다. 브로커 장애로 밀려 있을 뿐 언젠가 나갈 이벤트라,
-     * 운영자가 개입할 대상이 아니다. 개입해야 하는 것은 릴레이가 스스로 못 푸는 DEAD뿐이다.
+     * 운영자가 개입할 대상이 아니다(개입 대상은 DEAD).
      */
     private void requireDead(String action) {
         if (this.status != OutboxStatus.DEAD) {

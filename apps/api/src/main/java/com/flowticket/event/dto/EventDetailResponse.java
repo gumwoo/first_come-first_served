@@ -6,8 +6,8 @@ import java.time.LocalDate;
 /**
  * 공연 상세. 전부 DB에서 온다. 이 응답을 만드는 데 외부 호출이 없다.
  *
- * <p>동기화 배치가 미리 채운 값을 읽기만 한다. 아직 상세를 못 받은 공연은 해당 필드가
- * {@code null}이다.
+ * 동기화 배치가 미리 채운 값을 읽기만 한다. 아직 상세를 못 받은 공연은 해당 필드가
+ * null이다.
  */
 public record EventDetailResponse(
         Long id,

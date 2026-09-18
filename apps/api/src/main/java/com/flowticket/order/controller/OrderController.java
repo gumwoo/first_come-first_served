@@ -41,7 +41,7 @@ public class OrderController {
     /**
      * 주문 SSE 구독 티켓 발급(소유자 전용).
      *
-     * <p>POST인 이유: 자격증명을 새로 만들어 내보내는 요청이라 캐시·리트라이 대상이 아니다.
+     * POST인 이유: 자격증명을 새로 만들어 내보내는 요청이라 캐시·리트라이 대상이 아니다.
      * GET으로 두면 프록시·브라우저 캐시에 티켓이 남을 수 있다.
      */
     @PostMapping("/orders/{id}/sse-ticket")

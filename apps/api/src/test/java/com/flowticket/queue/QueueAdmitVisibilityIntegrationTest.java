@@ -18,17 +18,15 @@ import org.springframework.test.context.TestPropertySource;
 /**
  * TS-024 회귀: 승격 커밋이 Lua 밖으로 새지 않는지 본다.
  *
- * <p>승격은 pop + admitcount 증가 + admitExp 등록까지 한 Lua로 확정되고,
- * {@code queue:admit:{token}} 키와 SSE 알림은 그 뒤에 붙는 부수 작업이다. admitExp 등록이
+ * 승격은 pop + admitcount 증가 + admitExp 등록까지 한 Lua로 확정되고,
+ * queue:admit:{token} 키와 SSE 알림은 그 뒤에 붙는 부수 작업이다. admitExp 등록이
  * Lua 밖에 있으면 두 가지가 샌다.
  *
- * <ul>
- *   <li>1) wait에서도 빠지고 입장 표시도 없는 창 → 상태 조회가 EXPIRED로 떨어진다.</li>
- *   <li>2) 그 창에서 Pod가 죽으면 admitcount만 오른 채 admitExp에 없어 정원이 영구 누수된다.
- *       카운트를 줄이는 경로(RECLAIM/LEAVE)가 둘 다 admitExp를 근거로 움직이기 때문이다.</li>
- * </ul>
+ *   - 1) wait에서도 빠지고 입장 표시도 없는 창 → 상태 조회가 EXPIRED로 떨어진다.
+ *   - 2) 그 창에서 Pod가 죽으면 admitcount만 오른 채 admitExp에 없어 정원이 영구 누수된다.
+ *       카운트를 줄이는 경로(RECLAIM/LEAVE)가 둘 다 admitExp를 근거로 움직이기 때문이다.
  *
- * <p>{@code admit-ttl}을 넉넉히 둔다. {@link QueueIntegrationTest}는 1초라서
+ * admit-ttl을 넉넉히 둔다. QueueIntegrationTest는 1초라서
  * "만료 전인가" 판정이 초 경계에서 뒤집힐 수 있다.
  */
 @TestPropertySource(properties = {"queue.capacity=3", "queue.admit-ttl=60"})
@@ -41,7 +39,7 @@ class QueueAdmitVisibilityIntegrationTest extends IntegrationTestSupport {
 
     @Autowired EventRepository eventRepository;
 
-    /** 발급 게이트가 실재하는 ON_SALE 이벤트를 요구한다. {@link QueueIntegrationTest} 주석 참고. */
+    /** 발급 게이트가 실재하는 ON_SALE 이벤트를 요구한다. QueueIntegrationTest 주석 참고. */
     private Long EVENT;
 
     @BeforeEach

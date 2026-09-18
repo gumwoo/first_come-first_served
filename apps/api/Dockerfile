@@ -9,7 +9,7 @@
 # 버전은 gradle-wrapper.properties(8.10.2)와 맞춘다. 빌드 재현성.
 FROM gradle:8.10.2-jdk17 AS builder
 
-# gradle 이미지는 비루트 `gradle` 유저로 동작한다 → 소유권을 맞춰 복사해야 빌드 산출물을 쓸 수 있다.
+# gradle 이미지는 비루트 `gradle` 유저로 동작하므로 소유권을 맞춰 복사해야 빌드 산출물을 쓸 수 있다.
 # 의존성 정의를 먼저 복사해, 소스만 바뀐 재빌드에서 의존성 해석 레이어가 캐시되게 한다.
 WORKDIR /home/gradle/src
 COPY --chown=gradle:gradle apps/api/settings.gradle.kts apps/api/build.gradle.kts ./

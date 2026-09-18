@@ -5,17 +5,17 @@ import { fillQueueCapacity, releaseQueueCapacity } from "../helpers/redis";
 /**
  * 대기(WAITING) 상태를 결정적으로 만드는 기반을 검증한다.
  *
- * <p>정원이 100이라 단일 사용자는 즉시 승격되고, `QUEUE_CAPACITY`를 낮추면 같은 백엔드를 공유하는 다른 E2E가 전부 깨진다
+ * 정원이 100이라 단일 사용자는 즉시 승격되고, `QUEUE_CAPACITY`를 낮추면 같은 백엔드를 공유하는 다른 E2E가 전부 깨진다
  * (`seedAdmittedUser`에 의존하는 예매·결제·환불). 그래서 `queue:admitcount:<eventId>`를
  * 직접 채워 그 이벤트만 정원이 찬 상태로 만든다.
  *
- * <p>이 파일 자체는 기능 회귀가 아니라 다음 테스트를 위한 기반이다.
+ * 이 파일은 다음 테스트를 위한 기반 검증이다.
  * ADR-015 1)(onopen 재동기화)의 회귀 테스트가 이 위에 올라간다.
  * 그래서 여기서는 두 가지만 본다: 정원을 채우면 막히는가, 비우면 풀리는가.
  *
- * <p>뒷정리가 필수라 모든 조작을 `try/finally`로 감싼다. 남기면 그 이벤트가 영구히 정원이 찬 상태가 된다.
+ * 뒷정리가 필수라 모든 조작을 `try/finally`로 감싼다. 남기면 그 이벤트가 영구히 정원이 찬 상태가 된다.
  *
- * <p>fixture는 값을 덮어쓰지 않고 더했다 빼는 방식이다. 이유는 `helpers/redis.ts` 참고.
+ * fixture는 값을 덮어쓰지 않고 더했다 빼는 방식이다. 이유는 `helpers/redis.ts` 참고.
  */
 
 // 승격 워커 주기 1500ms(application.yml `queue.admit-interval-ms`).
@@ -52,15 +52,15 @@ test("정원이 차 있으면 승격되지 않고, 비우면 승격된다", asyn
 /**
  * ADR-015 1) 회귀: SSE 재연결만으로 승격을 인지하는가.
  *
- * <p>이 테스트가 성립하려면 폴링이 살아 있으면 안 된다. 폴링과 onopen 재조회는 같은
+ * 이 테스트가 성립하려면 폴링이 살아 있으면 안 된다. 폴링과 onopen 재조회는 같은
  * `/queue/status`를 부르므로, 폴링이 돌면 그쪽이 먼저 복구해버려 onopen 경로를
  * 증명할 수 없다. 그래서 E2E 빌드는 `NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS=600000`으로
  * 폴링을 테스트 시간 밖으로 밀어낸다(ci.yml). 그 값은 운영 후보가 아니다.
  *
- * <p>시나리오: 연결이 끊긴 사이 승격되면 서버는 이벤트를
+ * 시나리오: 연결이 끊긴 사이 승격되면 서버는 이벤트를
  * 그냥 버린다(`QueueSseRegistry.deliverLocal`). 재전송도 Last-Event-ID도 없다.
  *
- * <p>onopen 재조회를 되돌리면 5단계에서 실패한다. 그게 이 테스트의 존재 이유다.
+ * onopen 재조회를 되돌리면 5단계에서 실패한다. 그게 이 테스트의 존재 이유다.
  */
 test("SSE가 끊긴 사이 승격돼도 재연결하면 복구된다", async ({ page }) => {
   const { eventId } = await seedLoggedInUser(page);

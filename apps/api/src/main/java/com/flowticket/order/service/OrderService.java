@@ -60,8 +60,8 @@ public class OrderService {
     /**
      * 주문 생성: hold 검증(HELD·소유자·미만료) → 가격 스냅샷 → order(PENDING).
      *
-     * <p>동시 생성의 최종 방어선은 부분 UNIQUE({@code uq_orders_active_hold})이고, 진 쪽은 기존 주문을 반환한다.
-     * 확인한 제약이 아니면 원 예외를 올린다. {@code NOT_SUPPORTED}여야 캐치가 트랜잭션 밖에 있다(TS-014).
+     * 동시 생성의 최종 방어선은 부분 UNIQUE(uq_orders_active_hold)이고, 진 쪽은 기존 주문을 반환한다.
+     * 확인한 제약이 아니면 원 예외를 올린다. NOT_SUPPORTED여야 캐치가 트랜잭션 밖에 있다(TS-014).
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public OrderResponse create(Long userId, Long holdId) {
@@ -77,7 +77,7 @@ public class OrderService {
         }
     }
 
-    /** 실제 생성 트랜잭션. 제약 위반은 {@link #create}가 밖에서 잡는다. */
+    /** 실제 생성 트랜잭션. 제약 위반은 create가 밖에서 잡는다. */
     @Transactional
     public OrderResponse createTx(Long userId, Long holdId) {
         if (holdId == null) {

@@ -23,12 +23,12 @@ import jakarta.persistence.EntityManagerFactory;
 /**
  * 목록 조회가 엔티티를 로드하지 않는다는 것을 회귀로 고정한다.
  *
- * <p>목록이 쓰는 컬럼은 9개인데 {@code selectFrom(event)}는 엔티티의 모든 컬럼(20개)을 읽는다.
+ * 목록이 쓰는 컬럼은 9개인데 selectFrom(event)는 엔티티의 모든 컬럼(20개)을 읽는다.
  *
- * <p>이 테스트는 성능을 단언하지 않는다. 읽는 컬럼 수만 고정한다.
+ * 이 테스트는 성능을 단언하지 않는다. 읽는 컬럼 수만 고정한다.
  *
- * <p>이 테스트는 Hibernate 통계의 엔티티 로드 수를 본다. 프로젝션이면 0이고,
- * {@code selectFrom(event)}로 되돌리면 로드 수가 올라가 실패한다.
+ * 이 테스트는 Hibernate 통계의 엔티티 로드 수를 본다. 프로젝션이면 0이고,
+ * selectFrom(event)로 되돌리면 로드 수가 올라가 실패한다.
  */
 @SpringBootTest
 // 통계를 켜지 않으면 카운트가 항상 0이라 테스트가 무조건 통과하는 거짓 안전이 된다.

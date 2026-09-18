@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # 클러스터 철거: terraform이 모르는 리소스를 먼저 치우고, 마지막에 잔여를 점검한다.
 #
-# 왜 스크립트인가: `terraform-design.md` §6에 순서가 있어도 사람이 밟으면 빠뜨린다
-# (Ingress 선삭제 누락 → VPC 삭제 막힘, EBS 잔여 확인 누락 → 방치 과금,
-#  terraform 밖의 ENI·보안그룹 → 서브넷 DependencyViolation). 밟는 주체를 스크립트로 옮긴다.
+# `terraform-design.md` §6의 순서를 사람이 밟으면 빠뜨린다(Ingress 선삭제 누락 → VPC 삭제 막힘,
+# EBS 잔여 확인 누락 → 방치 과금, terraform 밖의 ENI·보안그룹 → 서브넷 DependencyViolation).
 #
 # bootstrap(ECR·ACM·Route53·tfstate·IAM)은 건드리지 않는다(§6). 재생성 비용이 크고
 # 도메인·인증서는 클러스터 수명과 무관하다.
@@ -30,8 +29,7 @@ have_cluster() { kubectl get nodes >/dev/null 2>&1; }
 audit() {
   echo "==> 잔여 점검 ($REGION, FlowTicket 소유분만)"
   # 리전 전체를 세면 안 된다. 같은 리전에 무관한 RDS가 하나 생기면 이 스크립트가
-  # "철거 실패"라고 말하게 되고, 그러면 의미가 "FlowTicket 잔여 없음"이 아니라
-  # "이 리전에 아무것도 없음"이 된다.
+  # "철거 실패"라고 판정한다. 점검 대상은 FlowTicket 소유분으로 한정한다.
   #
   # Terraform이 만든 것은 default_tags의 `Project=flowticket`으로 정확히 걸러진다
   # (versions.tf provider 블록). Terraform 밖에서 만들어지는 둘은 이름으로 판별한다:

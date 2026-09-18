@@ -16,9 +16,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * 대기열 SSE 연결 레지스트리(token→emitter). 승격/만료 시 해당 토큰으로 push.
  * 전송 실패(느린/끊긴 클라이언트)는 즉시 제거해 격리한다(ADR-002).
  *
- * <p>멀티 Pod: 승격 워커가 도는 Pod와 SSE 연결을 든 Pod가 다를 수 있어, {@link #send}/{@link #complete}는
+ * 멀티 Pod: 승격 워커가 도는 Pod와 SSE 연결을 든 Pod가 다를 수 있어, send/complete는
  * Redis 채널로 발행하고 모든 Pod가 구독해 로컬 emitter로 전달한다(연결 없는 Pod는 무시). 완료 신호는
- * 예약 이벤트명 {@link #COMPLETE_EVENT}로 라우팅. pub/sub 미배선(유닛)이면 로컬 전달로 폴백.
+ * 예약 이벤트명 COMPLETE_EVENT로 라우팅. pub/sub 미배선(유닛)이면 로컬 전달로 폴백.
  */
 @Slf4j
 @Component
@@ -40,7 +40,7 @@ public class QueueSseRegistry implements MessageListener {
     /**
      * 토큰용 SSE 스트림 생성·등록. 완료/타임아웃/에러 시 자동 정리.
      *
-     * <p>연결 직후 코멘트 프레임({@code :})을 한 번 보낸다. 없으면 응답이 커밋되지 않아 {@code onopen}이
+     * 연결 직후 코멘트 프레임(:)을 한 번 보낸다. 없으면 응답이 커밋되지 않아 onopen이
      * 불리지 않고, 재연결 시 상태 재조회(ADR-015 ①, TS-012)가 발동하지 못한다.
      * 유휴 연결 유지용 하트비트(ADR-015 ②)와는 다른 문제다.
      */
@@ -66,8 +66,8 @@ public class QueueSseRegistry implements MessageListener {
     /**
      * 해당 토큰 연결로 이벤트 push. 멀티 Pod 팬아웃을 위해 Redis로 발행(미배선 시 로컬 폴백).
      *
-     * <p>트랜잭션이 열려 있으면 커밋 후로 미룬다. 롤백된 상태를 알리지 않기 위해서다.
-     * 호출부마다 챙기면 언젠가 빠지므로 팬아웃 입구인 여기서 한 번에 보장한다({@link AfterCommit}).
+     * 트랜잭션이 열려 있으면 커밋 후로 미룬다. 롤백된 상태를 알리지 않기 위해서다.
+     * 호출부마다 챙기면 언젠가 빠지므로 팬아웃 입구인 여기서 한 번에 보장한다(AfterCommit).
      */
     public void send(String token, String event, Object data) {
         AfterCommit.run(() -> {

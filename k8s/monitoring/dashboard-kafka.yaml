@@ -5,7 +5,7 @@
 # 특히 브로커 페일오버 실증(IMP-016)에서는 이 화면만 띄워두고 브로커를 죽인다.
 #
 # 여기 쓴 메트릭 이름은 전부 실제 /metrics 출력과 Prometheus 쿼리로 확인한 것만 넣었다.
-# 없는 이름을 쓰면 에러가 아니라 빈 패널이 될 뿐이다.
+# 없는 이름을 쓰면 에러 없이 빈 패널이 된다.
 # 확인한 것: kafka_server_replicamanager_*, kafka_controller_*, kafka_server_brokertopicmetrics_*,
 #           kafka_consumergroup_lag, kafka_brokers, jvm_gc_collection_seconds
 apiVersion: v1

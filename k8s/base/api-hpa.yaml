@@ -12,7 +12,7 @@ spec:
   # 600 rps 실측에서 api는 병목이 아니었다(서버 p95 15ms, Hikari pending 0). 노드 allocatable
   # 안에서 api·web이 동시에 최대로 갈 수 없어 여유를 web에 넘긴다. TS-021 커넥션 상한: 7×5=35.
   #
-  # 7은 성능상 충분하다고 판단한 값이 아니라 예산에 들어가는 최대값이다.
+  # 7은 노드 예산에 들어가는 최대값이다(성능상 충분하다는 판단은 아니다).
   # api 7×300 + web 4×300 + 기타 1,650 = 4,950m / allocatable 5,790m (식은 web-hpa.yaml).
   maxReplicas: 7
   metrics:

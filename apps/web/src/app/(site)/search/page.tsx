@@ -20,7 +20,7 @@ const GENRES: [string, string][] = [
 const STATUSES: [string, string][] = [
   ["전체", ""], ["예매중", "ON_SALE"], ["오픈예정", "SCHEDULED"], ["매진", "SOLD_OUT"],
 ];
-// 지역은 KOPIS area(시도 전체명)에 contains 매칭 → 짧은 라벨로 충분.
+// 지역은 KOPIS area(시도 전체명)에 contains로 매칭하므로 짧은 라벨로 충분하다.
 const REGIONS: [string, string][] = [
   ["전체", ""], ["서울", "서울"], ["경기", "경기"], ["인천", "인천"],
   ["부산", "부산"], ["대구", "대구"], ["대전", "대전"], ["광주", "광주"],

@@ -36,7 +36,7 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
-  // access 만료 → 한 번만 silent refresh 후 재시도
+  // access가 만료되면 한 번만 silent refresh 후 재시도
   if (
     res.status === 401 &&
     !options._retried &&

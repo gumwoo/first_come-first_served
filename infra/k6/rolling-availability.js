@@ -30,10 +30,9 @@ const VUS = __ENV.VUS ? parseInt(__ENV.VUS, 10) : 6;
 
 const non2xx = new Counter("non2xx_total");
 
-// 두 모델은 같은 장애를 다르게 본다. closed는 응답이 늦어지면 그 VU가 묶여 부하가 스스로
-// 줄어들고(read-load-rate.js 헤더 참조), 연결이 10초 매달리는 구간에서는 VU 수만큼만 실패할 수
-// 있다. open은 응답이 늦어도 초당 도착 수를 유지하므로 그 창을 정면으로 때린다.
-// 그래서 closed의 "0건"은 무중단의 증거가 아니라 측정기가 못 본 것일 수 있다.
+// closed는 응답이 늦어지면 VU가 묶여 부하가 줄어들어(read-load-rate.js 헤더 참조), 연결이 10초
+// 매달리는 구간에서 VU 수만큼만 실패할 수 있다. open은 초당 도착 수를 유지한다.
+// 그래서 closed의 "0건"은 무중단의 증거가 되지 못할 수 있다.
 const scenario =
   MODEL === "closed"
     ? { executor: "constant-vus", vus: VUS, duration: RUN_FOR, gracefulStop: "30s" }

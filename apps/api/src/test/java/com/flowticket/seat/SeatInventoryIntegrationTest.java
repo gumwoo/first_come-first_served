@@ -258,7 +258,7 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 만료_복구된_좌석은_다른_유저가_다시_선점할_수_있다() throws Exception {
-        // 상태기계 분기: sweep은 status만 되돌리는 게 아니라 실제 재선점까지 가능해야 함.
+        // 상태기계 분기: sweep 후 좌석을 실제로 다시 선점할 수 있어야 함.
         String t8 = admittedToken(8L, eventId);
         seatService.hold(8L, eventId, List.of(aSeatId), t8);
 

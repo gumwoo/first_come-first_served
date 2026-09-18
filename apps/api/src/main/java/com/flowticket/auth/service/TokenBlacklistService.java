@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 /**
  * 로그아웃된 Access Token을 남은 TTL 동안 블랙리스트로 관리.
  *
- * <p>Redis 장애 시 읽기({@link #isBlacklisted})는 fail-open, 쓰기({@link #blacklist})는 실패를 전파한다.
+ * Redis 장애 시 읽기(isBlacklisted)는 fail-open, 쓰기(blacklist)는 실패를 전파한다.
  * 필터 안의 읽기가 예외를 올리면 공개 경로까지 Bearer 요청이 전부 500이 된다(ADR-016).
  */
 @Slf4j
@@ -38,9 +38,9 @@ public class TokenBlacklistService {
     }
 
     /**
-     * 확인하지 못하면 {@code false}(=통과). 위 클래스 주석의 fail-open 방침이다.
+     * 확인하지 못하면 false(=통과). 위 클래스 주석의 fail-open 방침이다.
      *
-     * <p>지표를 올리는 이유: 이 실패는 사용자에게 보이지 않는다. 요청은 전부 성공하고
+     * 지표를 올리는 이유: 이 실패는 사용자에게 보이지 않는다. 요청은 전부 성공하고
      * 로그아웃 취소만 반영되지 않는다. 세지 않으면 알아챌 방법이 없다.
      */
     public boolean isBlacklisted(String accessToken) {

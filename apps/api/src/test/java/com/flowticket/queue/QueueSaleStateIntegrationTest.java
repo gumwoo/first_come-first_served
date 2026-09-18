@@ -23,16 +23,14 @@ import org.springframework.test.context.TestPropertySource;
 /**
  * 판매상태 게이트 회귀.
  *
- * <p>{@code queue:wait:{eventId}}는 eventId를 문자열로만 다루므로, 게이트가 없으면 실재하지 않는
+ * queue:wait:{eventId}는 eventId를 문자열로만 다루므로, 게이트가 없으면 실재하지 않는
  * 이벤트나 CLOSED 공연에도 줄을 세우고 토큰을 내준다. 사용자는 대기가 끝난 뒤 좌석 단계에서야
  * 거절당하고, 그동안 정원(capacity) 한 자리를 점유한다.
  *
- * <p>게이트는 두 군데에 있고 둘 다 필요하다.
- * <ul>
- *   <li>{@code QueueService.issue()}: 애초에 줄을 세우지 않는다.</li>
- *   <li>{@code SeatService.hold()}: 발급 이후 상태가 바뀌는 창을 막는다. admit-ttl이 300초라
- *       운영자가 PAUSED로 내려도 이미 발급된 토큰은 그만큼 살아 있다.</li>
- * </ul>
+ * 게이트는 두 군데에 있고 둘 다 필요하다.
+ *   - QueueService.issue(): 애초에 줄을 세우지 않는다.
+ *   - SeatService.hold(): 발급 이후 상태가 바뀌는 창을 막는다. admit-ttl이 300초라
+ *       운영자가 PAUSED로 내려도 이미 발급된 토큰은 그만큼 살아 있다.
  */
 @TestPropertySource(properties = {"queue.capacity=10", "queue.admit-ttl=60"})
 @SpringBootTest
@@ -58,11 +56,11 @@ class QueueSaleStateIntegrationTest extends IntegrationTestSupport {
 
     /**
      * ON_SALE 외 5개 상태는 전부 막힌다. SCHEDULED(오픈 전)도 포함인데, 프론트가 이미
-     * {@code beforeOpen}으로 예매 버튼을 잠그고 있어 서버 규칙을 거기에 맞춘 것이다.
+     * beforeOpen으로 예매 버튼을 잠그고 있어 서버 규칙을 거기에 맞춘 것이다.
      */
     @Test
     void 판매중이_아니면_발급이_거절된다() {
-        // values()를 도는 것이 핵심이다. 나중에 상태가 추가돼도 이 테스트가 자동으로 커버한다.
+        // values()를 돌아 나중에 추가되는 상태도 자동으로 검사한다.
         // 목록을 손으로 나열하면 새 상태가 게이트를 빠져나간다.
         for (EventStatus status : EventStatus.values()) {
             if (status == EventStatus.ON_SALE) {

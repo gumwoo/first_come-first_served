@@ -18,10 +18,8 @@ resource "aws_ecr_repository" "this" {
 
   name = each.value
 
-  # 기본값은 MUTABLE이다. image.yml을 workflow_dispatch로 재실행하면 같은 SHA 태그를
-  # 다시 push하는데(실제로 ECR 저장소 리전 문제로 재실행한 적이 있다) IMMUTABLE이면 실패한다.
-  # 즉 재실행 시 덮어쓰기가 실제로 일어난다. 다만 서로 다른 커밋이 같은 태그를 쓰는
-  # 일은 없으므로(태그 = git SHA) 태그 재사용 위험은 제한적이다. 재실행 가능성을 택했다.
+  # MUTABLE로 둔다. image.yml을 workflow_dispatch로 재실행하면 같은 SHA 태그를 다시 push하는데
+  # IMMUTABLE이면 실패한다. 태그가 git SHA라 서로 다른 커밋이 같은 태그를 쓰지는 않는다.
   image_tag_mutability = var.ecr_image_tag_mutability
 
   image_scanning_configuration {

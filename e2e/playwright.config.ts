@@ -6,8 +6,8 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./tests",
-  // KOPIS 이벤트/좌석은 공유 자원이라 병렬 워커가 같은 좌석을 다투면 경합(SOLD_OUT)한다.
-  // 크리티컬 플로우 소수라 직렬 실행으로 결정론 확보(속도 > 결정론이 아니라 결정론 우선).
+  // KOPIS 이벤트/좌석은 공유 자원이라 병렬 워커가 같은 좌석을 다투면 SOLD_OUT이 난다.
+  // 크리티컬 플로우만 있어 직렬 실행으로 결정론을 우선한다.
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI, // CI에선 test.only 금지(실수 방지)

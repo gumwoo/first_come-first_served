@@ -1,9 +1,9 @@
-// k8s 하네스: 배포 매니페스트가 애플리케이션 코드와 실제로 맞는지 검사한다.
+// k8s 하네스: 배포 매니페스트가 애플리케이션 코드와 맞는지 검사한다.
 //
-// 왜 필요한가: 매니페스트는 앱과 따로 작성돼 이런 불일치가 생긴다.
-//   1) 존재하지 않는 환경변수(NEXT_PUBLIC_API_BASE_URL)를 주입: 앱은 API_ORIGIN을 읽는다
-//   2) ALB에서 /api를 API Service로 직결: Spring에는 /api 접두어가 없어 전부 404
-// 둘 다 apply 전에는 아무 증상이 없고, apply하면 그때 깨진다. 정적으로만 잡을 수 있다.
+// 매니페스트는 앱과 따로 작성돼 이런 불일치가 생긴다.
+//   1) 앱이 읽지 않는 환경변수(예: NEXT_PUBLIC_API_BASE_URL) 주입. 앱은 API_ORIGIN을 읽는다
+//   2) ALB에서 /api를 API Service로 직결. Spring에는 /api 접두어가 없어 전부 404
+// 둘 다 apply 전에는 증상이 없어 정적으로 잡는다.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -149,12 +149,9 @@ if (fs.existsSync(imageWorkflow)) {
 }
 
 // ---------- 6) 브라우저 번들에 구워지는 값(NEXT_PUBLIC_*)이 빌드 인자로 준비돼 있는가 ----------
-// 규칙 4)의 반대편이다. 4)는 "빌드 시점 값을 런타임 env로 넣는 것"을 막고, 6)은
-// 빌드 시점 값이 아예 빠진 것을 막는다. 실제로 NEXT_PUBLIC_TOSS_CLIENT_KEY가 그랬다.
-// 코드는 읽는데 Dockerfile에 ARG가 없어 이미지에 값이 안 들어갔다.
-//
-// 이 유형이 위험한 이유: 에러가 아니라 다른 흐름으로 빠진다. 결제창이 안 뜨고
-// 다른 경로를 타므로 배포 후에도 눈치채기 어렵다.
+// 규칙 4)의 반대편이다. 4)는 빌드 시점 값을 런타임 env로 넣는 것을, 6)은 빌드 시점 값이 빠진 것을 막는다.
+// 코드는 읽는데 Dockerfile에 ARG가 없으면 값이 이미지에 들어가지 않고, 에러 없이 다른 흐름으로 빠진다
+// (예: 토스 키가 없으면 결제창 없는 경로).
 const webDockerfile = path.join(REPO_ROOT, WEB, "Dockerfile");
 if (fs.existsSync(webDockerfile)) {
   const dockerfile = read(webDockerfile);
@@ -208,15 +205,9 @@ if (!apiDeploy) {
 }
 
 // ---------- 8) HPA가 소유하는 Deployment에 replicas를 두지 않는다 ----------
-// Git에 replicas가 있으면 sync가 돌 때마다 HPA가 정한
-// 파드 수를 Git 값으로 덮어쓴다. 부하 중 스케일아웃이 sync 한 번에 취소된다는 뜻이다.
-//
-// ignoreDifferences + RespectIgnoreDifferences=true 로 막으려 했으나 실측에서 막지 못했다
-// (HPA가 없는 flowticket-web으로 통제 실험: 4 → sync → 2. ServerSideApply를 빼도 동일).
-// 확실한 방어는 필드를 매니페스트에서 없애는 것이고, 없앤 상태를 유지하는 건 이 규칙이 한다.
-// 하한은 HPA의 minReplicas가 담당하므로 잃는 것이 없다.
-//
-// HPA가 없는 Deployment(web)는 대상이 아니다. 그쪽은 Git이 replicas를 소유해야 맞다.
+// Git에 replicas가 있으면 ArgoCD sync가 HPA가 정한 파드 수를 Git 값으로 덮어써, 부하 중 스케일아웃이 취소된다.
+// RespectIgnoreDifferences로는 막히지 않았으므로(TS-022) 필드를 매니페스트에서 없애고 이 규칙으로 유지한다.
+// 하한은 HPA의 minReplicas가 담당한다. HPA가 없는 Deployment(web)는 대상이 아니다.
 const docs = [];
 for (const f of manifests) {
   let parsed;

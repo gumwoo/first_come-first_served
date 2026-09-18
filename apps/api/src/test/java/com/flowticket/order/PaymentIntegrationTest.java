@@ -184,7 +184,7 @@ class PaymentIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 결제_확정은_같은_트랜잭션에_아웃박스_이벤트를_적재한다() {
-        // ADR-010: 커밋 후 별도 발행(AFTER_COMMIT)이 아니라 결제와 같은 커밋에 이벤트가 남아야
+        // ADR-010: 이벤트가 결제와 같은 커밋에 남아야(커밋 후 별도 발행 X)
         // "커밋됐는데 발행 전 크래시"에도 릴레이가 나중에 재발행할 수 있다(유실 0).
         Ctx c = order(70L, 1);
 

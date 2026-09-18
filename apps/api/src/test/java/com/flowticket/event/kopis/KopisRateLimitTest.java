@@ -15,7 +15,7 @@ import org.springframework.web.client.RestClient;
 /**
  * KOPIS 이용 제한(IP당 1초 10회, 초과 시 서비스 중지)을 지키는지 검증한다.
  *
- * <p>이 제한을 몰라서 부하 테스트 중 상세 조회가 초당 70회 수준으로 나갔고 400 Request Blocked를
+ * 이 제한을 몰라서 부하 테스트 중 상세 조회가 초당 70회 수준으로 나갔고 400 Request Blocked를
  * 2,014건 맞았다. 성능 문제이기 전에 남의 서비스에 대한 문제다.
  */
 class KopisRateLimitTest {

@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 # Cluster Autoscaler 실증: Pod가 못 들어갈 때 노드가 붙는가, 부하가 빠지면 줄어드는가.
 #
-# 왜 이 측정이 필요한가: 평시 구성은 예산 안에 맞춘 HPA 상한이다
-# (api 7 / web 4 = 4,950m / allocatable 5,790m). 그 구성에서는 HPA가 상한까지
-# 늘려도 스케줄링이 성공하므로 CA가 발동할 일이 없다. CA를 넣었다고 말하려면
-# Pending이 실제로 생기고, 노드가 붙어 해소되는 장면을 봐야 한다.
-#
-# 그래서 이 스크립트는 일부러 예산을 넘긴다. HPA 상한을 임시로 올려
-# Pending을 만든 뒤, CA가 노드를 붙이는지 본다. 끝나면 원래 값으로 되돌린다.
+# 평시 구성은 예산 안에 맞춘 HPA 상한이라(api 7 / web 4 = 4,950m / allocatable 5,790m) CA가 발동하지 않는다.
+# 이 스크립트는 HPA 상한을 임시로 올려 Pending을 만든 뒤, CA가 노드를 붙이는지 보고 원래 값으로 되돌린다.
 #
 # 측정하는 것 네 가지:
 #   1) Pending이 실제로 발생하는가          (안 생기면 예산을 못 넘긴 것: 조건 미달)
@@ -43,7 +38,7 @@ while [ $# -gt 0 ]; do
     --duration)       RUN_FOR="$2"; shift 2;;
     --down-wait)      DOWN_WAIT="$2"; shift 2;;
     --skip-scale-down) SKIP_DOWN=1; shift;;
-    -h|--help)        sed -n '2,26p' "$0"; exit 0;;
+    -h|--help)        sed -n '2,19p' "$0"; exit 0;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2;;
   esac
 done
@@ -257,7 +252,7 @@ mkdir -p "$OUT"; cp "$WORK"/*.txt "$WORK"/*.log "$OUT/" 2>/dev/null || true
 echo "    상세: $OUT/"
 echo
 
-# 종료 코드는 "측정을 돌렸다"가 아니라 "CA가 동작했다"의 판정이어야 한다.
+# 종료 코드는 CA 동작 여부를 판정한다.
 if [ "$MAX_PENDING" -eq 0 ]; then
   echo "판정: 조건 미달: Pending이 한 번도 생기지 않았다." >&2
   echo "  예산을 넘기지 못한 것이다. --api-max 를 올리거나 --rate 를 올려 다시 하라." >&2

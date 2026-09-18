@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 # External Secrets Operator 부트스트랩. 클러스터를 새로 만들 때 이것 하나만 실행한다.
 #
-# 왜 스크립트인가: ESO는 자기 자신을 GitOps로 관리할 수 없다(시크릿을 만드는 주체가 없으면
-# 앱이 뜨지 않는다). 그래서 최초 설치는 어딘가에서 한 번 손으로 시작해야 하고, 그 "한 번"을
-# 사람의 기억이 아니라 저장소에 남긴다.
-#
-# 왜 sed 렌더링인가: RDS 마스터 시크릿 이름은 `rds!db-<DBI resource id>` 형식이라
-# RDS를 재생성하면 바뀐다. 매니페스트에 박아두면 인프라 전체 재생성 시 깨진다.
-# Terraform 출력에서 매번 읽어 채우면 사람이 이 파일을 고칠 일이 없다.
+# ESO는 자기 자신을 GitOps로 관리할 수 없어(시크릿이 없으면 앱이 뜨지 않는다) 최초 설치를 스크립트로 둔다.
+# RDS 마스터 시크릿 이름(`rds!db-<DBI resource id>`)은 RDS를 재생성하면 바뀌므로, 매니페스트에
+# 박지 않고 Terraform 출력에서 읽어 sed로 채운다.
 #
 # 전제: terraform apply 완료(IRSA 역할 `<cluster>-external-secrets` 존재), kubeconfig 설정됨.
 set -euo pipefail
@@ -15,7 +11,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 TFDIR="$ROOT/infra/terraform/platform/environments/demo"
-# Slack webhook URL이 담긴 SSM 파라미터. 값이 아니라 경로만 저장소에 남는다.
+# Slack webhook URL이 담긴 SSM 파라미터. 저장소에는 경로만 남는다.
 SLACK_PARAM="/flowticket/SLACK_ALERT_WEBHOOK_URL"
 
 echo "==> 1/5 RDS 마스터 시크릿 ARN 조회 (Terraform 출력)"

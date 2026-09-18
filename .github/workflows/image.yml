@@ -26,8 +26,8 @@ concurrency:
 # OIDC로 AWS 역할을 맡으려면 id-token 발급 권한이 필요하다(장기 액세스 키를 쓰지 않는 이유).
 permissions:
   id-token: write
-  # 기본은 읽기만. write가 실제로 필요한 건 bump-tag 하나뿐이라 그 잡에만 준다
-  # (잡 레벨 permissions는 이 블록을 대체하므로 bump-tag는 id-token을 받지 않는다. 필요 없다).
+  # 기본은 읽기만. write가 필요한 건 bump-tag 하나뿐이라 그 잡에만 준다
+  # (잡 레벨 permissions는 이 블록을 대체하므로 bump-tag는 id-token을 받지 않는다).
   contents: read
 
 env:

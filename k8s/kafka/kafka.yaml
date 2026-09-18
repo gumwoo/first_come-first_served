@@ -63,8 +63,7 @@ spec:
     # 브로커 JMX를 Prometheus 형식으로 노출한다(포트 9404, 이름 tcp-prometheus).
     # 규칙은 kafka-metrics-configmap.yaml: 노출 범위를 좁힌 이유를 거기에 적었다.
     #
-    # 왜 필요한가: "브로커 페일오버 시 쓰기가 계속되는가"(IMP-016)를 보려면
-    # UnderMinIsr·ISR 변동을 볼 수 있어야 한다. 없으면 "앱이 안 죽었다"까지만 말할 수 있다.
+    # 브로커 페일오버 시 쓰기가 계속되는지(IMP-016) 보려면 UnderMinIsr·ISR 변동이 필요하다.
     metricsConfig:
       type: jmxPrometheusExporter
       valueFrom:

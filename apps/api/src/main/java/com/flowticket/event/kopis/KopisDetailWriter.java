@@ -7,14 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 상세 수집 결과를 DB에 반영하는 쓰기 전용 협력자.
  *
- * <p>왜 별도 빈인가. {@link KopisDetailSyncer} 안에 이 메서드를 두면 같은 빈에서
- * 자기 자신을 호출하게 되어(self-invocation) 프록시를 거치지 않고, {@code @Transactional}이
- * 적용되지 않는다({@code KopisSyncService}는 같은 문제를 self 주입으로 푼다).
- * 여기서는 호출자가 비트랜잭션이라 협력자를 분리하는 편이 단순하다.
- *
- * <p>트랜잭션 범위를 한 건으로 좁게 유지하는 것도 의도다. 상세 수집 전체를 한 트랜잭션으로
- * 묶으면 외부 호출이 섞인 채 수 분간 DB 커넥션을 물고 있게 되는데, 커넥션은 이 클러스터에서
- * 이미 병목이다(TS-021: 파드 × 풀 크기가 RDS 한도를 넘겼다).
+ * KopisDetailSyncer 안에 두면 self-invocation이라 @Transactional이 적용되지 않는다.
+ * 트랜잭션은 한 건 단위로 좁혀, 외부 호출 동안 DB 커넥션을 물고 있지 않게 한다(TS-021).
  */
 @Component
 public class KopisDetailWriter {

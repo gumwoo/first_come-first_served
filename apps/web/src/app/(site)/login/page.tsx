@@ -21,7 +21,7 @@ export default function LoginPage() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
 
-  // 이미 로그인한 사용자는 로그인 페이지에 머물 이유가 없음 → 홈으로
+  // 이미 로그인한 사용자는 로그인 페이지에 머물 이유가 없어 홈으로
   useEffect(() => {
     if (user) router.replace("/");
   }, [user, router]);

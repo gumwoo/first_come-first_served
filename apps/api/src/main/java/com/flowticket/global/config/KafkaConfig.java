@@ -40,7 +40,7 @@ public class KafkaConfig {
      * 토픽 파라미터는 환경별로 다르다. 로컬·CI는 단일 브로커라 1/1이어야 하고(RF가 브로커 수를 넘으면
      * 생성 실패), 운영(Strimzi 3브로커)은 파티션 N·RF 3으로 병렬성과 HA를 얻는다. 그래서 코드에 박지 않고
      * 설정으로 뺀다. 파티션은 나중에 늘릴 수 있지만 RF는 생성 후 이 방식으로 못 바꾼다.
-     * 운영에서는 Strimzi {@code KafkaTopic} CR이 권위를 갖고 여기 값과 일치시킨다.
+     * 운영에서는 Strimzi KafkaTopic CR이 권위를 갖고 여기 값과 일치시킨다.
      */
     private final int partitions;
     private final int replicas;
@@ -62,7 +62,7 @@ public class KafkaConfig {
     }
 
     /**
-     * 컨슈머 예외 시 짧게 재시도(2회) 후 소진되면 &lt;topic&gt;.DLT로 발행.
+     * 컨슈머 예외 시 짧게 재시도(2회) 후 소진되면 <topic>.DLT로 발행.
      * Spring Boot가 이 CommonErrorHandler 빈을 리스너 컨테이너 팩토리에 자동 연결한다.
      */
     @Bean
@@ -72,10 +72,10 @@ public class KafkaConfig {
     }
 
     /**
-     * DLT 값 직렬화기를 타입별로 나눈다. 리스너 실패는 {@code OrderEvent}(JSON), 역직렬화 실패는 원본 byte[].
+     * DLT 값 직렬화기를 타입별로 나눈다. 리스너 실패는 OrderEvent(JSON), 역직렬화 실패는 원본 byte[].
      * JSON 하나로 두면 byte[]가 base64 문자열이 되어 DLT 소비에서 다시 실패한다(TS-020).
      *
-     * <p>{@code assignable=true}라 {@code OrderEvent}가 {@code Object.class} 매핑에 걸린다.
+     * assignable=true라 OrderEvent가 Object.class 매핑에 걸린다.
      */
     @Bean
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -92,7 +92,7 @@ public class KafkaConfig {
     /**
      * DLT 전용 리스너 컨테이너: 값을 해석하지 않고 바이트로 받는다.
      *
-     * <p>DLT에는 정상 이벤트의 JSON도, 역직렬화에 실패한 원본 바이트도 들어온다. 후자를 타입으로
+     * DLT에는 정상 이벤트의 JSON도, 역직렬화에 실패한 원본 바이트도 들어온다. 후자를 타입으로
      * 받으려 하면 DLT 소비가 또 실패하고, 그 실패는 갈 곳이 없다. 그래서 DLT는 불투명한
      * 바이트로 취급하고 기록만 한다. 판단은 사람이 admin API로 한다(ADR-008).
      */

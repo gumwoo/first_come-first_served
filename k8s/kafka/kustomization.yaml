@@ -1,9 +1,7 @@
 # Kafka 적용 단위. `kubectl apply -k k8s/kafka` 한 번으로 끝난다.
 #
-# 왜 묶는가: Kafka CR의 `metricsConfig.valueFrom.configMapKeyRef`가 `kafka-metrics`
-# ConfigMap을 참조한다. 파일이 따로 놀면 "ConfigMap 먼저, 그다음 Kafka CR"이라는 순서를
-# 사람이 기억해야 하고, kafka.yaml만 적용하면 Kafka CR이 존재하지 않는 ConfigMap을
-# 가리키게 된다.
+# Kafka CR의 `metricsConfig.valueFrom.configMapKeyRef`가 `kafka-metrics` ConfigMap을 참조하므로 함께 적용한다.
+# kafka.yaml만 적용하면 존재하지 않는 ConfigMap을 가리키게 된다.
 #
 # configMapGenerator로 바꾸지 마라. 생성기를 쓰면 이름에 해시 접미사가 붙는데
 # (`kafka-metrics-9f8g7h...`), kustomize의 이름 참조 변환기는 Strimzi CRD의

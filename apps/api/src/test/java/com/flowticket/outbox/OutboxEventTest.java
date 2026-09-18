@@ -9,11 +9,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link OutboxEvent}의 상태 전이 계약. 컨테이너 없이 도는 단위 테스트다. 검증 대상이
- * 발행 파이프라인이 아니라 엔티티가 남기는 흔적이기 때문이다.
+ * OutboxEvent의 상태 전이 계약. 엔티티만 보는 단위 테스트다(컨테이너 없음).
  *
- * <p>{@code lastError}의 수명이 요점이다. 일시적 실패에도 기록되므로, 지우지 않으면
- * "PUBLISHED인데 오류가 붙어 있는" 상태가 남아 운영자가 미해결로 오해한다.
+ * lastError는 일시적 실패에도 기록되므로, 발행에 성공하면 지워야 "PUBLISHED인데 오류가 붙은" 상태가 남지 않는다.
  */
 class OutboxEventTest {
 

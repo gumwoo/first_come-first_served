@@ -26,7 +26,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * SSE 알림은 커밋된 사실만 알려야 한다. 롤백된 트랜잭션이 알림을 내보내면 클라이언트는
  * 일어나지 않은 일을 통보받고, 그 알림으로 재조회한 화면이 오히려 옛 상태를 보여준다.
  *
- * <p>pubSub 없이(=로컬 폴백) 스파이를 세워 Redis에 의존하지 않고 결정적으로 검증한다.
+ * pubSub 없이(=로컬 폴백) 스파이를 세워 Redis에 의존하지 않고 결정적으로 검증한다.
  * 검증 대상은 "언제 나가는가"이지 "어디로 나가는가"가 아니다(팬아웃은 SseFanoutIntegrationTest).
  */
 @SpringBootTest

@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # ElastiCache 페일오버 중 앱의 거동과 유실 범위를 측정한다.
 #
-# 왜 필요한가: ADR-012 §10이 Redis Multi-AZ를 A(실증) 범주에 넣었고
-# terraform-design이 관찰 항목까지 지정했다. "대기열 순번 보존 여부, SSE 재연결, 유실 범위".
+# ADR-012 §10의 Redis Multi-AZ 실증. 관찰 항목(terraform-design): 대기열 순번 보존, SSE 재연결, 유실 범위.
 #
-# 좌석 조회(/events/{id}/seats)로 하면 의미가 없다. 그 경로는 DB·캐시를 타지
-# 대기열 Redis 자료구조를 타지 않는다. Redis가 진실원인 경로를 때려야 유실이 보인다.
+# 좌석 조회(/events/{id}/seats)는 대기열 Redis 자료구조를 타지 않으므로, Redis가 진실원인 경로를 때린다.
 #   POST /events/{id}/queue/token  → 대기열 진입(Redis ZSet 쓰기)
 #   GET  /queue/status?token=...   → 순번 조회(Redis ZSet 읽기)
 #
@@ -39,7 +37,7 @@ while [ $# -gt 0 ]; do
     --rate)     RATE="$2"; shift 2;;
     --duration) DURATION="$2"; shift 2;;
     --warmup)   WARMUP="$2"; shift 2;;
-    -h|--help)  sed -n '2,24p' "$0"; exit 0;;
+    -h|--help)  sed -n '2,18p' "$0"; exit 0;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2;;
   esac
 done
@@ -66,7 +64,7 @@ trap cleanup EXIT
 say() { echo "==> $*"; }
 . "$ROOT/scripts/lib/cluster-http.sh"
 # MSYS_NO_PATHCONV=1이 없으면 Git Bash가 /flowticket/... 을 Windows 경로로 바꿔
-# ParameterNotFound가 난다(seed-demo-data.sh·bootstrap.sh와 같은 함정). 실제로 걸렸다.
+# ParameterNotFound가 난다(seed-demo-data.sh·bootstrap.sh와 같은 함정).
 ssm() { MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "$1" --with-decryption --region "$REGION" \
   --query 'Parameter.Value' --output text 2>/dev/null | tr -d '\r'; }
 

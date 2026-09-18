@@ -56,7 +56,7 @@ public class SeatService {
     private final ObjectProvider<SeatService> self;
     private final long holdTtl;
     private final int maxPerUser;
-    /** 좌석맵 캐시 TTL(ms). 0이면 캐시를 쓰지 않는다. 기본값이 0이라 켜지 않으면 동작이 그대로다. */
+    /** 좌석맵 캐시 TTL(ms). 0이면 캐시를 쓰지 않는다. 기본값은 0이다. */
     private final long mapCacheTtlMs;
 
     public SeatService(EventRepository eventRepository,
@@ -88,11 +88,11 @@ public class SeatService {
     /**
      * 좌석맵: 등급 요약(가격·잔여) + 개별 좌석.
      *
-     * <p>{@code seat.map-cache-ttl-ms}가 0보다 크면 짧은 TTL 캐시를 태운다(기본 0, 실험 스위치).
+     * seat.map-cache-ttl-ms가 0보다 크면 짧은 TTL 캐시를 태운다(기본 0, 실험 스위치).
      * 이벤트 기반 무효화가 없어 TTL 동안 선점된 좌석이 AVAILABLE로 보일 수 있다(IMP-020).
      *
-     * <p>{@code NOT_SUPPORTED}로 트랜잭션 밖에서 돌고, miss일 때만 {@code self}를 거쳐
-     * {@link #loadSeatMap(Long)}의 트랜잭션을 연다. 호출자가 트랜잭션 안이면 그것을 suspend하므로
+     * NOT_SUPPORTED로 트랜잭션 밖에서 돌고, miss일 때만 self를 거쳐
+     * loadSeatMap(Long)의 트랜잭션을 연다. 호출자가 트랜잭션 안이면 그것을 suspend하므로
      * 트랜잭션 안에서 이 메서드를 부르는 코드가 생기면 다시 봐야 한다.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -171,7 +171,7 @@ public class SeatService {
         if (current + seatIds.size() > maxPerUser) {
             throw new BusinessException(ErrorCode.MAX_PER_USER_EXCEEDED);
         }
-        // 원자적 선점: AVAILABLE인 좌석만 HELD. 요청 수와 다르면 일부 매진 → 롤백.
+        // 원자적 선점: AVAILABLE인 좌석만 HELD. 요청 수와 다르면 일부가 이미 선점된 것이라 롤백한다.
         int held = seatRepository.holdIfAvailable(seatIds, eventId, SeatStatus.HELD, SeatStatus.AVAILABLE);
         if (held != seatIds.size()) {
             throw new BusinessException(soldOutOrConflict(eventId, held));
@@ -188,15 +188,11 @@ public class SeatService {
     }
 
     /**
-     * 선점 실패의 원인을 가른다. 공연이 매진된 것과 내가 고른 좌석만 뺏긴 것은 다르다.
+     * 선점 실패의 원인을 가른다: 공연 매진(SOLD_OUT)인지, 고른 좌석만 뺏긴 것(SEAT_CONFLICT)인지.
+     * SOLD_OUT은 "잔여 0"일 때만 쓴다(docs/rules/domain/seat.md).
      *
-     * <p>둘 다 {@code SOLD_OUT}으로 답하면 1석만 뺏긴 사용자가 좌석이 남았는데도 매진 화면으로
-     * 간다. SOLD_OUT은 "잔여 0"일 때만 쓴다({@code docs/rules/domain/seat.md}).
-     *
-     * <p>{@code held}를 더하는 것이 핵심이다. 이 메서드는 롤백 <i>전</i>에 불린다.
-     * 방금 조건부 UPDATE로 HELD가 된 {@code held}석은 예외로 트랜잭션이 되감기면 다시
-     * AVAILABLE로 돌아온다. 더하지 않으면 "요청 좌석을 전부 잡았지만 다른 이유로 실패"한
-     * 경우에 잔여를 0으로 잘못 읽어 매진이라고 답하게 된다.
+     * 롤백 전에 불리므로 방금 HELD로 바꾼 held석을 잔여에 더한다. 더하지 않으면 요청 좌석을 다 잡고
+     * 다른 이유로 실패한 경우에 잔여를 0으로 읽어 매진이라고 답한다.
      */
     private ErrorCode soldOutOrConflict(Long eventId, int held) {
         long remaining = seatRepository.countByEventIdAndStatus(eventId, SeatStatus.AVAILABLE) + held;
@@ -207,7 +203,7 @@ public class SeatService {
      * advisory lock 키로 쓸 int 변환. pg_advisory_xact_lock의 2인자형이 int4라
      * bigint 하나에 해시로 밀어 넣는 방식보다 안전하다(해시는 무관한 쌍끼리 서로 막을 수 있다).
      * 범위를 넘으면 값이 잘리는 대신 ArithmeticException으로 즉시 실패한다.
-     * 키가 겹쳐 생기는 불필요한 대기는 정합성 문제가 아니라서 더 찾기 어렵다.
+     * 키가 겹쳐 생기는 불필요한 대기는 정합성 오류로 드러나지 않아 찾기 어렵다.
      */
     private static int quotaLockKey(Long id) {
         return Math.toIntExact(id);

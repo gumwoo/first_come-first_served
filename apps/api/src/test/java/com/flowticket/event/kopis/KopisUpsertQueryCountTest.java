@@ -19,10 +19,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 /**
  * IMP-012 측정: KOPIS 동기화의 기존 여부 확인 쿼리 수를 before/after로 센다.
- * before(naive)는 항목마다 {@code findByKopisId} → N건에 SELECT N번,
- * after는 {@code findAllByKopisIdIn} 배치 조회 → 1번.
+ * before(naive)는 항목마다 findByKopisId → N건에 SELECT N번,
+ * after는 findAllByKopisIdIn 배치 조회 → 1번.
  *
- * <p>쿼리 수는 Hibernate 통계(prepare statement count)로 직접 측정한다(추정 아님).
+ * 쿼리 수는 Hibernate 통계(prepare statement count)로 직접 측정한다(추정 아님).
  */
 @TestPropertySource(properties = {"spring.jpa.properties.hibernate.generate_statistics=true"})
 @SpringBootTest

@@ -15,7 +15,7 @@ import { useOrder } from "@/features/order/hooks/useOrder";
 /**
  * 주문 SSE 구독 티켓의 수명 처리.
  *
- * <p>티켓에 TTL이 생기면서 딜레마가 하나 생겼다. 만료 후 브라우저가 만료된 URL로 무한
+ * 티켓에 TTL이 생기면서 딜레마가 하나 생겼다. 만료 후 브라우저가 만료된 URL로 무한
  * 재시도하거나, 반대로 매 `onerror`마다 재발급하면 일시적 단절(ALB idle timeout)마다 티켓
  * 요청이 붙는다. 코드는 `readyState`로 둘을 가른다. 그 분기가 이 파일의 검증 대상이다.
  */

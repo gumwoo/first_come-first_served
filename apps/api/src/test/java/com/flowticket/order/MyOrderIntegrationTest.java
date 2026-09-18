@@ -78,7 +78,7 @@ class MyOrderIntegrationTest extends IntegrationTestSupport {
     @Test
     void 목록은_본인_주문만_최신순() {
         long me = 50L, other = 51L;
-        // 전체 탭 = 실제 예매(PAID 등)만 → 결제까지 완료해야 노출
+        // 전체 탭 = 실제 예매(PAID 등)만이라 결제까지 완료해야 노출된다
         Long o1 = order(me);
         paymentService.pay(me, o1, "card", null, "OK-" + o1);
         Long o2 = order(me);

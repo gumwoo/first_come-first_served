@@ -42,9 +42,9 @@ public class JwtProvider {
     public static final String TYPE_ACCESS = "access";
     public static final String TYPE_REFRESH = "refresh";
     /**
-     * SSE 구독 전용 티켓. {@code EventSource}는 요청 헤더를 붙일 수 없어 자격증명을 URL로 실어야
+     * SSE 구독 전용 티켓. EventSource는 요청 헤더를 붙일 수 없어 자격증명을 URL로 실어야
      * 하는데, access token을 그대로 URL에 두면 접근 로그·리퍼러에 전체 권한 자격증명이 남는다.
-     * 그래서 단일 주문 구독에만 쓸 수 있는 별도 타입을 만든다. {@link #isValid}가 type을
+     * 그래서 단일 주문 구독에만 쓸 수 있는 별도 타입을 만든다. isValid가 type을
      * 대조하므로 이 티켓으로는 API를 호출할 수 없고, access token으로는 구독할 수 없다.
      */
     public static final String TYPE_SSE = "sse";
@@ -86,7 +86,7 @@ public class JwtProvider {
     }
 
     /**
-     * 특정 주문 구독에만 유효한 티켓({@code jwt.sse-ticket-ttl}, 기본 300초).
+     * 특정 주문 구독에만 유효한 티켓(jwt.sse-ticket-ttl, 기본 300초).
      * TTL은 새 연결을 시작할 수 있는 기간이지 성립한 스트림의 수명이 아니다(ADR-017).
      */
     public String createSseTicket(Long userId, Long orderId) {

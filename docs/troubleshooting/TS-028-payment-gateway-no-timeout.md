@@ -165,3 +165,10 @@ this.client = builder.clone().baseUrl(BASE_URL).requestFactory(...).build();
 주석은 훌륭했고 정확했다. 그런데 그 지식이 결제 코드까지 가지 않았다. **규칙 ⑱은 그 주석을
 기계가 강제하는 형태로 옮긴 것**이다 — 문서로 남긴 지식이 다음 코드에도 적용되게 하려면
 결국 검사로 바꿔야 한다.
+
+## 5. 이후 변경
+
+타임아웃을 거는 위치가 `TossPaymentGateway` 생성자에서 `TossClientConfig`로 옮겨졌다
+([[TS-040]]). 어댑터가 요청 팩토리를 직접 덮어쓰면 `MockRestServiceServer`가 요청을 가로채지
+못해, 어댑터가 실제로 무엇을 보내는지 테스트할 수 없기 때문이다. 규칙 ⑱은 형태 ②
+(`RestClient.Builder`를 받아 `.build()`)를 보므로 옮긴 뒤에도 그대로 잡는다.

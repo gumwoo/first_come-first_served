@@ -3,14 +3,12 @@ package com.flowticket.order.gateway;
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.web.client.ClientHttpRequestFactories;
-import org.springframework.boot.web.client.ClientHttpRequestFactorySettings;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -25,24 +23,13 @@ import org.springframework.web.client.RestClient;
 @ConditionalOnProperty(name = "payment.gateway", havingValue = "toss")
 public class TossPaymentGateway implements PaymentGateway {
 
-    private static final String BASE_URL = "https://api.tosspayments.com";
-
     private final RestClient client;
     private final String authHeader;
 
-    /**
-     * 타임아웃을 반드시 건다. 이 호출은 DB 트랜잭션 안이라 응답 없는 PG가 Hikari 커넥션까지 묶는다(TS-028).
-     * read 타임아웃은 "모름"이라 미아 승인이 생길 수 있지만 ADR-011 정산이 회수하므로 넉넉히 준다(기본 10초).
-     */
-    public TossPaymentGateway(RestClient.Builder builder,
-                              @Value("${TOSS_SECRET_KEY:}") String secretKey,
-                              @Value("${toss.connect-timeout-ms:2000}") long connectTimeoutMs,
-                              @Value("${toss.read-timeout-ms:10000}") long readTimeoutMs) {
-        this.client = builder.clone().baseUrl(BASE_URL)
-                .requestFactory(ClientHttpRequestFactories.get(ClientHttpRequestFactorySettings.DEFAULTS
-                        .withConnectTimeout(Duration.ofMillis(connectTimeoutMs))
-                        .withReadTimeout(Duration.ofMillis(readTimeoutMs))))
-                .build();
+    /** 타임아웃이 걸린 RestClient는 TossClientConfig가 만든다(TS-028). */
+    public TossPaymentGateway(@Qualifier("tossClient") RestClient tossClient,
+                              @Value("${TOSS_SECRET_KEY:}") String secretKey) {
+        this.client = tossClient;
         // Basic 인증: base64(secretKey + ":")
         this.authHeader = "Basic " + Base64.getEncoder()
                 .encodeToString((secretKey + ":").getBytes(StandardCharsets.UTF_8));
@@ -60,11 +47,21 @@ public class TossPaymentGateway implements PaymentGateway {
         throw new BusinessException(ErrorCode.VALIDATION_ERROR);
     }
 
-    /** 원 결제(paymentKey=pgTid)를 취소. Toss 결제취소 API. cancelReason 필수. */
+    /**
+     * 원 결제(paymentKey=pgTid)를 amount만큼 취소. Toss 결제취소 API. cancelReason 필수.
+     *
+     * cancelAmount를 빼면 Toss는 전액 취소로 처리한다. 수수료를 뗀 환불(RefundPolicy)에서 그 값을
+     * 생략하면 DB에는 수수료 차감액이, PG에는 전액 취소가 남아 장부가 어긋난다.
+     */
     @Override
     public ApproveResult refund(String pgTid, int amount) {
         if (pgTid == null || pgTid.isBlank()) {
             return ApproveResult.fail("환불 대상 결제 없음");
+        }
+        if (amount <= 0) {
+            // 여기서 막지 않으면 Toss가 거절한 뒤 실패로 수렴하지만, 취소 금액이 0인 요청은
+            // 호출 쪽 계산이 깨진 것이라 PG까지 보내지 않는다.
+            return ApproveResult.fail("취소 금액이 0 이하");
         }
         try {
             @SuppressWarnings("unchecked")
@@ -72,7 +69,7 @@ public class TossPaymentGateway implements PaymentGateway {
                     .uri("/v1/payments/{paymentKey}/cancel", pgTid)
                     .header("Authorization", authHeader)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("cancelReason", "고객 취소"))
+                    .body(Map.of("cancelReason", "고객 취소", "cancelAmount", amount))
                     .retrieve()
                     .body(Map.class);
             String status = res == null ? null : String.valueOf(res.get("status"));

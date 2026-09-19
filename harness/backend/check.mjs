@@ -550,7 +550,7 @@ const NON_APP_HEADROOM = 20;
 //   1) RestClient.builder(...) / RestClient.create(...): 직접 만든다
 //   2) RestClient.Builder 를 주입받아 .build() 한다. 스프링 빌더를 쓴다
 //
-// 1)만 보면 주입받은 빌더를 `clone()`해 쓰는 코드(TossPaymentGateway)가 규칙의 시야에서 빠져,
+// 1)만 보면 주입받은 빌더를 `clone()`해 쓰는 코드(KopisClientConfig·TossClientConfig)가 규칙의 시야에서 빠져,
 // requestFactory를 지워도 통과한다.
 const HTTP_DIRECT_RE = /RestClient\s*\.\s*(builder|create)\s*\(/;
 const HTTP_INJECTED_RE = /RestClient\s*\.\s*Builder/;

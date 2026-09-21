@@ -2,6 +2,7 @@ package com.flowticket.event.kopis;
 
 import com.flowticket.event.domain.Event;
 import com.flowticket.event.repository.EventRepository;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -31,10 +32,14 @@ public class KopisDetailSyncer {
     private final int batchLimit;
     private final int refreshAfterDays;
 
+    private final Clock clock;
+
     public KopisDetailSyncer(EventRepository eventRepository, KopisClient kopisClient,
                              KopisDetailWriter writer,
                              @Value("${kopis.sync.detail-batch-limit:300}") int batchLimit,
-                             @Value("${kopis.sync.detail-refresh-after-days:7}") int refreshAfterDays) {
+                             @Value("${kopis.sync.detail-refresh-after-days:7}") int refreshAfterDays,
+                             Clock clock) {
+        this.clock = clock;
         this.eventRepository = eventRepository;
         this.kopisClient = kopisClient;
         this.writer = writer;
@@ -65,7 +70,7 @@ public class KopisDetailSyncer {
      * @return 이번 회차에 채운 건수
      */
     public int syncMissingDetails() {
-        LocalDateTime staleBefore = LocalDateTime.now().minusDays(refreshAfterDays);
+        LocalDateTime staleBefore = LocalDateTime.now(clock).minusDays(refreshAfterDays);
         List<Long> ids = eventRepository.findIdsNeedingDetail(staleBefore, PageRequest.ofSize(batchLimit));
         if (ids.isEmpty()) {
             return 0;

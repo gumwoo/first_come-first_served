@@ -6,6 +6,7 @@ import com.flowticket.order.gateway.PaymentGateway;
 import com.flowticket.order.gateway.PaymentGateway.Inquiry;
 import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.order.repository.RefundAttemptRepository;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -44,13 +45,17 @@ public class RefundReconciliationService {
     private final int batchSize;
     private final int recheckMinutes;
 
+    private final Clock clock;
+
     public RefundReconciliationService(OrderRepository orderRepository,
                                        RefundAttemptRepository attemptRepository,
                                        PaymentGateway gateway, RefundConverger converger,
                                        @Value("${refund.reconcile-grace-minutes:10}") int graceMinutes,
                                        @Value("${refund.reconcile-lookback-hours:168}") int lookbackHours,
                                        @Value("${refund.reconcile-batch-size:50}") int batchSize,
-                                       @Value("${refund.reconcile-recheck-minutes:60}") int recheckMinutes) {
+                                       @Value("${refund.reconcile-recheck-minutes:60}") int recheckMinutes,
+                                       Clock clock) {
+        this.clock = clock;
         this.orderRepository = orderRepository;
         this.attemptRepository = attemptRepository;
         this.gateway = gateway;
@@ -73,7 +78,7 @@ public class RefundReconciliationService {
                initialDelayString = "${refund.reconcile-interval-ms:600000}")
     @SchedulerLock(name = "refund-reconcile", lockAtMostFor = "PT5M", lockAtLeastFor = "PT0S")
     public void reconcileOrphanCancellations() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
         List<RefundAttempt> candidates = attemptRepository.findReconcileCandidates(
                 now.minusMinutes(graceMinutes),   // 유예: 진행 중인 환불을 건드리지 않음
                 now.minusHours(lookbackHours),    // 소급 한계: 오래된 건은 수동 정산 대상

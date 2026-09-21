@@ -19,6 +19,7 @@ import com.flowticket.seat.repository.EventSeatPriceRepository;
 import com.flowticket.seat.repository.SeatHoldItemRepository;
 import com.flowticket.seat.repository.SeatHoldRepository;
 import com.flowticket.seat.repository.SeatRepository;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.EnumMap;
 import java.util.List;
@@ -44,10 +45,13 @@ public class OrderService {
     private final EventSeatPriceRepository priceRepository;
     private final ObjectProvider<OrderService> self; // 트랜잭션 프록시 self-호출용
 
+    private final Clock clock;
+
     public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                         SeatHoldRepository holdRepository, SeatHoldItemRepository holdItemRepository,
                         SeatRepository seatRepository, EventSeatPriceRepository priceRepository,
-                        ObjectProvider<OrderService> self) {
+                        ObjectProvider<OrderService> self, Clock clock) {
+        this.clock = clock;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.holdRepository = holdRepository;
@@ -91,7 +95,7 @@ public class OrderService {
         if (hold.getStatus() != SeatHoldStatus.HELD) {
             throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
         }
-        if (hold.getExpiresAt().isBefore(LocalDateTime.now())) {
+        if (hold.getExpiresAt().isBefore(LocalDateTime.now(clock))) {
             throw new BusinessException(ErrorCode.HOLD_EXPIRED);
         }
 

@@ -1,6 +1,7 @@
 package com.flowticket.queue.service;
 
 import com.flowticket.queue.sse.QueueSseRegistry;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -67,9 +68,12 @@ public class QueueAdmissionService {
     private final int capacity;
     private final long admitTtl;
 
+    private final Clock clock;
+
     public QueueAdmissionService(StringRedisTemplate redis, QueueSseRegistry sse,
                                  @Value("${queue.capacity:100}") int capacity,
-                                 @Value("${queue.admit-ttl:300}") long admitTtl) {
+                                 @Value("${queue.admit-ttl:300}") long admitTtl, Clock clock) {
+        this.clock = clock;
         this.redis = redis;
         this.sse = sse;
         this.capacity = capacity;
@@ -78,7 +82,7 @@ public class QueueAdmissionService {
 
     /** 여유 슬롯만큼 승격. 승격된 토큰 수 반환. */
     public int admit(Long eventId) {
-        long expiresAt = Instant.now().getEpochSecond() + admitTtl;
+        long expiresAt = Instant.now(clock).getEpochSecond() + admitTtl;
         List<?> popped = redis.execute(ADMIT_SCRIPT,
                 List.of(QueueKeys.wait(eventId), QueueKeys.admitCount(eventId), QueueKeys.admitExp(eventId)),
                 String.valueOf(capacity), String.valueOf(expiresAt));
@@ -103,7 +107,7 @@ public class QueueAdmissionService {
     public List<String> reclaim(Long eventId) {
         List<?> raw = redis.execute(RECLAIM_SCRIPT,
                 List.of(QueueKeys.admitExp(eventId), QueueKeys.admitCount(eventId)),
-                String.valueOf(Instant.now().getEpochSecond()));
+                String.valueOf(Instant.now(clock).getEpochSecond()));
         if (raw == null || raw.isEmpty()) {
             return List.of();
         }

@@ -6,6 +6,7 @@ import com.flowticket.order.gateway.PaymentGateway;
 import com.flowticket.order.gateway.PaymentGateway.ApproveResult;
 import com.flowticket.order.gateway.PaymentGateway.Inquiry;
 import com.flowticket.order.repository.OrderRepository;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -40,10 +41,14 @@ public class PaymentReconciliationService {
     private final int lookbackHours;
     private final int batchSize;
 
+    private final Clock clock;
+
     public PaymentReconciliationService(OrderRepository orderRepository, PaymentGateway gateway,
                                         @Value("${payment.reconcile-grace-minutes:10}") int graceMinutes,
                                         @Value("${payment.reconcile-lookback-hours:24}") int lookbackHours,
-                                        @Value("${payment.reconcile-batch-size:50}") int batchSize) {
+                                        @Value("${payment.reconcile-batch-size:50}") int batchSize,
+                                        Clock clock) {
+        this.clock = clock;
         this.orderRepository = orderRepository;
         this.gateway = gateway;
         this.graceMinutes = graceMinutes;
@@ -59,7 +64,7 @@ public class PaymentReconciliationService {
                initialDelayString = "${payment.reconcile-interval-ms:600000}")
     @SchedulerLock(name = "payment-reconcile", lockAtMostFor = "PT5M", lockAtLeastFor = "PT0S")
     public void reconcileOrphanApprovals() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
         List<Order> candidates = orderRepository.findReconcileCandidates(
                 UNSETTLED,
                 now.minusMinutes(graceMinutes), // 유예: 진행 중인 결제를 건드리지 않음

@@ -22,6 +22,7 @@ import com.flowticket.outbox.repository.OutboxEventRepository;
 import com.flowticket.seat.domain.SeatStatus;
 import com.flowticket.seat.repository.SeatHoldRepository;
 import com.flowticket.seat.repository.SeatRepository;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -56,11 +57,14 @@ public class PaymentService {
     private final ObjectMapper objectMapper;
     private final ObjectProvider<PaymentService> self; // 트랜잭션 프록시 self-호출용
 
+    private final Clock clock;
+
     public PaymentService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                           PaymentRepository paymentRepository, SeatRepository seatRepository,
                           SeatHoldRepository holdRepository, PaymentGateway gateway,
                           OrderSseRegistry orderSse, OutboxEventRepository outboxRepository,
-                          ObjectMapper objectMapper, ObjectProvider<PaymentService> self) {
+                          ObjectMapper objectMapper, ObjectProvider<PaymentService> self, Clock clock) {
+        this.clock = clock;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.paymentRepository = paymentRepository;
@@ -102,7 +106,7 @@ public class PaymentService {
         if (order.getStatus() != OrderStatus.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
         }
-        if (order.getExpiresAt().isBefore(LocalDateTime.now())) {
+        if (order.getExpiresAt().isBefore(LocalDateTime.now(clock))) {
             throw new BusinessException(ErrorCode.PAYMENT_TIMEOUT);
         }
 
@@ -161,7 +165,7 @@ public class PaymentService {
         if (order.getStatus() != OrderStatus.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
         }
-        if (order.getExpiresAt().isBefore(LocalDateTime.now())) {
+        if (order.getExpiresAt().isBefore(LocalDateTime.now(clock))) {
             throw new BusinessException(ErrorCode.PAYMENT_TIMEOUT);
         }
 

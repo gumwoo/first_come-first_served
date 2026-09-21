@@ -2,6 +2,7 @@ package com.flowticket.event.kopis;
 
 import com.flowticket.event.dto.KopisSyncStatusResponse;
 import com.flowticket.seat.service.SeatSeeder;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -34,12 +35,15 @@ public class KopisSyncService {
     private final int maxPages;
     private final ObjectProvider<KopisSyncService> self; // 락 프록시 경유 self-호출용
 
+    private final Clock clock;
+
     public KopisSyncService(KopisClient kopisClient, KopisUpserter kopisUpserter,
                             KopisDetailSyncer detailSyncer, SeatSeeder seatSeeder,
                             @Value("${kopis.sync.days:90}") int syncDays,
                             @Value("${kopis.sync.rows:100}") int rows,
                             @Value("${kopis.sync.max-pages:10}") int maxPages,
-                            ObjectProvider<KopisSyncService> self) {
+                            ObjectProvider<KopisSyncService> self, Clock clock) {
+        this.clock = clock;
         this.kopisClient = kopisClient;
         this.kopisUpserter = kopisUpserter;
         this.detailSyncer = detailSyncer;
@@ -74,7 +78,7 @@ public class KopisSyncService {
      */
     @SchedulerLock(name = "kopis-sync", lockAtMostFor = "PT10M", lockAtLeastFor = "PT0S")
     public Integer sync() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         LocalDate end = today.plusDays(syncDays);
         List<KopisEvent> all = new ArrayList<>();
         for (LocalDate st = today; st.isBefore(end); st = st.plusDays(CHUNK_DAYS)) {

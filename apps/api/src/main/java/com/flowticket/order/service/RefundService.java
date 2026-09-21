@@ -21,6 +21,7 @@ import com.flowticket.order.service.RefundPolicy.RefundQuote;
 import com.flowticket.order.sse.OrderSseRegistry;
 import com.flowticket.seat.domain.SeatStatus;
 import com.flowticket.seat.repository.SeatRepository;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -49,12 +50,15 @@ public class RefundService {
     private final OrderSseRegistry orderSse;
     private final ObjectProvider<RefundService> self; // 트랜잭션 프록시 self-호출용
 
+    private final Clock clock;
+
     public RefundService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                          PaymentRepository paymentRepository, RefundRepository refundRepository,
                          RefundAttemptRepository refundAttemptRepository,
                          SeatRepository seatRepository, EventRepository eventRepository,
                          RefundPolicy refundPolicy, PaymentGateway gateway,
-                         OrderSseRegistry orderSse, ObjectProvider<RefundService> self) {
+                         OrderSseRegistry orderSse, ObjectProvider<RefundService> self, Clock clock) {
+        this.clock = clock;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.paymentRepository = paymentRepository;
@@ -108,7 +112,7 @@ public class RefundService {
         }
 
         // 상태 + 시점 게이트: PAID 아니거나 환불 불가 시점(당일·이후)이면 거부
-        RefundQuote q = refundPolicy.quote(order.getAmount(), eventDate(order), LocalDateTime.now());
+        RefundQuote q = refundPolicy.quote(order.getAmount(), eventDate(order), LocalDateTime.now(clock));
         if (order.getStatus() != OrderStatus.PAID || !q.refundable()) {
             throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED);
         }

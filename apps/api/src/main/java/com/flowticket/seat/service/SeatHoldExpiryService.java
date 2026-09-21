@@ -8,6 +8,7 @@ import com.flowticket.seat.repository.SeatHoldItemRepository;
 import com.flowticket.seat.repository.SeatHoldRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.sse.SeatSseRegistry;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -30,8 +31,11 @@ public class SeatHoldExpiryService {
     private final SeatRepository seatRepository;
     private final SeatSseRegistry sse;
 
+    private final Clock clock;
+
     public SeatHoldExpiryService(SeatHoldRepository holdRepository, SeatHoldItemRepository holdItemRepository,
-                                 SeatRepository seatRepository, SeatSseRegistry sse) {
+                                 SeatRepository seatRepository, SeatSseRegistry sse, Clock clock) {
+        this.clock = clock;
         this.holdRepository = holdRepository;
         this.holdItemRepository = holdItemRepository;
         this.seatRepository = seatRepository;
@@ -43,7 +47,7 @@ public class SeatHoldExpiryService {
     @Transactional
     public void sweepExpired() {
         List<SeatHold> holds = holdRepository.findByStatusAndExpiresAtBefore(
-                SeatHoldStatus.HELD, LocalDateTime.now());
+                SeatHoldStatus.HELD, LocalDateTime.now(clock));
         if (holds.isEmpty()) {
             return;
         }

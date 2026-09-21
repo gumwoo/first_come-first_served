@@ -6,6 +6,7 @@ import com.flowticket.order.event.OrderEvent;
 import com.flowticket.outbox.domain.OutboxEvent;
 import com.flowticket.outbox.domain.OutboxStatus;
 import com.flowticket.outbox.repository.OutboxEventRepository;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -39,11 +40,14 @@ public class OutboxRelay {
     private final long sendTimeoutMs;
     private final int retentionDays;
 
+    private final Clock clock;
+
     public OutboxRelay(OutboxEventRepository repository, KafkaTemplate<String, Object> kafkaTemplate,
                        ObjectMapper mapper,
                        @Value("${outbox.batch-size:100}") int batchSize,
                        @Value("${outbox.send-timeout-ms:3000}") long sendTimeoutMs,
-                       @Value("${outbox.retention-days:7}") int retentionDays) {
+                       @Value("${outbox.retention-days:7}") int retentionDays, Clock clock) {
+        this.clock = clock;
         this.repository = repository;
         this.kafkaTemplate = kafkaTemplate;
         this.mapper = mapper;
@@ -144,7 +148,7 @@ public class OutboxRelay {
     @Transactional
     public void purgePublished() {
         int deleted = repository.deletePublishedBefore(
-                OutboxStatus.PUBLISHED, LocalDateTime.now().minusDays(retentionDays));
+                OutboxStatus.PUBLISHED, LocalDateTime.now(clock).minusDays(retentionDays));
         if (deleted > 0) {
             log.info("[outbox] 발행 완료 {}일 경과 {}건 정리", retentionDays, deleted);
         }

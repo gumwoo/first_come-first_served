@@ -242,15 +242,32 @@ public class RefundService {
                 return RefundResponse.of(done.get(), currentStatus(orderId).name());
             }
             if (currentStatus(orderId) != OrderStatus.CANCELLED || System.nanoTime() >= deadline) {
-                throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED);
+                return finalAnswer(orderId, idemKey);
             }
             try {
                 Thread.sleep(WINNER_POLL_MS);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
-                throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED);
+                return finalAnswer(orderId, idemKey);
             }
         }
+    }
+
+    /**
+     * 기다리기를 끝내기 전에 내 멱등키의 환불 행을 한 번 더 본다.
+     *
+     * 두 번 읽는 사이가 비어 있기 때문이다. refunds를 읽고(없음) 주문 상태를 읽는(REFUNDED) 그
+     * 틈에 승자가 TX2를 커밋하면, DB는 정상인데 패자만 실패한다. 실제로 통합테스트가 이 좁은
+     * 구간을 잡아냈다.
+     *
+     * 재조회 결과로 답이 갈린다.
+     *   내 키의 행이 있다   → 승자의 결과(= 내 요청의 결과)
+     *   없다               → 다른 키가 취소했거나 PG 거절로 되돌아간 것이라 환불 불가
+     */
+    private RefundResponse finalAnswer(Long orderId, String idemKey) {
+        return refundRepository.findByIdempotencyKey(idemKey)
+                .map(r -> RefundResponse.of(r, currentStatus(orderId).name()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_ALLOWED));
     }
 
     private LocalDate eventDate(Order order) {

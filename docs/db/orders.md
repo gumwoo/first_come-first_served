@@ -19,6 +19,7 @@
 | payment_method | VARCHAR(10) | Y | | | PaymentMethod(card/easy/vbank) |
 | expires_at | TIMESTAMP | N | | | 결제 제한시각(= hold 잔여 TTL) |
 | paid_at | TIMESTAMP | Y | | | 결제 확정 시각 |
+| refund_checked_at | TIMESTAMP | Y | | | 환불 정산이 마지막으로 PG에 조회한 시각([[ADR-011]]) — `V19` |
 | created_at | TIMESTAMP | N | now() | | |
 
 ## 인덱스 / 제약
@@ -26,9 +27,12 @@
 |------|------|------|------|
 | ix_orders_status_exp | INDEX | status, expires_at | 만료 sweep 가속 |
 | ix_orders_user | INDEX | user_id | 마이/중복예매 검사 |
+| ix_orders_refund_recheck | INDEX(부분, status='PAID') | refund_checked_at ASC NULLS FIRST | 환불 정산 후보 순회(오래 안 본 순서) |
 
 ## 도메인 규칙 연결
 - 상태 전이는 **조건부 UPDATE**(`WHERE status='PENDING'`)로 원자화([[ADR-006]]).
 - PAID 시 seats HELD→SOLD, seat_holds HELD→CONVERTED, QR 발급, `order.paid`.
 - 만료 sweep: PENDING/VBANK_WAITING + expires_at<now → EXPIRED + 좌석/hold 회수.
 - 승인 거절은 order를 FAILED로 두지 않음(재시도 위해 PENDING 유지) — `payments`에만 FAILED 기록.
+- `refund_checked_at`은 정산 잡의 진행 표시일 뿐 도메인 상태가 아니다. 조건부 UPDATE 대상이 아니며
+  사용자 요청 경로에서는 읽지도 쓰지도 않는다([[ADR-011]] §추가 결정).

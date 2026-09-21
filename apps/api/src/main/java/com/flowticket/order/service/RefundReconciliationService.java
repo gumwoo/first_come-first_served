@@ -35,23 +35,30 @@ public class RefundReconciliationService {
     private final int graceMinutes;
     private final int lookbackHours;
     private final int batchSize;
+    private final int recheckMinutes;
 
     public RefundReconciliationService(OrderRepository orderRepository, PaymentGateway gateway,
                                        RefundConverger converger,
                                        @Value("${refund.reconcile-grace-minutes:10}") int graceMinutes,
                                        @Value("${refund.reconcile-lookback-hours:24}") int lookbackHours,
-                                       @Value("${refund.reconcile-batch-size:50}") int batchSize) {
+                                       @Value("${refund.reconcile-batch-size:50}") int batchSize,
+                                       @Value("${refund.reconcile-recheck-minutes:60}") int recheckMinutes) {
         this.orderRepository = orderRepository;
         this.gateway = gateway;
         this.converger = converger;
         this.graceMinutes = graceMinutes;
         this.lookbackHours = lookbackHours;
         this.batchSize = batchSize;
+        this.recheckMinutes = recheckMinutes;
     }
 
     /**
      * 미아 취소 정산. 트랜잭션을 걸지 않는다. 후보 조회 외에는 PG 호출이고, 수렴 쓰기는
      * RefundConverger의 짧은 트랜잭션에서 한다.
+     *
+     * 한 틱은 배치 크기만큼만 보고, 본 주문에는 조회 시각을 남겨 다음 틱이 그다음 묶음으로
+     * 넘어가게 한다. 정상 주문은 조회해도 PAID로 남기 때문에, 표시가 없으면 같은 앞쪽 묶음만
+     * 영원히 반복하고 뒤쪽은 소급 한계 밖으로 사라진다.
      *
      * 후보가 PAID 전체라 조회 비용이 결제 건수에 비례한다. 유예·소급 한계·배치 상한으로 묶지만,
      * 결제량이 커지면 환불 시도 자체를 먼저 기록하고 그 행만 후보로 삼는 구조로 바꿔야 한다.
@@ -62,8 +69,9 @@ public class RefundReconciliationService {
     public void reconcileOrphanCancellations() {
         LocalDateTime now = LocalDateTime.now();
         List<Order> candidates = orderRepository.findRefundReconcileCandidates(
-                now.minusMinutes(graceMinutes), // 유예: 진행 중인 환불을 건드리지 않음
-                now.minusHours(lookbackHours),  // 소급 한계: 오래된 건은 수동 정산 대상
+                now.minusMinutes(graceMinutes),   // 유예: 진행 중인 환불을 건드리지 않음
+                now.minusHours(lookbackHours),    // 소급 한계: 오래된 건은 수동 정산 대상
+                now.minusMinutes(recheckMinutes), // 재조회 하한: 방금 본 주문은 건너뛴다
                 PageRequest.of(0, batchSize));
         if (candidates.isEmpty()) {
             return;
@@ -74,7 +82,10 @@ public class RefundReconciliationService {
                 converged++;
             }
         }
-        log.info("[reconcile] 환불 후보 {}건 중 {}건 수렴", candidates.size(), converged);
+        // PG 조회에 실패한 건까지 포함해 표시한다. 실패를 표시하지 않으면 그 주문이 매 틱 선두로
+        // 돌아와 뒤쪽 후보를 다시 굶긴다. 다음 순회에서 재시도된다.
+        orderRepository.markRefundChecked(candidates.stream().map(Order::getId).toList(), now);
+        log.info("[reconcile] 환불 후보 {}건 조회, {}건 수렴", candidates.size(), converged);
     }
 
     /**

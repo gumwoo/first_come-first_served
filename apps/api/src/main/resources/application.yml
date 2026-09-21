@@ -266,6 +266,7 @@ refund:
   reconcile-grace-minutes: ${REFUND_RECONCILE_GRACE:10}       # 결제 시각 이후 유예(진행 중 환불 보호)
   reconcile-lookback-hours: ${REFUND_RECONCILE_LOOKBACK:24}   # 소급 한계(이전 건은 수동 정산)
   reconcile-batch-size: ${REFUND_RECONCILE_BATCH:50}          # 틱당 PG 조회 상한
+  reconcile-recheck-minutes: ${REFUND_RECONCILE_RECHECK:60}   # 같은 주문을 다시 묻기까지의 최소 간격
 
 # 관리자 계정 부트스트랩. 둘 다 설정 시 최초 1회 ROLE_ADMIN 생성. 자격증명은 환경변수로만.
 admin:

@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
@@ -84,10 +85,27 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
      * 환불은 PG 취소가 성공한 뒤 DB 쓰기가 실패하면 통째로 롤백돼 주문이 PAID로 돌아간다.
      * 그러면 DB에는 환불을 시도한 흔적이 남지 않으므로, PAID 자체를 후보로 삼아 PG에 물어보는
      * 방법밖에 없다. 유예(before)와 소급 한계(after), 페이지 상한으로 조회 비용을 바운드한다.
+     *
+     * 정렬 키가 paidAt이면 안 된다. 정상 주문은 조회해도 PAID로 남아 다음 틱에 또 뽑히므로,
+     * 후보가 배치보다 많으면 앞쪽 주문만 반복 조회되고 뒤쪽은 소급 한계 밖으로 밀려날 때까지
+     * 한 번도 조회되지 않는다. 마지막 조회 시각(NULLS FIRST = 한 번도 안 본 것 먼저)으로 돌린다.
+     * recheckBefore는 방금 본 주문을 다시 묻지 않게 하는 하한이다.
      */
     @Query("select o from Order o where o.status = com.flowticket.order.domain.OrderStatus.PAID "
-            + "and o.paidAt < :before and o.paidAt > :after order by o.paidAt asc")
+            + "and o.paidAt < :before and o.paidAt > :after "
+            + "and (o.refundCheckedAt is null or o.refundCheckedAt < :recheckBefore) "
+            + "order by o.refundCheckedAt asc nulls first, o.paidAt asc")
     List<Order> findRefundReconcileCandidates(@Param("before") java.time.LocalDateTime before,
                                               @Param("after") java.time.LocalDateTime after,
+                                              @Param("recheckBefore") java.time.LocalDateTime recheckBefore,
                                               Pageable pageable);
+
+    /**
+     * 조회한 후보에 표시를 남긴다. 수렴 여부와 무관하게 남겨야 순회가 앞으로 나간다.
+     * 정산의 진행 상태일 뿐 도메인 상태가 아니라 조건부 UPDATE가 아니다.
+     */
+    @Transactional // 정산 잡은 트랜잭션 없이 도므로 이 쓰기만 자체 트랜잭션으로 연다
+    @Modifying(clearAutomatically = true)
+    @Query("update Order o set o.refundCheckedAt = :now where o.id in :ids")
+    int markRefundChecked(@Param("ids") List<Long> ids, @Param("now") java.time.LocalDateTime now);
 }

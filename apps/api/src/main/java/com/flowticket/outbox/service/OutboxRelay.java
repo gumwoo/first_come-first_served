@@ -120,7 +120,7 @@ public class OutboxRelay {
             // 파티션 키 = aggregateId(orderId) → 같은 주문 이벤트의 순서 보장(기존 발행 방식 계승).
             kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, String.valueOf(row.getAggregateId()), event)
                     .get(sendTimeoutMs, TimeUnit.MILLISECONDS); // 브로커 확인 후에만 마킹
-            row.markPublished();
+            row.markPublished(LocalDateTime.now(clock));
             return true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

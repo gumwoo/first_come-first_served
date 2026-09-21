@@ -38,6 +38,8 @@
      `updateDetail(..., syncedAt)`으로 바꿨다.
    - `refund_attempts.created_at` — 정산 후보의 창을 가른다([[ADR-011]]). INSERT가 DB의 `now()`를
      쓰고 있어 같은 문제가 있었다. 앱 시계 값을 넘긴다.
+   - `outbox_events.published_at` — 보존기간 경과 판정의 비교 대상이다([[ADR-010]]). 기준(now − 보존기간)은
+     시계를 쓰는데 비교 대상이 시스템 시계라 경계가 따로 놀았다. `markPublished(publishedAt)`으로 바꿨다.
 
    판단 기준은 "그 값을 누가 읽고 무엇을 결정하는가"다. 아무도 비교하지 않는 값은 기록이다.
 

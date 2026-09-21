@@ -19,10 +19,8 @@ import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.service.SeatHoldExpiryService;
 import com.flowticket.seat.service.SeatSeeder;
 import com.flowticket.seat.service.SeatService;
-import java.time.Clock;
+import com.flowticket.support.MutableClock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,30 +41,6 @@ import org.springframework.context.annotation.Primary;
 @SpringBootTest
 @Import(SeatHoldExpiryClockIntegrationTest.MutableClockConfig.class)
 class SeatHoldExpiryClockIntegrationTest extends IntegrationTestSupport {
-
-    /** 테스트가 앞으로 돌릴 수 있는 시계. 운영 빈(ClockConfig)을 대신한다. */
-    static class MutableClock extends Clock {
-        private Instant now = Instant.now();
-
-        void advance(Duration d) {
-            now = now.plus(d);
-        }
-
-        @Override
-        public Instant instant() {
-            return now;
-        }
-
-        @Override
-        public ZoneId getZone() {
-            return ZoneId.systemDefault();
-        }
-
-        @Override
-        public Clock withZone(ZoneId zone) {
-            return this;
-        }
-    }
 
     @TestConfiguration
     static class MutableClockConfig {

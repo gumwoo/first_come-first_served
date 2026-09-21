@@ -264,7 +264,8 @@ public class PaymentService {
                 // Mock은 no-op 성공, Toss는 결제취소 API(refund와 동일 엔드포인트).
                 // 취소 실패해도 원 예외로 롤백은 진행(승인 직후 프로세스 크래시 구간은 PaymentReconciliationService가 정리).
                 try {
-                    gateway.refund(pgTid, order.getAmount());
+                    // 멱등키는 승인 단위로 고정한다(pgTid). 같은 승인을 두 번 취소하지 않는다.
+                    gateway.refund(pgTid, order.getAmount(), "void-" + pgTid);
                 } catch (RuntimeException ex) {
                     log.warn("[payment] 보상 취소 실패 orderId={} pgTid={}: {}",
                             order.getId(), pgTid, ex.getMessage());

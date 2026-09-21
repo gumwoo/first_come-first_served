@@ -114,7 +114,7 @@ public class RefundService {
                 .findFirstByOrderIdAndStatusOrderByIdDesc(orderId, PaymentStatus.APPROVED)
                 .orElse(null);
         String pgTid = paid != null ? paid.getPgTid() : null;
-        ApproveResult res = gateway.refund(pgTid, q.refundAmount());
+        ApproveResult res = gateway.refund(pgTid, q.refundAmount(), idemKey);
         if (!res.success()) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR); // 롤백 → CANCELLED 전이도 되돌림
         }

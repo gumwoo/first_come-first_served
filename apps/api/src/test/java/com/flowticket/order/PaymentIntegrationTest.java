@@ -224,7 +224,7 @@ class PaymentIntegrationTest extends IntegrationTestSupport {
 
         // 승인(approve) 직후 확정 실패 → 보상 취소(refund)가 정확히 1회 호출됐는지 검증
         verify(gateway, times(1)).approve(eq(c.orderId()), anyInt(), anyString(), any(), anyString());
-        verify(gateway, times(1)).refund(anyString(), anyInt());
+        verify(gateway, times(1)).refund(anyString(), anyInt(), anyString());
         // 주문은 여전히 PAID로 확정되지 않음
         assertThat(orderRepository.findById(c.orderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
     }

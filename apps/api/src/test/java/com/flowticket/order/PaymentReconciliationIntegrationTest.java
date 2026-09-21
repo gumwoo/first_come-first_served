@@ -59,7 +59,7 @@ class PaymentReconciliationIntegrationTest extends IntegrationTestSupport {
 
         reconciliation.reconcileOrphanApprovals();
 
-        verify(gateway, times(1)).refund(eq("PG-TID-" + orderId), eq(10000));
+        verify(gateway, times(1)).refund(eq("PG-TID-" + orderId), eq(10000), anyString());
     }
 
     @Test
@@ -69,7 +69,7 @@ class PaymentReconciliationIntegrationTest extends IntegrationTestSupport {
 
         reconciliation.reconcileOrphanApprovals();
 
-        verify(gateway, never()).refund(anyString(), anyInt());
+        verify(gateway, never()).refund(anyString(), anyInt(), anyString());
     }
 
     @Test
@@ -80,7 +80,7 @@ class PaymentReconciliationIntegrationTest extends IntegrationTestSupport {
         reconciliation.reconcileOrphanApprovals();
 
         verify(gateway, never()).inquire(paid);
-        verify(gateway, never()).refund(anyString(), anyInt());
+        verify(gateway, never()).refund(anyString(), anyInt(), anyString());
     }
 
     @Test

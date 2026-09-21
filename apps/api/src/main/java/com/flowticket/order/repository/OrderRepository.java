@@ -77,4 +77,17 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                                         @Param("before") java.time.LocalDateTime before,
                                         @Param("after") java.time.LocalDateTime after,
                                         Pageable pageable);
+
+    /**
+     * 환불 정산 후보: 결제 완료로 남아 있는 주문 중 결제 시각이 유예를 지난 것.
+     *
+     * 환불은 PG 취소가 성공한 뒤 DB 쓰기가 실패하면 통째로 롤백돼 주문이 PAID로 돌아간다.
+     * 그러면 DB에는 환불을 시도한 흔적이 남지 않으므로, PAID 자체를 후보로 삼아 PG에 물어보는
+     * 방법밖에 없다. 유예(before)와 소급 한계(after), 페이지 상한으로 조회 비용을 바운드한다.
+     */
+    @Query("select o from Order o where o.status = com.flowticket.order.domain.OrderStatus.PAID "
+            + "and o.paidAt < :before and o.paidAt > :after order by o.paidAt asc")
+    List<Order> findRefundReconcileCandidates(@Param("before") java.time.LocalDateTime before,
+                                              @Param("after") java.time.LocalDateTime after,
+                                              Pageable pageable);
 }

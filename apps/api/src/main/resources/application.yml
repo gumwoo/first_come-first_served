@@ -231,7 +231,12 @@ order:
 outbox:
   relay-interval-ms: ${OUTBOX_RELAY_INTERVAL:1000}  # 폴링 주기(발행 지연 상한)
   batch-size: ${OUTBOX_BATCH_SIZE:100}              # 한 틱 최대 발행 건수
-  send-timeout-ms: ${OUTBOX_SEND_TIMEOUT:3000}      # 발행 확인 대기 상한(브로커 장애 시 틱 바운드)
+  send-timeout-ms: ${OUTBOX_SEND_TIMEOUT:3000}      # 발행 확인 대기 상한(한 건)
+  # 한 틱의 시간 상한(ADR-022). ShedLock 임차(OutboxRelay의 lockAtMostFor=PT1M)보다 짧아야 한다.
+  # 이 값이 없으면 상한이 batch-size × send-timeout(100 × 3초 = 300초)이라 임차를 넘긴다.
+  # 넘기는 순간 다른 파드가 같은 PENDING을 집어 "한 인스턴스만 돈다"가 깨진다.
+  # 마지막 한 건이 예산 직전에 시작될 수 있으므로 tick-budget + send-timeout ≤ 임차여야 한다.
+  tick-budget-ms: ${OUTBOX_TICK_BUDGET:45000}
   retention-days: ${OUTBOX_RETENTION_DAYS:7}        # PUBLISHED 보존 기간(운영 가시성): 이후 purge
   purge-cron: ${OUTBOX_PURGE_CRON:0 0 3 * * *}      # 매일 새벽 3시 정리(PENDING·실패는 제외)
 

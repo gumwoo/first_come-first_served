@@ -677,4 +677,51 @@ for (const file of javaFiles) {
   }
 }
 
+// ---------- 22. 아웃박스 릴레이의 한 틱은 ShedLock 임차보다 짧아야 한다 ----------
+//
+// 릴레이는 @SchedulerLock(lockAtMostFor=...)으로 "한 인스턴스만 돈다"를 전제한다. 그런데 한 틱의
+// 시간 상한은 배치 크기 × 발행 확인 대기이고, 임차는 그것과 무관하게 적혀 있다. 느리지만 성공하는
+// ACK가 쌓여 틱이 임차를 넘기면 다른 파드가 같은 PENDING을 집는다 — 전제가 조용히 깨진다.
+//
+// 그래서 틱 예산(outbox.tick-budget-ms)을 두고, 여기서 세 값의 관계를 검사한다.
+// 마지막 한 건이 예산 직전에 시작될 수 있으므로 예산 + 발행 대기 ≤ 임차여야 한다.
+//
+// 런타임에 드러나지 않는다: 겹쳐 돌아도 소비자 멱등(eventId)이 중복을 흡수해 증상이 없다(ADR-022).
+const relayPath = path.join(REPO_ROOT, API, "src/main/java/com/flowticket/outbox/service/OutboxRelay.java");
+const outboxYmlPath = path.join(REPO_ROOT, API, "src/main/resources/application.yml");
+if (fs.existsSync(relayPath) && fs.existsSync(outboxYmlPath)) {
+  const relaySrc = read(relayPath);
+  const outboxYml = read(outboxYmlPath);
+  const lease = relaySrc.match(/@SchedulerLock\([^)]*lockAtMostFor\s*=\s*"([^"]+)"/);
+  const budget = outboxYml.match(/tick-budget-ms:\s*\$\{[^:]+:(\d+)\}/);
+  const sendTimeout = outboxYml.match(/send-timeout-ms:\s*\$\{[^:]+:(\d+)\}/);
+
+  if (!lease || !budget || !sendTimeout) {
+    r.fail(
+      "아웃박스 릴레이 임차 검사 불가: OutboxRelay의 lockAtMostFor 또는 " +
+        "application.yml의 outbox.tick-budget-ms·send-timeout-ms를 읽지 못했다. " +
+        "셋의 관계가 깨지면 릴레이가 겹쳐 도는데 증상이 없다"
+    );
+  } else {
+    const leaseMs = isoDurationMs(lease[1]);
+    const needMs = Number(budget[1]) + Number(sendTimeout[1]);
+    if (leaseMs === null) {
+      r.fail(`lockAtMostFor를 해석하지 못했다: "${lease[1]}" (PT#H#M#S 형태만 지원)`);
+    } else if (needMs > leaseMs) {
+      r.fail(
+        `아웃박스 틱이 임차보다 길 수 있다: tick-budget(${budget[1]}ms) + send-timeout(${sendTimeout[1]}ms) ` +
+          `= ${needMs}ms > lockAtMostFor(${lease[1]} = ${leaseMs}ms). ` +
+          `임차가 먼저 끝나면 다른 파드가 같은 PENDING을 집는다(ADR-022)`
+      );
+    }
+  }
+}
+
+/** PT#H#M#S 를 ms로. 해석 못 하면 null. */
+function isoDurationMs(text) {
+  const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(text);
+  if (!m || (!m[1] && !m[2] && !m[3])) return null;
+  return (Number(m[1] || 0) * 3600 + Number(m[2] || 0) * 60 + Number(m[3] || 0)) * 1000;
+}
+
 r.done();

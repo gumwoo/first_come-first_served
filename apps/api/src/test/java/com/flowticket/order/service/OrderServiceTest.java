@@ -22,7 +22,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.beans.factory.ObjectProvider;
+import java.time.Clock;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
@@ -40,11 +41,10 @@ class OrderServiceTest {
     @Mock SeatHoldItemRepository holdItemRepository;
     @Mock SeatRepository seatRepository;
     @Mock EventSeatPriceRepository priceRepository;
-    @Mock ObjectProvider<OrderService> self;
+    /** 트랜잭션 경계. 커밋에서 제약 위반이 나는 상황을 여기서 재현한다. */
+    @Mock TransactionTemplate tx;
+    @Mock Clock clock;
     @InjectMocks OrderService orderService;
-
-    /** 트랜잭션 경계를 나누는 프록시 self-호출 대상. 단위 테스트에는 프록시가 없어 목으로 세운다. */
-    @Mock OrderService selfProxy;
 
     @Test
     void 우리가_아는_제약이_아니면_원_예외를_그대로_올린다() {
@@ -52,8 +52,7 @@ class OrderServiceTest {
         // 조회가 비었다는 건 위반의 정체가 다른 것(NOT NULL·FK 등 진짜 버그)이라는 뜻이다.
         DataIntegrityViolationException cause =
                 new DataIntegrityViolationException("null value in column \"amount\"");
-        when(self.getObject()).thenReturn(selfProxy);
-        when(selfProxy.createTx(anyLong(), anyLong())).thenThrow(cause);
+        when(tx.execute(any())).thenThrow(cause);
         when(orderRepository.findFirstByHoldIdAndStatusIn(anyLong(), any()))
                 .thenReturn(Optional.empty());
 
@@ -69,8 +68,7 @@ class OrderServiceTest {
         // 만료·취소된 주문이 "이미 있는 주문"으로 잡혀 정당한 재주문이 막히고,
         // 좁으면 제약에 걸린 요청이 승자를 못 찾아 원 예외로 500이 나간다.
         DataIntegrityViolationException cause = new DataIntegrityViolationException("uq_orders_active_hold");
-        when(self.getObject()).thenReturn(selfProxy);
-        when(selfProxy.createTx(anyLong(), anyLong())).thenThrow(cause);
+        when(tx.execute(any())).thenThrow(cause);
         when(orderRepository.findFirstByHoldIdAndStatusIn(anyLong(), any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> orderService.create(7L, 42L)).isSameAs(cause);

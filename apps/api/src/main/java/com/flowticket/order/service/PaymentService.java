@@ -29,10 +29,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 결제 승인(card/easy 즉시, vbank 가상계좌+입금확인). 게이트웨이 승인 → 조건부 주문전이 →
@@ -55,7 +55,8 @@ public class PaymentService {
     private final OrderSseRegistry orderSse;
     private final OutboxEventRepository outboxRepository; // 같은 tx에 이벤트 적재(ADR-010)
     private final ObjectMapper objectMapper;
-    private final ObjectProvider<PaymentService> self; // 트랜잭션 프록시 self-호출용
+    /** 트랜잭션 경계를 코드로 연다. 커밋에서 나는 멱등키 충돌을 경계 밖에서 잡아야 하기 때문이다. */
+    private final TransactionTemplate tx;
 
     private final Clock clock;
 
@@ -63,7 +64,7 @@ public class PaymentService {
                           PaymentRepository paymentRepository, SeatRepository seatRepository,
                           SeatHoldRepository holdRepository, PaymentGateway gateway,
                           OrderSseRegistry orderSse, OutboxEventRepository outboxRepository,
-                          ObjectMapper objectMapper, ObjectProvider<PaymentService> self, Clock clock) {
+                          ObjectMapper objectMapper, TransactionTemplate tx, Clock clock) {
         this.clock = clock;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
@@ -74,7 +75,7 @@ public class PaymentService {
         this.orderSse = orderSse;
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
-        this.self = self;
+        this.tx = tx;
     }
 
     /**
@@ -83,7 +84,7 @@ public class PaymentService {
      */
     public PaymentResponse pay(Long userId, Long orderId, String method, String provider, String idemKey) {
         try {
-            return self.getObject().payTx(userId, orderId, method, provider, idemKey);
+            return tx.execute(status -> payTx(userId, orderId, method, provider, idemKey));
         } catch (DataIntegrityViolationException e) {
             return paymentRepository.findByIdempotencyKey(idemKey)
                     .map(p -> PaymentResponse.of(p.getId(), p.getStatus().name(), currentStatus(orderId).name()))
@@ -91,8 +92,8 @@ public class PaymentService {
         }
     }
 
-    @Transactional
-    public PaymentResponse payTx(Long userId, Long orderId, String method, String provider, String idemKey) {
+    /** 결제 본문. 반드시 pay()의 트랜잭션 경계 안에서 호출된다. */
+    private PaymentResponse payTx(Long userId, Long orderId, String method, String provider, String idemKey) {
         if (idemKey == null || idemKey.isBlank() || method == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
@@ -146,7 +147,7 @@ public class PaymentService {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
         try {
-            return self.getObject().confirmTx(userId, orderId, paymentKey);
+            return tx.execute(status -> confirmTx(userId, orderId, paymentKey));
         } catch (DataIntegrityViolationException e) {
             return paymentRepository.findByIdempotencyKey(paymentKey)
                     .map(p -> PaymentResponse.of(p.getId(), p.getStatus().name(), currentStatus(orderId).name()))
@@ -154,8 +155,8 @@ public class PaymentService {
         }
     }
 
-    @Transactional
-    public PaymentResponse confirmTx(Long userId, Long orderId, String paymentKey) {
+    /** 승인 확정 본문. 반드시 confirm()의 트랜잭션 경계 안에서 호출된다. */
+    private PaymentResponse confirmTx(Long userId, Long orderId, String paymentKey) {
         Order order = ownedOrder(orderId, userId);
 
         var dup = paymentRepository.findByIdempotencyKey(paymentKey);

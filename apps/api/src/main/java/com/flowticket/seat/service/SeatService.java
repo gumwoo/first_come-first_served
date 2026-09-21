@@ -5,39 +5,31 @@ import com.flowticket.event.domain.Event;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.error.ErrorCode;
 import com.flowticket.queue.service.QueueService;
-import com.flowticket.seat.domain.Seat;
-import com.flowticket.seat.domain.SeatGrade;
 import com.flowticket.seat.domain.SeatHold;
 import com.flowticket.seat.domain.SeatHoldItem;
 import com.flowticket.seat.domain.SeatHoldStatus;
 import com.flowticket.seat.domain.SeatStatus;
 import com.flowticket.seat.dto.HoldResponse;
-import com.flowticket.seat.dto.SeatMapResponse;
-import com.flowticket.seat.dto.SeatMapResponse.GradeInfo;
-import com.flowticket.seat.dto.SeatMapResponse.SeatInfo;
-import com.flowticket.seat.repository.EventSeatPriceRepository;
 import com.flowticket.seat.repository.SeatHoldItemRepository;
 import com.flowticket.seat.repository.SeatHoldRepository;
 import com.flowticket.seat.repository.SeatQuotaRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.sse.SeatSseRegistry;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.ObjectProvider;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 좌석 조회/선점/해제. 선점은 조건부 UPDATE로 원자화(초과판매 0, ADR-003). */
+/**
+ * 좌석 선점·해제(명령). 선점은 조건부 UPDATE로 원자화한다(초과판매 0, ADR-003).
+ *
+ * 조회는 SeatQueryService가 맡는다. 일관성 모델이 다르기 때문이다 — 조회는 짧은 TTL 캐시로
+ * 낡은 값을 허용하고, 선점은 한 좌석도 겹치지 않게 한다(ADR-019 3단계).
+ */
 @Slf4j
 @Service
 @Transactional(readOnly = true)
@@ -45,103 +37,38 @@ public class SeatService {
 
     private final EventRepository eventRepository;
     private final SeatRepository seatRepository;
-    private final EventSeatPriceRepository priceRepository;
     private final SeatHoldRepository holdRepository;
     private final SeatHoldItemRepository holdItemRepository;
     private final SeatQuotaRepository quotaRepository;
+    private final SeatPricing pricing;
     private final QueueService queueService;
     private final SeatSseRegistry sse;
-    private final StringRedisTemplate redis;
-    private final ObjectMapper objectMapper;
     /** 트랜잭션 프록시를 거쳐 자기 메서드를 부르기 위한 것(PaymentService와 같은 패턴). */
-    private final ObjectProvider<SeatService> self;
     private final long holdTtl;
     private final int maxPerUser;
     /** 좌석맵 캐시 TTL(ms). 0이면 캐시를 쓰지 않는다. 기본값은 0이다. */
-    private final long mapCacheTtlMs;
 
     private final Clock clock;
 
     public SeatService(EventRepository eventRepository,
-                       SeatRepository seatRepository, EventSeatPriceRepository priceRepository,
+                       SeatRepository seatRepository,
                        SeatHoldRepository holdRepository, SeatHoldItemRepository holdItemRepository,
-                       SeatQuotaRepository quotaRepository,
+                       SeatQuotaRepository quotaRepository, SeatPricing pricing,
                        QueueService queueService, SeatSseRegistry sse,
-                       StringRedisTemplate redis, ObjectMapper objectMapper,
-                       ObjectProvider<SeatService> self,
                        @Value("${seat.hold-ttl:300}") long holdTtl,
                        @Value("${seat.max-per-user:4}") int maxPerUser,
-                       @Value("${seat.map-cache-ttl-ms:0}") long mapCacheTtlMs,
                        Clock clock) {
         this.clock = clock;
         this.eventRepository = eventRepository;
         this.seatRepository = seatRepository;
-        this.priceRepository = priceRepository;
         this.holdRepository = holdRepository;
         this.holdItemRepository = holdItemRepository;
         this.quotaRepository = quotaRepository;
+        this.pricing = pricing;
         this.queueService = queueService;
         this.sse = sse;
-        this.redis = redis;
-        this.objectMapper = objectMapper;
-        this.self = self;
         this.holdTtl = holdTtl;
         this.maxPerUser = maxPerUser;
-        this.mapCacheTtlMs = mapCacheTtlMs;
-    }
-
-    /**
-     * 좌석맵: 등급 요약(가격·잔여) + 개별 좌석.
-     *
-     * seat.map-cache-ttl-ms가 0보다 크면 짧은 TTL 캐시를 태운다(기본 0, 실험 스위치).
-     * 이벤트 기반 무효화가 없어 TTL 동안 선점된 좌석이 AVAILABLE로 보일 수 있다(IMP-020).
-     *
-     * NOT_SUPPORTED로 트랜잭션 밖에서 돌고, miss일 때만 self를 거쳐
-     * loadSeatMap(Long)의 트랜잭션을 연다. 호출자가 트랜잭션 안이면 그것을 suspend하므로
-     * 트랜잭션 안에서 이 메서드를 부르는 코드가 생기면 다시 봐야 한다.
-     */
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public SeatMapResponse getSeats(Long eventId) {
-        if (mapCacheTtlMs <= 0) {
-            return self.getObject().loadSeatMap(eventId);
-        }
-        String key = "cache:seatmap:" + eventId;
-        try {
-            String hit = redis.opsForValue().get(key);
-            if (hit != null) {
-                return objectMapper.readValue(hit, SeatMapResponse.class);
-            }
-        } catch (Exception e) {
-            log.warn("[seat] 좌석맵 캐시 읽기 실패 event={}: DB로 폴백: {}", eventId, e.getMessage());
-        }
-        SeatMapResponse fresh = self.getObject().loadSeatMap(eventId);
-        try {
-            redis.opsForValue().set(key, objectMapper.writeValueAsString(fresh),
-                    Duration.ofMillis(mapCacheTtlMs));
-        } catch (Exception e) {
-            log.warn("[seat] 좌석맵 캐시 쓰기 실패 event={}: {}", eventId, e.getMessage());
-        }
-        return fresh;
-    }
-
-    /** DB에서 좌석맵을 읽는다. 프록시를 통해 불려야 트랜잭션이 열린다(위 getSeats 참고). */
-    @Transactional(readOnly = true)
-    public SeatMapResponse loadSeatMap(Long eventId) {
-        Map<SeatGrade, Integer> prices = priceMap(eventId);
-        List<Seat> seats = seatRepository.findByEventId(eventId);
-
-        List<GradeInfo> grades = new ArrayList<>();
-        for (Map.Entry<SeatGrade, Integer> e : prices.entrySet()) {
-            SeatGrade g = e.getKey();
-            long total = seats.stream().filter(s -> s.getGrade() == g).count();
-            long avail = seats.stream().filter(s -> s.getGrade() == g && s.getStatus() == SeatStatus.AVAILABLE).count();
-            grades.add(new GradeInfo(g.name(), e.getValue(), total, avail));
-        }
-        List<SeatInfo> seatInfos = seats.stream()
-                .map(s -> new SeatInfo(s.getId(), s.getGrade().name(), s.getZone(),
-                        s.getSeatRow(), s.getSeatCol(), s.getStatus().name()))
-                .toList();
-        return new SeatMapResponse(eventId, grades, seatInfos);
     }
 
     /** 좌석 선점: 입장 검증 → 1인 한도 → 조건부 UPDATE(원자) → 홀드 기록. */
@@ -187,7 +114,7 @@ public class SeatService {
         for (Long seatId : seatIds) {
             holdItemRepository.save(SeatHoldItem.builder().holdId(hold.getId()).seatId(seatId).build());
         }
-        int total = totalPrice(eventId, seatIds);
+        int total = pricing.totalPrice(eventId, seatIds);
         sse.broadcast(eventId, "seat.held", Map.of("seatIds", seatIds)); // 실시간 좌석맵 반영
         return new HoldResponse(hold.getId(), seatIds, total, hold.getExpiresAt());
     }
@@ -235,14 +162,4 @@ public class SeatService {
         sse.broadcast(hold.getEventId(), "seat.hold.released", Map.of("seatIds", seatIds)); // 재고 복구 반영
     }
 
-    private Map<SeatGrade, Integer> priceMap(Long eventId) {
-        return priceRepository.findByEventId(eventId).stream()
-                .collect(Collectors.toMap(p -> p.getGrade(), p -> p.getPrice()));
-    }
-
-    private int totalPrice(Long eventId, List<Long> seatIds) {
-        Map<SeatGrade, Integer> prices = priceMap(eventId);
-        return seatRepository.findAllById(seatIds).stream()
-                .mapToInt(s -> prices.getOrDefault(s.getGrade(), 0)).sum();
-    }
 }

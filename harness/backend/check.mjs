@@ -650,4 +650,31 @@ if (fs.existsSync(wrapperProps)) {
   }
 }
 
+// ---------- 21. 자기 자신을 주입하지 않는다 ----------
+//
+// @Transactional·@SchedulerLock은 프록시로 걸린다. 같은 객체 안에서 this.method()로 부르면
+// 프록시를 지나지 않아 어노테이션이 적용되지 않고, 그 회피로 ObjectProvider<자기타입>을 주입해
+// self.getObject().method()로 부르는 형태가 반복돼 왔다.
+//
+// 동작은 맞지만 프레임워크의 구현 방식이 서비스의 의존성 목록에 드러나고, 단위 테스트는 "자기
+// 자신을 돌려주는" 배선을 해야 한다. 경계가 필요하면 빈을 나눈다(ADR-019).
+//   - 트랜잭션 안의 쓰기      → 쓰기 전용 협력자(UserRegistrar·RefundConverger)
+//   - 트랜잭션 밖의 진입점    → 진입점 분리(KopisSyncScheduler)
+//   - 경계가 곧 알고리즘      → TransactionTemplate(OrderService·PaymentService·RefundService)
+//   - 일관성 모델이 다름      → 조회·명령 분리(SeatQueryService·SeatService)
+//
+// 타입 이름이 파일명과 같은 경우만 본다. 다른 빈을 ObjectProvider로 받는 것(지연 조회·선택 주입)은
+// 정당한 쓰임이라 건드리지 않는다.
+for (const file of javaFiles) {
+  const rel = path.relative(REPO_ROOT, file).split(path.sep).join("/");
+  const cls = path.basename(file, ".java");
+  const code = stripComments(read(file));
+  if (new RegExp(`ObjectProvider\s*<\s*${cls}\s*>`).test(code)) {
+    r.fail(
+      `자기 자신을 주입한다: ${rel}: ObjectProvider<${cls}>. ` +
+        `프록시 self-호출 대신 경계를 빈으로 나눌 것(ADR-019)`
+    );
+  }
+}
+
 r.done();

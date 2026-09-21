@@ -20,7 +20,7 @@
 | idempotency_key | VARCHAR(80) | N | | UNIQUE | 환불 요청의 멱등키(`refunds`와 같은 값) |
 | resolved | BOOLEAN | N | false | | PG와 DB가 어긋나지 않음이 확인됨 |
 | checked_at | TIMESTAMP | Y | | | 정산이 마지막으로 PG에 조회한 시각(후보 순회용) |
-| created_at | TIMESTAMP | N | now() | | 시도 시각 — 정산의 기준 시각 |
+| created_at | TIMESTAMP | N | now() | | 시도 시각 — 정산 후보 창의 기준. **앱이 넣는다**(DB 기본값은 폴백) |
 
 ## 인덱스 / 제약
 | 이름 | 종류 | 컬럼 | 이유 |

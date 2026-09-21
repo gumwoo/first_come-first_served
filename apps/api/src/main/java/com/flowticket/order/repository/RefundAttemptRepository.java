@@ -39,15 +39,20 @@ public interface RefundAttemptRepository extends JpaRepository<RefundAttempt, Lo
      * 길이 초과·FK 위반 같은 예상 못 한 제약 위반까지 함께 삼킨다. 그 경우 시도 기록 없이
      * PG 취소가 나가고, 뒤이어 refunds INSERT가 같은 이유로 실패해 정산 안전망까지 비어 버린다.
      * 무시할 충돌을 DB에 명시해 그 구멍을 막는다.
+     *
+     * created_at은 DB의 now()가 아니라 호출자가 넣는다. 이 값은 기록이 아니라 정산 후보의 창을
+     * 가르는 판정 기준이고, 그 창을 계산하는 RefundReconciliationService는 주입된 Clock을 본다
+     * (ADR-018). DB 시계로 찍으면 같은 판정을 두 시계가 나눠 갖는다.
      */
     @Transactional
     @Modifying
     @Query(value = """
             insert into refund_attempts (order_id, idempotency_key, resolved, created_at)
-            values (:orderId, :key, false, now())
+            values (:orderId, :key, false, :createdAt)
             on conflict (idempotency_key) do nothing
             """, nativeQuery = true)
-    int record(@Param("orderId") Long orderId, @Param("key") String key);
+    int record(@Param("orderId") Long orderId, @Param("key") String key,
+               @Param("createdAt") LocalDateTime createdAt);
 
     Optional<RefundAttempt> findByIdempotencyKey(String idempotencyKey);
 

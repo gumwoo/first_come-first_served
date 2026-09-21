@@ -37,7 +37,7 @@ class EventDetailNoExternalCallTest extends IntegrationTestSupport {
                 .kopisId("PF900001").title("동기화된 공연").venue("올림픽홀").build());
         // 동기화 배치가 미리 채운 상태를 재현
         event.updateDetail("1시간 30분", "만 12세 이상", "전석 30,000원",
-                "가수 김플로우", "여름밤의 콘서트", "매일 19시");
+                "가수 김플로우", "여름밤의 콘서트", "매일 19시", java.time.LocalDateTime.now());
         eventRepository.saveAndFlush(event);
 
         EventDetailResponse res = eventService.detail(event.getId());
@@ -75,7 +75,8 @@ class EventDetailNoExternalCallTest extends IntegrationTestSupport {
         d.cast = "C";
         d.synopsis = "S";
         d.schedule = "D";
-        event.updateDetail(null, null, d.priceText, d.cast, d.synopsis, d.schedule);
+        event.updateDetail(null, null, d.priceText, d.cast, d.synopsis, d.schedule,
+                java.time.LocalDateTime.now());
         eventRepository.saveAndFlush(event);
 
         EventDetailResponse res = eventService.detail(event.getId());

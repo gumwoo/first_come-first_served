@@ -87,7 +87,7 @@ public class RefundService {
         // 시도 기록 전에 소유자를 본다. 남의 주문 ID로도 기록이 쌓여 정산 후보를 오염시킨다.
         // 판정의 진실원은 refundTx의 ownedOrder다(여기 통과해도 트랜잭션 안에서 다시 본다).
         ownedOrder(orderId, userId);
-        refundAttemptRepository.record(orderId, idemKey);
+        refundAttemptRepository.record(orderId, idemKey, LocalDateTime.now(clock));
         rejectIfKeyBelongsToAnotherOrder(orderId, idemKey);
         try {
             RefundResponse res = self.getObject().refundTx(userId, orderId, reason, idemKey);

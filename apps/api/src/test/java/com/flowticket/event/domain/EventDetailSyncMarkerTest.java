@@ -1,5 +1,6 @@
 package com.flowticket.event.domain;
 
+import java.time.LocalDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;
@@ -22,7 +23,8 @@ class EventDetailSyncMarkerTest {
         Event e = new Event();
 
         // KOPIS 상세에 공연시간이 없는 경우: 나머지는 정상 수집됐다.
-        e.updateDetail(null, "만 12세 이상", "R석 90,000원", "출연진", "줄거리", "일정");
+        e.updateDetail(null, "만 12세 이상", "R석 90,000원", "출연진", "줄거리", "일정",
+                LocalDateTime.now());
 
         assertThat(e.getDetailSyncedAt())
                 .as("상세 호출이 성공했으므로 수집 표시는 찍혀야 한다. 이게 없으면 매 회차 같은 공연을 다시 부른다")
@@ -38,7 +40,7 @@ class EventDetailSyncMarkerTest {
         Event e = new Event();
         ReflectionTestUtils.setField(e, "runningTime", "120분");
 
-        e.updateDetail("   ", null, null, null, null, null);
+        e.updateDetail("   ", null, null, null, null, null, LocalDateTime.now());
 
         assertThat(e.getRunningTime()).isEqualTo("120분");
         assertThat(e.getDetailSyncedAt()).isNotNull();

@@ -23,6 +23,7 @@ import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.sse.SeatSseRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.ObjectProvider;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -59,6 +60,8 @@ public class SeatService {
     /** 좌석맵 캐시 TTL(ms). 0이면 캐시를 쓰지 않는다. 기본값은 0이다. */
     private final long mapCacheTtlMs;
 
+    private final Clock clock;
+
     public SeatService(EventRepository eventRepository,
                        SeatRepository seatRepository, EventSeatPriceRepository priceRepository,
                        SeatHoldRepository holdRepository, SeatHoldItemRepository holdItemRepository,
@@ -68,7 +71,9 @@ public class SeatService {
                        ObjectProvider<SeatService> self,
                        @Value("${seat.hold-ttl:300}") long holdTtl,
                        @Value("${seat.max-per-user:4}") int maxPerUser,
-                       @Value("${seat.map-cache-ttl-ms:0}") long mapCacheTtlMs) {
+                       @Value("${seat.map-cache-ttl-ms:0}") long mapCacheTtlMs,
+                       Clock clock) {
+        this.clock = clock;
         this.eventRepository = eventRepository;
         this.seatRepository = seatRepository;
         this.priceRepository = priceRepository;
@@ -178,7 +183,7 @@ public class SeatService {
         }
         SeatHold hold = holdRepository.save(SeatHold.builder()
                 .eventId(eventId).userId(userId)
-                .expiresAt(LocalDateTime.now().plusSeconds(holdTtl)).build());
+                .expiresAt(LocalDateTime.now(clock).plusSeconds(holdTtl)).build());
         for (Long seatId : seatIds) {
             holdItemRepository.save(SeatHoldItem.builder().holdId(hold.getId()).seatId(seatId).build());
         }

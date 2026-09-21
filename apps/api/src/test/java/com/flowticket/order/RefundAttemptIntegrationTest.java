@@ -154,7 +154,7 @@ class RefundAttemptIntegrationTest extends IntegrationTestSupport {
         Long orderB = paidOrder(userB);
         String key = "K-SHARED";
         // A가 PG 취소 후 롤백된 상태: 시도만 남고 refunds에는 아무것도 없다.
-        attemptRepository.record(orderA, key);
+        attemptRepository.record(orderA, key, java.time.LocalDateTime.now());
 
         assertThatThrownBy(() -> refundService.refund(userB, orderB, "변심", key))
                 .isInstanceOf(BusinessException.class);

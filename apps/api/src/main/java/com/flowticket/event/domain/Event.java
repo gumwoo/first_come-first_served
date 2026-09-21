@@ -145,16 +145,21 @@ public class Event {
      *
      * detailSyncedAt을 항상 갱신하는 것이 중요하다. 이 값이 NULL인 건만 다음 동기화
      * 대상이 되므로, 갱신하지 않으면 매번 같은 공연을 다시 호출한다.
+     *
+     * 시각은 호출자가 넣는다. 이 값은 기록이 아니라 "다시 수집할 때가 됐는가"의 판정 기준이고,
+     * 그 판정을 하는 KopisDetailSyncer는 주입된 Clock을 본다(ADR-018). 여기서 now()를 직접
+     * 부르면 같은 판정을 두 시계가 나눠 갖게 된다.
      */
     public void updateDetail(String runningTime, String ageLimit, String priceText,
-                             String castInfo, String synopsis, String scheduleText) {
+                             String castInfo, String synopsis, String scheduleText,
+                             LocalDateTime syncedAt) {
         if (runningTime != null && !runningTime.isBlank()) this.runningTime = runningTime;
         if (ageLimit != null && !ageLimit.isBlank()) this.ageLimit = ageLimit;
         this.priceText = priceText;
         this.castInfo = castInfo;
         this.synopsis = synopsis;
         this.scheduleText = scheduleText;
-        this.detailSyncedAt = LocalDateTime.now();
+        this.detailSyncedAt = syncedAt;
         this.updatedAt = this.detailSyncedAt;
     }
 

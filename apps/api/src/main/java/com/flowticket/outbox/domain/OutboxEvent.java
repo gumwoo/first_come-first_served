@@ -75,10 +75,15 @@ public class OutboxEvent {
         this.createdAt = LocalDateTime.now();
     }
 
-    /** 발행 성공: 반드시 Kafka send 성공을 확인한 뒤 호출(publish-then-mark). */
-    public void markPublished() {
+    /**
+     * 발행 성공: 반드시 Kafka send 성공을 확인한 뒤 호출(publish-then-mark).
+     *
+     * 시각은 호출자가 넣는다. publishedAt은 기록이 아니라 purge 판정 기준이고(보존기간 경과 여부),
+     * 그 경계를 계산하는 OutboxRelay는 주입된 Clock을 본다(ADR-018).
+     */
+    public void markPublished(LocalDateTime publishedAt) {
         this.status = OutboxStatus.PUBLISHED;
-        this.publishedAt = LocalDateTime.now();
+        this.publishedAt = publishedAt;
         // 앞선 틱의 일시적 실패 기록을 지운다. attempts는 남겨 "몇 번 만에 나갔는지"를 보존한다.
         this.lastError = null;
     }

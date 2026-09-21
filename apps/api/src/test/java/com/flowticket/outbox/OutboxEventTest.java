@@ -1,5 +1,6 @@
 package com.flowticket.outbox;
 
+import java.time.LocalDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.flowticket.outbox.domain.OutboxEvent;
@@ -24,9 +25,13 @@ class OutboxEventTest {
         event.markAttemptFailed("TimeoutException: broker unreachable");
         assertThat(event.getLastError()).isNotBlank();
 
-        event.markPublished();
+        LocalDateTime publishedAt = LocalDateTime.of(2026, 9, 21, 3, 0);
+        event.markPublished(publishedAt);
 
         assertThat(event.getStatus()).isEqualTo(OutboxStatus.PUBLISHED);
+        assertThat(event.getPublishedAt())
+                .as("purge 기준 시각이라 호출자가 넘긴 값을 그대로 둔다(ADR-018)")
+                .isEqualTo(publishedAt);
         assertThat(event.getLastError())
                 .as("PUBLISHED에 오류가 남아 있으면 운영자가 미해결로 오해한다")
                 .isNull();

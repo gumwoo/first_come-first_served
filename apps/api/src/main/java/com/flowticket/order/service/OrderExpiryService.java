@@ -2,6 +2,7 @@ package com.flowticket.order.service;
 
 import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.repository.OrderRepository;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +24,10 @@ public class OrderExpiryService {
 
     private final OrderRepository orderRepository;
 
-    public OrderExpiryService(OrderRepository orderRepository) {
+    private final Clock clock;
+
+    public OrderExpiryService(OrderRepository orderRepository, Clock clock) {
+        this.clock = clock;
         this.orderRepository = orderRepository;
     }
 
@@ -31,7 +35,7 @@ public class OrderExpiryService {
     @SchedulerLock(name = "order-expiry-sweep", lockAtMostFor = "PT50S", lockAtLeastFor = "PT0S")
     @Transactional
     public void sweepExpired() {
-        int n = orderRepository.expireOverdue(ACTIVE, LocalDateTime.now());
+        int n = orderRepository.expireOverdue(ACTIVE, LocalDateTime.now(clock));
         if (n > 0) {
             log.info("[order] 주문 만료 회수 {}건", n);
         }

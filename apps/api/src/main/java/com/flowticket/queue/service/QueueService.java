@@ -7,6 +7,7 @@ import com.flowticket.event.repository.EventRepository;
 import com.flowticket.queue.domain.QueueStatus;
 import com.flowticket.queue.dto.QueueStatusResponse;
 import com.flowticket.queue.dto.QueueTokenResponse;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -73,10 +74,14 @@ public class QueueService {
     private final long tokenTtl;
     private final long admitIntervalMs;
 
+    private final Clock clock;
+
     public QueueService(StringRedisTemplate redis, EventRepository eventRepository,
                         @Value("${queue.capacity:100}") int capacity,
                         @Value("${queue.token-ttl:1800}") long tokenTtl,
-                        @Value("${queue.admit-interval-ms:1500}") long admitIntervalMs) {
+                        @Value("${queue.admit-interval-ms:1500}") long admitIntervalMs,
+                        Clock clock) {
+        this.clock = clock;
         this.redis = redis;
         this.eventRepository = eventRepository;
         this.capacity = capacity;
@@ -173,7 +178,7 @@ public class QueueService {
         }
         // admitExp는 이벤트 단위 ZSet이라 이 검사 자체가 소속 이벤트를 보장한다.
         Double expiresAt = redis.opsForZSet().score(QueueKeys.admitExp(eventId), token);
-        if (expiresAt != null && expiresAt > Instant.now().getEpochSecond()) {
+        if (expiresAt != null && expiresAt > Instant.now(clock).getEpochSecond()) {
             return true;
         }
         // 폴백: admit 키는 토큰만 보므로 다른 이벤트의 입장으로 좌석을 잡지 못하게 소속을 확인한다.
@@ -249,7 +254,7 @@ public class QueueService {
             return true; // 대부분 여기서 끝난다(왕복 1회)
         }
         Double expiresAt = redis.opsForZSet().score(QueueKeys.admitExp(eventId), token);
-        return expiresAt != null && expiresAt > Instant.now().getEpochSecond();
+        return expiresAt != null && expiresAt > Instant.now(clock).getEpochSecond();
     }
 
     private long rankOf(String token, Long eventId) {

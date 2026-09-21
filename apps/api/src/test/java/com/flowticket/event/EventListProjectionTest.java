@@ -50,7 +50,8 @@ class EventListProjectionTest extends IntegrationTestSupport {
                     .kopisId("PF-P" + i).title("공연" + i).venue("홀").region("서울특별시")
                     .genre("연극").status(EventStatus.ON_SALE).build());
             // 목록이 읽으면 안 되는 본문 텍스트를 채워둔다.
-            e.updateDetail("120분", "전체", "전석 30,000원", "출연진", "아주 긴 줄거리".repeat(50), "매일 19시");
+            e.updateDetail("120분", "전체", "전석 30,000원", "출연진", "아주 긴 줄거리".repeat(50), "매일 19시",
+                    java.time.LocalDateTime.now());
             eventRepository.saveAndFlush(e);
         }
         stats().setStatisticsEnabled(true);

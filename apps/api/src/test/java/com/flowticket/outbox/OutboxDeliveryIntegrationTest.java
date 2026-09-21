@@ -107,7 +107,8 @@ class OutboxDeliveryIntegrationTest {
         doThrow(new KafkaException("broker down"))
                 .when(failingKafka).send(anyString(), anyString(), any());
         // 실제 릴레이와 동일한 설정값(배치 100 / 타임아웃 3s / 보존 7일)
-        relayDuringOutage = new OutboxRelay(outboxRepository, failingKafka, mapper, 100, 3000L, 7);
+        relayDuringOutage = new OutboxRelay(outboxRepository, failingKafka, mapper, 100, 3000L, 7,
+                java.time.Clock.systemDefaultZone());
     }
 
     @Test

@@ -37,20 +37,13 @@ class KopisDetailRefreshTest extends IntegrationTestSupport {
         eventRepository.deleteAll();
     }
 
-    /**
-     * 과거 시각의 상세 동기화 상태를 만든다.
-     *
-     * updateDetail()은 항상 now()를 찍으므로 도메인 API로는 과거를 만들 수 없다.
-     * 그렇다고 운영 저장소에 테스트 전용 메서드를 넣지는 않는다. 그 자리에서 직접 UPDATE 한다.
-     */
+    /** 과거 시각의 상세 동기화 상태를 만든다. 동기화 시각을 호출자가 넣으므로 도메인 API로 된다. */
     private Event saved(String kopisId, LocalDateTime detailSyncedAt) {
-        Event e = eventRepository.saveAndFlush(
-                Event.builder().kopisId(kopisId).title(kopisId).build());
+        Event e = Event.builder().kopisId(kopisId).title(kopisId).build();
         if (detailSyncedAt != null) {
-            jdbcTemplate.update("update events set detail_synced_at = ? where id = ?",
-                    Timestamp.valueOf(detailSyncedAt), e.getId());
+            e.updateDetail(null, null, null, null, null, null, detailSyncedAt);
         }
-        return e;
+        return eventRepository.saveAndFlush(e);
     }
 
     @Test
@@ -93,7 +86,8 @@ class KopisDetailRefreshTest extends IntegrationTestSupport {
         Event e = eventRepository.saveAndFlush(
                 Event.builder().kopisId("PF-KEEP").title("원래 제목").build());
         // 상세 동기화가 채운 상태
-        e.updateDetail("120분", "만 12세 이상", "전석 30,000원", "출연진", "줄거리", "매일 19시");
+        e.updateDetail("120분", "만 12세 이상", "전석 30,000원", "출연진", "줄거리", "매일 19시",
+                LocalDateTime.now());
         eventRepository.saveAndFlush(e);
 
         // 다음날 목록 동기화: 목록에는 runningTime·ageLimit이 없다

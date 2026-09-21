@@ -9,12 +9,14 @@ import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.domain.Payment;
 import com.flowticket.order.domain.PaymentStatus;
 import com.flowticket.order.domain.Refund;
+import com.flowticket.order.domain.RefundAttempt;
 import com.flowticket.order.dto.RefundResponse;
 import com.flowticket.order.gateway.PaymentGateway;
 import com.flowticket.order.gateway.PaymentGateway.ApproveResult;
 import com.flowticket.order.repository.OrderItemRepository;
 import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.order.repository.PaymentRepository;
+import com.flowticket.order.repository.RefundAttemptRepository;
 import com.flowticket.order.repository.RefundRepository;
 import com.flowticket.order.service.RefundPolicy.RefundQuote;
 import com.flowticket.order.sse.OrderSseRegistry;
@@ -40,6 +42,7 @@ public class RefundService {
     private final OrderItemRepository orderItemRepository;
     private final PaymentRepository paymentRepository;
     private final RefundRepository refundRepository;
+    private final RefundAttemptRepository refundAttemptRepository;
     private final SeatRepository seatRepository;
     private final EventRepository eventRepository;
     private final RefundPolicy refundPolicy;
@@ -49,6 +52,7 @@ public class RefundService {
 
     public RefundService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                          PaymentRepository paymentRepository, RefundRepository refundRepository,
+                         RefundAttemptRepository refundAttemptRepository,
                          SeatRepository seatRepository, EventRepository eventRepository,
                          RefundPolicy refundPolicy, PaymentGateway gateway,
                          OrderSseRegistry orderSse, ObjectProvider<RefundService> self) {
@@ -56,6 +60,7 @@ public class RefundService {
         this.orderItemRepository = orderItemRepository;
         this.paymentRepository = paymentRepository;
         this.refundRepository = refundRepository;
+        this.refundAttemptRepository = refundAttemptRepository;
         this.seatRepository = seatRepository;
         this.eventRepository = eventRepository;
         this.refundPolicy = refundPolicy;
@@ -67,17 +72,40 @@ public class RefundService {
     /**
      * 환불 진입. 동시 같은 idempotencyKey(더블클릭)로 UNIQUE 충돌이 나면:
      * 이미 다른 스레드가 처리한 것이므로 기존 결과를 멱등하게 반환.
+     *
+     * 시도 기록을 먼저 남긴다(ADR-011). refundTx는 PG 취소와 DB 쓰기를 한 트랜잭션에 묶으므로,
+     * PG 취소 성공 뒤 쓰기가 실패하면 전체가 롤백돼 "환불을 시도했다"는 사실까지 사라진다.
+     * 이 행은 그 트랜잭션이 열리기 전에 별도로 커밋돼 정산의 후보가 된다.
      */
     public RefundResponse refund(Long userId, Long orderId, String reason, String idemKey) {
         if (idemKey == null || idemKey.isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
+        recordAttempt(orderId, idemKey);
         try {
-            return self.getObject().refundTx(userId, orderId, reason, idemKey);
+            RefundResponse res = self.getObject().refundTx(userId, orderId, reason, idemKey);
+            // 정상 완료: PG와 DB가 일치하므로 정산이 볼 필요가 없다.
+            refundAttemptRepository.resolve(idemKey);
+            return res;
         } catch (DataIntegrityViolationException e) {
             return refundRepository.findByIdempotencyKey(idemKey)
                     .map(r -> RefundResponse.of(r, currentStatus(orderId).name()))
                     .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+        }
+    }
+
+    /**
+     * 시도 기록. 자체 트랜잭션으로 즉시 커밋된다.
+     *
+     * 같은 멱등키가 이미 있으면 그대로 둔다(재시도·더블클릭). 여기서 예외를 올리면 TS-030이
+     * 보장한 동시 환불 멱등이 깨진다 — 패자는 refundTx 안에서 승자의 결과를 받아야 한다.
+     */
+    private void recordAttempt(Long orderId, String idemKey) {
+        try {
+            refundAttemptRepository.save(RefundAttempt.builder()
+                    .orderId(orderId).idempotencyKey(idemKey).build());
+        } catch (DataIntegrityViolationException e) {
+            // 이미 기록된 시도다. 정산 후보로는 한 번만 올라가면 된다.
         }
     }
 

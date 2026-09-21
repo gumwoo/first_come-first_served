@@ -262,11 +262,12 @@ refund:
   tier1-rate: ${REFUND_TIER1_RATE:10}  # D-3~D-7 (%)
   tier2-rate: ${REFUND_TIER2_RATE:30}  # D-1~D-2 (%)
   # 환불 정산(ADR-011): PG엔 취소인데 우리 주문은 결제 완료인 "미아 취소"를 주기적으로 맞춤.
+  # 후보는 refund_attempts(환불 시도 기록)다. 기준 시각도 결제가 아니라 환불 시도 시각이다.
   reconcile-interval-ms: ${REFUND_RECONCILE_INTERVAL:600000}  # 정산 주기(ms)
-  reconcile-grace-minutes: ${REFUND_RECONCILE_GRACE:10}       # 결제 시각 이후 유예(진행 중 환불 보호)
-  reconcile-lookback-hours: ${REFUND_RECONCILE_LOOKBACK:24}   # 소급 한계(이전 건은 수동 정산)
+  reconcile-grace-minutes: ${REFUND_RECONCILE_GRACE:10}       # 시도 이후 유예(진행 중 환불 보호)
+  reconcile-lookback-hours: ${REFUND_RECONCILE_LOOKBACK:168}  # 소급 한계 7일(이전 건은 수동 정산)
   reconcile-batch-size: ${REFUND_RECONCILE_BATCH:50}          # 틱당 PG 조회 상한
-  reconcile-recheck-minutes: ${REFUND_RECONCILE_RECHECK:60}   # 같은 주문을 다시 묻기까지의 최소 간격
+  reconcile-recheck-minutes: ${REFUND_RECONCILE_RECHECK:60}   # 같은 시도를 다시 묻기까지의 최소 간격
 
 # 관리자 계정 부트스트랩. 둘 다 설정 시 최초 1회 ROLE_ADMIN 생성. 자격증명은 환경변수로만.
 admin:

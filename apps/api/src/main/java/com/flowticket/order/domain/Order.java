@@ -47,10 +47,6 @@ public class Order {
     @Column(name = "paid_at")
     private LocalDateTime paidAt;
 
-    /** 환불 정산이 마지막으로 PG에 조회한 시각(ADR-011). 후보를 오래 안 본 순서로 돌리는 데만 쓴다. */
-    @Column(name = "refund_checked_at")
-    private LocalDateTime refundCheckedAt;
-
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

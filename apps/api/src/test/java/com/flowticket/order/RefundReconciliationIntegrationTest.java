@@ -3,6 +3,7 @@ package com.flowticket.order;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.flowticket.support.IntegrationTestSupport;
@@ -11,11 +12,13 @@ import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.order.domain.OrderStatus;
+import com.flowticket.order.domain.RefundAttempt;
 import com.flowticket.order.gateway.PaymentGateway;
 import com.flowticket.order.gateway.PaymentGateway.Inquiry;
 import com.flowticket.order.repository.OrderItemRepository;
 import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.order.repository.PaymentRepository;
+import com.flowticket.order.repository.RefundAttemptRepository;
 import com.flowticket.order.repository.RefundRepository;
 import com.flowticket.order.service.OrderService;
 import com.flowticket.order.service.PaymentService;
@@ -60,6 +63,7 @@ class RefundReconciliationIntegrationTest extends IntegrationTestSupport {
     @Autowired OrderItemRepository orderItemRepository;
     @Autowired PaymentRepository paymentRepository;
     @Autowired RefundRepository refundRepository;
+    @Autowired RefundAttemptRepository attemptRepository;
     @Autowired SeatRepository seatRepository;
     @Autowired SeatHoldRepository holdRepository;
     @Autowired SeatHoldItemRepository holdItemRepository;
@@ -70,6 +74,7 @@ class RefundReconciliationIntegrationTest extends IntegrationTestSupport {
 
     @BeforeEach
     void clean() {
+        attemptRepository.deleteAll();
         refundRepository.deleteAll();
         paymentRepository.deleteAll();
         orderItemRepository.deleteAll();
@@ -152,13 +157,41 @@ class RefundReconciliationIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    void 유예시간_안의_최근_결제는_조회하지_않는다() {
+    void 유예시간_안의_최근_시도는_조회하지_않는다() {
         Ctx c = paidOrder(75L);
-        jdbc.update("update orders set paid_at = now() where id = ?", c.orderId());
+        jdbc.update("update refund_attempts set created_at = now() where order_id = ?", c.orderId());
 
         reconciliation.reconcileOrphanCancellations();
 
         verify(gateway, never()).inquire(c.orderId());
+    }
+
+    /**
+     * 후보 기준이 결제 시각이면 놓치는 경우. 환불 가능 여부는 공연일까지 남은 날로 정해지므로
+     * 한 달 전에 결제한 주문도 오늘 환불된다. 기준은 환불 시도 시각이어야 한다.
+     */
+    @Test
+    void 결제한지_오래된_주문도_환불_시도가_있으면_정산한다() {
+        Ctx c = paidOrder(76L);
+        jdbc.update("update orders set paid_at = now() - interval '30 days' where id = ?", c.orderId());
+        doReturn(Inquiry.canceled("PG-CANCEL-OLD", c.amount(), false)).when(gateway).inquire(c.orderId());
+
+        reconciliation.reconcileOrphanCancellations();
+
+        assertThat(orderRepository.findById(c.orderId()).orElseThrow().getStatus())
+                .isEqualTo(OrderStatus.REFUNDED);
+    }
+
+    /** 확인된 시도는 후보에서 빠진다. 열린 채로 두면 매 틱 PG를 다시 부른다. */
+    @Test
+    void 수렴한_시도는_다시_조회하지_않는다() {
+        Ctx c = paidOrder(77L);
+        doReturn(Inquiry.canceled("PG-CANCEL-4", c.amount(), false)).when(gateway).inquire(c.orderId());
+
+        reconciliation.reconcileOrphanCancellations();
+        reconciliation.reconcileOrphanCancellations();
+
+        verify(gateway, times(1)).inquire(c.orderId());
     }
 
     // --- helpers ---
@@ -182,7 +215,11 @@ class RefundReconciliationIntegrationTest extends IntegrationTestSupport {
         int amount = orderRepository.findById(orderId).orElseThrow().getAmount();
         paymentService.pay(userId, orderId, "card", null, "OK-" + orderId);
 
-        jdbc.update("update orders set paid_at = now() - interval '1 hour' where id = ?", orderId);
+        // 환불을 시도했다가 PG 취소 후 DB 쓰기가 실패한 상태를 만든다. 롤백돼도 시도 기록은 남는다.
+        attemptRepository.save(RefundAttempt.builder()
+                .orderId(orderId).idempotencyKey("R-" + orderId).build());
+        jdbc.update("update refund_attempts set created_at = now() - interval '1 hour' "
+                + "where order_id = ?", orderId);
         return new Ctx(orderId, seatIds.get(0), amount);
     }
 }

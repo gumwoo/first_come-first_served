@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -163,6 +164,29 @@ class RefundAttemptIntegrationTest extends IntegrationTestSupport {
         assertThat(attemptRepository.findByIdempotencyKey(key).orElseThrow().isResolved()).isFalse();
         assertThat(attemptRepository.findByIdempotencyKey(key).orElseThrow().getOrderId())
                 .isEqualTo(orderA);
+    }
+
+    /**
+     * PG 취소 결과를 모를 때는 되돌리지도, 시도를 닫지도 않는다(ADR-021).
+     *
+     * 타임아웃·5xx는 "취소하지 않았다"가 아니다. 실제로 취소됐는데 응답만 못 받았을 수 있어,
+     * 여기서 주문을 PAID로 되돌리고 시도까지 닫으면 돈은 나갔는데 장부는 결제 완료로 남고
+     * 그 상태를 찾아낼 단서도 사라진다. 정산이 PG에 물어 정리하도록 열어 둔다.
+     */
+    @Test
+    void PG_취소결과를_모르면_되돌리지_않고_정산에_넘긴다() {
+        long user = 116L;
+        Long orderId = paidOrder(user);
+        doReturn(PaymentGateway.ApproveResult.unknown("타임아웃"))
+                .when(gateway).refund(anyString(), anyInt(), anyString());
+
+        assertThatThrownBy(() -> refundService.refund(user, orderId, "변심", "R-UNK-" + orderId))
+                .isInstanceOf(BusinessException.class);
+
+        assertThat(orderRepository.findById(orderId).orElseThrow().getStatus())
+                .as("되돌리면 PG에만 남은 취소를 영영 못 찾는다").isEqualTo(OrderStatus.CANCELLED);
+        assertThat(attemptRepository.findAll().get(0).isResolved())
+                .as("정산이 다시 봐야 하므로 시도는 열어 둔다").isFalse();
     }
 
     // --- helpers ---

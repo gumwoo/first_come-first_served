@@ -121,6 +121,39 @@ class TossPaymentGatewayTest {
         f.server().verify();
     }
 
+    /**
+     * 타임아웃·5xx는 "취소하지 않았다"가 아니라 "모른다"이다.
+     *
+     * 이걸 실패로 단정하면 호출자가 취소 전이를 되돌린다. 실제로는 취소가 됐을 수 있어,
+     * 돈은 나갔는데 장부만 결제 완료로 돌아간다(ADR-021).
+     */
+    @Test
+    void refund_5xx는_결과불명이다() {
+        Fixture f = fixture();
+        f.server().expect(requestTo(containsString("/v1/payments/PAY-7/cancel")))
+                .andRespond(withServerError());
+
+        ApproveResult res = f.gateway().refund("PAY-7", 10_000, "R-UNKNOWN");
+
+        assertThat(res.unknown()).as("결과를 모르면 되돌리기를 결정할 수 없다").isTrue();
+        assertThat(res.success()).isFalse();
+    }
+
+    /** PG가 답을 줬고 그 답이 "하지 않았다"면 거절이다. 이건 되돌려도 된다. */
+    @Test
+    void refund_취소상태가_아니면_거절이다() {
+        Fixture f = fixture();
+        f.server().expect(requestTo(containsString("/v1/payments/PAY-8/cancel")))
+                .andRespond(withSuccess("""
+                        {"status":"DONE","paymentKey":"PAY-8"}
+                        """, MediaType.APPLICATION_JSON));
+
+        ApproveResult res = f.gateway().refund("PAY-8", 10_000, "R-REJECT");
+
+        assertThat(res.success()).isFalse();
+        assertThat(res.unknown()).as("PG가 상태를 답했으므로 모르는 것이 아니다").isFalse();
+    }
+
     @Test
     void inquire_승인은_DONE이다() {
         Fixture f = fixture();

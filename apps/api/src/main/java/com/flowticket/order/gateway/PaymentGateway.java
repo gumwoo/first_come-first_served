@@ -96,14 +96,46 @@ public interface PaymentGateway {
         }
     }
 
+    /**
+     * 승인·취소 요청의 결과.
+     *
+     * 실패를 둘로 가른다. 예전에는 타임아웃·5xx까지 전부 "실패"라 호출자가 "PG가 하지 않았다"로
+     * 읽었는데, 실제로는 **했는데 응답만 못 받은 경우**가 섞여 있었다. 그 상태에서 되돌리기를
+     * 실행하면 돈은 움직였는데 우리 장부만 원래대로 돌아간다(Inquiry.PgStatus와 같은 이유).
+     */
+    enum PgOutcome {
+        /** PG가 처리했다. */
+        SUCCESS,
+        /** PG가 답을 줬고, 그 답이 "하지 않았다"이다. */
+        REJECTED,
+        /** 결과를 모른다(타임아웃·네트워크·5xx·해석 불가). */
+        UNKNOWN
+    }
+
     /** 승인 결과. */
-    record ApproveResult(boolean success, String pgTid, String failReason) {
+    record ApproveResult(PgOutcome outcome, String pgTid, String failReason) {
+
         public static ApproveResult ok(String pgTid) {
-            return new ApproveResult(true, pgTid, null);
+            return new ApproveResult(PgOutcome.SUCCESS, pgTid, null);
         }
 
+        /** PG가 답을 줬고, 그 답이 "하지 않았다"이다. */
         public static ApproveResult fail(String reason) {
-            return new ApproveResult(false, null, reason);
+            return new ApproveResult(PgOutcome.REJECTED, null, reason);
+        }
+
+        /** 결과를 모른다. 되돌리지도 확정하지도 말고 정산에 넘겨야 한다. */
+        public static ApproveResult unknown(String reason) {
+            return new ApproveResult(PgOutcome.UNKNOWN, null, reason);
+        }
+
+        public boolean success() {
+            return outcome == PgOutcome.SUCCESS;
+        }
+
+        /** 모르는 결과인가. 호출자가 보상·되돌리기를 결정하기 전에 반드시 봐야 한다. */
+        public boolean unknown() {
+            return outcome == PgOutcome.UNKNOWN;
         }
     }
 }

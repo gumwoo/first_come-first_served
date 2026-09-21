@@ -22,6 +22,7 @@ import com.flowticket.order.sse.OrderSseRegistry;
 import com.flowticket.seat.domain.SeatStatus;
 import com.flowticket.seat.repository.SeatRepository;
 import java.time.Clock;
+import lombok.extern.slf4j.Slf4j;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -35,6 +36,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 예매 취소·환불. PAID + 시점 게이트에서만 가능. 조건부 전이(PAID→CANCELLED→REFUNDED)로 원자화하고
  * 좌석을 SOLD→AVAILABLE 복구한다. 멱등: 더블클릭/재전송에도 이중 환불·이중 복구 0(ADR-006).
  */
+@Slf4j
 @Service
 public class RefundService {
 
@@ -111,8 +113,18 @@ public class RefundService {
                 return awaitWinner(orderId, idemKey);
             }
             ApproveResult res = gateway.refund(started.pgTid(), started.quote().refundAmount(), idemKey);
+            if (res.unknown()) {
+                // 결과를 모른다. 취소가 이미 됐을 수도 있으므로 아무것도 되돌리지 않고, 시도도
+                // 닫지 않는다. 주문은 CANCELLED로 남고 정산이 PG에 물어 정리한다(ADR-021).
+                //
+                // 여기서 되돌리고 시도까지 닫으면 돈은 나갔는데 주문은 PAID로 돌아가고, 그 상태를
+                // 찾아낼 단서까지 사라진다 — 이 PR이 만든 안전망을 스스로 끄는 셈이다.
+                log.warn("[refund] PG 취소 결과 불명: 정산에 넘긴다 orderId={} key={} 사유={}",
+                        orderId, idemKey, res.failReason());
+                throw new BusinessException(ErrorCode.INTERNAL_ERROR);
+            }
             if (!res.success()) {
-                // PG가 거절했다. 돈이 움직이지 않았으므로 취소 전이를 되돌린다.
+                // PG가 답을 줬고 그 답이 "하지 않았다"이다. 돈이 움직이지 않았으므로 되돌린다.
                 // 예전에는 한 트랜잭션이라 롤백이 이 일을 대신했다.
                 tx.executeWithoutResult(status -> orderRepository.revertCancel(orderId));
                 refundAttemptRepository.resolve(orderId, idemKey);

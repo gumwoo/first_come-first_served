@@ -22,6 +22,15 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
     long countByStatus(OutboxStatus status);
 
     /**
+     * 가장 오래 기다린 미발행 행의 생성 시각. 없으면 null.
+     *
+     * 적체 "개수"만으로는 릴레이가 뒤처지는지 알 수 없다. 100건이 1초 만에 쌓였다 빠지는 것과
+     * 3건이 10분째 남아 있는 것은 다른 상태인데 개수는 비슷하게 보인다.
+     */
+    @Query("select min(o.createdAt) from OutboxEvent o where o.status = :status")
+    LocalDateTime findOldestCreatedAt(@Param("status") OutboxStatus status);
+
+    /**
      * 선행 이벤트가 DEAD로 격리된 aggregate 목록. 릴레이가 매 틱 조회해 같은 aggregate의 후속
      * 이벤트를 보류하는 데 쓴다. 앞선 이벤트가 나가지 못했는데 뒤 이벤트만 나가면 소비자가
      * 인과를 거꾸로 본다(예: PAID를 못 본 채 REFUNDED부터 수신).

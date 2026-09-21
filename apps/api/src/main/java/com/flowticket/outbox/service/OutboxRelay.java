@@ -6,7 +6,10 @@ import com.flowticket.order.event.OrderEvent;
 import com.flowticket.outbox.domain.OutboxEvent;
 import com.flowticket.outbox.domain.OutboxStatus;
 import com.flowticket.outbox.repository.OutboxEventRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -35,9 +38,23 @@ public class OutboxRelay {
 
     private final OutboxEventRepository repository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    /** 한 틱이 실제로 쓴 시간. 임차(lockAtMostFor)에 얼마나 다가가는지 본다. */
+    private final Timer tickTimer;
+    /** 브로커 ACK 대기 시간. 틱이 길어지는 이유가 여기인지 가른다. */
+    private final Timer ackTimer;
+    /** 행이 생성되고 발행되기까지. 적체 개수로는 보이지 않는 지연을 본다. */
+    private final Timer lagTimer;
     private final ObjectMapper mapper;
     private final int batchSize;
     private final long sendTimeoutMs;
+    /**
+     * 한 틱이 쓸 수 있는 시간. ShedLock 임차(lockAtMostFor)보다 짧아야 한다.
+     *
+     * 이 값이 없으면 한 틱의 상한은 batch-size × send-timeout이다(기본값 기준 100 × 3초 = 300초).
+     * 임차는 1분이라, 느리지만 성공하는 ACK가 쌓이면 임차가 먼저 끝나 다른 파드가 같은 PENDING을
+     * 집는다. "한 인스턴스만 돈다"는 전제가 깨지는 지점이다(ADR-022).
+     */
+    private final long tickBudgetMs;
     private final int retentionDays;
 
     private final Clock clock;
@@ -46,13 +63,25 @@ public class OutboxRelay {
                        ObjectMapper mapper,
                        @Value("${outbox.batch-size:100}") int batchSize,
                        @Value("${outbox.send-timeout-ms:3000}") long sendTimeoutMs,
-                       @Value("${outbox.retention-days:7}") int retentionDays, Clock clock) {
+                       @Value("${outbox.tick-budget-ms:45000}") long tickBudgetMs,
+                       @Value("${outbox.retention-days:7}") int retentionDays, Clock clock,
+                       MeterRegistry meterRegistry) {
         this.clock = clock;
+        this.tickTimer = Timer.builder("flowticket.outbox.relay.tick")
+                .description("아웃박스 릴레이 한 틱의 소요 시간")
+                .register(meterRegistry);
+        this.ackTimer = Timer.builder("flowticket.outbox.publish.ack")
+                .description("브로커 ACK 대기 시간(한 건)")
+                .register(meterRegistry);
+        this.lagTimer = Timer.builder("flowticket.outbox.publish.lag")
+                .description("아웃박스 행 생성부터 발행까지의 지연")
+                .register(meterRegistry);
         this.repository = repository;
         this.kafkaTemplate = kafkaTemplate;
         this.mapper = mapper;
         this.batchSize = batchSize;
         this.sendTimeoutMs = sendTimeoutMs;
+        this.tickBudgetMs = tickBudgetMs;
         this.retentionDays = retentionDays;
     }
 
@@ -70,11 +99,21 @@ public class OutboxRelay {
     @SchedulerLock(name = "outbox-relay", lockAtMostFor = "PT1M", lockAtLeastFor = "PT0S")
     @Transactional
     public void publishPending() {
+        long startedAt = System.nanoTime();
+        try {
+            publishBatch(startedAt);
+        } finally {
+            tickTimer.record(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS);
+        }
+    }
+
+    private void publishBatch(long startedAt) {
         List<OutboxEvent> batch = repository.findByStatusOrderByCreatedAtAsc(
                 OutboxStatus.PENDING, PageRequest.of(0, batchSize));
         if (batch.isEmpty()) {
             return;
         }
+        long deadline = startedAt + tickBudgetMs * 1_000_000L;
         // 이전 틱에 격리된 aggregate. 배치 안에서 새로 DEAD가 나면 여기 더해, 같은 틱에 이어지는
         // 후속 이벤트도 곧바로 보류된다.
         Set<String> blocked = new HashSet<>(repository.findBlockedAggregateKeys(OutboxStatus.DEAD));
@@ -82,7 +121,14 @@ public class OutboxRelay {
         int published = 0;
         int dead = 0;
         int held = 0;
+        boolean budgetSpent = false;
         for (OutboxEvent row : batch) {
+            // 남은 건은 PENDING 그대로 두고 다음 틱이 이어받는다. 여기서 끊지 않으면 한 틱이
+            // 임차보다 길어져 다른 파드와 겹칠 수 있다(ADR-022).
+            if (System.nanoTime() >= deadline) {
+                budgetSpent = true;
+                break;
+            }
             String key = aggregateKey(row);
             if (blocked.contains(key)) {
                 held++;
@@ -98,6 +144,10 @@ public class OutboxRelay {
                 break;
             }
             published++;
+        }
+        if (budgetSpent) {
+            log.warn("[outbox] 틱 예산({}ms) 초과: 발행 {}/{}건, 남은 건은 다음 틱",
+                    tickBudgetMs, published, batch.size());
         }
         log.info("[outbox] 발행 {}/{}건 (격리 {}건, 보류 {}건)", published, batch.size(), dead, held);
     }
@@ -116,17 +166,24 @@ public class OutboxRelay {
 
     /** 발행 성공 시 true. 실패는 일시적으로 보고 PENDING을 유지해 다음 틱에 다시 시도한다. */
     private boolean send(OutboxEvent row, OrderEvent event) {
+        long sendStartedAt = System.nanoTime();
         try {
             // 파티션 키 = aggregateId(orderId) → 같은 주문 이벤트의 순서 보장(기존 발행 방식 계승).
             kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, String.valueOf(row.getAggregateId()), event)
                     .get(sendTimeoutMs, TimeUnit.MILLISECONDS); // 브로커 확인 후에만 마킹
-            row.markPublished(LocalDateTime.now(clock));
+            ackTimer.record(System.nanoTime() - sendStartedAt, TimeUnit.NANOSECONDS);
+            LocalDateTime publishedAt = LocalDateTime.now(clock);
+            lagTimer.record(Duration.between(row.getCreatedAt(), publishedAt));
+            row.markPublished(publishedAt);
             return true;
         } catch (InterruptedException e) {
+            ackTimer.record(System.nanoTime() - sendStartedAt, TimeUnit.NANOSECONDS);
             Thread.currentThread().interrupt();
             row.markAttemptFailed("interrupted");
             return false;
         } catch (Exception e) {
+            // 실패한 대기도 잰다. 틱이 길어진 이유가 타임아웃인지 여기서 드러난다.
+            ackTimer.record(System.nanoTime() - sendStartedAt, TimeUnit.NANOSECONDS);
             row.markAttemptFailed(e.toString());
             log.warn("[outbox] 발행 실패 id={} type={} attempts={}: {}",
                     row.getId(), row.getType(), row.getAttempts(), e.toString());

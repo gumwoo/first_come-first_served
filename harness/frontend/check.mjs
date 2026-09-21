@@ -222,4 +222,27 @@ if (fs.existsSync(nextConfigPath) && fs.existsSync(apiYmlPath)) {
   }
 }
 
+// ---------- 9. 쿼리 키는 팩토리로만 만든다 ----------
+//
+// 훅마다 ["admin", "orders", { page }] 같은 배열 리터럴을 적으면, 조회하는 쪽과 무효화하는 쪽이
+// 서로를 모른다. 한 글자만 어긋나도 무효화가 조용히 빗나가 화면이 낡은 채로 남는다. 타입도
+// 못 잡는다(둘 다 그냥 배열이다).
+//
+// 로그아웃 시 사용자 종속 캐시를 지우는 것도 키 계층에 기대고 있다. 리터럴이 하나라도 섞이면
+// 그 캐시는 루트 제거에서 빠져나간다.
+//
+// 키 정의 파일(queryKeys.ts) 자신은 당연히 리터럴을 쓴다.
+const QUERY_KEY_LITERAL_RE = /queryKey:\s*\[/;
+for (const file of tsFiles) {
+  const rel = path.relative(REPO_ROOT, file).split(path.sep).join("/");
+  if (rel.endsWith("queryKeys.ts")) continue;
+  const m = read(file).match(QUERY_KEY_LITERAL_RE);
+  if (m) {
+    r.fail(
+      `쿼리 키 리터럴: ${rel}: queryKey에 배열을 직접 적었다. ` +
+        `features/<도메인>/queryKeys.ts의 팩토리를 쓸 것(무효화·로그아웃 캐시 정리가 키 계층에 의존한다)`
+    );
+  }
+}
+
 r.done();

@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as adminApi from "@/features/admin/api/admin";
 import type { EventInput } from "@/features/admin/api/admin";
+import { adminKeys } from "@/features/admin/queryKeys";
 import { useAuthStore } from "@/features/auth/store/authStore";
 
 /** 관리자 여부(FE 게이트용). 서버가 최종 권한 판단은 /admin/** 게이트로 수행. */
@@ -15,7 +16,7 @@ export function useAdminDashboard() {
   const token = useAuthStore((s) => s.accessToken);
   const isAdmin = useIsAdmin();
   return useQuery({
-    queryKey: ["admin", "dashboard"],
+    queryKey: adminKeys.dashboard(),
     queryFn: () => adminApi.getDashboard(token),
     enabled: !!token && isAdmin,
   });
@@ -26,7 +27,7 @@ export function useAdminOrders(status: string, page: number, size = 15) {
   const token = useAuthStore((s) => s.accessToken);
   const isAdmin = useIsAdmin();
   return useQuery({
-    queryKey: ["admin", "orders", { status, page, size }],
+    queryKey: adminKeys.orderList(status, page, size),
     queryFn: () => adminApi.getAdminOrders({ status, page, size }, token),
     enabled: !!token && isAdmin,
   });
@@ -37,7 +38,7 @@ export function useAdminEvents(page: number, size = 15) {
   const token = useAuthStore((s) => s.accessToken);
   const isAdmin = useIsAdmin();
   return useQuery({
-    queryKey: ["admin", "events", { page, size }],
+    queryKey: adminKeys.eventList(page, size),
     queryFn: () => adminApi.getAdminEvents({ page, size }, token),
     enabled: !!token && isAdmin,
   });
@@ -51,8 +52,8 @@ export function useSaveAdminEvent() {
     mutationFn: ({ id, body }: { id: number | null; body: EventInput }) =>
       id == null ? adminApi.createAdminEvent(body, token) : adminApi.updateAdminEvent(id, body, token),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin", "events"] });
-      qc.invalidateQueries({ queryKey: ["admin", "dashboard"] });
+      qc.invalidateQueries({ queryKey: adminKeys.events() });
+      qc.invalidateQueries({ queryKey: adminKeys.dashboard() });
     },
   });
 }
@@ -62,7 +63,7 @@ export function useAdminDlq(status: string, page: number, size = 10) {
   const token = useAuthStore((s) => s.accessToken);
   const isAdmin = useIsAdmin();
   return useQuery({
-    queryKey: ["admin", "dlq", { status, page, size }],
+    queryKey: adminKeys.dlqList(status, page, size),
     queryFn: () => adminApi.getDlq({ status, page, size }, token),
     enabled: !!token && isAdmin,
   });
@@ -76,9 +77,9 @@ export function useDlqAction() {
     mutationFn: ({ id, action }: { id: number; action: "retry" | "discard" }) =>
       action === "retry" ? adminApi.retryDlq(id, token) : adminApi.discardDlq(id, token),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin", "dlq"] });
-      qc.invalidateQueries({ queryKey: ["admin", "dashboard"] });
-      qc.invalidateQueries({ queryKey: ["admin", "alerts"] });
+      qc.invalidateQueries({ queryKey: adminKeys.dlq() });
+      qc.invalidateQueries({ queryKey: adminKeys.dashboard() });
+      qc.invalidateQueries({ queryKey: adminKeys.alerts() });
     },
   });
 }
@@ -88,7 +89,7 @@ export function useAlerts() {
   const token = useAuthStore((s) => s.accessToken);
   const isAdmin = useIsAdmin();
   return useQuery({
-    queryKey: ["admin", "alerts"],
+    queryKey: adminKeys.alerts(),
     queryFn: () => adminApi.getAlerts(token),
     enabled: !!token && isAdmin,
   });
@@ -100,6 +101,6 @@ export function useUpdateAlert() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (dlqPendingThreshold: number) => adminApi.updateAlerts(dlqPendingThreshold, token),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "alerts"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: adminKeys.alerts() }),
   });
 }

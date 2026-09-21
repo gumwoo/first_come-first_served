@@ -103,8 +103,8 @@ public class PaymentService {
         }
         try {
             Started started = tx.execute(status -> startPayment(userId, orderId, method, provider, idemKey));
-            if (started.duplicate() != null) {
-                return started.duplicate();
+            if (started.duplicateStatus() != null) {
+                return duplicateResult(started, idemKey, orderId);
             }
             if ("vbank".equals(method)) {
                 // 발급도 외부 호출이다. 계좌를 받아 온 뒤 별도 트랜잭션에서 확정한다.
@@ -129,14 +129,32 @@ public class PaymentService {
         }
         try {
             Started started = tx.execute(status -> startPayment(userId, orderId, "card", "toss", paymentKey));
-            if (started.duplicate() != null) {
-                return started.duplicate();
+            if (started.duplicateStatus() != null) {
+                return duplicateResult(started, paymentKey, orderId);
             }
             ApproveResult res = gateway.confirm(orderId, paymentKey, started.amount());
             return settle(started.paymentId(), orderId, started.amount(), res, OrderStatus.PENDING);
         } catch (DataIntegrityViolationException e) {
             return awaitWinner(paymentKey, orderId);
         }
+    }
+
+    /**
+     * 이미 있는 결제 행을 어떻게 돌려줄지 정한다.
+     *
+     * READY는 최종 결과가 아니다. 승자가 TX1을 커밋하고 PG 응답을 기다리는 구간이라,
+     * 그대로 돌려주면 먼저 누른 쪽은 APPROVED를 받고 두 번째로 누른 쪽은 READY를 받는다.
+     *
+     * INSERT 경쟁(UNIQUE 충돌)만 기다리게 하면 이 구간을 놓친다. 그쪽은 두 요청이 거의 동시에
+     * 들어온 경우이고, 여기는 승자의 TX1이 이미 커밋된 뒤에 들어온 경우다 — 더 흔하다.
+     */
+    private PaymentResponse duplicateResult(Started started, String idemKey, Long orderId) {
+        if (started.duplicateStatus() == PaymentStatus.READY) {
+            // 가상계좌 입금 대기인지 승인 대기인지는 awaitWinner가 가른다(settled 참고).
+            return awaitWinner(idemKey, orderId);
+        }
+        return PaymentResponse.of(started.paymentId(), started.duplicateStatus().name(),
+                currentStatus(orderId).name());
     }
 
     /**
@@ -155,8 +173,8 @@ public class PaymentService {
         while (true) {
             Payment winner = paymentRepository.findByIdempotencyKey(idemKey)
                     .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
-            if (winner.getStatus() != PaymentStatus.READY || System.nanoTime() >= deadline) {
-                if (winner.getStatus() == PaymentStatus.READY) {
+            if (settled(winner) || System.nanoTime() >= deadline) {
+                if (!settled(winner)) {
                     log.warn("[payment] 중복 요청이 승자를 기다리다 상한 초과 orderId={} key={}", orderId, idemKey);
                 }
                 return PaymentResponse.of(winner.getId(), winner.getStatus().name(),
@@ -172,8 +190,13 @@ public class PaymentService {
         }
     }
 
-    /** TX1의 결과. 이미 같은 멱등키로 처리된 요청이면 duplicate에 그 결과가 담긴다. */
-    private record Started(Long paymentId, int amount, PaymentResponse duplicate) {}
+    /**
+     * TX1의 결과. 이미 같은 멱등키의 결제 행이 있으면 duplicateStatus가 채워진다.
+     *
+     * 여기서 응답을 만들지 않는다. 그 행이 READY면 승자가 아직 PG 응답을 기다리는 중이라
+     * 최종 결과가 아니고, 기다릴지 말지는 트랜잭션 밖에서 판단해야 하기 때문이다.
+     */
+    private record Started(Long paymentId, int amount, PaymentStatus duplicateStatus) {}
 
     /**
      * TX1: 주문을 검증하고 READY 결제 행을 만든다.
@@ -184,11 +207,10 @@ public class PaymentService {
     private Started startPayment(Long userId, Long orderId, String method, String provider, String idemKey) {
         Order order = ownedOrder(orderId, userId);
 
-        // 멱등: 같은 결제 시도가 이미 있으면 그 결과 반환(순차 더블클릭 방어)
+        // 멱등: 같은 결제 시도가 이미 있으면 그 사실만 들고 나간다(순차 더블클릭 방어)
         var dup = paymentRepository.findByIdempotencyKey(idemKey);
         if (dup.isPresent()) {
-            return new Started(dup.get().getId(), order.getAmount(),
-                    PaymentResponse.of(dup.get().getId(), dup.get().getStatus().name(), order.getStatus().name()));
+            return new Started(dup.get().getId(), order.getAmount(), dup.get().getStatus());
         }
         if (order.getStatus() != OrderStatus.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
@@ -254,6 +276,19 @@ public class PaymentService {
         } catch (RuntimeException ex) {
             log.warn("[payment] 보상 취소 실패 orderId={} pgTid={}: {}", orderId, pgTid, ex.getMessage());
         }
+    }
+
+    /**
+     * 더 기다릴 이유가 없는 상태인가.
+     *
+     * 가상계좌는 계좌를 발급받은 뒤에도 입금까지 READY로 머문다. 그 READY는 진행 중이 아니라
+     * 정상적인 대기 상태라 기다리면 안 된다. 발급 전(계좌 없음)이라면 승인 대기와 같아서 기다린다.
+     */
+    private boolean settled(Payment payment) {
+        if (payment.getStatus() != PaymentStatus.READY) {
+            return true;
+        }
+        return "vbank".equals(payment.getMethod()) && payment.getVbankAccount() != null;
     }
 
     private PaymentResponse failPaymentTx(Long paymentId, Long orderId) {

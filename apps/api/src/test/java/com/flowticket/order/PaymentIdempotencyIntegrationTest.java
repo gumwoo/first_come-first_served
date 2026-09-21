@@ -143,6 +143,45 @@ class PaymentIdempotencyIntegrationTest extends IntegrationTestSupport {
         assertThat(seatRepository.findById(c.seatId).orElseThrow().getStatus()).isEqualTo(SeatStatus.SOLD);
     }
 
+    /**
+     * 승자의 TX1이 이미 커밋된 뒤에 들어온 중복 요청.
+     *
+     * 승인을 트랜잭션 밖으로 빼면서(ADR-020) 생긴 구간이다. 승자가 PG 응답을 기다리는 동안 결제
+     * 행은 READY로 커밋돼 있어, 뒤에 온 요청은 UNIQUE 충돌조차 나지 않고 그 행을 그냥 읽는다.
+     * 그대로 돌려주면 먼저 누른 쪽은 APPROVED, 두 번째는 READY를 받아 IMP-008이 깨진다.
+     *
+     * 동시 더블클릭 테스트는 INSERT 경쟁(UNIQUE 충돌) 쪽이라 이 구간을 지나치지 않을 수 있다.
+     */
+    @Test
+    void 승인_진행중인_중복요청은_최종결과를_받는다() throws Exception {
+        Ctx c = order(45L, 1);
+        String key = "OK-inflight-" + c.orderId;
+        // 승자가 TX1만 커밋하고 PG 응답을 기다리는 상태를 직접 만든다.
+        jdbc.update("insert into payments (order_id, method, amount, status, idempotency_key, created_at) "
+                + "values (?, 'card', ?, 'READY', ?, now())",
+                c.orderId, orderRepository.findById(c.orderId).orElseThrow().getAmount(), key);
+
+        // 곧 승자가 확정한다(TX2). 그 전에 들어온 중복 요청이 무엇을 받는지 본다.
+        Thread winner = new Thread(() -> {
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            jdbc.update("update payments set status='APPROVED', pg_tid='PG-INFLIGHT' where idempotency_key=?", key);
+        });
+        winner.start();
+
+        PaymentResponse res = paymentService.pay(45L, c.orderId, "card", null, key);
+        winner.join();
+
+        assertThat(res.paymentStatus())
+                .as("진행 중인 승자를 기다렸다가 최종 결과를 돌려줘야 한다")
+                .isEqualTo("APPROVED");
+        assertThat(paymentRepository.count()).as("중복 요청이 행을 더 만들지 않는다").isEqualTo(1);
+    }
+
     // --- helpers ---
 
     private record Ctx(Long orderId, Long holdId, Long seatId) {}

@@ -49,6 +49,7 @@ const cases = [
   { name: "fe-layer-breach",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },
   { name: "fe-dead-api",         script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-dead-api" } },
   { name: "fe-sse-no-resync",    script: "frontend/check.mjs", expect: "SSE 복구 경로 없음:", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-sse-no-resync" } },
+  { name: "fe-literal-query-key", script: "frontend/check.mjs", expect: "쿼리 키 리터럴:", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-literal-query-key" } },
   // 2) 필수 이벤트 구독 누락 (계약/웹 둘 다 override해 단독 격리)
   { name: "fe-missing-required-event", script: "frontend/check.mjs", env: {
     HARNESS_CONTRACTS_DIR: "harness/fixtures/violations/fe-missing-required-event",

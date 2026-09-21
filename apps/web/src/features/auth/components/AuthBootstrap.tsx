@@ -1,9 +1,11 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { refresh, getMe } from "@/features/auth/api/auth";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { setTokenRefresher } from "@/lib/apiClient";
+import { clearUserScopedCache } from "@/features/auth/cache";
 import { onAuthBroadcast, broadcastAuth } from "@/features/auth/tabSync";
 
 /**
@@ -11,6 +13,7 @@ import { onAuthBroadcast, broadcastAuth } from "@/features/auth/tabSync";
  * 탭 간 인증 이벤트 구독(다른 탭 로그인/로그아웃을 즉시 반영).
  */
 export function AuthBootstrap() {
+  const queryClient = useQueryClient();
   const { setAccessToken, setUser } = useAuthStore();
 
   useEffect(() => {
@@ -60,6 +63,8 @@ export function AuthBootstrap() {
       if (e === "logout") {
         setAccessToken(null);
         setUser(null);
+        // 로그아웃한 탭에서만 지우면 이 탭의 캐시에 이전 사용자 데이터가 남는다.
+        clearUserScopedCache(queryClient);
       } else if (e === "login") {
         restore(); // 자기 쿠키로 스스로 복원(토큰은 전파받지 않음)
       }
@@ -69,7 +74,7 @@ export function AuthBootstrap() {
       setTokenRefresher(null);
       unsub();
     };
-  }, [setAccessToken, setUser]);
+  }, [setAccessToken, setUser, queryClient]);
 
   return null;
 }

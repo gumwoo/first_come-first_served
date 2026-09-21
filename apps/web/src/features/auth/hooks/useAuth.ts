@@ -1,7 +1,8 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import * as authApi from "@/features/auth/api/auth";
 import { useAuthStore } from "@/features/auth/store/authStore";
+import { clearUserScopedCache } from "@/features/auth/cache";
 import { broadcastAuth } from "@/features/auth/tabSync";
 
 export function useLogin() {
@@ -25,12 +26,15 @@ export function useLogin() {
 
 export function useLogout() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { accessToken, clear } = useAuthStore();
   return useMutation({
     mutationFn: () => authApi.logout(accessToken),
     onSettled: () => {
       // 서버 응답과 무관하게 클라 상태는 정리 + 다른 탭에도 즉시 전파
       clear();
+      // 토큰만 지우면 이전 사용자의 응답이 캐시에 남아 다음 로그인 직후 잠깐 보인다.
+      clearUserScopedCache(queryClient);
       broadcastAuth("logout");
       router.push("/");
     },

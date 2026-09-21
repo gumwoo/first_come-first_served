@@ -22,10 +22,12 @@ import com.flowticket.order.sse.OrderSseRegistry;
 import com.flowticket.seat.domain.SeatStatus;
 import com.flowticket.seat.repository.SeatRepository;
 import java.time.Clock;
+import lombok.extern.slf4j.Slf4j;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -34,6 +36,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 예매 취소·환불. PAID + 시점 게이트에서만 가능. 조건부 전이(PAID→CANCELLED→REFUNDED)로 원자화하고
  * 좌석을 SOLD→AVAILABLE 복구한다. 멱등: 더블클릭/재전송에도 이중 환불·이중 복구 0(ADR-006).
  */
+@Slf4j
 @Service
 public class RefundService {
 
@@ -51,13 +54,18 @@ public class RefundService {
     private final TransactionTemplate tx;
 
     private final Clock clock;
+    /** 취소 전이의 패자가 승자의 기록을 기다리는 상한. PG 응답 시간보다 짧게 잡는다. */
+    private final long duplicateWaitMs;
+
+    private static final long WINNER_POLL_MS = 50;
 
     public RefundService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                          PaymentRepository paymentRepository, RefundRepository refundRepository,
                          RefundAttemptRepository refundAttemptRepository,
                          SeatRepository seatRepository, EventRepository eventRepository,
                          RefundPolicy refundPolicy, PaymentGateway gateway,
-                         OrderSseRegistry orderSse, TransactionTemplate tx, Clock clock) {
+                         OrderSseRegistry orderSse, TransactionTemplate tx, Clock clock,
+                         @Value("${payment.duplicate-wait-ms:5000}") long duplicateWaitMs) {
         this.clock = clock;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
@@ -70,30 +78,63 @@ public class RefundService {
         this.gateway = gateway;
         this.orderSse = orderSse;
         this.tx = tx;
+        this.duplicateWaitMs = duplicateWaitMs;
     }
 
     /**
-     * 환불 진입. 동시 같은 idempotencyKey(더블클릭)로 UNIQUE 충돌이 나면:
-     * 이미 다른 스레드가 처리한 것이므로 기존 결과를 멱등하게 반환.
+     * 환불 진입.
      *
-     * 시도 기록을 먼저 남긴다(ADR-011). refundTx는 PG 취소와 DB 쓰기를 한 트랜잭션에 묶으므로,
-     * PG 취소 성공 뒤 쓰기가 실패하면 전체가 롤백돼 "환불을 시도했다"는 사실까지 사라진다.
-     * 이 행은 그 트랜잭션이 열리기 전에 별도로 커밋돼 정산의 후보가 된다.
+     * 결제와 같은 이유로 세 구간으로 나눈다(ADR-020·ADR-021). PG 취소를 기다리는 동안 DB 커넥션을
+     * 쥐고 있지 않는다.
+     *   TX1  검증 + 정책 계산 + 원자 전이 PAID→CANCELLED   — 이 요청이 취소의 주인인지 여기서 갈린다
+     *   (밖) PG 취소 요청
+     *   TX2  환불 기록 + 좌석 복구 + CANCELLED→REFUNDED
+     *
+     * 시도 기록은 그 앞에 남긴다(ADR-011). TX2가 실패하면 PG에만 취소가 남는데, 그 상태를 찾는
+     * 유일한 단서가 이 행이다.
      */
     public RefundResponse refund(Long userId, Long orderId, String reason, String idemKey) {
         if (idemKey == null || idemKey.isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
         // 시도 기록 전에 소유자를 본다. 남의 주문 ID로도 기록이 쌓여 정산 후보를 오염시킨다.
-        // 판정의 진실원은 refundTx의 ownedOrder다(여기 통과해도 트랜잭션 안에서 다시 본다).
+        // 판정의 진실원은 TX1의 ownedOrder다(여기 통과해도 트랜잭션 안에서 다시 본다).
         ownedOrder(orderId, userId);
         refundAttemptRepository.record(orderId, idemKey, LocalDateTime.now(clock));
         rejectIfKeyBelongsToAnotherOrder(orderId, idemKey);
         try {
-            RefundResponse res = tx.execute(status -> refundTx(userId, orderId, reason, idemKey));
+            Started started = tx.execute(status -> startRefund(userId, orderId, idemKey));
+            if (started.done() != null) {
+                // 이미 환불된 건(순차 더블클릭). 어긋난 것이 없으므로 시도를 닫는다.
+                refundAttemptRepository.resolve(orderId, idemKey);
+                return started.done();
+            }
+            if (!started.owner()) {
+                return awaitWinner(orderId, idemKey);
+            }
+            ApproveResult res = gateway.refund(started.pgTid(), started.quote().refundAmount(), idemKey);
+            if (res.unknown()) {
+                // 결과를 모른다. 취소가 이미 됐을 수도 있으므로 아무것도 되돌리지 않고, 시도도
+                // 닫지 않는다. 주문은 CANCELLED로 남고 정산이 PG에 물어 정리한다(ADR-021).
+                //
+                // 여기서 되돌리고 시도까지 닫으면 돈은 나갔는데 주문은 PAID로 돌아가고, 그 상태를
+                // 찾아낼 단서까지 사라진다 — 이 PR이 만든 안전망을 스스로 끄는 셈이다.
+                log.warn("[refund] PG 취소 결과 불명: 정산에 넘긴다 orderId={} key={} 사유={}",
+                        orderId, idemKey, res.failReason());
+                throw new BusinessException(ErrorCode.INTERNAL_ERROR);
+            }
+            if (!res.success()) {
+                // PG가 답을 줬고 그 답이 "하지 않았다"이다. 돈이 움직이지 않았으므로 되돌린다.
+                // 예전에는 한 트랜잭션이라 롤백이 이 일을 대신했다.
+                tx.executeWithoutResult(status -> orderRepository.revertCancel(orderId));
+                refundAttemptRepository.resolve(orderId, idemKey);
+                throw new BusinessException(ErrorCode.INTERNAL_ERROR);
+            }
+            RefundResponse out = tx.execute(status ->
+                    completeRefund(orderId, started, reason, idemKey, res.pgTid()));
             // 정상 완료: PG와 DB가 일치하므로 정산이 볼 필요가 없다.
             refundAttemptRepository.resolve(orderId, idemKey);
-            return res;
+            return out;
         } catch (DataIntegrityViolationException e) {
             return refundRepository.findByIdempotencyKey(idemKey)
                     .map(r -> RefundResponse.of(r, currentStatus(orderId).name()))
@@ -101,50 +142,69 @@ public class RefundService {
         }
     }
 
-    /** 환불 본문. 반드시 refund()의 트랜잭션 경계 안에서 호출된다. */
-    private RefundResponse refundTx(Long userId, Long orderId, String reason, String idemKey) {
+    /**
+     * TX1의 결과.
+     *   done   이미 환불이 끝난 건이라 돌려줄 결과가 있다
+     *   owner  이 요청이 PAID→CANCELLED 전이의 주인이다. 아니면 승자를 기다려야 한다
+     */
+    private record Started(RefundQuote quote, Long paymentId, String pgTid,
+                           boolean owner, RefundResponse done) {}
+
+    /**
+     * TX1: 환불 가능 여부를 보고 취소 전이를 잡는다.
+     *
+     * 전이가 refunds INSERT보다 먼저라는 순서는 그대로다([[TS-030]]). 달라진 것은 그 사이에 PG 호출이
+     * 끼면서 전이와 기록이 **다른 트랜잭션**이 됐다는 점이고, 그래서 패자는 승자의 기록이 보일 때까지
+     * 기다려야 한다(awaitWinner).
+     */
+    private Started startRefund(Long userId, Long orderId, String idemKey) {
         Order order = ownedOrder(orderId, userId);
 
-        // 멱등: 같은 환불 시도가 이미 있으면 그 결과 반환(순차 더블클릭 방어)
+        // 멱등: 같은 환불 시도가 이미 끝나 있으면 그 결과 반환(순차 더블클릭 방어)
         var dup = refundRepository.findByIdempotencyKey(idemKey);
         if (dup.isPresent()) {
-            return RefundResponse.of(dup.get(), order.getStatus().name());
+            return new Started(null, null, null, false, RefundResponse.of(dup.get(), order.getStatus().name()));
         }
 
-        // 상태 + 시점 게이트: PAID 아니거나 환불 불가 시점(당일·이후)이면 거부
+        // 시점 게이트: 환불 불가 시점(당일·이후)이면 거부. 상태와 별개로 먼저 본다.
         RefundQuote q = refundPolicy.quote(order.getAmount(), eventDate(order), LocalDateTime.now(clock));
-        if (order.getStatus() != OrderStatus.PAID || !q.refundable()) {
+        if (!q.refundable()) {
+            throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED);
+        }
+
+        // 상태 게이트. CANCELLED는 "환불 불가"가 아니라 "누군가 취소 전이를 이미 가져갔다"이다.
+        //
+        // 구간을 나누기 전에는 이 구분이 필요 없었다. 전이와 기록이 한 트랜잭션이라 CANCELLED가
+        // 밖에서 보이지 않았기 때문이다. 지금은 승자가 PG 응답을 기다리는 동안 이 상태가 보이고,
+        // 여기서 거부하면 같은 멱등키의 더블클릭이 승자를 기다려 보지도 못하고 실패한다.
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            return new Started(q, null, null, false, null);
+        }
+        if (order.getStatus() != OrderStatus.PAID) {
             throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED);
         }
 
         // 원자 전이 PAID→CANCELLED (동시 환불 방어: 1행이면 이 요청이 취소의 주인)
-        int cancelled = orderRepository.markCancelled(orderId, OrderStatus.PAID);
-        if (cancelled != 1) {
-            // 취소의 주인이 아니어도 실패는 아니다. 같은 멱등키의 동시 요청이면 승자의 결과를 돌려준다.
-            // 환불은 상태 전이가 refunds INSERT보다 먼저라 패자가 UNIQUE에 도달하지 못한다(TS-030).
-            // 조건부 UPDATE가 승자의 행 락을 기다렸으므로 이 시점에는 승자 행이 이미 커밋돼 보인다.
-            return refundRepository.findByIdempotencyKey(idemKey)
-                    .map(r -> RefundResponse.of(r, currentStatus(orderId).name()))
-                    // 다른 멱등키로 이미 환불됐거나 취소된 주문: 이건 진짜로 환불 불가다.
-                    .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_ALLOWED));
+        if (orderRepository.markCancelled(orderId, OrderStatus.PAID) != 1) {
+            return new Started(q, null, null, false, null);
         }
-
-        // 원 결제(APPROVED) 취소: PG 환불
+        // 원 결제(APPROVED)의 거래 ID. PG 취소는 이 트랜잭션 밖에서 한다.
         Payment paid = paymentRepository
                 .findFirstByOrderIdAndStatusOrderByIdDesc(orderId, PaymentStatus.APPROVED)
                 .orElse(null);
-        String pgTid = paid != null ? paid.getPgTid() : null;
-        ApproveResult res = gateway.refund(pgTid, q.refundAmount(), idemKey);
-        if (!res.success()) {
-            throw new BusinessException(ErrorCode.INTERNAL_ERROR); // 롤백 → CANCELLED 전이도 되돌림
-        }
+        return new Started(q, paid != null ? paid.getId() : null,
+                paid != null ? paid.getPgTid() : null, true, null);
+    }
 
+    /** TX2: 환불을 기록하고 좌석을 돌려놓는다. 이 구간이 끝나야 주문이 REFUNDED가 된다. */
+    private RefundResponse completeRefund(Long orderId, Started started, String reason,
+                                          String idemKey, String pgRefundTid) {
         // 환불 기록: 좌석 복구(벌크 UPDATE) 전에 flush로 확정(TS-007/010, 컨텍스트 클리어 유실 방지)
         Refund refund = refundRepository.save(Refund.builder()
                 .orderId(orderId)
-                .paymentId(paid != null ? paid.getId() : null)
-                .amount(q.refundAmount()).fee(q.fee()).reason(reason)
-                .pgRefundTid(res.pgTid()).idempotencyKey(idemKey).build());
+                .paymentId(started.paymentId())
+                .amount(started.quote().refundAmount()).fee(started.quote().fee()).reason(reason)
+                .pgRefundTid(pgRefundTid).idempotencyKey(idemKey).build());
         refundRepository.saveAndFlush(refund);
 
         // 좌석 SOLD→AVAILABLE 복구
@@ -158,6 +218,56 @@ public class RefundService {
         orderSse.broadcast(orderId, "order.refunded", Map.of("orderId", orderId));
 
         return RefundResponse.of(refund, OrderStatus.REFUNDED.name());
+    }
+
+    /**
+     * 취소 전이의 주인이 아닌 요청이 승자의 결과를 받게 한다([[TS-030]]).
+     *
+     * 예전에는 전이와 refunds INSERT가 한 트랜잭션이라, 조건부 UPDATE가 승자의 행 락을 기다린
+     * 시점에는 승자 행이 이미 커밋돼 보였다. 지금은 그 사이에 PG 취소가 들어가 승자가 아직
+     * 기록 전일 수 있다. 그대로 REFUND_NOT_ALLOWED를 내면 더블클릭한 쪽만 실패한다.
+     *
+     * 주문이 더 이상 CANCELLED가 아니면 기다릴 이유가 없다. 다른 멱등키로 이미 환불됐거나
+     * (REFUNDED) PG 거절로 되돌려진(PAID) 경우이고, 둘 다 이 요청에는 환불 불가다.
+     *
+     * CANCELLED를 곧바로 "내 요청의 승자"로 해석하지 않는다. 다른 멱등키가 취소를 가져갔을 수도
+     * 있어서, 성공으로 답하는 조건은 **내 멱등키의 환불 행이 나타났을 때** 하나뿐이다. 남의 취소를
+     * 기다린 경우에는 상한까지 기다렸다가 환불 불가로 끝난다 — 답은 맞고 대기 시간만 손해다.
+     */
+    private RefundResponse awaitWinner(Long orderId, String idemKey) {
+        long deadline = System.nanoTime() + duplicateWaitMs * 1_000_000L;
+        while (true) {
+            var done = refundRepository.findByIdempotencyKey(idemKey);
+            if (done.isPresent()) {
+                return RefundResponse.of(done.get(), currentStatus(orderId).name());
+            }
+            if (currentStatus(orderId) != OrderStatus.CANCELLED || System.nanoTime() >= deadline) {
+                return finalAnswer(orderId, idemKey);
+            }
+            try {
+                Thread.sleep(WINNER_POLL_MS);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return finalAnswer(orderId, idemKey);
+            }
+        }
+    }
+
+    /**
+     * 기다리기를 끝내기 전에 내 멱등키의 환불 행을 한 번 더 본다.
+     *
+     * 두 번 읽는 사이가 비어 있기 때문이다. refunds를 읽고(없음) 주문 상태를 읽는(REFUNDED) 그
+     * 틈에 승자가 TX2를 커밋하면, DB는 정상인데 패자만 실패한다. 실제로 통합테스트가 이 좁은
+     * 구간을 잡아냈다.
+     *
+     * 재조회 결과로 답이 갈린다.
+     *   내 키의 행이 있다   → 승자의 결과(= 내 요청의 결과)
+     *   없다               → 다른 키가 취소했거나 PG 거절로 되돌아간 것이라 환불 불가
+     */
+    private RefundResponse finalAnswer(Long orderId, String idemKey) {
+        return refundRepository.findByIdempotencyKey(idemKey)
+                .map(r -> RefundResponse.of(r, currentStatus(orderId).name()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_ALLOWED));
     }
 
     private LocalDate eventDate(Order order) {

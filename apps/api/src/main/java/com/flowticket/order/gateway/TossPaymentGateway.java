@@ -83,10 +83,13 @@ public class TossPaymentGateway implements PaymentGateway {
             if (res != null && ("CANCELED".equals(status) || "PARTIAL_CANCELED".equals(status))) {
                 return ApproveResult.ok(String.valueOf(res.get("paymentKey")));
             }
+            // 2xx인데 취소 상태가 아니다 = PG가 답을 줬고 그 답이 "하지 않았다"이다.
             return ApproveResult.fail("토스 취소 상태: " + status);
         } catch (Exception e) {
-            log.warn("[toss] refund 실패 pgTid={}: {}", pgTid, e.getMessage());
-            return ApproveResult.fail("토스 취소 실패");
+            // 타임아웃·네트워크·4xx·5xx는 결과를 모르는 것이다. 취소가 이미 됐을 수도 있다.
+            // 여기서 실패로 단정하면 호출자가 되돌리기를 실행해 장부만 원래대로 돌아간다.
+            log.warn("[toss] refund 결과 불명 pgTid={}: {}", pgTid, e.getMessage());
+            return ApproveResult.unknown("토스 취소 결과 불명");
         }
     }
 
@@ -109,8 +112,9 @@ public class TossPaymentGateway implements PaymentGateway {
             }
             return ApproveResult.fail("토스 승인 상태: " + status);
         } catch (Exception e) {
-            log.warn("[toss] confirm 실패 order={}: {}", orderId, e.getMessage());
-            return ApproveResult.fail("토스 승인 실패");
+            // 승인도 마찬가지다. 모르는 것을 실패로 단정하지 않는다 — 미아 승인은 정산이 회수한다(ADR-011).
+            log.warn("[toss] confirm 결과 불명 order={}: {}", orderId, e.getMessage());
+            return ApproveResult.unknown("토스 승인 결과 불명");
         }
     }
 

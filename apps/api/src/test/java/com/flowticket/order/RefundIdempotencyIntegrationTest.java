@@ -146,6 +146,43 @@ class RefundIdempotencyIntegrationTest extends IntegrationTestSupport {
 
     // --- helpers ---
 
+    /**
+     * 취소 전이의 주인이 아닌 요청은 승자의 기록을 기다린다(TS-030).
+     *
+     * PG 취소를 트랜잭션 밖으로 빼면서(ADR-021) 전이와 refunds INSERT가 다른 트랜잭션이 됐다.
+     * 패자가 조건부 UPDATE에서 0행을 받는 시점에 승자는 아직 PG 응답을 기다리는 중이라, 예전처럼
+     * 바로 승자의 행을 읽으면 비어 있다. 그대로 REFUND_NOT_ALLOWED를 내면 더블클릭한 쪽만 실패한다.
+     */
+    @Test
+    void 취소전이의_패자는_승자의_환불기록을_기다린다() throws Exception {
+        Ctx c = paidOrder(72L);
+        String key = "R-inflight-" + c.orderId();
+        // 승자가 TX1만 끝내고 PG 응답을 기다리는 상태를 직접 만든다.
+        jdbc.update("update orders set status='CANCELLED' where id=?", c.orderId());
+
+        Thread winner = new Thread(() -> {
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            // 승자의 TX2: 환불 기록 + 확정
+            jdbc.update("insert into refunds (order_id, amount, fee, reason, idempotency_key, created_at) "
+                    + "values (?, ?, 0, '승자', ?, now())", c.orderId(), c.amount(), key);
+            jdbc.update("update orders set status='REFUNDED' where id=?", c.orderId());
+        });
+        winner.start();
+
+        RefundResponse res = refundService.refund(72L, c.orderId(), "변심", key);
+        winner.join();
+
+        assertThat(res.orderStatus())
+                .as("승자의 확정을 기다렸다가 같은 결과를 돌려줘야 한다")
+                .isEqualTo("REFUNDED");
+        assertThat(refundRepository.count()).as("패자가 환불 행을 더 만들지 않는다").isEqualTo(1);
+    }
+
     private record Ctx(Long orderId, Long seatId, int amount) {}
 
     private Ctx paidOrder(long userId) {

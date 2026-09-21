@@ -194,6 +194,46 @@ class RefundReconciliationIntegrationTest extends IntegrationTestSupport {
         verify(gateway, times(1)).inquire(c.orderId());
     }
 
+    /**
+     * 취소 전이만 하고 멈춘 주문을 정산이 이어서 끝낸다(ADR-021).
+     *
+     * PG 취소는 성공했는데 TX2 전에 죽은 경우다. 여기서 양보하면 주문이 CANCELLED로 굳고
+     * 좌석이 SOLD인 채 영원히 묶인다.
+     */
+    @Test
+    void 취소전이만_되고_멈춘_주문을_이어서_끝낸다() {
+        Ctx c = paidOrder(78L);
+        jdbc.update("update orders set status='CANCELLED' where id=?", c.orderId());
+        doReturn(Inquiry.canceled("PG-CANCEL-STUCK", c.amount(), false)).when(gateway).inquire(c.orderId());
+
+        reconciliation.reconcileOrphanCancellations();
+
+        assertThat(orderRepository.findById(c.orderId()).orElseThrow().getStatus())
+                .isEqualTo(OrderStatus.REFUNDED);
+        assertThat(seatRepository.findById(c.seatId()).orElseThrow().getStatus())
+                .isEqualTo(SeatStatus.AVAILABLE);
+        assertThat(refundRepository.findAll()).hasSize(1);
+    }
+
+    /**
+     * PG를 부르기 전에 죽은 경우는 반대로 되돌린다.
+     *
+     * 승인이 그대로 살아 있으므로 환불로 수렴시키면 안 된다. 주문만 CANCELLED로 남아 있는 것이라
+     * PAID로 되돌려 사용자가 다시 시도할 수 있게 한다.
+     */
+    @Test
+    void PG취소_없이_멈춘_취소전이는_되돌린다() {
+        Ctx c = paidOrder(79L);
+        jdbc.update("update orders set status='CANCELLED' where id=?", c.orderId());
+        doReturn(Inquiry.approved("PG-STILL-APPROVED")).when(gateway).inquire(c.orderId());
+
+        reconciliation.reconcileOrphanCancellations();
+
+        assertThat(orderRepository.findById(c.orderId()).orElseThrow().getStatus())
+                .as("승인이 살아 있으면 환불이 아니라 원상복구다").isEqualTo(OrderStatus.PAID);
+        assertThat(refundRepository.findAll()).isEmpty();
+    }
+
     // --- helpers ---
 
     private record Ctx(Long orderId, Long seatId, int amount) {}

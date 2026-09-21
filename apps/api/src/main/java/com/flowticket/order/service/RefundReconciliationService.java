@@ -1,6 +1,7 @@
 package com.flowticket.order.service;
 
 import com.flowticket.order.domain.Order;
+import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.domain.RefundAttempt;
 import com.flowticket.order.gateway.PaymentGateway;
 import com.flowticket.order.gateway.PaymentGateway.Inquiry;
@@ -122,6 +123,13 @@ public class RefundReconciliationService {
         try {
             Inquiry inquiry = gateway.inquire(order.getId());
             if (!inquiry.canceled()) {
+                // 취소 전이만 하고 PG를 부르기 전에 죽은 경우다(ADR-021). 승인이 그대로 살아 있으니
+                // 되돌린다. 두지 않으면 주문이 CANCELLED로 굳고 좌석이 SOLD인 채 묶인다.
+                if (inquiry.approved() && order.getStatus() == OrderStatus.CANCELLED) {
+                    int reverted = orderRepository.revertCancel(order.getId());
+                    log.warn("[reconcile] PG 취소 없이 멈춘 취소 전이를 되돌림 orderId={} 적용={}",
+                            order.getId(), reverted);
+                }
                 if (inquiry.status() != PaymentGateway.PgStatus.UNKNOWN) {
                     resolve(attempt);
                 }

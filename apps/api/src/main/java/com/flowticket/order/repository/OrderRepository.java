@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
@@ -52,6 +53,18 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("update Order o set o.status = com.flowticket.order.domain.OrderStatus.CANCELLED "
             + "where o.id = :id and o.status = :from")
     int markCancelled(@Param("id") Long id, @Param("from") OrderStatus from);
+
+    /**
+     * 취소 전이 되돌리기: PG가 환불을 거절했을 때 CANCELLED인 주문만 PAID로.
+     *
+     * markPaid를 쓰지 않는다. 그쪽은 paidAt을 지금으로 덮어써 결제 시각이 바뀐다.
+     * 되돌리는 것이지 새로 결제하는 것이 아니다.
+     */
+    @Transactional // 정산 잡은 트랜잭션 없이 돌므로 이 쓰기만 자체 트랜잭션으로 연다
+    @Modifying(clearAutomatically = true)
+    @Query("update Order o set o.status = com.flowticket.order.domain.OrderStatus.PAID "
+            + "where o.id = :id and o.status = com.flowticket.order.domain.OrderStatus.CANCELLED")
+    int revertCancel(@Param("id") Long id);
 
     /** 환불 확정: CANCELLED인 주문만 REFUNDED로. */
     @Modifying(clearAutomatically = true)

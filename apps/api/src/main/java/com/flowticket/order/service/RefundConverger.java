@@ -29,6 +29,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Component
 public class RefundConverger {
 
+    private OrderStatus currentStatus(Long orderId) {
+        return orderRepository.findById(orderId).map(Order::getStatus).orElse(null);
+    }
+
     /** 정산이 만든 환불 행의 멱등키. 주문당 하나라 재실행해도 두 번 쌓이지 않는다. */
     static String reconcileKey(Long orderId) {
         return "recon-refund-" + orderId;
@@ -59,12 +63,22 @@ public class RefundConverger {
      * 수 없으므로 다시 계산하면 PG와 또 어긋난다. 수수료는 결제금액에서 취소금액을 뺀 나머지다.
      *
      * 전이는 RefundService와 같은 순서(조건부 UPDATE → 환불 기록 → 좌석 → 확정)를 따른다.
-     * markCancelled가 0행이면 사용자 환불이 방금 이 주문을 가져갔거나 이미 수렴된 것이라 양보한다.
+     *
+     * 두 가지 시작점을 받는다.
+     *   PAID       우리가 전이의 주인이 된다. 사용자 환불이 PG 취소까지 하고 롤백된 경우다.
+     *   CANCELLED  전이는 됐는데 마무리(환불 기록·좌석)를 못 한 경우다. 이어서 끝낸다.
+     *
+     * 두 번째는 PG 호출을 트랜잭션 밖으로 빼면서 생긴 상태다(ADR-021). 그 사이에 죽으면 주문이
+     * CANCELLED로 남는데, 여기서 양보하면 좌석이 SOLD인 채로 영원히 묶인다.
+     *
+     * 진행 중인 사용자 요청을 가로채지는 않는다. 후보는 시도 시각이 유예(기본 10분)를 넘긴 것뿐이고,
+     * PG 호출의 상한은 10초다(TS-028). 10분째 CANCELLED면 그 요청은 끝난 것이다.
      */
     @Transactional
     public boolean converge(Order order, String pgTid, int canceledAmount) {
         Long orderId = order.getId();
-        if (orderRepository.markCancelled(orderId, OrderStatus.PAID) != 1) {
+        if (orderRepository.markCancelled(orderId, OrderStatus.PAID) != 1
+                && currentStatus(orderId) != OrderStatus.CANCELLED) {
             return false;
         }
         Payment paid = paymentRepository

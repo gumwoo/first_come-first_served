@@ -154,9 +154,21 @@ public class RefundService {
             return new Started(null, null, null, false, RefundResponse.of(dup.get(), order.getStatus().name()));
         }
 
-        // 상태 + 시점 게이트: PAID 아니거나 환불 불가 시점(당일·이후)이면 거부
+        // 시점 게이트: 환불 불가 시점(당일·이후)이면 거부. 상태와 별개로 먼저 본다.
         RefundQuote q = refundPolicy.quote(order.getAmount(), eventDate(order), LocalDateTime.now(clock));
-        if (order.getStatus() != OrderStatus.PAID || !q.refundable()) {
+        if (!q.refundable()) {
+            throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED);
+        }
+
+        // 상태 게이트. CANCELLED는 "환불 불가"가 아니라 "누군가 취소 전이를 이미 가져갔다"이다.
+        //
+        // 구간을 나누기 전에는 이 구분이 필요 없었다. 전이와 기록이 한 트랜잭션이라 CANCELLED가
+        // 밖에서 보이지 않았기 때문이다. 지금은 승자가 PG 응답을 기다리는 동안 이 상태가 보이고,
+        // 여기서 거부하면 같은 멱등키의 더블클릭이 승자를 기다려 보지도 못하고 실패한다.
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            return new Started(q, null, null, false, null);
+        }
+        if (order.getStatus() != OrderStatus.PAID) {
             throw new BusinessException(ErrorCode.REFUND_NOT_ALLOWED);
         }
 
@@ -205,6 +217,10 @@ public class RefundService {
      *
      * 주문이 더 이상 CANCELLED가 아니면 기다릴 이유가 없다. 다른 멱등키로 이미 환불됐거나
      * (REFUNDED) PG 거절로 되돌려진(PAID) 경우이고, 둘 다 이 요청에는 환불 불가다.
+     *
+     * CANCELLED를 곧바로 "내 요청의 승자"로 해석하지 않는다. 다른 멱등키가 취소를 가져갔을 수도
+     * 있어서, 성공으로 답하는 조건은 **내 멱등키의 환불 행이 나타났을 때** 하나뿐이다. 남의 취소를
+     * 기다린 경우에는 상한까지 기다렸다가 환불 불가로 끝난다 — 답은 맞고 대기 시간만 손해다.
      */
     private RefundResponse awaitWinner(Long orderId, String idemKey) {
         long deadline = System.nanoTime() + duplicateWaitMs * 1_000_000L;

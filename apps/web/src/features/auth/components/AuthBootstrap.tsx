@@ -17,6 +17,14 @@ export function AuthBootstrap() {
   const { setAccessToken, setUser } = useAuthStore();
 
   useEffect(() => {
+    /** 인증이 사라지는 경로는 전부 여기를 지난다. 캐시 정리를 한 곳에 모은다. */
+    const dropAuth = () => {
+      setAccessToken(null);
+      setUser(null);
+      // 인증만 버리고 캐시를 두면 다음 사용자가 로그인했을 때 이전 사용자의 응답이 남아 있다.
+      clearUserScopedCache(queryClient);
+    };
+
     // httpOnly refresh 쿠키로 Access + 프로필 복원
     const restore = async () => {
       try {
@@ -28,8 +36,8 @@ export function AuthBootstrap() {
           /* ignore */
         }
       } catch {
-        setAccessToken(null);
-        setUser(null);
+        // 리프레시 토큰 만료·폐기. 로그아웃 버튼을 누르지 않았을 뿐 인증이 끝난 상태다.
+        dropAuth();
       }
     };
 
@@ -40,8 +48,7 @@ export function AuthBootstrap() {
         setAccessToken(r.accessToken);
         return r.accessToken;
       } catch {
-        setAccessToken(null);
-        setUser(null);
+        dropAuth();
         return null;
       }
     });
@@ -61,11 +68,11 @@ export function AuthBootstrap() {
 
     const unsub = onAuthBroadcast((e) => {
       if (e === "logout") {
-        setAccessToken(null);
-        setUser(null);
         // 로그아웃한 탭에서만 지우면 이 탭의 캐시에 이전 사용자 데이터가 남는다.
-        clearUserScopedCache(queryClient);
+        dropAuth();
       } else if (e === "login") {
+        // 다른 계정으로 로그인했을 수 있다. 복원 전에 이 탭의 캐시를 버린다.
+        clearUserScopedCache(queryClient);
         restore(); // 자기 쿠키로 스스로 복원(토큰은 전파받지 않음)
       }
     });

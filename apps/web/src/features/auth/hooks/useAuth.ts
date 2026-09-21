@@ -7,11 +7,15 @@ import { broadcastAuth } from "@/features/auth/tabSync";
 
 export function useLogin() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { setAccessToken, setUser } = useAuthStore();
   return useMutation({
     mutationFn: (v: { email: string; password: string; remember: boolean }) =>
       authApi.login(v.email, v.password, v.remember),
     onSuccess: async (token) => {
+      // 이전 사용자의 캐시를 먼저 버린다. 로그아웃을 거치지 않고 계정이 바뀌는 경로
+      // (세션 만료 후 재로그인, 다른 계정으로 바로 로그인)가 실재한다.
+      clearUserScopedCache(queryClient);
       setAccessToken(token.accessToken);
       try {
         setUser(await authApi.getMe(token.accessToken));

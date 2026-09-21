@@ -28,6 +28,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 class KopisSyncLockIntegrationTest extends IntegrationTestSupport {
 
     @Autowired KopisSyncService kopisSyncService;
+    @Autowired KopisSyncScheduler kopisSyncScheduler;
     @Autowired LockProvider lockProvider;
     @MockBean KopisClient kopisClient; // 실제 KOPIS 호출 차단(락에 막히면 어차피 호출되지 않음)
 
@@ -44,6 +45,29 @@ class KopisSyncLockIntegrationTest extends IntegrationTestSupport {
 
             // ShedLock이 호출을 건너뛰어 null → 컨트롤러가 409(SYNC_IN_PROGRESS)로 변환한다.
             assertThat(result).as("락 보유 중이면 동기화 본문이 실행되지 않는다").isNull();
+            verify(kopisClient, never()).fetchListAll(anyString(), anyString(), anyInt(), anyInt());
+        } finally {
+            lock.orElseThrow().unlock();
+        }
+    }
+
+    /**
+     * 스케줄 경로도 같은 문을 지나는지 본다.
+     *
+     * 예전에는 KopisSyncService가 자기 프록시를 주입받아 sync()를 불렀다. 그 주입을 없애면서
+     * 스케줄 진입점을 다른 빈으로 뺐는데, 만약 프록시를 거치지 않는 형태였다면 락이 잡혀 있어도
+     * 본문이 실행된다. 그 경우 이 테스트가 KOPIS 호출을 잡아낸다.
+     */
+    @Test
+    void 락이_잡혀있으면_스케줄_동기화도_실행되지_않는다() {
+        LockConfiguration held = new LockConfiguration(
+                Instant.now(), "kopis-sync", Duration.ofSeconds(30), Duration.ZERO);
+        Optional<SimpleLock> lock = lockProvider.lock(held);
+        assertThat(lock).isPresent();
+
+        try {
+            kopisSyncScheduler.scheduledSync();
+
             verify(kopisClient, never()).fetchListAll(anyString(), anyString(), anyInt(), anyInt());
         } finally {
             lock.orElseThrow().unlock();

@@ -27,6 +27,7 @@ const cases = [
   { name: "be-entity-data",      script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-entity-data" } },
   { name: "be-field-injection",  script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-field-injection" } },
   { name: "be-tx-private",       script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-tx-private" } },
+  { name: "be-self-injection",   script: "backend/check.mjs", expect: "자기 자신을 주입한다:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-self-injection" } },
   { name: "be-open-security",    script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-open-security" } },
   { name: "be-flyway-dup-version", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-flyway-dup-version" } },
   { name: "be-event-not-broadcast", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-event-not-broadcast" } },

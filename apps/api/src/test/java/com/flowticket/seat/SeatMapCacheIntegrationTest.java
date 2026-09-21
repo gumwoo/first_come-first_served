@@ -7,6 +7,7 @@ import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.seat.dto.SeatMapResponse;
 import com.flowticket.seat.service.SeatSeeder;
+import com.flowticket.seat.service.SeatQueryService;
 import com.flowticket.seat.service.SeatService;
 import com.flowticket.support.IntegrationTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -21,7 +22,7 @@ import org.springframework.test.context.TestPropertySource;
  * 좌석맵 캐시(실험 스위치)의 동작과 대가를 함께 고정한다.
  *
  * 이 캐시는 성능 상한을 재기 위한 것이지 운영 최종 설계가 아니다
- * (SeatService.getSeats 주석). 그 판단의 근거가 되는 사실,
+ * (SeatQueryService.getSeats 주석). 그 판단의 근거가 되는 사실,
  * "TTL 동안 좌석 상태 변경이 보이지 않는다"를 테스트로 박아둔다.
  * 나중에 이벤트 기반 무효화를 붙이면 이 테스트가 바뀌어야 하고, 그때 이 대가가
  * 해소됐다는 것이 드러난다.
@@ -31,6 +32,7 @@ import org.springframework.test.context.TestPropertySource;
 class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
 
     @Autowired SeatService seatService;
+    @Autowired SeatQueryService seatQueryService;
     @Autowired SeatSeeder seatSeeder;
     @Autowired EventRepository eventRepository;
     @Autowired JdbcTemplate jdbc;
@@ -47,8 +49,8 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 두번째_조회는_같은_결과를_돌려준다() {
-        SeatMapResponse first = seatService.getSeats(eventId);
-        SeatMapResponse second = seatService.getSeats(eventId);
+        SeatMapResponse first = seatQueryService.getSeats(eventId);
+        SeatMapResponse second = seatQueryService.getSeats(eventId);
 
         assertThat(second.seats()).hasSameSizeAs(first.seats());
         assertThat(second.eventId()).isEqualTo(first.eventId());
@@ -63,11 +65,11 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
      */
     @Test
     void 캐시_hit은_DB_커넥션을_빌리지_않는다() {
-        seatService.getSeats(eventId); // 첫 호출 = miss → 여기서만 커넥션을 쓴다
+        seatQueryService.getSeats(eventId); // 첫 호출 = miss → 여기서만 커넥션을 쓴다
 
         long before = acquireCount();
         for (int i = 0; i < 5; i++) {
-            seatService.getSeats(eventId);
+            seatQueryService.getSeats(eventId);
         }
         long after = acquireCount();
 
@@ -93,14 +95,14 @@ class SeatMapCacheIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void TTL_동안_좌석_상태_변경이_보이지_않는다() {
-        long availableBefore = seatService.getSeats(eventId).seats().stream()
+        long availableBefore = seatQueryService.getSeats(eventId).seats().stream()
                 .filter(s -> "AVAILABLE".equals(s.status())).count();
         assertThat(availableBefore).isEqualTo(100);
 
         // DB에서 직접 바꾼다. 캐시를 거치지 않는 변경이라 무효화가 없으면 보이지 않는다.
         jdbc.update("update seats set status='HELD' where event_id=?", eventId);
 
-        long availableAfter = seatService.getSeats(eventId).seats().stream()
+        long availableAfter = seatQueryService.getSeats(eventId).seats().stream()
                 .filter(s -> "AVAILABLE".equals(s.status())).count();
 
         // TTL 캐시의 의도된 동작이다. 운영에서 켜려면 이벤트 기반 무효화가 필요하다.

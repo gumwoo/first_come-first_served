@@ -4,6 +4,7 @@ import com.flowticket.global.common.ApiResponse;
 import com.flowticket.seat.dto.HoldRequest;
 import com.flowticket.seat.dto.HoldResponse;
 import com.flowticket.seat.dto.SeatMapResponse;
+import com.flowticket.seat.service.SeatQueryService;
 import com.flowticket.seat.service.SeatService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -18,14 +19,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class SeatController {
 
     private final SeatService seatService;
+    private final SeatQueryService seatQueryService;
 
-    public SeatController(SeatService seatService) {
+    public SeatController(SeatService seatService, SeatQueryService seatQueryService) {
         this.seatService = seatService;
+        this.seatQueryService = seatQueryService;
     }
 
     @GetMapping("/events/{id}/seats")
     public ApiResponse<SeatMapResponse> seats(@PathVariable Long id) {
-        return ApiResponse.ok(seatService.getSeats(id));
+        return ApiResponse.ok(seatQueryService.getSeats(id));
     }
 
     @PostMapping("/events/{id}/seats/hold")

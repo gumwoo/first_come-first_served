@@ -22,7 +22,7 @@ return Boolean.TRUE.equals(redis.hasKey(PREFIX + accessToken));   // 방어 없�
 있으면 경로와 무관하게 블랙리스트를 조회한다. 로그인한 브라우저는 공개 경로에도 `Authorization`을
 보내므로, **공연 목록·좌석 조회 같은 Redis와 무관한 읽기까지 함께 끊긴다.**
 
-같은 저장소의 다른 Redis 사용처는 이미 방어돼 있다 — `SeatService.getSeats()`는 캐시 조회를
+같은 저장소의 다른 Redis 사용처는 이미 방어돼 있다 — `SeatQueryService.getSeats()`는 캐시 조회를
 try/catch로 감싸고 DB로 되돌아간다. **같은 의존성인데 방침이 달랐고, 다르게 정한 흔적이 없었다.**
 즉 이것은 선택의 결과가 아니라 **선택하지 않은 결과**였다.
 

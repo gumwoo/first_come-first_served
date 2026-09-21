@@ -119,14 +119,18 @@ single-flight를 구현하지 않았으니 방향은 예상대로다. **다만 �
 되돌렸다.**
 
 ⚠️ **캐시 기능만 비활성화된다 — 코드가 실험 전으로 돌아간 것이 아니다.** #244의 트랜잭션
-경계 변경은 유지되므로, 캐시가 꺼진 경우에도 DB 조회는 `loadSeatMap()`의 짧은 read-only
-트랜잭션 안에서 수행된다(실험 전에는 `getSeats()` 자체가 클래스 레벨 트랜잭션 안이었다).
+경계 변경은 유지되므로, 캐시가 꺼진 경우에도 DB 조회는 짧은 read-only 트랜잭션 안에서
+수행된다(실험 전에는 `getSeats()` 자체가 클래스 레벨 트랜잭션 안이었다).
 
 ```
-현재(캐시 OFF)                       실험 전
-getSeats  NOT_SUPPORTED             getSeats  @Transactional(readOnly)
-   └ self.loadSeatMap  @Transactional   └ (같은 트랜잭션 안에서 DB 조회)
+현재(캐시 OFF)                                   실험 전
+SeatQueryService.getSeats  NOT_SUPPORTED        getSeats  @Transactional(readOnly)
+   └ SeatMapLoader.load  @Transactional(read)      └ (같은 트랜잭션 안에서 DB 조회)
 ```
+
+> 클래스 구성은 [[ADR-019]] 3단계에서 바뀌었다. 위 §5·§6의 `SeatService`·`self.loadSeatMap`은
+> 측정 당시(#244)의 이름이다. 지금은 조회가 `SeatQueryService`(캐시) → `SeatMapLoader`(읽기
+> 트랜잭션)로 나뉘어 있고, 트랜잭션 경계와 캐시 동작은 그대로다.
 
 좌석은 단순 조회 데이터가 아니라 **재고성 상태**다. TTL 동안 이미 선점된 좌석이
 `AVAILABLE`로 보인다 — 최종 선점은 조건부 UPDATE가 막지만([[ADR-003]]) **사용자가 고른 뒤

@@ -1,6 +1,6 @@
 # ADR-019 · 자기 프록시 주입 대신 협력자로 나눈다
 
-- 상태: **Accepted** (Auth·KOPIS·Order·Payment·Refund 적용 / Seat는 후속 — 아래 §적용 순서)
+- 상태: **Accepted** (전 구간 적용 완료 · 하네스 규칙 ㉑로 재발 차단)
 - 날짜: 2026-09-21
 - 슬라이스: 횡단(S01·S02·S04·S05·S06)
 - 관련: [[TS-014]](사전 검사가 동시 요청에 뚫리는 같은 패턴), [[TS-021]](KOPIS 트랜잭션 범위), [[ADR-011]](정산 쓰기 협력자)
@@ -57,8 +57,9 @@ self.getObject().signupTx(req);
 
 1. **Auth·KOPIS**(완료) — 가입 트랜잭션, 스케줄 진입점. 동시성 불변식과 무관하다.
 2. **Order·Payment·Refund**(완료) — `TransactionTemplate`. 조건부 전이·멱등키 순서를 함께 검증했다.
-3. **Seat** — 조회(캐시, `NOT_SUPPORTED`)와 명령(홀드, advisory lock)의 일관성 모델이 다르다.
-   클래스 분리가 곧 자기 주입 제거가 된다.
+3. **Seat**(완료) — 조회(캐시, `NOT_SUPPORTED`)와 명령(홀드, advisory lock)의 일관성 모델이 다르다.
+   클래스 분리가 곧 자기 주입 제거가 됐다. `SeatQueryService`(캐시) → `SeatMapLoader`(읽기 트랜잭션),
+   `SeatService`(선점·해제), 양쪽이 같은 가격을 보도록 `SeatPricing`을 공유한다.
 
 ## 2단계 · 주문·결제·환불에 `TransactionTemplate`을 쓴 이유
 
@@ -93,7 +94,7 @@ try {
   테스트 배선이다(`@Mock ObjectProvider` 2개가 사라졌다).
 - **클래스 수가 는다.** 작은 협력자가 도메인마다 하나씩 생긴다. 자기 주입보다 낫다고 판단했지만
   공짜는 아니다.
-- **정적으로 막지는 않았다.** "`ObjectProvider<Self>`를 새로 만들지 말 것"을 하네스 규칙으로 넣을 수
-  있지만, `SeatService`가 아직 그 형태다. 3번까지 끝난 뒤에 건다.
+- **하네스 규칙 ㉑로 막았다.** 파일명과 같은 타입을 `ObjectProvider`로 주입하면 실패한다. 다른 빈을
+  `ObjectProvider`로 받는 것(지연 조회·선택 주입)은 정당한 쓰임이라 건드리지 않는다.
 - **`TransactionTemplate`은 어노테이션보다 읽는 사람이 적다.** 이 저장소에서 처음 쓰는 형태라,
   "본문이 `private`이고 경계는 호출부에 있다"는 규칙이 지켜지는지는 리뷰가 봐야 한다.

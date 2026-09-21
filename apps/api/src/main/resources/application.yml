@@ -254,6 +254,9 @@ payment:
   reconcile-grace-minutes: ${PAYMENT_RECONCILE_GRACE:10}        # 결제 제한시각 이후 유예(진행 중 결제 보호)
   reconcile-lookback-hours: ${PAYMENT_RECONCILE_LOOKBACK:24}    # 소급 한계(이전 건은 수동 정산)
   reconcile-batch-size: ${PAYMENT_RECONCILE_BATCH:50}           # 틱당 PG 조회 상한
+  # 같은 멱등키의 동시 요청(더블클릭)이 승자의 최종 결과를 기다리는 상한(ADR-020).
+  # PG 응답 시간(toss.read-timeout-ms 기본 10초)보다 짧게 잡는다.
+  duplicate-wait-ms: ${PAYMENT_DUPLICATE_WAIT:5000}
 
 # 취소 수수료 정책. 공연일까지 남은 일수 기준 기간별 수수료율(%). 당일·이후는 환불 불가.
 refund:

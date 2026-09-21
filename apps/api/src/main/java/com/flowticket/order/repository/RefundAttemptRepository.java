@@ -31,6 +31,23 @@ public interface RefundAttemptRepository extends JpaRepository<RefundAttempt, Lo
                                                 @Param("recheckBefore") LocalDateTime recheckBefore,
                                                 Pageable pageable);
 
+    /**
+     * 시도 기록. 같은 멱등키가 이미 있으면 아무것도 하지 않는다(재시도·더블클릭).
+     *
+     * 애플리케이션에서 DataIntegrityViolationException을 잡아 무시하면 멱등키 충돌뿐 아니라
+     * 길이 초과·FK 위반 같은 예상 못 한 제약 위반까지 함께 삼킨다. 그 경우 시도 기록 없이
+     * PG 취소가 나가고, 뒤이어 refunds INSERT가 같은 이유로 실패해 정산 안전망까지 비어 버린다.
+     * 무시할 충돌을 DB에 명시해 그 구멍을 막는다.
+     */
+    @Transactional
+    @Modifying
+    @Query(value = """
+            insert into refund_attempts (order_id, idempotency_key, resolved, created_at)
+            values (:orderId, :key, false, now())
+            on conflict (idempotency_key) do nothing
+            """, nativeQuery = true)
+    int record(@Param("orderId") Long orderId, @Param("key") String key);
+
     /** PG와 DB가 어긋나지 않음이 확인된 시도를 후보에서 뺀다. */
     @Transactional
     @Modifying(clearAutomatically = true)

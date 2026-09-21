@@ -106,7 +106,11 @@ DB      = PAID (환불 흔적 없음, 좌석 SOLD)
 6. **후보는 마지막 조회 시각으로 돌린다.** PG 조회에 실패한 시도는 확인되지 않은 채 후보에 남는다.
    표시가 없으면 그 시도가 매 틱 선두로 돌아와, 후보가 배치보다 많을 때 뒤쪽이 **한 번도 조회되지
    않는다**(starvation). `refund_attempts.checked_at`에 시각을 남기고 NULLS FIRST로 순회한다.
-7. **쓰기는 `RefundConverger`로 분리한다.** PG 조회는 트랜잭션 밖, 수렴 쓰기만 짧은 트랜잭션.
+7. **무시할 제약 위반을 DB에 명시한다.** 중복 기록은 `on conflict (idempotency_key) do nothing`으로
+   넘긴다. 애플리케이션에서 `DataIntegrityViolationException`을 통째로 잡아 무시하면 멱등키 충돌뿐
+   아니라 길이 초과·FK 위반까지 삼켜, **기록 없이 PG 취소가 나가고 이 정산이 그 건을 영영 못 본다.**
+   입력 길이도 경계(DTO)에서 컬럼 폭에 맞춰 막는다.
+8. **쓰기는 `RefundConverger`로 분리한다.** PG 조회는 트랜잭션 밖, 수렴 쓰기만 짧은 트랜잭션.
    전이 순서는 `RefundService`와 같다(조건부 UPDATE → 환불 기록 → 좌석 → 확정).
 
 ### 고려한 대안

@@ -31,6 +31,9 @@
 ## 도메인 규칙 연결
 - 기록은 `RefundService.refund()`가 **환불 트랜잭션을 열기 전에** 남긴다. 같은 멱등키가 이미 있으면
   그대로 둔다 — 여기서 예외를 올리면 [[TS-030]]이 보장한 동시 환불 멱등이 깨진다.
+- 그 "그대로 둔다"는 `on conflict (idempotency_key) do nothing`으로 **DB에 명시**한다. 애플리케이션에서
+  `DataIntegrityViolationException`을 잡아 무시하면 길이 초과·FK 위반까지 함께 삼켜, 기록 없이 PG 취소가
+  나가고 정산 안전망이 비어 버린다.
 - `resolved = true`가 되는 경우는 셋이다: 환불 정상 완료, 정산이 PG에 물어 취소가 없음을 확인
   (`DONE`/`NOT_FOUND`), 정산이 미아 취소를 수렴 완료.
 - 조회 실패(`UNKNOWN`)는 **닫지 않는다.** 모르는 것을 "어긋나지 않았다"로 기록하면 진짜 미아 취소를

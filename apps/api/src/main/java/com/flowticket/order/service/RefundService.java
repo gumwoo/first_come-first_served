@@ -9,7 +9,6 @@ import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.domain.Payment;
 import com.flowticket.order.domain.PaymentStatus;
 import com.flowticket.order.domain.Refund;
-import com.flowticket.order.domain.RefundAttempt;
 import com.flowticket.order.dto.RefundResponse;
 import com.flowticket.order.gateway.PaymentGateway;
 import com.flowticket.order.gateway.PaymentGateway.ApproveResult;
@@ -81,7 +80,10 @@ public class RefundService {
         if (idemKey == null || idemKey.isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
-        recordAttempt(orderId, idemKey);
+        // 시도 기록 전에 소유자를 본다. 남의 주문 ID로도 기록이 쌓여 정산 후보를 오염시킨다.
+        // 판정의 진실원은 refundTx의 ownedOrder다(여기 통과해도 트랜잭션 안에서 다시 본다).
+        ownedOrder(orderId, userId);
+        refundAttemptRepository.record(orderId, idemKey);
         try {
             RefundResponse res = self.getObject().refundTx(userId, orderId, reason, idemKey);
             // 정상 완료: PG와 DB가 일치하므로 정산이 볼 필요가 없다.
@@ -91,21 +93,6 @@ public class RefundService {
             return refundRepository.findByIdempotencyKey(idemKey)
                     .map(r -> RefundResponse.of(r, currentStatus(orderId).name()))
                     .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
-        }
-    }
-
-    /**
-     * 시도 기록. 자체 트랜잭션으로 즉시 커밋된다.
-     *
-     * 같은 멱등키가 이미 있으면 그대로 둔다(재시도·더블클릭). 여기서 예외를 올리면 TS-030이
-     * 보장한 동시 환불 멱등이 깨진다 — 패자는 refundTx 안에서 승자의 결과를 받아야 한다.
-     */
-    private void recordAttempt(Long orderId, String idemKey) {
-        try {
-            refundAttemptRepository.save(RefundAttempt.builder()
-                    .orderId(orderId).idempotencyKey(idemKey).build());
-        } catch (DataIntegrityViolationException e) {
-            // 이미 기록된 시도다. 정산 후보로는 한 번만 올라가면 된다.
         }
     }
 

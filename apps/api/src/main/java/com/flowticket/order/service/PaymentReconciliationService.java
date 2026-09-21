@@ -84,7 +84,8 @@ public class PaymentReconciliationService {
             if (!inquiry.approved()) {
                 return false; // 정상: 승인 없음(또는 이미 취소됨)
             }
-            ApproveResult cancelled = gateway.refund(inquiry.pgTid(), order.getAmount());
+            ApproveResult cancelled = gateway.refund(inquiry.pgTid(), order.getAmount(),
+                    "void-" + inquiry.pgTid());
             if (!cancelled.success()) {
                 log.error("[reconcile] 미아 승인 취소 실패 orderId={} pgTid={} 사유={}",
                         order.getId(), inquiry.pgTid(), cancelled.failReason());

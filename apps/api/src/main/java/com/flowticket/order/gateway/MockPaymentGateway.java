@@ -35,7 +35,7 @@ public class MockPaymentGateway implements PaymentGateway {
     }
 
     @Override
-    public ApproveResult refund(String pgTid, int amount) {
+    public ApproveResult refund(String pgTid, int amount, String idempotencyKey) {
         return ApproveResult.ok("MOCK-REFUND-" + pgTid);
     }
 

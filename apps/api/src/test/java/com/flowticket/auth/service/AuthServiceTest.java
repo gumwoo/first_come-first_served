@@ -22,10 +22,8 @@ import com.flowticket.global.security.JwtProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -38,16 +36,18 @@ class AuthServiceTest {
     @Mock TokenService tokenService;
     @Mock TokenBlacklistService blacklistService;
     @Mock JwtProvider jwtProvider;
-    @Mock ObjectProvider<AuthService> self;
-    @InjectMocks AuthService authService;
+    AuthService authService;
 
     /**
-     * signup()은 트랜잭션 경계를 나누려고 프록시 self-호출로 signupTx()를 부른다.
-     * 단위 테스트에는 프록시가 없으니 자기 자신을 돌려준다(경계 자체는 통합 테스트의 몫).
+     * 가입 트랜잭션은 협력자(UserRegistrar)가 연다. 여기서는 그 협력자를 실물로 끼워 가입 흐름
+     * 전체를 본다(대역으로 바꾸면 검증 대상이 사라진다). 트랜잭션 경계 자체는 통합 테스트의 몫이다.
      */
     @org.junit.jupiter.api.BeforeEach
-    void wireSelf() {
-        org.mockito.Mockito.lenient().when(self.getObject()).thenReturn(authService);
+    void setUp() {
+        UserRegistrar registrar =
+                new UserRegistrar(userRepository, passwordEncoder, phoneVerificationService);
+        authService = new AuthService(userRepository, passwordEncoder, registrar,
+                tokenService, blacklistService, jwtProvider);
     }
 
     @Test

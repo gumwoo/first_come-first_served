@@ -9,9 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,7 +31,6 @@ public class KopisSyncService {
     private final int syncDays;
     private final int rows;
     private final int maxPages;
-    private final ObjectProvider<KopisSyncService> self; // 락 프록시 경유 self-호출용
 
     private final Clock clock;
 
@@ -41,8 +38,7 @@ public class KopisSyncService {
                             KopisDetailSyncer detailSyncer, SeatSeeder seatSeeder,
                             @Value("${kopis.sync.days:90}") int syncDays,
                             @Value("${kopis.sync.rows:100}") int rows,
-                            @Value("${kopis.sync.max-pages:10}") int maxPages,
-                            ObjectProvider<KopisSyncService> self, Clock clock) {
+                            @Value("${kopis.sync.max-pages:10}") int maxPages, Clock clock) {
         this.clock = clock;
         this.kopisClient = kopisClient;
         this.kopisUpserter = kopisUpserter;
@@ -51,7 +47,6 @@ public class KopisSyncService {
         this.syncDays = syncDays;
         this.rows = rows;
         this.maxPages = maxPages;
-        this.self = self;
     }
 
     /**
@@ -103,19 +98,5 @@ public class KopisSyncService {
             log.warn("[seat] 자동 좌석 시딩 실패: {}", e.getMessage()); // 시딩 실패가 동기화를 막지 않음
         }
         return upserted;
-    }
-
-    /**
-     * 매일 새벽 4시 자동 동기화. 락은 sync()에 있으므로 프록시를 거쳐 호출한다.
-     * this.sync()로 부르면 self-invocation이라 AOP가 적용되지 않아 락을 우회한다.
-     */
-    @Scheduled(cron = "0 0 4 * * *")
-    public void scheduledSync() {
-        Integer n = self.getObject().sync();
-        if (n == null) {
-            log.info("[kopis] 다른 인스턴스/수동 실행이 동기화 중: 이번 스케줄은 건너뜀");
-            return;
-        }
-        log.info("[kopis] 스케줄 동기화 {}건", n);
     }
 }

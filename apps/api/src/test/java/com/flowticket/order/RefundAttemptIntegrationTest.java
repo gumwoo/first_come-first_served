@@ -141,6 +141,30 @@ class RefundAttemptIntegrationTest extends IntegrationTestSupport {
         assertThat(refundRepository.findAll()).hasSize(1);
     }
 
+    /**
+     * 멱등키는 클라이언트가 만들고 UNIQUE는 전역이다. 앞 주문의 시도가 미해결로 남은 상태에서
+     * 다른 주문이 같은 키를 쓰면, 그 요청은 기록 없이 PG를 부르고 성공 시 앞 주문의 시도까지
+     * 닫아 버린다. 그러면 앞 주문의 미아 취소는 영영 정산되지 않는다.
+     */
+    @Test
+    void 다른_주문의_멱등키를_재사용하면_PG를_부르기_전에_거절한다() {
+        long userA = 114L;
+        long userB = 115L;
+        Long orderA = paidOrder(userA);
+        Long orderB = paidOrder(userB);
+        String key = "K-SHARED";
+        // A가 PG 취소 후 롤백된 상태: 시도만 남고 refunds에는 아무것도 없다.
+        attemptRepository.record(orderA, key);
+
+        assertThatThrownBy(() -> refundService.refund(userB, orderB, "변심", key))
+                .isInstanceOf(BusinessException.class);
+
+        verify(gateway, never()).refund(anyString(), anyInt(), anyString());
+        assertThat(attemptRepository.findByIdempotencyKey(key).orElseThrow().isResolved()).isFalse();
+        assertThat(attemptRepository.findByIdempotencyKey(key).orElseThrow().getOrderId())
+                .isEqualTo(orderA);
+    }
+
     // --- helpers ---
 
     private Long paidOrder(long userId) {

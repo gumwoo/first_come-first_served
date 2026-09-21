@@ -34,6 +34,9 @@
 - 그 "그대로 둔다"는 `on conflict (idempotency_key) do nothing`으로 **DB에 명시**한다. 애플리케이션에서
   `DataIntegrityViolationException`을 잡아 무시하면 길이 초과·FK 위반까지 함께 삼켜, 기록 없이 PG 취소가
   나가고 정산 안전망이 비어 버린다.
+- 닫을 때는 **주문까지 지목한다**(`order_id` + `idempotency_key`). 키는 클라이언트가 만들고 UNIQUE는
+  전역이라, 키만으로 닫으면 같은 키를 재사용한 다른 주문의 성공이 남의 미해결 시도를 닫는다.
+  키가 이미 다른 주문에 묶여 있는 요청은 PG를 부르기 전에 `VALIDATION_ERROR`로 거절한다.
 - `resolved = true`가 되는 경우는 셋이다: 환불 정상 완료, 정산이 PG에 물어 취소가 없음을 확인
   (`DONE`/`NOT_FOUND`), 정산이 미아 취소를 수렴 완료.
 - 조회 실패(`UNKNOWN`)는 **닫지 않는다.** 모르는 것을 "어긋나지 않았다"로 기록하면 진짜 미아 취소를

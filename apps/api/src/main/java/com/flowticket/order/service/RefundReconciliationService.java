@@ -103,17 +103,22 @@ public class RefundReconciliationService {
      * 승인이 남아 있거나(DONE) 결제 자체가 없으면(NOT_FOUND) 어긋난 것이 없으므로 시도를 닫는다.
      * PG 취소 전에 실패한 환불이 여기로 온다.
      */
+    /** 주문까지 지목해 닫는다. 같은 멱등키를 쓴 다른 주문의 시도를 건드리지 않기 위해서다. */
+    private void resolve(RefundAttempt attempt) {
+        attemptRepository.resolve(attempt.getOrderId(), attempt.getIdempotencyKey());
+    }
+
     private boolean reconcile(RefundAttempt attempt) {
         Order order = orderRepository.findById(attempt.getOrderId()).orElse(null);
         if (order == null) {
-            attemptRepository.resolve(attempt.getIdempotencyKey());
+            resolve(attempt);
             return false;
         }
         try {
             Inquiry inquiry = gateway.inquire(order.getId());
             if (!inquiry.canceled()) {
                 if (inquiry.status() != PaymentGateway.PgStatus.UNKNOWN) {
-                    attemptRepository.resolve(attempt.getIdempotencyKey());
+                    resolve(attempt);
                 }
                 return false;
             }
@@ -126,10 +131,10 @@ public class RefundReconciliationService {
             }
             if (!converger.converge(order, inquiry.pgTid(), canceled)) {
                 // 사용자 환불이 방금 가져갔거나 이미 수렴됐다. 어느 쪽이든 어긋난 것이 없다.
-                attemptRepository.resolve(attempt.getIdempotencyKey());
+                resolve(attempt);
                 return false;
             }
-            attemptRepository.resolve(attempt.getIdempotencyKey());
+            resolve(attempt);
             log.warn("[reconcile] PG에만 있던 환불을 반영 orderId={} pgTid={} 결제={} 취소={}",
                     order.getId(), inquiry.pgTid(), order.getAmount(), canceled);
             return true;

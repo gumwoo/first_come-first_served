@@ -3,6 +3,7 @@ package com.flowticket.order.repository;
 import com.flowticket.order.domain.RefundAttempt;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -48,11 +49,19 @@ public interface RefundAttemptRepository extends JpaRepository<RefundAttempt, Lo
             """, nativeQuery = true)
     int record(@Param("orderId") Long orderId, @Param("key") String key);
 
-    /** PG와 DB가 어긋나지 않음이 확인된 시도를 후보에서 뺀다. */
+    Optional<RefundAttempt> findByIdempotencyKey(String idempotencyKey);
+
+    /**
+     * PG와 DB가 어긋나지 않음이 확인된 시도를 후보에서 뺀다.
+     *
+     * 멱등키만으로 지목하지 않는다. 키는 클라이언트가 만들고 UNIQUE는 전역이라, 다른 주문이 같은
+     * 키를 재사용하면 그 주문의 성공이 남의 미해결 시도를 닫아 버린다. 주문까지 같아야 닫는다.
+     */
     @Transactional
     @Modifying(clearAutomatically = true)
-    @Query("update RefundAttempt a set a.resolved = true where a.idempotencyKey = :key")
-    int resolve(@Param("key") String key);
+    @Query("update RefundAttempt a set a.resolved = true "
+            + "where a.orderId = :orderId and a.idempotencyKey = :key")
+    int resolve(@Param("orderId") Long orderId, @Param("key") String key);
 
     /**
      * 조회한 후보에 표시를 남긴다. 확인 여부와 무관하게 남겨야 순회가 앞으로 나간다.

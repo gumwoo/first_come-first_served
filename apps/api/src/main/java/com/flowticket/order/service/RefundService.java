@@ -84,10 +84,11 @@ public class RefundService {
         // 판정의 진실원은 refundTx의 ownedOrder다(여기 통과해도 트랜잭션 안에서 다시 본다).
         ownedOrder(orderId, userId);
         refundAttemptRepository.record(orderId, idemKey);
+        rejectIfKeyBelongsToAnotherOrder(orderId, idemKey);
         try {
             RefundResponse res = self.getObject().refundTx(userId, orderId, reason, idemKey);
             // 정상 완료: PG와 DB가 일치하므로 정산이 볼 필요가 없다.
-            refundAttemptRepository.resolve(idemKey);
+            refundAttemptRepository.resolve(orderId, idemKey);
             return res;
         } catch (DataIntegrityViolationException e) {
             return refundRepository.findByIdempotencyKey(idemKey)
@@ -158,6 +159,21 @@ public class RefundService {
     private LocalDate eventDate(Order order) {
         return eventRepository.findById(order.getEventId())
                 .map(e -> e.getStartDate()).orElse(null);
+    }
+
+    /**
+     * 같은 멱등키가 다른 주문에 묶여 있으면 PG를 부르기 전에 거절한다.
+     *
+     * 시도 기록은 키 UNIQUE라 재사용 요청은 행을 만들지 못한다. 그대로 진행시키면 그 요청은
+     * 기록 없이 PG를 호출하게 되고, 성공하면 앞 주문의 미해결 시도까지 닫아 정산이 그 건을
+     * 영영 못 보게 된다. refunds의 키 UNIQUE는 앞 주문이 롤백된 경우 비어 있어 막아주지 못한다.
+     */
+    private void rejectIfKeyBelongsToAnotherOrder(Long orderId, String idemKey) {
+        refundAttemptRepository.findByIdempotencyKey(idemKey)
+                .filter(a -> !a.getOrderId().equals(orderId))
+                .ifPresent(a -> {
+                    throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+                });
     }
 
     private Order ownedOrder(Long orderId, Long userId) {

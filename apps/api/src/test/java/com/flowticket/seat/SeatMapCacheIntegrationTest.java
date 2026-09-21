@@ -22,7 +22,7 @@ import org.springframework.test.context.TestPropertySource;
  * 좌석맵 캐시(실험 스위치)의 동작과 대가를 함께 고정한다.
  *
  * 이 캐시는 성능 상한을 재기 위한 것이지 운영 최종 설계가 아니다
- * (SeatService.getSeats 주석). 그 판단의 근거가 되는 사실,
+ * (SeatQueryService.getSeats 주석). 그 판단의 근거가 되는 사실,
  * "TTL 동안 좌석 상태 변경이 보이지 않는다"를 테스트로 박아둔다.
  * 나중에 이벤트 기반 무효화를 붙이면 이 테스트가 바뀌어야 하고, 그때 이 대가가
  * 해소됐다는 것이 드러난다.

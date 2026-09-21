@@ -43,11 +43,8 @@ public class SeatService {
     private final SeatPricing pricing;
     private final QueueService queueService;
     private final SeatSseRegistry sse;
-    /** 트랜잭션 프록시를 거쳐 자기 메서드를 부르기 위한 것(PaymentService와 같은 패턴). */
     private final long holdTtl;
     private final int maxPerUser;
-    /** 좌석맵 캐시 TTL(ms). 0이면 캐시를 쓰지 않는다. 기본값은 0이다. */
-
     private final Clock clock;
 
     public SeatService(EventRepository eventRepository,

@@ -24,3 +24,4 @@ IMP(개선 일지: 문제→측정→개선)와 구분 — ADR은 "무엇을·�
 | [ADR-017](ADR-017-order-sse-subscription-ticket.md) | 주문 SSE 구독은 단명 티켓으로 인가 — `EventSource`는 헤더를 못 붙이고 fetch 스트림은 자동 재연결을 잃으므로 URL 티켓을 쓰되, 전용 타입·주문 하나·TTL 300초로 노출의 값을 낮춘다. TTL은 새 구독의 창이지 스트림 수명이 아니다 | Accepted |
 | [ADR-018](ADR-018-clock-injection.md) | 시간의 출처를 주입한다 — 만료·환불 가능 시점·정산 창이 모두 "지금"으로 갈리는데 `LocalDateTime.now()` 직접 호출이라 판정을 테스트에서 고정할 수 없었다. 시계를 빈으로 두되 `systemDefaultZone()`(UTC를 쓰면 KST에서 9시간 과거로 판정, TS-039). 엔티티 타임스탬프는 범위 밖 | Accepted |
 | [ADR-019](ADR-019-self-proxy-to-collaborator.md) | 자기 프록시 주입(`ObjectProvider<Self>`) 대신 협력자로 나눈다 — 프레임워크의 프록시 구현이 서비스 의존성에 드러나고 단위 테스트가 자기 자신을 배선해야 했다. 경계의 성격에 따라 쓰기 협력자·진입점 분리·조회/명령 분리로 나눈다. **락·트랜잭션의 위치는 옮기지 않는다** | Accepted(전 구간 완료 + 하네스 ㉑) |
+| [ADR-020](ADR-020-payment-tx-boundary.md) | 결제 승인을 DB 트랜잭션 밖에서 한다 — PG 응답을 기다리는 동안 Hikari 커넥션(파드당 5)을 쥐고 있었다. TX1(READY 행) → PG → TX2(확정)로 나누고 보상 취소도 경계 밖으로. 동시 더블클릭이 승자의 최종 결과를 받는 IMP-008 보장은 짧은 재확인으로 유지 | Accepted(승인 경로 / 환불은 후속) |

@@ -26,10 +26,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 예매 취소·환불. PAID + 시점 게이트에서만 가능. 조건부 전이(PAID→CANCELLED→REFUNDED)로 원자화하고
@@ -48,7 +47,8 @@ public class RefundService {
     private final RefundPolicy refundPolicy;
     private final PaymentGateway gateway;
     private final OrderSseRegistry orderSse;
-    private final ObjectProvider<RefundService> self; // 트랜잭션 프록시 self-호출용
+    /** 트랜잭션 경계를 코드로 연다. 커밋에서 나는 멱등키 충돌을 경계 밖에서 잡아야 하기 때문이다. */
+    private final TransactionTemplate tx;
 
     private final Clock clock;
 
@@ -57,7 +57,7 @@ public class RefundService {
                          RefundAttemptRepository refundAttemptRepository,
                          SeatRepository seatRepository, EventRepository eventRepository,
                          RefundPolicy refundPolicy, PaymentGateway gateway,
-                         OrderSseRegistry orderSse, ObjectProvider<RefundService> self, Clock clock) {
+                         OrderSseRegistry orderSse, TransactionTemplate tx, Clock clock) {
         this.clock = clock;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
@@ -69,7 +69,7 @@ public class RefundService {
         this.refundPolicy = refundPolicy;
         this.gateway = gateway;
         this.orderSse = orderSse;
-        this.self = self;
+        this.tx = tx;
     }
 
     /**
@@ -90,7 +90,7 @@ public class RefundService {
         refundAttemptRepository.record(orderId, idemKey, LocalDateTime.now(clock));
         rejectIfKeyBelongsToAnotherOrder(orderId, idemKey);
         try {
-            RefundResponse res = self.getObject().refundTx(userId, orderId, reason, idemKey);
+            RefundResponse res = tx.execute(status -> refundTx(userId, orderId, reason, idemKey));
             // 정상 완료: PG와 DB가 일치하므로 정산이 볼 필요가 없다.
             refundAttemptRepository.resolve(orderId, idemKey);
             return res;
@@ -101,8 +101,8 @@ public class RefundService {
         }
     }
 
-    @Transactional
-    public RefundResponse refundTx(Long userId, Long orderId, String reason, String idemKey) {
+    /** 환불 본문. 반드시 refund()의 트랜잭션 경계 안에서 호출된다. */
+    private RefundResponse refundTx(Long userId, Long orderId, String reason, String idemKey) {
         Order order = ownedOrder(orderId, userId);
 
         // 멱등: 같은 환불 시도가 이미 있으면 그 결과 반환(순차 더블클릭 방어)

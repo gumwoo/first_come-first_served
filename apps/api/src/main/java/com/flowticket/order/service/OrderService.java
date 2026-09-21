@@ -24,11 +24,11 @@ import java.time.LocalDateTime;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** 주문 생성/조회. 좌석 선점(hold)을 검증해 주문(PENDING) + 가격 스냅샷으로 승격. */
 @Service
@@ -43,14 +43,15 @@ public class OrderService {
     private final SeatHoldItemRepository holdItemRepository;
     private final SeatRepository seatRepository;
     private final EventSeatPriceRepository priceRepository;
-    private final ObjectProvider<OrderService> self; // 트랜잭션 프록시 self-호출용
+    /** 트랜잭션 경계를 코드로 연다. 커밋에서 나는 제약 위반을 경계 밖에서 잡아야 하기 때문이다. */
+    private final TransactionTemplate tx;
 
     private final Clock clock;
 
     public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                         SeatHoldRepository holdRepository, SeatHoldItemRepository holdItemRepository,
                         SeatRepository seatRepository, EventSeatPriceRepository priceRepository,
-                        ObjectProvider<OrderService> self, Clock clock) {
+                        TransactionTemplate tx, Clock clock) {
         this.clock = clock;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
@@ -58,19 +59,23 @@ public class OrderService {
         this.holdItemRepository = holdItemRepository;
         this.seatRepository = seatRepository;
         this.priceRepository = priceRepository;
-        this.self = self;
+        this.tx = tx;
     }
 
     /**
      * 주문 생성: hold 검증(HELD·소유자·미만료) → 가격 스냅샷 → order(PENDING).
      *
      * 동시 생성의 최종 방어선은 부분 UNIQUE(uq_orders_active_hold)이고, 진 쪽은 기존 주문을 반환한다.
-     * 확인한 제약이 아니면 원 예외를 올린다. NOT_SUPPORTED여야 캐치가 트랜잭션 밖에 있다(TS-014).
+     * 확인한 제약이 아니면 원 예외를 올린다.
+     *
+     * 트랜잭션은 TransactionTemplate으로 연다. 제약 위반은 커밋에서 나므로 캐치가 경계 밖에 있어야
+     * 하는데, 그 경계가 이 메서드의 알고리즘 자체다(ADR-019). NOT_SUPPORTED는 클래스의 readOnly
+     * 트랜잭션과 호출자의 트랜잭션을 모두 끊어, 템플릿이 항상 새 경계를 열게 한다(TS-014).
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public OrderResponse create(Long userId, Long holdId) {
         try {
-            return self.getObject().createTx(userId, holdId);
+            return tx.execute(status -> createTx(userId, holdId));
         } catch (DataIntegrityViolationException e) {
             return orderRepository.findFirstByHoldIdAndStatusIn(holdId, ACTIVE)
                     .map(this::toResponse)
@@ -81,9 +86,8 @@ public class OrderService {
         }
     }
 
-    /** 실제 생성 트랜잭션. 제약 위반은 create가 밖에서 잡는다. */
-    @Transactional
-    public OrderResponse createTx(Long userId, Long holdId) {
+    /** 생성 본문. 반드시 create()의 트랜잭션 경계 안에서 호출된다. */
+    private OrderResponse createTx(Long userId, Long holdId) {
         if (holdId == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }

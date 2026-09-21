@@ -1,6 +1,6 @@
 # ADR-019 · 자기 프록시 주입 대신 협력자로 나눈다
 
-- 상태: **Accepted** (Auth·KOPIS 적용 / Order·Payment·Refund·Seat는 후속 — 아래 §적용 순서)
+- 상태: **Accepted** (Auth·KOPIS·Order·Payment·Refund 적용 / Seat는 후속 — 아래 §적용 순서)
 - 날짜: 2026-09-21
 - 슬라이스: 횡단(S01·S02·S04·S05·S06)
 - 관련: [[TS-014]](사전 검사가 동시 요청에 뚫리는 같은 패턴), [[TS-021]](KOPIS 트랜잭션 범위), [[ADR-011]](정산 쓰기 협력자)
@@ -33,6 +33,7 @@ self.getObject().signupTx(req);
 |---|---|---|
 | 트랜잭션 **안**의 쓰기 | 쓰기 전용 협력자 | `UserRegistrar`, `RefundConverger` |
 | 트랜잭션 **밖**의 진입점 | 진입점을 분리 | `KopisSyncScheduler` |
+| 트랜잭션 경계가 **알고리즘 자체** | `TransactionTemplate` | `OrderService`·`PaymentService`·`RefundService` |
 | 읽기/쓰기의 일관성 모델이 다름 | 조회·명령 분리 | `SeatService`(후속) |
 
 **락·트랜잭션의 위치는 옮기지 않는다.** KOPIS의 `@SchedulerLock`은 `sync()`에 그대로 둔다. 예전에
@@ -41,10 +42,9 @@ self.getObject().signupTx(req);
 
 ## 고려한 대안
 
-- **`TransactionTemplate`으로 바꾼다.** 트랜잭션 경계가 제어 흐름으로 드러나 "롤백 뒤에 무엇을
-  하는가"가 명확해진다. 지금 적용하지 않았다. 이 두 곳은 경계가 **메서드 단위로 깔끔하게 갈리는**
-  형태라 협력자 분리로 충분하고, 템플릿을 쓰면 서비스마다 람다 중첩이 늘어난다. 경계 자체가
-  알고리즘인 곳(결제 보상 등)이 나오면 그때 다시 본다.
+- **`TransactionTemplate`으로 바꾼다.** Auth·KOPIS에는 쓰지 않았다. 그 둘은 경계가 메서드 단위로
+  깔끔하게 갈려 협력자 분리로 충분하다. **2단계(Order·Payment·Refund)에는 이쪽을 썼다** —
+  아래 §2단계 참고.
 - **`@Transactional(propagation = REQUIRES_NEW)`로 안쪽을 새 트랜잭션으로 연다.** 자기 주입은 그대로
   남는다. 해결이 아니다.
 - **AspectJ 로드타임 위빙으로 self-invocation도 가로챈다.** 빌드·기동에 위빙을 더한다. 문제 하나를
@@ -55,10 +55,37 @@ self.getObject().signupTx(req);
 위험도 순으로 나눈다. 한 PR에 몰면 결제·환불의 동시성 불변식([[TS-011]]·[[TS-030]])까지 한 번에
 재검증해야 한다.
 
-1. **Auth·KOPIS**(이 ADR) — 가입 트랜잭션, 스케줄 진입점. 동시성 불변식과 무관하다.
-2. **Order·Payment·Refund** — 트랜잭션 협력자 분리. 조건부 전이·멱등키 순서를 함께 검증해야 한다.
+1. **Auth·KOPIS**(완료) — 가입 트랜잭션, 스케줄 진입점. 동시성 불변식과 무관하다.
+2. **Order·Payment·Refund**(완료) — `TransactionTemplate`. 조건부 전이·멱등키 순서를 함께 검증했다.
 3. **Seat** — 조회(캐시, `NOT_SUPPORTED`)와 명령(홀드, advisory lock)의 일관성 모델이 다르다.
    클래스 분리가 곧 자기 주입 제거가 된다.
+
+## 2단계 · 주문·결제·환불에 `TransactionTemplate`을 쓴 이유
+
+이 셋은 형태가 같다. **트랜잭션을 열고, 커밋에서 나는 제약 위반을 경계 밖에서 잡아 복구한다.**
+
+```java
+try {
+    return tx.execute(status -> payTx(...));   // 멱등키 UNIQUE는 커밋에서 터진다
+} catch (DataIntegrityViolationException e) {
+    return paymentRepository.findByIdempotencyKey(idemKey)...  // 승자의 결과를 돌려준다
+}
+```
+
+여기서는 **경계가 곧 알고리즘**이다. "언제 커밋되는가"와 "실패를 어디서 잡는가"가 이 메서드가 하는
+일의 핵심이라, 어노테이션으로 숨기는 것보다 코드로 보이는 편이 낫다. 협력자로 빼면 그 관계가 다시
+두 클래스에 흩어진다.
+
+`PaymentService`에는 실질적인 이유가 하나 더 있다. 트랜잭션 메서드가 넷(`payTx`·`confirmTx`·
+`confirmVbankDeposit`·`handleVbankDepositWebhook`)인데 `finalizePaid`·`appendOutbox`·`ownedOrder`를
+함께 쓴다. 앞의 둘만 협력자로 빼면 그 사설 헬퍼들이 두 클래스로 갈라지거나, 넷 다 옮겨 서비스가
+껍데기만 남는다.
+
+본문 메서드는 `private`이 된다. 부수 효과로 **경계를 건너뛰고 본문을 직접 부를 길이 사라진다** —
+예전에는 `payTx`가 `public`이라 누군가 트랜잭션 없이 호출할 수 있었다.
+
+`TransactionTemplate` 빈은 스프링 부트가 자동 구성한다(`TransactionAutoConfiguration`,
+`PlatformTransactionManager`가 하나일 때). 이 저장소는 JPA 트랜잭션 매니저 하나뿐이다.
 
 ## 결과 / 한계 (정직)
 
@@ -67,4 +94,6 @@ self.getObject().signupTx(req);
 - **클래스 수가 는다.** 작은 협력자가 도메인마다 하나씩 생긴다. 자기 주입보다 낫다고 판단했지만
   공짜는 아니다.
 - **정적으로 막지는 않았다.** "`ObjectProvider<Self>`를 새로 만들지 말 것"을 하네스 규칙으로 넣을 수
-  있지만, 남은 4곳이 아직 그 형태라 지금 넣으면 전부 예외 목록에 올려야 한다. 3번까지 끝난 뒤에 건다.
+  있지만, `SeatService`가 아직 그 형태다. 3번까지 끝난 뒤에 건다.
+- **`TransactionTemplate`은 어노테이션보다 읽는 사람이 적다.** 이 저장소에서 처음 쓰는 형태라,
+  "본문이 `private`이고 경계는 호출부에 있다"는 규칙이 지켜지는지는 리뷰가 봐야 한다.

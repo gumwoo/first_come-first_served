@@ -20,49 +20,57 @@ if (files.length === 0) {
   console.error("사용: queue-order.mjs [--tolerance-ms 1000] <api 로그 파일> [...]");
   process.exit(2);
 }
-const TOL = Number(a["tolerance-ms"]);
+// 예외로 죽으면 "위반(1)"이 아니라 "검사 실패(2)"다. 셸이 종료 코드 1을 위반으로 분류한다(check-correctness.sh).
+async function main() {
+  const TOL = Number(a["tolerance-ms"]);
 
-const byEvent = new Map(); // event → [{seq, at, token}]
-for (const f of files) {
-  const rl = createInterface({ input: createReadStream(f), crlfDelay: Infinity });
-  for await (const line of rl) {
-    if (!line.includes("queue.audit kind=admit")) continue;
-    const kv = Object.fromEntries([...line.matchAll(/(\w+)=(\S+)/g)].map((m) => [m[1], m[2]]));
-    const seq = Number(kv.seq);
-    const at = Number(kv.at);
-    if (!kv.event || !Number.isFinite(seq) || !Number.isFinite(at)) continue;
-    if (!byEvent.has(kv.event)) byEvent.set(kv.event, []);
-    byEvent.get(kv.event).push({ seq, at, token: kv.token });
-  }
-}
-
-const result = { toleranceMs: TOL, events: {} };
-let total = 0;
-for (const [event, xs] of byEvent) {
-  xs.sort((p, q) => p.seq - q.seq);
-  // seq 순서로 지나가며, 앞(작은 seq)에서 본 가장 늦은 승격 시각보다 허용 폭 넘게 이른 승격이 있으면 위반이다.
-  let maxAt = -Infinity;
-  let maxSeq = null;
-  const samples = [];
-  let inversions = 0;
-  for (const x of xs) {
-    if (x.at + TOL < maxAt) {
-      inversions++;
-      // 순번이 큰 토큰(x)이 순번이 작은 토큰보다 허용 폭 넘게 먼저 승격됐다.
-      if (samples.length < 10) samples.push({ higherSeq: x.seq, higherAt: x.at, lowerSeq: maxSeq, lowerAt: maxAt });
-    }
-    if (x.at > maxAt) {
-      maxAt = x.at;
-      maxSeq = x.seq;
+  const byEvent = new Map(); // event → [{seq, at, token}]
+  for (const f of files) {
+    const rl = createInterface({ input: createReadStream(f), crlfDelay: Infinity });
+    for await (const line of rl) {
+      if (!line.includes("queue.audit kind=admit")) continue;
+      const kv = Object.fromEntries([...line.matchAll(/(\w+)=(\S+)/g)].map((m) => [m[1], m[2]]));
+      const seq = Number(kv.seq);
+      const at = Number(kv.at);
+      if (!kv.event || !Number.isFinite(seq) || !Number.isFinite(at)) continue;
+      if (!byEvent.has(kv.event)) byEvent.set(kv.event, []);
+      byEvent.get(kv.event).push({ seq, at, token: kv.token });
     }
   }
-  // 같은 seq가 두 번 승격됐다면 그것도 위반이다(한 토큰이 두 번 빠져나감).
-  const dupSeq = xs.length - new Set(xs.map((x) => x.seq)).size;
-  total += inversions + dupSeq;
-  result.events[event] = { admits: xs.length, inversions, duplicateSeq: dupSeq, samples };
+
+  const result = { toleranceMs: TOL, events: {} };
+  let total = 0;
+  for (const [event, xs] of byEvent) {
+    xs.sort((p, q) => p.seq - q.seq);
+    // seq 순서로 지나가며, 앞(작은 seq)에서 본 가장 늦은 승격 시각보다 허용 폭 넘게 이른 승격이 있으면 위반이다.
+    let maxAt = -Infinity;
+    let maxSeq = null;
+    const samples = [];
+    let inversions = 0;
+    for (const x of xs) {
+      if (x.at + TOL < maxAt) {
+        inversions++;
+        // 순번이 큰 토큰(x)이 순번이 작은 토큰보다 허용 폭 넘게 먼저 승격됐다.
+        if (samples.length < 10) samples.push({ higherSeq: x.seq, higherAt: x.at, lowerSeq: maxSeq, lowerAt: maxAt });
+      }
+      if (x.at > maxAt) {
+        maxAt = x.at;
+        maxSeq = x.seq;
+      }
+    }
+    // 같은 seq가 두 번 승격됐다면 그것도 위반이다(한 토큰이 두 번 빠져나감).
+    const dupSeq = xs.length - new Set(xs.map((x) => x.seq)).size;
+    total += inversions + dupSeq;
+    result.events[event] = { admits: xs.length, inversions, duplicateSeq: dupSeq, samples };
+  }
+  result.violations = total;
+  result.admits = [...byEvent.values()].reduce((n, xs) => n + xs.length, 0);
+  console.log(JSON.stringify(result, null, 2));
+  // 승격 기록이 한 줄도 없으면 "위반 없음"이 아니라 "판정 불가"다(로그 수집 실패, 감사 로그 미배포).
+  process.exitCode = result.admits === 0 ? 2 : total ? 1 : 0;
 }
-result.violations = total;
-result.admits = [...byEvent.values()].reduce((n, xs) => n + xs.length, 0);
-console.log(JSON.stringify(result, null, 2));
-// 승격 기록이 한 줄도 없으면 "위반 없음"이 아니라 "판정 불가"다(로그 수집 실패, 감사 로그 미배포).
-process.exit(result.admits === 0 ? 2 : total ? 1 : 0);
+
+main().catch((e) => {
+  console.error(`[queue-order] 검사 실패: ${e.stack || e}`);
+  process.exitCode = 2;
+});

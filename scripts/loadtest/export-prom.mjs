@@ -82,4 +82,4 @@ for (const [name, q] of Object.entries(QUERIES)) {
   }
 }
 writeFileSync(`${a.out}/prom/_meta.json`, JSON.stringify({ prom: a.prom, start: a.start, end: a.end, step: Number(a.step), queries: QUERIES }, null, 2));
-process.exit(failed ? 1 : 0);
+process.exitCode = failed ? 1 : 0;

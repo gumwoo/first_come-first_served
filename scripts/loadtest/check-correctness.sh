@@ -17,7 +17,9 @@
 #
 # DB·Redis는 프라이빗이라 클러스터 안 일회용 파드로 붙는다. 자격증명은 api와 같은 ConfigMap·Secret에서 필요한 키만
 # 받고, 이 스크립트는 보지도 출력하지도 않는다(seed-users.sh와 같은 방식).
-# 종료 코드: 위반 없음 0, 위반 있음 1, 검사 자체 실패 2.
+# 종료 코드: 위반 없음 0, 위반 있음 1, 검사 자체 실패 2(위반도 함께 찾았으면 summary에 둘 다 적는다).
+# run 직후 바로 돌리면 아직 발행 중인 아웃박스가 미발행으로 잡힐 수 있다. 아웃박스가 비워진 뒤
+# (flowticket_outbox_oldest_pending_age_seconds 0) 실행한다.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -119,7 +121,9 @@ fi
   echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
   echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null
   echo "--- 실효 입장 초과: 판정식 미확정(계획서 §3.3) — 판정하지 않음"
-  if [ "$BROKEN" -ne 0 ]; then echo "판정: 검사 실패(결과 불완전)"
+  # 검사 일부가 실패해도 이미 찾은 위반은 함께 보인다.
+  if [ "$BROKEN" -ne 0 ] && [ "$FAIL" -ne 0 ]; then echo "판정: 정합성 위반 + 검사 일부 실패(결과 불완전)"
+  elif [ "$BROKEN" -ne 0 ]; then echo "판정: 검사 실패(결과 불완전)"
   elif [ "$FAIL" -ne 0 ]; then echo "판정: 정합성 위반"
   else echo "판정: 위반 없음"; fi
 } > "$D/summary.txt"

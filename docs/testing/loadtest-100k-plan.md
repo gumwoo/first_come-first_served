@@ -274,7 +274,7 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 
 | 도구 | 하는 일 |
 |---|---|
-| `scripts/loadtest/watch-correctness.mjs` | run 동안 Prometheus를 주기적으로 조회해 실시간 조건 셋(over-admit, 카운터 어긋남 — `admit_drift` 게이지, 초과판매)을 판정한다. 위반이면 `violation.json`을 남기고 `--on-violation` 명령(예: 발생기의 k6 정지)을 한 번 실행한 뒤 종료 코드 3. 지표가 없거나 수집 실패(NaN)면 위반이 아니라 "판정 불가"로 기록한다 |
+| `scripts/loadtest/watch-correctness.mjs` | run 동안 Prometheus를 주기적으로 조회해 실시간 조건 셋(over-admit, 카운터 어긋남 — `admit_drift` 게이지, 초과판매)을 판정한다. 위반이면 `violation.json`을 남기고 `--on-violation` 명령(예: 발생기의 k6 정지)을 한 번 실행한다. 종료 코드: 0 위반 없음(조회 오류가 한 번도 없고 세 조건 모두 값이 나왔다), 3 위반, 4 판정 불가(조회 오류가 한 번이라도 있었거나 값이 한 번도 나오지 않은 조건이 있다 — 감시가 끊긴 구간에서는 위반이 없었다고 말할 수 없다). 시계열이 없는 틱(활성 이벤트 없음)은 오류가 아니다 |
 | `scripts/loadtest/check-correctness.sh` | run이 끝난 뒤 사후 조건을 검사한다: SQL(`correctness.sql` — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스), 대기열 순서(`queue-order.mjs` — api 로그의 승격 감사 줄), 이벤트 유실(PUBLISHED 아웃박스 vs 소비자 멱등 키). 위반 1, 검사 실패 2 |
 
 실효 입장 초과는 판정식이 미확정이라 도구가 판정하지 않는다(재료인 승격·회수·이탈 로그만 함께 수집한다).
@@ -586,7 +586,7 @@ artifacts/loadtest/<session-id>/<run-id>/
 
 | 파일 | 내용 |
 |---|---|
-| `watch-correctness.jsonl`, `violation.json`, `violation-action.log` | 실시간 판정 기록, 첫 위반, 중단 명령 출력(`watch-correctness.mjs`). 감시 내내 값이 한 번도 없었으면 종료 코드 4(판정 불가) |
+| `watch-correctness.jsonl`, `watch-summary.json`, `violation.json`, `violation-action.log` | 실시간 판정 기록, 조건별 값·시계열 없음·오류 틱 수와 판정, 첫 위반, 중단 명령 출력(`watch-correctness.mjs`) |
 | `prom/<이름>.json`, `prom/_meta.json` | run 구간의 범위 질의 결과(`scripts/loadtest/export-prom.mjs`, 질의 목록은 스크립트에 있다) |
 | `correctness/` | 사후 검사 결과 — `sql.csv`, `api.log`, `queue-order.json`, `published-ids.txt`·`dedup-exists.txt`(이벤트 유실 대조의 입력과 Redis 응답), `event-loss.txt`, `summary.txt`(`check-correctness.sh`). 승격 기록이 0건이면 대기열 순서는 판정 불가 |
 

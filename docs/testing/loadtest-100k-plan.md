@@ -139,7 +139,7 @@ S-30K와 S-100K 사이의 중간 단계와 실패 시 구간 축소 규칙은 §
 | `dropped_iterations` | 시작하지 못한 진입 | k6 — arrival-rate executor에만 있다. 0이 아니면 §3.1 무효 |
 | 평균 arrival rate | achieved arrivals / 진입 시간 | `entry-arrivals.mjs`(분모는 진입 시간) |
 | **peak 1초 arrival rate** | 1초 창에서의 최대 진입 시작 수 | **k6 원시 출력만** — 아래 참고 |
-| 처리된 진입 | 토큰 발급이 성공(200)한 수 | k6 check · `http_server_requests`(진입 URI) |
+| 처리된 진입 | 토큰 발급이 성공(200, WAITING 또는 ADMITTED)한 수 | k6 `entry_processed` · `http_server_requests`(진입 URI) |
 | HTTP 요청 수 · HTTP rps | 진입 외 요청을 포함한 전체 | k6 `http_reqs` · `http_server_requests` |
 
 **1초 단위 peak는 서버 쪽 지표로 잴 수 없다.** Prometheus 수집 주기가 15초(`servicemonitor-api.yaml`)이고,
@@ -315,6 +315,11 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 - 철거 성공은 로그 안의 감사 출력(잔여 0)으로 판정한다([[TS-038]]). 철거가 실패해도 감사는 돈다.
 - 한계: PC가 켜져 있고 그 사용자로 로그온돼 있어야 한다(암호를 저장하지 않는다). 절전이면 깨워서 실행하지만,
   Windows 전원 설정에서 절전 해제 타이머가 꺼져 있으면 깨우지 못한다. 실행 시각에 AWS 자격증명이 유효해야 한다.
+- 등록은 `terraform init`(backend)된 체크아웃에서 한다. 철거는 그 체크아웃의 state로 하므로, init되지 않았거나
+  등록 뒤 지워지면 철거하지 못한다(등록 스크립트가 init 여부를 확인하고, `tear-down.sh`는 state 조회 실패를 철거
+  실패로 끝낸다). 실행 중 뜨는 콘솔 창을 닫아도 중단된다.
+- 새 측정 세션을 띄우기 전에 `schedule-teardown.ps1 -Status`(세션 없이)로 이전 세션의 예약 철거가 남아 있지
+  않은지 확인한다. 남아 있으면 새 세션이 그 시각에 철거된다.
 
 ---
 

@@ -34,13 +34,22 @@ if (files.length === 0) {
 const sums = { entry_arrivals: 0, entry_processed: 0, entry_no_user: 0, dropped_iterations: 0, http_reqs: 0 };
 const perSecond = new Map(); // epoch 초 → 그 초에 시작된 진입 수
 let firstMs = Infinity;
+let malformedLines = 0; // 강제 종료로 잘린 줄
 let lastMs = -Infinity;
 
 for (const f of files) {
   const rl = createInterface({ input: createReadStream(f), crlfDelay: Infinity });
   for await (const line of rl) {
     if (!line.includes('"type":"Point"')) continue;
-    const p = JSON.parse(line);
+    // 발생기가 강제 종료되면 마지막 줄이 잘려 있을 수 있다. 그 줄은 버리고 센다 — 잘린 줄 하나 때문에
+    // 그때까지의 지표를 통째로 잃지 않는다.
+    let p;
+    try {
+      p = JSON.parse(line);
+    } catch {
+      malformedLines++;
+      continue;
+    }
     if (!(p.metric in sums)) continue;
     sums[p.metric] += p.data.value;
     if (p.metric === "entry_arrivals") {
@@ -64,6 +73,7 @@ const offered = sums.entry_arrivals + sums.entry_no_user + sums.dropped_iteratio
 
 const result = {
   files,
+  malformedLines,
   targetUsers: usersN,
   offeredArrivals: offered,
   // 목표 사용자 수보다 덜 시작된 수(도착률 정수 반올림 등). 음수면 목표보다 더 시작됐다.

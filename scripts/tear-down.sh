@@ -227,7 +227,15 @@ clean_untracked() {
 
 echo "==> 5/7 terraform destroy"
 DESTROY_RC=0
-if [ "$(tf state list 2>/dev/null | wc -l)" -eq 0 ]; then
+# state 조회가 실패한 것(backend 미초기화, 자격증명 만료)을 "state가 비어 있다"로 읽으면 철거를 건너뛴 채
+# 성공처럼 끝난다. 예약 철거(scripts/loadtest/scheduled-teardown.sh)가 조용히 아무것도 안 하게 되는 경로다.
+# 조회 실패와 빈 state를 구분하고, 실패면 감사를 남기고 실패로 끝낸다.
+if ! STATE_LIST="$(tf state list 2>&1)"; then
+  echo "terraform state 조회에 실패했다(backend 초기화·자격증명 확인). 철거하지 못했다:" >&2
+  echo "$STATE_LIST" | sed 's/^/      /' >&2
+  audit; exit 1
+fi
+if [ -z "$STATE_LIST" ]; then
   echo "    state가 비어 있다. 건너뛴다"
 else
   # 파이프를 쓰지 않는다. `| tail` 을 붙이면 종료 코드가 tail의 것이 되어

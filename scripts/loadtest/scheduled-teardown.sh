@@ -19,7 +19,12 @@ LOG="artifacts/loadtest/$SESSION/scheduled-teardown-$(date +%Y%m%d-%H%M%S).log"
   bash scripts/tear-down.sh
   echo "[scheduled] tear-down exit=$?"
   bash scripts/tear-down.sh --audit-only
-  echo "[scheduled] audit exit=$?"
+  AUDIT_RC=$?
+  echo "[scheduled] audit exit=$AUDIT_RC"
   echo "[scheduled] end $(date -Is)"
+  exit "$AUDIT_RC"
 } > "$LOG" 2>&1
+AUDIT_RC=$?
 echo "로그: $LOG"
+# 작업 스케줄러의 LastTaskResult로 실패를 알 수 있게 감사 결과로 끝낸다(잔여가 있으면 0이 아니다).
+exit "$AUDIT_RC"

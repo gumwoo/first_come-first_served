@@ -164,6 +164,13 @@ variable "loadgen_instance_count" {
   description = "클러스터 밖 발생기 대수. 측정 세션에서만 loadtest.tfvars로 켠다(기본 0 = 생성 안 함)."
   type        = number
   default     = 0
+
+  # 상한은 EC2 Standard vCPU 쿼터에서 나온 계산값이다(loadtest-100k-plan §4 "발생기 구성 상한").
+  # 발생기가 모자라도 이 상한을 넘겨 늘리지 않는다 — 넘기면 노드 확장에 쓸 쿼터를 발생기가 먹는다.
+  validation {
+    condition     = var.loadgen_instance_count >= 0 && var.loadgen_instance_count <= 3
+    error_message = "loadgen_instance_count는 0~3이다(계획서 §4 발생기 구성 상한). 상한을 바꾸려면 계획서부터 고친다."
+  }
 }
 
 variable "loadgen_instance_type" {

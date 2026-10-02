@@ -167,6 +167,7 @@ const rl = createInterface({ input, crlfDelay: Infinity });
 rl.on("line", (line) => {
   if (stopping) {
     if (/QTOKEN\s+\S+/.test(line)) stat.skippedAfterStop++;
+    else if (!args.tokens) process.stdout.write(line + "\n"); // 중단 뒤의 k6 로그도 남긴다
     return;
   }
   // 표준입력이면 k6 로그가 섞여 들어온다. QTOKEN 줄만 쓴다. 토큰 파일이면 줄 전체가 토큰이다.
@@ -179,14 +180,19 @@ rl.on("close", () => {
   maybeExit();
 });
 
-// 측정 세션을 끊을 때(Ctrl+C): 새 연결을 더 열지 않고, 입력을 닫고, 붙든 연결을 닫은 뒤 요약을 남긴다.
+// 측정 세션을 끊을 때(Ctrl+C): 새 연결을 더 열지 않고 붙든 연결을 닫은 뒤 요약을 남긴다.
 // 운영자가 끊은 것이라 서버 단절로 세지 않는다. 계획서 §3.3의 "즉시 중단"이 실제 대상에 연결을 남기지 않게 한다.
+//
+// 표준입력은 닫지 않고 끝(EOF)까지 계속 읽는다. 앞단 k6도 같은 Ctrl+C를 받아 graceful stop 중에 요약과 마지막
+// 원시 출력을 쓰는데, 여기서 파이프를 먼저 닫으면 k6가 끊긴 파이프에 쓰다 죽어 그 출력을 잃는다. 중단 뒤의 k6 로그는
+// 그대로 흘려 보내고, QTOKEN 줄은 연결하지 않고 skippedAfterStop으로만 센다. 토큰 파일 입력이면 바로 닫는다.
 process.on("SIGINT", () => {
   if (stopping) process.exit(130); // 두 번째 Ctrl+C
   stopping = true;
-  inputDone = true;
-  rl.close();
-  if (!args.tokens) process.stdin.pause();
+  if (args.tokens) {
+    inputDone = true;
+    rl.close();
+  }
   for (const [r, finish] of [...live]) {
     finish("client_stop", "clientStopped");
     r.destroy();

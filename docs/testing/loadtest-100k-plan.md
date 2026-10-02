@@ -61,10 +61,11 @@ iteration 시작을 일정하게 분산시키는 기준 시험에 쓰고, **실�
 | 분포 | 목적 | 정의 |
 |---|---|---|
 | **Constant** | 순수 capacity 비교 — 단계 간·개선 전후 비교의 기준 | `constant-arrival-rate`, 목표 10,000 arrivals/s × 10초 |
-| **Front-loaded** | 티켓 오픈 직후 집중 특성 | 총 100K / 10초, 초반 집중. `ramping-arrival-rate` stage로 정의(예: 초당 25K → 20K → 15K → …, 합계 100K) |
+| **Front-loaded** | 티켓 오픈 직후 집중 특성 | 총 100K / 10초, 초반 집중. `ramping-arrival-rate`로 **평균의 1.8배에서 0.2배까지 진입 시간 동안 선형 감소**(100K/10초면 18,000 → 2,000 arrivals/s, 계산값). 면적이 평균 × 시간이라 총 진입 수는 Constant와 같다 |
 
 **Front-loaded 분포는 실제 티켓 오픈 트래픽 데이터에서 나온 것이 아니다.** "현실적인 분포"라고 주장하지 않고
-**프로젝트가 정의한 stress workload**라고 쓴다. 구체 stage는 스크립트를 쓸 때 확정해 결과와 함께 남긴다.
+**프로젝트가 정의한 stress workload**라고 쓴다. 정의는 `infra/k6/queue-entry-rate.js`(`DIST=frontloaded`)에 고정돼 있다.
+k6가 목표 도착률을 정수로 반올림하므로 실제 총 진입 수는 목표와 몇 건 다를 수 있다 — 그래서 총 진입 수도 측정값으로 기록한다(§2.3).
 
 ### 2.1 사용자 행동 모델과 시험의 경계
 
@@ -163,6 +164,19 @@ arrival-rate executor로 새 스크립트를 쓴다. 이때 VU는 iteration 사�
 발생기가 측정 대상보다 먼저 무너질 가능성이 크다(추론). 그래서 진입 iteration은 토큰 발급까지로 끝내고,
 **SSE 동시 연결 부하는 진입으로 발급된 대기 토큰을 넘겨받아 같은 시험 창에서 별도 발생기로 만든다.**
 §6 단계 4를 API와 SSE로 나눈 것과 같은 이유다. 실제로 어느 쪽이 한계인지는 단계 2에서 확인한다.
+
+**구현**(로컬 목 서버로 동작만 확인했다. 용량은 단계 2에서 잰다):
+
+| 파일 | 역할 |
+|---|---|
+| `infra/k6/queue-entry-rate.js` | ①의 진입 발생기. arrival-rate executor, iteration 번호로 사용자 매핑, `EMIT_TOKENS=1`이면 발급된 대기 토큰을 한 줄씩 낸다 |
+| `infra/loadgen/sse-hold.mjs` | ②의 SSE 연결 발생기(Node). 진입 발생기 출력에서 토큰을 받아 연결을 열고 붙든다 |
+| `infra/loadgen/entry-arrivals.mjs` | 진입 원시 출력에서 §2.3 지표(offered·achieved·dropped·1초 peak)를 계산 |
+| `infra/loadgen/run-entry.sh` | run 하나를 실행하고 출력을 run 디렉터리(§7)에 모은다. 발생기 자원도 함께 기록 |
+| `infra/loadgen/mock-queue-server.mjs` | 로컬 스모크 전용 목 서버. 측정에 쓰지 않는다 |
+
+②의 "k6 코어에는 SSE 클라이언트가 없다"는 여전히 외부 지식이다. 그 판단과 무관하게, 연결 하나를 VU 하나로 붙드는
+구조를 피하려고 SSE 발생기를 Node로 만들었다.
 
 ### 2.5 폴링 폭증 시나리오(별도)
 
@@ -410,8 +424,44 @@ artifacts/loadtest/<session-id>/<run-id>/
   session-id = YYYYMMDD-HHMM (측정 세션 시작 시각, KST)
 ```
 
-`<run-id>`의 이름 규칙과 Prometheus 데이터를 내보내는 방법은 측정 도구를 만들 때 그 도구와 함께 정해
-이 절에 추가한다.
+**`<run-id>` = `<시험>-<조건>-r<회차>`**
+
+| 칸 | 값 |
+|---|---|
+| `<시험>` | `step2` · `step4api` · `step4sse` · `step5` · `step6` · `step7` · `step9`(§6 단계), `e2e`(E2E 입장자 시험 §2.1), `poll`(폴링 폭증 §2.5) |
+| `<조건>` | 그 run에서 정한 변수를 아래 순서대로 `_`로 잇는다. 해당 없는 단위는 뺀다 |
+| `r<회차>` | **같은 측정 세션 안에서** 같은 `<시험>-<조건>`을 반복한 순번(`r1`부터). 조건이 하나라도 다르면 회차가 아니라 다른 run이다 |
+
+`<조건>` 단위(이 순서로 쓴다):
+
+| 순서 | 단위 | 뜻 | 예 |
+|---|---|---|---|
+| 1 | `<n>pod` | 고정한 api Pod 수(단계 4·5) | `1pod`, `4pod` |
+| 2 | `<n>aps` | 목표 queue-entry arrivals/s | `2000aps` |
+| 3 | `<n>conn` | 목표 SSE 동시 연결 수 | `4000conn` |
+| 4 | `<n>k` | 사용자 수(천 명). 소수점은 `p`로 쓴다 | `50k`, `62p5k` |
+| 5 | `constant` · `frontloaded` | 도착 분포(§2) | |
+| 6 | `cap<n>` | 입장 정원(E2E) | `cap100` |
+| 7 | `sess<n>s` | 입장 후 세션 길이(E2E) | `sess60s` |
+| 8 | `poll<n>s` | 폴링 주기(폴링 폭증) | `poll2s` |
+
+예: `step2-1000aps-r1`, `step4api-1pod_2000aps-r1`, `step4sse-1pod_4000conn-r1`, `step5-4pod_6000aps-r2`,
+`step6-10k_constant-r1`, `step7-62p5k_frontloaded-r1`, `e2e-cap100_sess60s-r1`, `poll-10k_poll2s-r1`.
+단계 9는 비교 대상 run과 `<조건>`이 **같아야** before/after가 된다(`step7-50k_constant-r1` ↔ `step9-50k_constant-r1`).
+
+**run 디렉터리의 출력**(`infra/loadgen/run-entry.sh`가 만든다. 분산 실행이면 발생기마다 `<gen>`이 다르다):
+
+| 파일 | 내용 |
+|---|---|
+| `meta-<gen>.json` | 실행 조건(커밋 SHA, workload 값, 발생기, 시작 시각) |
+| `entry-<gen>.json` | k6 원시 출력(`--out json`). `entry_arrivals` 시계열이 1초 peak의 유일한 출처다(§2.3) |
+| `k6-summary-<gen>.json`, `k6-<gen>.log` | k6 요약(`dropped_iterations` 포함)과 로그 |
+| `arrivals-<gen>.json` | offered·achieved·dropped·처리된 진입·HTTP 요청 수·1초 peak(`entry-arrivals.mjs`) |
+| `sse-<gen>/` | SSE 연결별 결과·1초 타임라인·요약(`sse-hold.mjs`) |
+| `gen-vmstat-<gen>.log`, `gen-netdev-<gen>.log` | 발생기 CPU·메모리·네트워크(§3.1 무효 판정, §8 Generator 축) |
+
+Prometheus 데이터(범위 질의 결과)와 CloudWatch 데이터(§5.3), 정합성 SQL 결과는 정합성 감시 도구(§3.3)와 함께
+같은 run 디렉터리에 추가한다.
 
 `artifacts/`는 `.gitignore` 대상이다. k6 원시 출력·Prometheus 데이터는 커질 수 있고, 이 저장소는 public이다.
 **run이 끝날 때마다 즉시 저장한다.** 클러스터를 철거하면 Prometheus 데이터도 함께 사라지고

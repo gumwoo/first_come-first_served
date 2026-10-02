@@ -83,6 +83,20 @@ class QueueAdmitVisibilityIntegrationTest extends IntegrationTestSupport {
         assertThat(meterRegistry.get("flowticket.queue.gate.fallback").counter().count()).isEqualTo(before + 1);
     }
 
+    /** 만료됐지만 아직 회수 전인 토큰은 슬롯을 쥔 상태라 정원 초과가 아니다. 폴백으로 통과해도 세지 않는다. */
+    @Test
+    void 회수_전_만료_토큰의_폴백은_세지_않는다() {
+        String token = queueService.issue(931L, EVENT).token();
+        admissionService.admit(EVENT);
+        // 점수를 과거로 돌려 "만료됐지만 회수 전" 상태를 만든다. admit 키는 남아 있다.
+        redisTemplate.opsForZSet().add("queue:admitexp:" + EVENT, token, 1);
+        double before = meterRegistry.get("flowticket.queue.gate.fallback").counter().count();
+
+        queueService.isAdmitted(token, EVENT);
+
+        assertThat(meterRegistry.get("flowticket.queue.gate.fallback").counter().count()).isEqualTo(before);
+    }
+
     @Test
     void 승격은_카운트와_만료등록이_함께_움직인다() {
         for (long u = 910L; u < 913L; u++) {

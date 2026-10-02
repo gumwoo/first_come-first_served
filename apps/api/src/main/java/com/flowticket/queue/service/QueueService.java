@@ -192,9 +192,11 @@ public class QueueService {
         }
         Object tokenEvent = redis.opsForHash().get(QueueKeys.token(token), "eventId");
         boolean admitted = tokenEvent != null && eventId.equals(Long.valueOf((String) tokenEvent));
-        if (admitted) {
-            // admitExp에 유효한 입장이 없는데 admit 키로 통과했다. admitExp 만료 뒤(회수 전후) admit 키 TTL이
-            // 남은 창이라, 그 사이 빈 슬롯을 받은 사람과 함께 정원을 넘을 수 있다(loadtest-100k-plan §3.3 한계).
+        if (admitted && expiresAt == null) {
+            // 이미 회수돼 admitExp에 점수가 없는데 admit 키로 통과했다. 그 슬롯은 다른 사람에게 다시 승격됐을 수
+            // 있어 실효 입장자가 정원을 넘는 창이다(loadtest-100k-plan §3.3 한계).
+            // 점수가 있고 이미 지난(만료됐지만 회수 전) 토큰은 세지 않는다 — 아직 카운터와 admitExp에 남아
+            // 슬롯을 쥔 상태라 정원 초과가 아니다.
             metrics.gateFallback().increment();
         }
         return admitted;

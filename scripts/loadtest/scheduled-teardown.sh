@@ -12,9 +12,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 cd "$ROOT"
 
-mkdir -p "artifacts/loadtest/$SESSION"
+# 로그 자리를 만들지 못하면 아래 묶음이 실행되지 않는다. 그걸 성공으로 끝내면 안 된다.
+mkdir -p "artifacts/loadtest/$SESSION" || { echo "로그 디렉터리를 만들지 못했다: artifacts/loadtest/$SESSION" >&2; exit 1; }
 LOG="artifacts/loadtest/$SESSION/scheduled-teardown-$(date +%Y%m%d-%H%M%S).log"
-TEARDOWN_RC=0 AUDIT_RC=0
+# 실행되지 않았으면 실패다. 초기값을 성공(0)으로 두면 묶음이 통째로 건너뛰어져도 0으로 끝난다.
+TEARDOWN_RC=99 AUDIT_RC=99
 {
   echo "[scheduled] start $(date -Is) session=$SESSION"
   bash scripts/tear-down.sh; TEARDOWN_RC=$?

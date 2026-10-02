@@ -16,6 +16,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 TFDIR="$ROOT/infra/terraform/platform/environments/demo"
 REGION="${AWS_REGION:-ap-northeast-2}"
+# 아래 aws 호출(특히 감사)이 프로필의 기본 리전에 기대지 않게 한다. 다른 리전을 보면 잔여가 0으로 나온다.
+export AWS_DEFAULT_REGION="$REGION"
 CLUSTER="flowticket"
 AUDIT_ONLY=0
 [ "${1:-}" = "--audit-only" ] && AUDIT_ONLY=1
@@ -37,7 +39,7 @@ audit() {
   #   * EBS: EBS CSI 드라이버가 만든다(PVC 태그로 식별)
   local fail=0
   # 조회가 실패하면(자격증명 만료·권한·네트워크) 출력이 비어 있다. 그걸 0으로 읽으면 "잔여 없음"이 되어
-  # 철거 실패를 성공으로 보고한다(TS-038 §8과 같은 종류). 빈 값은 "확인 불가"로 찍고 실패로 센다.
+  # 철거 실패를 성공으로 보고한다(TS-038 §3과 같은 종류). 빈 값은 "확인 불가"로 찍고 실패로 센다.
   chk() {
     if [ -z "${2:-}" ]; then
       printf "    %-26s %s\n" "$1" "확인 불가(조회 실패)"

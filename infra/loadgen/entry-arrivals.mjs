@@ -50,7 +50,7 @@ for (const f of files) {
       malformedLines++;
       continue;
     }
-    if (p.type !== "Point") continue;
+    if (p?.type !== "Point") continue;
     if (!(p.metric in sums)) continue;
     sums[p.metric] += p.data.value;
     if (p.metric === "entry_arrivals") {

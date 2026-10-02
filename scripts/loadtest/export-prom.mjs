@@ -33,6 +33,8 @@ export const QUERIES = {
   queue_admitted: "max by (event) (flowticket_queue_admitted)",
   queue_admit_count: "max by (event) (flowticket_queue_admit_count)",
   queue_capacity: "max(flowticket_queue_capacity)",
+  queue_admit_drift: "max by (event) (abs(flowticket_queue_admit_drift))",
+  queue_admit_tick_failures_rate: "sum(rate(flowticket_queue_admit_tick_failures_total[1m]))",
   queue_admit_tick_p95: "histogram_quantile(0.95, sum by (le) (rate(flowticket_queue_admit_tick_seconds_bucket[1m])))",
   queue_gate_fallback_rate: "sum(rate(flowticket_queue_gate_fallback_total[1m]))",
   // SSE(§5.1). 파드마다 다른 값이라 합으로 묶는다.

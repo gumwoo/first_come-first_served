@@ -274,7 +274,7 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 
 | 도구 | 하는 일 |
 |---|---|
-| `scripts/loadtest/watch-correctness.mjs` | run 동안 Prometheus를 주기적으로 조회해 실시간 조건 셋(over-admit, 카운터 어긋남, 초과판매)을 판정한다. 위반이면 `violation.json`을 남기고 `--on-violation` 명령(예: 발생기의 k6 정지)을 한 번 실행한 뒤 종료 코드 3. 지표가 없거나 수집 실패(NaN)면 위반이 아니라 "판정 불가"로 기록한다 |
+| `scripts/loadtest/watch-correctness.mjs` | run 동안 Prometheus를 주기적으로 조회해 실시간 조건 셋(over-admit, 카운터 어긋남 — `admit_drift` 게이지, 초과판매)을 판정한다. 위반이면 `violation.json`을 남기고 `--on-violation` 명령(예: 발생기의 k6 정지)을 한 번 실행한 뒤 종료 코드 3. 지표가 없거나 수집 실패(NaN)면 위반이 아니라 "판정 불가"로 기록한다 |
 | `scripts/loadtest/check-correctness.sh` | run이 끝난 뒤 사후 조건을 검사한다: SQL(`correctness.sql` — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스), 대기열 순서(`queue-order.mjs` — api 로그의 승격 감사 줄), 이벤트 유실(PUBLISHED 아웃박스 vs 소비자 멱등 키). 위반 1, 검사 실패 2 |
 
 실효 입장 초과는 판정식이 미확정이라 도구가 판정하지 않는다(재료인 승격·회수·이탈 로그만 함께 수집한다).
@@ -586,9 +586,9 @@ artifacts/loadtest/<session-id>/<run-id>/
 
 | 파일 | 내용 |
 |---|---|
-| `watch-correctness.jsonl`, `violation.json`, `violation-action.log` | 실시간 판정 기록, 첫 위반, 중단 명령 출력(`watch-correctness.mjs`) |
+| `watch-correctness.jsonl`, `violation.json`, `violation-action.log` | 실시간 판정 기록, 첫 위반, 중단 명령 출력(`watch-correctness.mjs`). 감시 내내 값이 한 번도 없었으면 종료 코드 4(판정 불가) |
 | `prom/<이름>.json`, `prom/_meta.json` | run 구간의 범위 질의 결과(`scripts/loadtest/export-prom.mjs`, 질의 목록은 스크립트에 있다) |
-| `correctness/` | 사후 검사 결과 — `sql.csv`, `api.log`, `queue-order.json`, `event-loss.txt`, `summary.txt`(`check-correctness.sh`) |
+| `correctness/` | 사후 검사 결과 — `sql.csv`, `api.log`, `queue-order.json`, `published-ids.txt`·`dedup-exists.txt`(이벤트 유실 대조의 입력과 Redis 응답), `event-loss.txt`, `summary.txt`(`check-correctness.sh`). 승격 기록이 0건이면 대기열 순서는 판정 불가 |
 
 CloudWatch 데이터(§5.3)는 아직 내보내는 도구가 없다. 측정 세션에서 콘솔·CLI로 받아 같은 디렉터리에 둔다.
 

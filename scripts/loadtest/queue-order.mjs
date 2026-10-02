@@ -62,5 +62,7 @@ for (const [event, xs] of byEvent) {
   result.events[event] = { admits: xs.length, inversions, duplicateSeq: dupSeq, samples };
 }
 result.violations = total;
+result.admits = [...byEvent.values()].reduce((n, xs) => n + xs.length, 0);
 console.log(JSON.stringify(result, null, 2));
-process.exit(total ? 1 : 0);
+// 승격 기록이 한 줄도 없으면 "위반 없음"이 아니라 "판정 불가"다(로그 수집 실패, 감사 로그 미배포).
+process.exit(result.admits === 0 ? 2 : total ? 1 : 0);

@@ -62,7 +62,12 @@ FAIL=0 BROKEN=0
 
 echo "==> 1/3 SQL 검사"
 if { printf "\\\\set since '%s'\n" "$SINCE_DB"; cat "$HERE/correctness.sql"; } | psql_pod "loadtest-check-sql" > "$D/sql.csv"; then
-  awk -F, 'NF==2 && $2 ~ /^[0-9]+$/ && $2 > 0 { bad=1 } END { exit bad }' "$D/sql.csv" || FAIL=1
+  # 검사 8개가 모두 "<이름>,<수>" 한 줄씩 나와야 한다. 모자라면 일부 검사가 돌지 않은 것이다.
+  if [ "$(grep -cE '^[a-z_]+,[0-9]+$' "$D/sql.csv")" -ne 8 ]; then
+    echo "    SQL 결과가 8줄이 아니다" >&2; BROKEN=1
+  else
+    awk -F, '$2 > 0 { bad=1 } END { exit bad }' "$D/sql.csv" || FAIL=1
+  fi
 else
   echo "    SQL 검사 실패" >&2; BROKEN=1
 fi
@@ -71,6 +76,7 @@ echo "==> 2/3 대기열 순서(api 로그)"
 if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 --prefix \
      --max-log-requests=20 > "$D/api.log"; then
   node "$HERE/queue-order.mjs" --tolerance-ms "$TOL" "$D/api.log" > "$D/queue-order.json"
+  # 2: 승격 기록 0건(판정 불가) 또는 실행 실패
   case $? in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
 else
   echo "    api 로그 수집 실패(클러스터 접근)" >&2; BROKEN=1
@@ -109,7 +115,8 @@ fi
 {
   echo "since=$SINCE"
   echo "--- sql (검사,위반 수)"; cat "$D/sql.csv" 2>/dev/null
-  echo "--- queue-order"; node -e 'try{const r=require(process.argv[1]);console.log("violations="+r.violations)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
+  # require는 상대경로를 모듈 이름으로 읽는다. 파일로 읽는다.
+  echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
   echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null
   echo "--- 실효 입장 초과: 판정식 미확정(계획서 §3.3) — 판정하지 않음"
   if [ "$BROKEN" -ne 0 ]; then echo "판정: 검사 실패(결과 불완전)"

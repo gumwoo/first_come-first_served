@@ -75,7 +75,7 @@ SELECT 'paid_without_approved_payment', count(*) FROM orders o
  WHERE o.status = 'PAID' AND o.created_at >= :'since'
    AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id AND p.status = 'APPROVED');
 
--- 5) 아직 발행되지 않은 아웃박스 행(PENDING·DEAD). 0이 아니면 이벤트 유실 후보다.
+-- 5) 발행되지 않은 아웃박스 행(PENDING·DEAD·DISCARDED). 측정 중에는 0이어야 한다 — 0이 아니면 이벤트 유실 후보다.
 --    PUBLISHED 행이 실제로 소비됐는지는 check-correctness.sh가 Redis 멱등 키로 대조한다.
 SELECT 'outbox_not_published', count(*) FROM outbox_events
  WHERE status <> 'PUBLISHED' AND created_at >= :'since';

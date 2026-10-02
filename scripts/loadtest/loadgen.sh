@@ -21,7 +21,7 @@ ids() {
   aws ec2 describe-instances --region "$REGION" \
     --filters Name=tag:Project,Values=flowticket Name=tag:Role,Values=loadgen Name=instance-state-name,Values=running \
     --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value, InstanceId]' --output text \
-    | sort | awk '{print $2}'
+    | sort -V | awk '{print $2}'
 }
 
 bucket() {
@@ -37,10 +37,16 @@ run_on() {
   cid="$(aws ssm send-command --region "$REGION" --instance-ids "$id" --document-name AWS-RunShellScript \
     --parameters "$(jq -cn --arg c "$full" '{commands: [$c], executionTimeout: ["14400"]}')" \
     --timeout-seconds 600 --query 'Command.CommandId' --output text)"
-  local status
+  local status errors=0
   while true; do
-    status="$(aws ssm get-command-invocation --region "$REGION" --command-id "$cid" --instance-id "$id" \
-      --query Status --output text 2>/dev/null || echo Pending)"
+    if status="$(aws ssm get-command-invocation --region "$REGION" --command-id "$cid" --instance-id "$id" \
+        --query Status --output text 2>/dev/null)"; then
+      errors=0
+    else
+      # 등록 직후 잠깐은 조회가 실패한다. 계속 실패하면(자격 증명 만료 등) 무한 대기하지 않고 끝낸다.
+      errors=$((errors + 1)); status=Pending
+      [ "$errors" -ge 20 ] && { echo "--- $gen ($id): 상태 조회가 계속 실패한다(자격 증명 확인)" >&2; return 1; }
+    fi
     case "$status" in Pending|InProgress|Delayed) sleep 3 ;; *) break ;; esac
   done
   echo "--- $gen ($id): $status"
@@ -93,7 +99,8 @@ case "$cmd" in
   pull)
     session="${1:?session-id가 필요하다}"
     b="$(bucket)"
-    run_all "" "aws s3 sync artifacts/loadtest/$session s3://$b/runs/$session --only-show-errors && echo synced"
+    # 일부 발생기만 쓴 run(exec --gen N)이면 나머지에는 디렉터리가 없다. 그건 실패가 아니다.
+    run_all "" "if [ -d artifacts/loadtest/$session ]; then aws s3 sync artifacts/loadtest/$session s3://$b/runs/$session --only-show-errors && echo synced; else echo 'no runs here'; fi"
     mkdir -p "$ROOT/artifacts/loadtest/$session"
     aws s3 sync --region "$REGION" "s3://$b/runs/$session" "$ROOT/artifacts/loadtest/$session" --only-show-errors
     echo "받음: $ROOT/artifacts/loadtest/$session"

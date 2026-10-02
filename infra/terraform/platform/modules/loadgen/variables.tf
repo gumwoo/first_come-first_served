@@ -15,6 +15,11 @@ variable "instance_count" {
   description = "발생기 대수. 0이면 아무것도 만들지 않는다 — 측정 세션에서만 loadtest.tfvars로 켠다."
   type        = number
   default     = 0
+
+  validation {
+    condition     = var.instance_count >= 0 && floor(var.instance_count) == var.instance_count
+    error_message = "instance_count는 0 이상의 정수여야 한다."
+  }
 }
 
 variable "instance_type" {

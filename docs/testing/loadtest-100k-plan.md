@@ -254,7 +254,8 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 
 **발생기 인프라**(구현): `infra/terraform/platform/modules/loadgen`. 퍼블릭 서브넷의 EC2에서 ALB 공인 경로로 건다.
 
-- `loadgen_instance_count`(기본 0)를 측정 세션에서만 `loadtest.tfvars`로 켠다. 0이면 아무것도 만들지 않는다.
+- `loadgen_instance_count`(기본 0)는 측정 세션에서만 켠다. 0이면 아무것도 만들지 않는다. 켤 대수와 타입은 발생기
+  구성을 산정한 뒤 `loadtest.tfvars`에 고정한다(그 전까지 `loadtest.tfvars`에는 이 값이 없다).
 - 접속은 SSM으로만 한다(인바운드 규칙·SSH 키 없음). 조작은 `scripts/loadtest/loadgen.sh`(상태 확인, 실행할 커밋 고정,
   입력 파일 배포, 명령 실행, 결과 회수)로 한다.
 - 결과는 S3 버킷을 거쳐 로컬 `artifacts/`로 받는다. 버킷은 철거 때 함께 지워지므로 run마다 회수한다(§7).

@@ -137,7 +137,7 @@ S-30K와 S-100K 사이의 중간 단계와 실패 시 구간 축소 규칙은 §
 | offered arrivals | 발생기가 시작하려 한 진입 iteration 수 | `entry_arrivals` + `entry_no_user` + `dropped_iterations`(`entry-arrivals.mjs`) |
 | achieved arrivals | 실제로 진입 요청을 보낸 수 | k6 `entry_arrivals`(요청 직전에 센다) |
 | `dropped_iterations` | 시작하지 못한 진입 | k6 — arrival-rate executor에만 있다. 0이 아니면 §3.1 무효 |
-| 평균 arrival rate | achieved arrivals / 진입 시간 | k6 |
+| 평균 arrival rate | achieved arrivals / 진입 시간 | `entry-arrivals.mjs`(분모는 진입 시간) |
 | **peak 1초 arrival rate** | 1초 창에서의 최대 진입 시작 수 | **k6 원시 출력만** — 아래 참고 |
 | 처리된 진입 | 토큰 발급이 성공(200)한 수 | k6 check · `http_server_requests`(진입 URI) |
 | HTTP 요청 수 · HTTP rps | 진입 외 요청을 포함한 전체 | k6 `http_reqs` · `http_server_requests` |
@@ -455,7 +455,7 @@ artifacts/loadtest/<session-id>/<run-id>/
 |---|---|
 | `meta-<gen>.json` | 실행 조건(커밋 SHA, workload 값, 발생기, 시작 시각) |
 | `entry-<gen>.json` | k6 원시 출력(`--out json`). `entry_arrivals` 시계열이 1초 peak의 유일한 출처다(§2.3) |
-| `k6-summary-<gen>.json`, `k6-<gen>.log` | k6 요약(`dropped_iterations` 포함)과 로그 |
+| `k6-summary-<gen>.json`, `k6-<gen>.log` | k6 요약과 로그. `dropped_iterations`는 0이면 요약에 나타나지 않으므로 값은 `arrivals-<gen>.json`에서 읽는다 |
 | `arrivals-<gen>.json` | offered·achieved·dropped·처리된 진입·HTTP 요청 수·1초 peak(`entry-arrivals.mjs`) |
 | `sse-<gen>/` | SSE 연결별 결과·1초 타임라인·요약(`sse-hold.mjs`) |
 | `gen-vmstat-<gen>.log`, `gen-netdev-<gen>.log` | 발생기 CPU·메모리·네트워크(§3.1 무효 판정, §8 Generator 축) |

@@ -46,6 +46,8 @@ done
 [ -f "$USERS" ] || { echo "사용자 토큰 파일이 없다: $USERS" >&2; exit 2; }
 USERS="$(cd "$(dirname "$USERS")" && pwd)/$(basename "$USERS")"
 case "$USERS_N$ENTRY_SECONDS$OFFSET" in *[!0-9]*) echo "--users-n/--entry-seconds/--offset은 정수여야 한다" >&2; exit 2 ;; esac
+# 앞자리 0(예: 08)은 JSON 숫자가 아니다. 10진수로 정규화한다.
+USERS_N=$((10#$USERS_N)); ENTRY_SECONDS=$((10#$ENTRY_SECONDS)); OFFSET=$((10#$OFFSET))
 
 OUT="$ROOT/artifacts/loadtest/$SESSION/$RUN"
 mkdir -p "$OUT"
@@ -78,13 +80,19 @@ K6_ARGS=(run --log-format=raw
 [ -n "$PRE_VUS" ] && K6_ARGS+=(-e PRE_VUS="$PRE_VUS")
 [ -n "$MAX_VUS" ] && K6_ARGS+=(-e MAX_VUS="$MAX_VUS")
 
+# k6가 중단·실패로 끝나도 그때까지의 원시 출력으로 지표는 계산해 둔다. 종료 코드는 마지막에 돌려준다.
+set +e
 if [ "$NO_SSE" = 1 ]; then
   k6 "${K6_ARGS[@]}" "$ROOT/infra/k6/queue-entry-rate.js" > "$OUT/k6-$GEN.log" 2>&1
 else
   k6 "${K6_ARGS[@]}" -e EMIT_TOKENS=1 "$ROOT/infra/k6/queue-entry-rate.js" 2>&1 \
     | node "$HERE/sse-hold.mjs" --base "$BASE" --out "$OUT/sse-$GEN" --hold "$SSE_HOLD" > "$OUT/k6-$GEN.log"
 fi
+RUN_STATUS=$?
+set -e
 
 node "$HERE/entry-arrivals.mjs" --entry-seconds "$ENTRY_SECONDS" --users-n "$USERS_N" "$OUT/entry-$GEN.json" \
   > "$OUT/arrivals-$GEN.json"
 echo "run 출력: $OUT"
+[ "$RUN_STATUS" = 0 ] || echo "발생기가 0이 아닌 코드로 끝났다($RUN_STATUS) — 이 run의 유효성을 §3.1로 판정한다" >&2
+exit "$RUN_STATUS"

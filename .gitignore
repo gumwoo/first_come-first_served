@@ -76,5 +76,6 @@ backend.hcl
 # 100K 부하 측정 원시 데이터(docs/testing/loadtest-100k-plan.md §7).
 # k6 원시 출력(요청별 타임스탬프)·Prometheus 덤프는 커질 수 있고, 결과 문서(IMP)에는 요약값·경로·실행 조건만 남긴다.
 /artifacts/
-# 사용자 토큰 파일(액세스 토큰). k6 open()이 스크립트 디렉터리 기준으로 읽어 infra/k6에 두고 싶어지는 파일이다.
-/infra/k6/tokens*.json
+# 사용자 토큰 파일(액세스 토큰). 어디에 두든 커밋하지 않는다 — k6 open()이 스크립트 디렉터리 기준으로 읽어
+# infra/k6 같은 곳에 두고 싶어지기 쉽다. 정상 위치는 artifacts/ 아래다.
+tokens*.json

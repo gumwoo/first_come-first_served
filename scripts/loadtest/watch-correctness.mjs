@@ -17,11 +17,12 @@
 // 위반이 나오면 계획서의 "실시간 조건에 걸리면 즉시 중단"을 따른다: violation.json을 남기고, --on-violation 명령을
 // 한 번 실행한다(예: 발생기의 k6를 멈추는 명령). 감시는 계속하고, 끝날 때 종료 코드로 결과를 알린다:
 //   0 위반 없음 — 조회 오류가 한 번도 없었고, 세 조건과 승격 실패 카운터 모두 감시 중 한 번 이상 값이 나왔고,
-//     관측 공백이 한 틱도 없었고, 승격 실패가 늘지 않았다
+//     관측 공백이 한 틱도 없었고, 조회 간격이 스크랩 주기를 넘은 적이 없고, 승격 실패가 늘지 않았다
 //   2 인자 오류
 //   3 위반 있음
 //   4 판정 불가 — 조회 오류(연결 끊김·HTTP 오류·조회 시간 초과)가 한 번이라도 있었거나, 값이 한 번도 나오지 않은
-//     조건이 있거나, 항상 있어야 할 시계열이 빈 틱(관측 공백)이 있었거나, 감시 중 승격 처리 실패가 늘었다. 감시가 끊긴 구간에서는 위반이 없었다고 말할 수 없다.
+//     조건이 있거나, 항상 있어야 할 시계열이 빈 틱(관측 공백)이 있었거나, 조회 간격이 스크랩 주기를 넘었거나,
+//     감시 중 승격 처리 실패가 늘었다. 감시가 끊긴 구간에서는 위반이 없었다고 말할 수 없다.
 //     over-admit·카운터 어긋남은 사후 검사가 없어 이 종료 코드가 유일한 근거다.
 // 시계열이 없는 틱은 지표에 따라 다르게 본다.
 //   - 대기열 게이지(over-admit·카운터 어긋남): 활성 이벤트가 없으면 지워진다(QueueMetrics). 오류가 아니다(noSeries).
@@ -31,8 +32,9 @@
 //   - 값이 있어도 오래된 샘플이면 관측 공백이다. Prometheus는 스크랩이 늦어지면 5분(lookback) 안의 마지막 샘플을
 //     그대로 돌려준다. 항상 있어야 할 두 지표의 가장 오래된 샘플 나이가 --max-sample-age(기본 45초 = 스크랩 15초 × 3)를
 //     넘으면 그 틱은 관측 공백(freshness)이다.
-// --interval은 스크랩 주기(15초, servicemonitor-api.yaml) 이하만 받는다. 더 길면 그 사이의 샘플을 건너뛰어, 보지 않은
-// 구간을 "위반 없음"으로 세게 된다.
+// --interval(틱 시작 사이 간격, 기본 5초)은 스크랩 주기(15초, servicemonitor-api.yaml) 이하만 받는다. 그래도 조회가
+// 느리면 실제 간격이 늘어나므로, 조건마다 연속 조회 사이의 실제 간격을 재서 15초를 넘은 적이 있으면 판정 불가로
+// 센다 — 그 사이 스크랩된 샘플(예: 순간적인 over-admit)을 보지 못했을 수 있다.
 // 조건별 집계는 watch-summary.json에 남는다.
 //
 // 종료(SIGINT·SIGTERM·--for 경과) 시 진행 중인 틱은 끝까지 기다린 뒤 판정한다. 조회마다 --query-timeout(기본 10초)이
@@ -100,8 +102,12 @@ function main() {
   // 앱이 뜰 때 조건 없이 등록되는 지표. 비면 관측 공백이다.
   const ALWAYS_PRESENT = new Set(["oversold", "tickFailures"]);
   // 항상 있어야 할 두 지표 중 가장 오래된 샘플의 나이(초). 스크랩이 늦어 오래된 값을 "현재 값"으로 읽는 것을 막는다.
+  // timestamp()는 지표를 직접 고른 식(벡터 셀렉터)에만 샘플 시각을 준다 — 그래서 지표마다 따로 건다. 또 timestamp()는
+  // 지표 이름을 떼므로, 같은 파드의 두 지표는 레이블이 같아져 정규식 하나로 묶으면 "same labelset" 오류가 난다.
+  // 지표마다 구분 레이블을 붙인 뒤 or로 합친다(G1이 promtool로 확인한 형태).
   const SAMPLE_AGE =
-    'max(time() - timestamp({__name__=~"flowticket_seat_oversold|flowticket_queue_admit_tick_failures_total"}))';
+    'max(label_replace(time() - timestamp(flowticket_seat_oversold), "m", "oversold", "", "")' +
+    ' or label_replace(time() - timestamp(flowticket_queue_admit_tick_failures_total), "m", "tickfail", "", ""))';
 
   // Prometheus 즉시 질의. 시간 초과·HTTP 오류·status≠success는 예외로 올린다.
   async function promQuery(q) {
@@ -142,6 +148,11 @@ function main() {
   let inflight = null; // 진행 중인 틱. 종료 시 끝까지 기다린 뒤 판정한다
   let sleeper = null;
   const startedAt = Date.now();
+  // 조건마다 직전 조회 시각과, 연속 조회 사이 간격의 최댓값. 간격이 스크랩 주기를 넘으면 그 사이 스크랩된 샘플을
+  // 보지 못했을 수 있다(--interval은 틱이 끝난 뒤의 쉼이라 실제 간격은 그보다 길다).
+  const lastQueryAt = {};
+  let maxQueryGapSec = 0;
+  let cadenceGaps = 0;
 
   async function checkTickFailures(row) {
     try {
@@ -189,6 +200,16 @@ function main() {
     const row = { t: new Date().toISOString() };
     const found = [];
     for (const [name, q] of Object.entries(CHECKS)) {
+      const now = Date.now();
+      if (lastQueryAt[name] !== undefined) {
+        const gapSec = (now - lastQueryAt[name]) / 1000;
+        if (gapSec > maxQueryGapSec) maxQueryGapSec = gapSec;
+        if (gapSec > SCRAPE_SEC) {
+          cadenceGaps++;
+          row[`${name}QueryGapSec`] = gapSec;
+        }
+      }
+      lastQueryAt[name] = now;
       try {
         row[name] = await query(q);
         stats[name][row[name] !== null ? "value" : ALWAYS_PRESENT.has(name) ? "gap" : "noSeries"]++;
@@ -267,11 +288,12 @@ function main() {
     if (violated) {
       code = 3;
       verdict = "위반 있음(violation.json)";
-    } else if (crashed || anyError || neverValued.length || gaps.length || ticks === 0 || tickFailuresIncrease > 0) {
+    } else if (crashed || anyError || neverValued.length || gaps.length || cadenceGaps > 0 || ticks === 0 || tickFailuresIncrease > 0) {
       code = 4;
       verdict = "판정 불가" + (crashed ? " — 감시 루프가 예외로 멈췄다" : "") + (anyError ? " — 조회 오류가 있었다" : "") +
         (neverValued.length ? ` — 값이 한 번도 나오지 않은 조건: ${neverValued.join(", ")}` : "") +
         (gaps.length ? ` — 관측 공백(항상 있어야 할 시계열·프로세스 시작 시각이 비었거나 샘플이 오래됨): ${gaps.join(", ")}` : "") +
+        (cadenceGaps > 0 ? ` — 조회 간격이 스크랩 주기(${SCRAPE_SEC}초)를 넘은 적이 ${cadenceGaps}번(최대 ${maxQueryGapSec.toFixed(2)}초, 그 사이 샘플을 못 봤을 수 있다)` : "") +
         (tickFailuresIncrease > 0 ? ` — 감시 중 승격 처리 실패 ${tickFailuresIncrease}건(대기열 게이지가 멈췄을 수 있다)` : "");
     } else {
       code = 0;
@@ -283,6 +305,8 @@ function main() {
       endedAt: new Date().toISOString(),
       stats,
       tickFailuresIncrease,
+      maxQueryGapSec,
+      cadenceGaps,
       verdict,
       exitCode: code,
     };
@@ -307,6 +331,7 @@ function main() {
 
   (async () => {
     while (!stopping) {
+      const tickStart = Date.now();
       inflight = tick();
       await inflight;
       inflight = null;
@@ -316,7 +341,8 @@ function main() {
         break;
       }
       await new Promise((resolve) => {
-        sleeper = { resolve, timer: setTimeout(resolve, INTERVAL * 1000) };
+        // 틱 시작 간격이 --interval이 되도록 틱이 걸린 시간을 뺀다(늦어진 간격은 위에서 관측 공백으로 센다).
+        sleeper = { resolve, timer: setTimeout(resolve, Math.max(0, INTERVAL * 1000 - (Date.now() - tickStart))) };
       });
       sleeper = null;
     }

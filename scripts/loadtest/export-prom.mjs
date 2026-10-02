@@ -16,7 +16,7 @@
 // 늦으면 판정 불가로 끝낸다.
 //
 // 종료 코드: 0 모든 질의 저장, 1 질의 일부 실패, 2 인자 오류.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 const USAGE = "사용: export-prom.mjs --out <run 디렉터리> --start <ISO> --end <ISO> [--step 초(>0)] [--query-timeout 초(>0)]";
@@ -98,6 +98,9 @@ for (const [name, q] of Object.entries(QUERIES)) {
     console.error(`[prom] ${name}: 시계열 ${n}개`);
   } catch (e) {
     failed++;
+    // 실패한 질의의 결과 파일은 지운다. 다시 내보내다 실패하면 이전 구간의 파일이 새 _meta.json과 함께 읽힐 수 있다
+    // (HTTP 오류 본문은 위에서 이미 썼으므로 그것도 지운다 — 사후 검사는 파일이 없으면 판정 불가로 센다).
+    rmSync(`${a.out}/prom/${name}.json`, { force: true });
     console.error(`[prom] ${name}: 실패 ${e.message || e}`);
   }
 }

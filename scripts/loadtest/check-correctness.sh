@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # 정합성 사후 검증(loadtest-100k-plan §3.3). run이 끝난 뒤, 철거 전에 실행한다.
 #
-#   bash scripts/loadtest/check-correctness.sh --out artifacts/loadtest/<session>/<run> --since 2026-10-02T05:00:00Z
+#   bash scripts/loadtest/check-correctness.sh --out artifacts/loadtest/<session>/<run> --since 2026-10-02T05:00:00Z \
+#     [--until 2026-10-02T05:12:00Z]
+#
+# --until은 run 종료 시각(UTC)이다. 없으면 같은 run 디렉터리의 watch-summary.json(실시간 감시기)의 endedAt을 쓴다.
+# 내보낸 구간(prom/_meta.json)이 --since 이전부터 --until + 30초 이후까지를 덮어야 한다 — 파드 대조와 4단계(승격 처리
+# 실패)가 이 구간에 기댄다. 덮지 못하거나 run 종료 시각을 모르면 그 둘은 판정 불가(2)다.
 #
 # --since는 run 시작 시각(UTC, run 메타의 startedAt과 같은 형식)이다. 이 시각 이후의 주문·이벤트·로그만 본다.
 # DB에는 같은 UTC 벽시계로 바꿔 넘긴다 — 앱 컨테이너가 TZ=UTC이고 DB에도 UTC 벽시계가 쌓인다(api-deployment.yaml).
@@ -32,11 +37,12 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT="" SINCE="" NS=flowticket TOL=1000
+OUT="" SINCE="" UNTIL="" NS=flowticket TOL=1000
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) OUT="$2"; shift 2 ;;
     --since) SINCE="$2"; shift 2 ;;
+    --until) UNTIL="$2"; shift 2 ;;
     --tolerance-ms) TOL="$2"; shift 2 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2 ;;
   esac
@@ -45,6 +51,8 @@ done
 # 형식을 좁혀 SQL에 그대로 넣어도 안전하게 한다(따옴표·세미콜론이 들어올 수 없다).
 [[ "$SINCE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
   echo "--since는 YYYY-MM-DDTHH:MM:SSZ(UTC)여야 한다: $SINCE" >&2; exit 2; }
+[ -z "$UNTIL" ] || [[ "$UNTIL" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
+  echo "--until은 YYYY-MM-DDTHH:MM:SSZ(UTC)여야 한다: $UNTIL" >&2; exit 2; }
 SINCE_DB="${SINCE/T/ }"; SINCE_DB="${SINCE_DB%Z}"
 D="$OUT/correctness"
 mkdir -p "$D" || exit 2
@@ -69,7 +77,36 @@ EOF
     --image=postgres:16 --overrides="$overrides"
 }
 
+
 FAIL=0 BROKEN=0
+
+echo "==> 0/4 내보낸 구간 확인(prom/_meta.json)"
+# 파드 대조·승격 처리 실패 검사는 내보낸 구간이 run 전체(+ 마지막 스크랩 30초)를 덮어야 믿을 수 있다.
+if node -e '
+const fs = require("fs");
+const [out, since, untilArg] = process.argv.slice(1);
+const fail = (m) => { console.log(m); process.exit(2); };
+let until = untilArg ? Date.parse(untilArg) : NaN;
+let untilSrc = "--until";
+if (!untilArg) {
+  try { until = Date.parse(JSON.parse(fs.readFileSync(out + "/watch-summary.json", "utf8")).endedAt); untilSrc = "watch-summary.json endedAt"; }
+  catch { fail("run 종료 시각을 모른다 — --until을 주거나 실시간 감시기(watch-summary.json)를 같은 run 디렉터리에 남긴다"); }
+}
+if (!Number.isFinite(until)) fail("run 종료 시각을 읽지 못했다(" + untilSrc + ")");
+let meta;
+try { meta = JSON.parse(fs.readFileSync(out + "/prom/_meta.json", "utf8")); }
+catch { fail("prom/_meta.json을 읽지 못했다 — export-prom.mjs를 먼저 돌린다"); }
+const s = Number(meta.startSec) * 1000, e = Number(meta.endSec) * 1000;
+if (!Number.isFinite(s) || !Number.isFinite(e)) fail("prom/_meta.json에 startSec·endSec가 없다 — export-prom.mjs로 다시 내보낸다");
+const need = until + 30000;
+console.log("export=" + new Date(s).toISOString() + "~" + new Date(e).toISOString() + " run=" + since + "~" + new Date(until).toISOString() + "(" + untilSrc + ")");
+if (s > Date.parse(since)) fail("내보낸 구간이 run 시작보다 늦게 시작한다 — --start를 run 시작 이전으로 다시 내보낸다");
+if (e < need) fail("내보낸 구간이 run 종료 + 30초(" + new Date(need).toISOString() + ")를 덮지 않는다 — --end를 늘려 다시 내보낸다");
+' "$OUT" "$SINCE" "$UNTIL" > "$D/export-window.txt" 2>&1; then :
+else
+  BROKEN=1
+  echo "    $(tail -n 1 "$D/export-window.txt")" >&2
+fi
 
 echo "==> 1/4 SQL 검사"
 if { printf "\\\\set since '%s'\n" "$SINCE_DB"; cat "$HERE/correctness.sql"; } | psql_pod "loadtest-check-sql" > "$D/sql.csv"; then
@@ -173,6 +210,7 @@ esac
   # require는 상대경로를 모듈 이름으로 읽는다. 파일로 읽는다.
   echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
   echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null
+  echo "--- 내보낸 구간(파드 대조·승격 처리 실패의 전제)"; cat "$D/export-window.txt" 2>/dev/null
   echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null
   echo "--- 승격 처리 실패(내보낸 구간, 0보다 크면 실시간 판정 불가)"; cat "$D/tick-failures.txt" 2>/dev/null
   echo "--- 실효 입장 초과: 판정식 미확정(계획서 §3.3) — 판정하지 않음"

@@ -102,6 +102,8 @@ public class QueueAdmissionService {
         List<?> popped = redis.execute(ADMIT_SCRIPT,
                 List.of(QueueKeys.wait(eventId), QueueKeys.admitCount(eventId), QueueKeys.admitExp(eventId)),
                 String.valueOf(capacity), String.valueOf(expiresAt));
+        // 이 시각부터 admitExp로 게이트를 통과한다 — 실효 입장 구간의 시작(loadtest-100k-plan §3.3).
+        long admittedAt = clock.millis();
         if (popped == null || popped.isEmpty()) {
             return 0;
         }
@@ -113,7 +115,7 @@ public class QueueAdmissionService {
         for (int i = 0; i < popped.size(); i += 2) { // {member,score,...}
             String token = String.valueOf(popped.get(i));
             redis.opsForValue().set(QueueKeys.admit(token), "1", Duration.ofSeconds(admitTtl));
-            QueueAudit.admitted(eventId, token, clock.millis(), expiresAt, admitTtl);
+            QueueAudit.admitted(eventId, token, admittedAt, clock.millis(), expiresAt, admitTtl);
             sse.send(token, "queue.admitted", Map.of("redirect", "/events/" + eventId + "/seats"));
             admitted++;
         }

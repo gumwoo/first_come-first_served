@@ -14,7 +14,9 @@ import org.slf4j.LoggerFactory;
  * 승격 시각 + TTL까지 살아 있으므로, 토큰별로 "언제 들어와 언제까지 유효했나"를 시각으로 남겨야
  * 시점별 유효 입장 수를 다시 셀 수 있다.
  *
- * 양은 정원 단위다. 승격은 빈 슬롯만큼만 일어나므로 대기자 수와 무관하다.
+ * 승격·회수·이탈만 남기고 발급은 남기지 않는다. 발급은 진입 수만큼(시험에서는 초당 수천 건) 생겨 측정 대상에
+ * 로그 부하를 얹는다. 메타 만료 계산에 필요한 발급 시각은 발생기 쪽 기록(SSE 발생기의 연결 시작 시각)으로 갈음한다.
+ * 승격 기록의 양은 입장한 사용자 수만큼이다.
  * 토큰 원문은 남기지 않는다 — 입장 권한과 묶인 값이라 로그에 두면 그 자체로 입장 수단이 된다.
  * 재구성에는 같은 토큰끼리 묶을 수 있으면 충분해서 해시 앞부분만 쓴다.
  */
@@ -24,10 +26,15 @@ final class QueueAudit {
 
     private QueueAudit() {}
 
-    /** 승격 확정 후 admit 키를 쓴 시각. admit 키는 이 시각 + admitTtl까지 유효하다. */
-    static void admitted(Long eventId, String token, long atMillis, long admitExpiresAtEpochSec, long admitTtlSec) {
-        log.info("queue.audit kind=admit event={} token={} at={} admitExpAt={} admitKeyTtl={}",
-                eventId, ref(token), atMillis, admitExpiresAtEpochSec, admitTtlSec);
+    /**
+     * 승격. 두 시각을 남긴다 — 승격 스크립트가 반환된 시각(admitExp로 통과하기 시작, 유효 구간의 시작)과
+     * admit 키를 쓴 시각(키 TTL 시작, admit 키는 이 시각 + admitTtl까지 유효). 둘 사이에는 앞 토큰들의
+     * admit 키 기록과 SSE 발행이 끼어 있어 간격이 생긴다.
+     */
+    static void admitted(Long eventId, String token, long admittedAtMillis, long keyWrittenAtMillis,
+                         long admitExpiresAtEpochSec, long admitTtlSec) {
+        log.info("queue.audit kind=admit event={} token={} at={} keyAt={} admitExpAt={} admitKeyTtl={}",
+                eventId, ref(token), admittedAtMillis, keyWrittenAtMillis, admitExpiresAtEpochSec, admitTtlSec);
     }
 
     /** 만료 회수. admitExp에서는 빠졌지만 admit 키는 지우지 않는다(키 TTL까지 유효). */

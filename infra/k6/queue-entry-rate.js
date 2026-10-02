@@ -20,8 +20,10 @@
 //
 // 분산 실행: 발생기 G대가 나눠 걸 때 각자 USERS_N = 전체/G, USER_OFFSET = 자기 몫의 시작 인덱스.
 //
-// 실행(옵션 이름에 K6_ 접두사를 쓰지 않는다 — README "⚠️" 참고):
-//   k6 run -e K6_BASE_URL=... -e EVENT_ID=1733 -e USERS=./tokens.json -e USERS_N=10000 \
+// 실행. 새 옵션 이름에는 K6_ 접두사를 쓰지 않는다(README "⚠️" 참고). K6_BASE_URL은 k6 옵션이 아니라
+// 이 저장소 스크립트들이 함께 쓰는 기존 이름이라 그대로 둔다.
+// USERS는 절대경로로 준다. k6의 open()은 상대경로를 이 스크립트 디렉터리 기준으로 읽는다.
+//   k6 run -e K6_BASE_URL=... -e EVENT_ID=1733 -e USERS=/abs/path/tokens.json -e USERS_N=10000 \
 //          -e DIST=constant --out json=entry.json infra/k6/queue-entry-rate.js
 import http from "k6/http";
 import { check } from "k6";
@@ -37,7 +39,8 @@ const USER_OFFSET = Number(__ENV.USER_OFFSET || 0);
 const EMIT_TOKENS = __ENV.EMIT_TOKENS === "1";
 
 // open()은 init 컨텍스트에서 VU마다 실행된다. SharedArray로 한 번만 파싱해 VU가 공유한다(spike-queue.js 참고).
-const USERS = new SharedArray("users", () => JSON.parse(open(__ENV.USERS || "./tokens.json")));
+if (!__ENV.USERS) throw new Error("USERS(사용자 토큰 파일의 절대경로)가 필요하다");
+const USERS = new SharedArray("users", () => JSON.parse(open(__ENV.USERS)));
 const USERS_N = Number(__ENV.USERS_N || USERS.length - USER_OFFSET);
 
 if (!EVENT_ID) throw new Error("EVENT_ID가 필요하다");
@@ -74,7 +77,8 @@ export const options = {
   summaryTrendStats: ["avg", "p(50)", "p(95)", "p(99)", "max"],
 };
 
-// iteration이 시작된 시각에 하나씩 쌓인다. 1초 단위 peak arrivals/s는 이 시계열(--out json)에서만 계산한다(§2.3).
+// 진입 요청을 보내기 직전에 하나씩 쌓인다(= 그 iteration이 시작된 시각). 1초 단위 peak arrivals/s는 이 시계열
+// (--out json)에서만 계산한다(§2.3). 사용자가 없어 요청을 못 보낸 iteration은 넣지 않고 entry_no_user로 센다.
 const arrivals = new Counter("entry_arrivals");
 // 처리된 진입 = 토큰 발급 200(§2.3). HTTP 요청 수(http_reqs)와 섞지 않는다.
 const processed = new Counter("entry_processed");
@@ -82,12 +86,13 @@ const processed = new Counter("entry_processed");
 const noUser = new Counter("entry_no_user");
 
 export default function () {
-  arrivals.add(1, { dist: DIST });
-  const u = USERS[USER_OFFSET + exec.scenario.iterationInTest];
-  if (!u || exec.scenario.iterationInTest >= USERS_N) {
+  const i = exec.scenario.iterationInTest;
+  const u = i < USERS_N ? USERS[USER_OFFSET + i] : undefined;
+  if (!u) {
     noUser.add(1);
     return;
   }
+  arrivals.add(1, { dist: DIST });
   const res = http.post(`${BASE}/events/${EVENT_ID}/queue/token`, null, {
     headers: { Authorization: `Bearer ${u.t}` },
     tags: { name: "queue_entry", dist: DIST },

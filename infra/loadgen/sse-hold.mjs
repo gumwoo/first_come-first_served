@@ -8,11 +8,18 @@
 //   k6 run --log-format=raw -e EMIT_TOKENS=1 ... 2>&1 | node infra/loadgen/sse-hold.mjs --base ... --out <run 디렉터리>
 //
 // 출력(--out 디렉터리):
-//   sse-timeline.jsonl    — 1초마다 {t, open, opened, failed, closed, events}. SSE 활성 연결 수의 발생기 쪽 관측
+//   sse-timeline.jsonl    — 1초마다 {t, sinceStartMs, open, started, opened, failed, serverClosed, expiredClosed,
+//                           heldToEnd, clientStopped, skippedOverMax, events}. SSE 활성 연결 수의 발생기 쪽 관측
 //   sse-connections.jsonl — 연결마다 {token(해시), startedAt, openedAt, status, endedAt, endReason, events}
 //   sse-summary.json      — 최종 집계
 //
-// 연결 유지율은 "열린 뒤 서버가 끊은 연결"로 본다. 발생기가 --hold 시간 뒤에 스스로 닫은 것은 유지로 센다.
+// 열린 연결은 정확히 한 가지 끝으로 센다(opened = serverClosed + expiredClosed + heldToEnd + clientStopped + 아직 열림):
+//   serverClosed   — 서버가 예고 없이 끊음. **연결 유지 실패**다
+//   expiredClosed  — queue.expired를 받은 뒤 서버가 정상 종료함(입장창 만료의 정상 흐름). 유지 실패가 아니다
+//   heldToEnd      — 발생기가 --hold 시간 뒤 스스로 닫음. 유지로 센다
+//   clientStopped  — 운영자가 Ctrl+C로 끊음. 유지 실패가 아니다
+// 열지 못한 연결은 failed, 열리기 전에 Ctrl+C로 끊긴 연결은 stoppedBeforeOpen,
+// --max-conn을 넘어 버린 토큰은 skippedOverMax로 센다(started = opened + failed + stoppedBeforeOpen + 아직 여는 중).
 import http from "node:http";
 import https from "node:https";
 import { createHash } from "node:crypto";
@@ -45,22 +52,35 @@ mkdirSync(args.out, { recursive: true });
 const connLog = createWriteStream(`${args.out}/sse-connections.jsonl`);
 const timeline = createWriteStream(`${args.out}/sse-timeline.jsonl`);
 
-const stat = { started: 0, opened: 0, failed: 0, serverClosed: 0, heldToEnd: 0, events: {} };
+const stat = {
+  started: 0, opened: 0, failed: 0,
+  serverClosed: 0, expiredClosed: 0, heldToEnd: 0, clientStopped: 0, stoppedBeforeOpen: 0,
+  skippedOverMax: 0, events: {},
+};
 let open = 0;
 let inputDone = false;
-const live = new Set();
+let summarized = false;
+const live = new Map(); // req → 그 연결을 끝내는 함수
 
-// 토큰은 입장 권한과 묶인 값이라 원문을 파일에 남기지 않는다(QueueAudit과 같은 해시 앞 16자).
+// 토큰은 입장 권한과 묶인 값이라 원문을 파일에 남기지 않는다(SHA-256 앞 16자).
 const ref = (t) => createHash("sha256").update(t).digest("hex").slice(0, 16);
 
 function connect(token) {
-  if (stat.started >= MAX_CONN) return;
+  if (stat.started >= MAX_CONN) {
+    stat.skippedOverMax++; // 버리되 센다. 0이 아니면 목표 연결 수를 다 만들지 못했다
+    return;
+  }
   stat.started++;
   const rec = { token: ref(token), startedAt: Date.now(), openedAt: null, status: null, endedAt: null, endReason: null, events: {} };
   let finished = false;
-  const finish = (reason) => {
+  let timer = null;
+  // 끝의 종류는 여기서 한 번만 센다. destroy()가 뒤이어 error/end를 일으켜도 다시 세지 않는다.
+  const finish = (reason, counter) => {
     if (finished) return;
     finished = true;
+    if (timer) clearTimeout(timer);
+    if (counter === "clientStopped" && !rec.openedAt) counter = "stoppedBeforeOpen";
+    if (counter) stat[counter]++;
     rec.endedAt = Date.now();
     rec.endReason = reason;
     if (rec.openedAt) open--;
@@ -73,18 +93,16 @@ function connect(token) {
   const req = client.get(url, { agent, headers: { Accept: "text/event-stream" } }, (res) => {
     rec.status = res.statusCode;
     if (res.statusCode !== 200) {
-      stat.failed++;
       res.resume();
-      finish("http_" + res.statusCode);
+      finish("http_" + res.statusCode, "failed");
       return;
     }
     rec.openedAt = Date.now();
     stat.opened++;
     open++;
-    const timer = setTimeout(() => {
-      stat.heldToEnd++;
+    timer = setTimeout(() => {
+      finish("held", "heldToEnd");
       req.destroy();
-      finish("held");
     }, HOLD_MS);
     let buf = "";
     res.setEncoding("utf8");
@@ -102,22 +120,16 @@ function connect(token) {
         }
       }
     });
-    res.on("end", () => {
-      clearTimeout(timer);
-      if (!finished) stat.serverClosed++;
-      finish("server_end");
-    });
-    res.on("error", () => {
-      clearTimeout(timer);
-      if (!finished) stat.serverClosed++;
-      finish("stream_error");
-    });
+    // 입장창 만료(queue.expired) 뒤의 종료는 서버의 정상 흐름이다(QueueAdmissionService.reclaim).
+    const serverEnd = (reason) =>
+      rec.events["queue.expired"] ? finish("expired_end", "expiredClosed") : finish(reason, "serverClosed");
+    res.on("end", () => serverEnd("server_end"));
+    res.on("error", () => serverEnd("stream_error"));
   });
   req.on("error", (e) => {
-    if (!rec.openedAt && !finished) stat.failed++;
-    finish("conn_error:" + (e.code || e.message));
+    finish("conn_error:" + (e.code || e.message), rec.openedAt ? "serverClosed" : "failed");
   });
-  live.add(req);
+  live.set(req, finish);
 }
 
 const t0 = Date.now();
@@ -126,13 +138,16 @@ const tick = setInterval(() => {
 }, 1000);
 
 function maybeExit() {
-  if (!inputDone || live.size > 0) return;
+  if (summarized || !inputDone || live.size > 0) return;
+  summarized = true;
   clearInterval(tick);
   const summary = { base: args.base, holdSeconds: Number(args.hold), ...stat, endedAt: Date.now(), elapsedMs: Date.now() - t0 };
   writeFileSync(`${args.out}/sse-summary.json`, JSON.stringify(summary, null, 2));
   connLog.end();
   timeline.end();
-  console.error(`[sse-hold] 종료: 시작 ${stat.started}, 열림 ${stat.opened}, 실패 ${stat.failed}, 서버가 끊음 ${stat.serverClosed}, 끝까지 유지 ${stat.heldToEnd}`);
+  console.error(`[sse-hold] 종료: 시작 ${stat.started}, 열림 ${stat.opened}, 실패 ${stat.failed}, ` +
+    `서버가 끊음 ${stat.serverClosed}, 만료 후 종료 ${stat.expiredClosed}, 끝까지 유지 ${stat.heldToEnd}, ` +
+    `운영자 중단 ${stat.clientStopped}, 상한 초과로 버림 ${stat.skippedOverMax}`);
 }
 
 const input = args.tokens ? createReadStream(args.tokens) : process.stdin;
@@ -148,8 +163,12 @@ rl.on("close", () => {
   maybeExit();
 });
 
-// 측정 세션을 끊을 때(Ctrl+C) 붙든 연결을 닫고 요약을 남긴다.
+// 측정 세션을 끊을 때(Ctrl+C) 붙든 연결을 닫고 요약을 남긴다. 운영자가 끊은 것이라 서버 단절로 세지 않는다.
 process.on("SIGINT", () => {
   inputDone = true;
-  for (const r of live) r.destroy();
+  for (const [r, finish] of [...live]) {
+    finish("client_stop", "clientStopped");
+    r.destroy();
+  }
+  maybeExit();
 });

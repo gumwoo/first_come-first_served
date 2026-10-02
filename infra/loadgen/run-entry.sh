@@ -10,7 +10,7 @@
 #
 # 사용(발생기 인스턴스, Linux):
 #   infra/loadgen/run-entry.sh --session 20261002-1400 --run step7-50k_constant-r1 --gen g1 \
-#     --base https://flow-ticket.com/api --event 1733 --users tokens.json --users-n 25000 --offset 0 \
+#     --base https://flow-ticket.com/api --event 1733 --users ~/tokens.json --users-n 25000 --offset 0 \
 #     --entry-seconds 10 --dist constant --sse-hold 300
 set -euo pipefail
 
@@ -41,6 +41,11 @@ done
 for v in SESSION RUN BASE EVENT USERS USERS_N; do
   [ -n "${!v}" ] || { echo "--$(echo "$v" | tr 'A-Z_' 'a-z-') 가 필요하다" >&2; exit 2; }
 done
+
+# k6의 open()은 상대경로를 스크립트 디렉터리(infra/k6) 기준으로 읽는다. 절대경로로 바꿔 넘긴다.
+[ -f "$USERS" ] || { echo "사용자 토큰 파일이 없다: $USERS" >&2; exit 2; }
+USERS="$(cd "$(dirname "$USERS")" && pwd)/$(basename "$USERS")"
+case "$USERS_N$ENTRY_SECONDS$OFFSET" in *[!0-9]*) echo "--users-n/--entry-seconds/--offset은 정수여야 한다" >&2; exit 2 ;; esac
 
 OUT="$ROOT/artifacts/loadtest/$SESSION/$RUN"
 mkdir -p "$OUT"
@@ -80,5 +85,6 @@ else
     | node "$HERE/sse-hold.mjs" --base "$BASE" --out "$OUT/sse-$GEN" --hold "$SSE_HOLD" > "$OUT/k6-$GEN.log"
 fi
 
-node "$HERE/entry-arrivals.mjs" "$OUT/entry-$GEN.json" > "$OUT/arrivals-$GEN.json"
+node "$HERE/entry-arrivals.mjs" --entry-seconds "$ENTRY_SECONDS" --users-n "$USERS_N" "$OUT/entry-$GEN.json" \
+  > "$OUT/arrivals-$GEN.json"
 echo "run 출력: $OUT"

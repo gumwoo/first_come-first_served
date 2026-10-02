@@ -134,8 +134,8 @@ S-30K와 S-100K 사이의 중간 단계와 실패 시 구간 축소 규칙은 §
 
 | 지표 | 뜻 | 출처 |
 |---|---|---|
-| offered arrivals | 발생기가 시작하려 한 진입 iteration 수 | k6 설정(rate × 시간) |
-| achieved arrivals | 실제 시작된 진입 iteration 수 | k6 `iterations` |
+| offered arrivals | 발생기가 시작하려 한 진입 iteration 수 | `entry_arrivals` + `entry_no_user` + `dropped_iterations`(`entry-arrivals.mjs`) |
+| achieved arrivals | 실제로 진입 요청을 보낸 수 | k6 `entry_arrivals`(요청 직전에 센다) |
 | `dropped_iterations` | 시작하지 못한 진입 | k6 — arrival-rate executor에만 있다. 0이 아니면 §3.1 무효 |
 | 평균 arrival rate | achieved arrivals / 진입 시간 | k6 |
 | **peak 1초 arrival rate** | 1초 창에서의 최대 진입 시작 수 | **k6 원시 출력만** — 아래 참고 |

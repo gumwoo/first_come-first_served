@@ -10,11 +10,13 @@
 // 파드 목록과 대조해 찾는다. 3은 파드별로 현재 로그 파일의 첫 줄 시각을 본다. 회전이 없었다면 첫 줄은 컨테이너가
 // 막 떠서 찍은 줄이라 컨테이너 시작 시각 근처다. 첫 줄이 max(run 시작, 컨테이너 시작 + 여유)보다 늦으면 run 구간의
 // 앞부분이 회전으로 지워진 것이다. run 시작 전에 일어난 회전은 run 구간을 지우지 않으므로 문제 삼지 않는다.
-// 셋 중 하나라도 있거나 확인할 수 없으면 판정 불가로 끝낸다.
+// 셋 중 하나라도 있거나 확인할 수 없으면 판정 불가로 끝낸다. 파드 목록·재시작 횟수가 run 시작부터 덮여 있어야
+// 하므로, 내보낸 구간(prom/_meta.json의 startSec)이 run 시작보다 늦게 시작하면 그것도 판정 불가다 — 그 사이에
+// 생겼다 지워진 파드를 놓친다.
 //
 //   node scripts/loadtest/pod-coverage.mjs --pods <run>/prom/api_pods.json --restarts <run>/prom/api_restarts.json \
 //     --existing <"파드이름 재시작횟수 컨테이너시작시각" 줄 파일> --first-lines <"파드이름 첫줄시각" 줄 파일> \
-//     --since <run 시작 UTC ISO> [--startup-slack-sec 120]
+//     --since <run 시작 UTC ISO> --meta <run>/prom/_meta.json [--startup-slack-sec 120]
 //
 // --startup-slack-sec(기본 120초, 잠정값)는 컨테이너가 뜬 뒤 첫 로그 줄을 찍기까지 허용하는 시간이다. 짧게 잡으면
 // 회전이 없는데도 판정 불가가 나고(보수 쪽 오류), 길게 잡으면 그만큼 이른 회전을 놓친다.
@@ -31,16 +33,23 @@ try {
       existing: { type: "string" },
       "first-lines": { type: "string" },
       since: { type: "string" },
+      meta: { type: "string" },
       "startup-slack-sec": { type: "string", default: "120" },
     },
   });
-  if (!a.pods || !a.restarts || !a.existing || !a["first-lines"] || !a.since) {
-    throw new Error("--pods, --restarts, --existing, --first-lines, --since가 필요하다");
+  if (!a.pods || !a.restarts || !a.existing || !a["first-lines"] || !a.since || !a.meta) {
+    throw new Error("--pods, --restarts, --existing, --first-lines, --since, --meta가 필요하다");
   }
   const since = Date.parse(a.since);
   if (!Number.isFinite(since)) throw new Error(`--since를 읽지 못했다: ${a.since}`);
   if (!/^\d+$/.test(a["startup-slack-sec"])) throw new Error("--startup-slack-sec는 0 이상의 정수다");
   const slackMs = Number(a["startup-slack-sec"]) * 1000;
+  // 내보낸 구간이 run 시작을 덮어야 run 구간의 파드를 모두 안다.
+  const exportStartSec = Number(JSON.parse(readFileSync(a.meta, "utf8"))?.startSec);
+  if (!Number.isFinite(exportStartSec)) throw new Error(`${a.meta}: startSec를 읽지 못했다(export-prom.mjs로 다시 내보낸다)`);
+  if (exportStartSec * 1000 > since) {
+    throw new Error(`내보낸 구간이 run 시작보다 늦게 시작한다(${new Date(exportStartSec * 1000).toISOString()} > ${a.since}) — --start를 run 시작 이전으로 다시 내보낸다`);
+  }
 
   // Prometheus query_range 응답에서 시계열을 꺼낸다. 성공 응답이 아니면 예외.
   const series = (file) => {

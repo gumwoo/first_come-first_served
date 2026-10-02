@@ -10,6 +10,9 @@
 #   sql.csv            — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스(correctness.sql)
 #   queue-order.json   — 대기열 순서 위반(api 로그의 승격 감사 줄 대조, queue-order.mjs)
 #   event-loss.txt     — 발행된 아웃박스 이벤트 중 소비 기록(Redis 멱등 키)이 없는 수
+#   tick-failures.txt  — 내보낸 구간(prom/)의 승격 처리 실패. 실시간 감시기는 마지막 스크랩 이후를 보지 못하므로
+#                        여기서 다시 본다. 0보다 크면 대기열 게이지가 멈췄던 구간이 있어 실시간 판정(감시기의 0)을
+#                        믿을 수 없다 — 판정 불가로 센다. export-prom의 --end를 run 종료 + 30초 이후로 잡아야 덮인다.
 #   summary.txt        — 항목별 위반 수와 종합 판정
 #
 # 대기열 순서 대조는 run 동안 있었던 api 파드의 로그를 전부 읽을 수 있을 때만 판정한다(pod-coverage.mjs). 그래서
@@ -22,7 +25,8 @@
 #
 # DB·Redis는 프라이빗이라 클러스터 안 일회용 파드로 붙는다. 자격증명은 api와 같은 ConfigMap·Secret에서 필요한 키만
 # 받고, 이 스크립트는 보지도 출력하지도 않는다(seed-users.sh와 같은 방식).
-# 종료 코드: 위반 없음 0, 위반 있음 1, 검사 자체 실패 2(위반도 함께 찾았으면 summary에 둘 다 적는다).
+# 종료 코드: 위반 없음 0, 위반 있음 1, 검사 자체 실패·판정 불가 2. 위반을 하나라도 찾았으면 검사 일부가 실패했어도
+# 1이다 — 감시기(3)·queue-order(1)와 같이 위반이 우선한다. 검사 실패도 함께 있었으면 summary에 둘 다 적는다.
 # run 직후 바로 돌리면 아직 발행 중인 아웃박스가 미발행으로 잡힐 수 있다. 아웃박스가 비워진 뒤
 # (flowticket_outbox_oldest_pending_age_seconds 0) 실행한다.
 set -uo pipefail
@@ -67,7 +71,7 @@ EOF
 
 FAIL=0 BROKEN=0
 
-echo "==> 1/3 SQL 검사"
+echo "==> 1/4 SQL 검사"
 if { printf "\\\\set since '%s'\n" "$SINCE_DB"; cat "$HERE/correctness.sql"; } | psql_pod "loadtest-check-sql" > "$D/sql.csv"; then
   # 검사 8개가 모두 "<이름>,<수>" 한 줄씩 나와야 한다. 모자라면 일부 검사가 돌지 않은 것이다.
   if [ "$(grep -cE '^[a-z_]+,[0-9]+$' "$D/sql.csv")" -ne 8 ]; then
@@ -79,7 +83,7 @@ else
   echo "    SQL 검사 실패" >&2; BROKEN=1
 fi
 
-echo "==> 2/3 대기열 순서(api 로그)"
+echo "==> 2/4 대기열 순서(api 로그)"
 if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 --prefix \
      --max-log-requests=20 > "$D/api.log"; then
   node "$HERE/queue-order.mjs" --tolerance-ms "$TOL" "$D/api.log" > "$D/queue-order.json"
@@ -104,12 +108,12 @@ if kubectl -n "$NS" get pods -l app=flowticket-api \
   done < "$D/api-pods-now.txt"
   node "$HERE/pod-coverage.mjs" --pods "$OUT/prom/api_pods.json" --restarts "$OUT/prom/api_restarts.json" \
     --existing "$D/api-pods-now.txt" --first-lines "$D/api-first-lines.txt" --since "$SINCE" \
-    > "$D/pod-coverage.json" || { echo "    로그를 다 읽지 못한 파드가 있다(pod-coverage.json)" >&2; BROKEN=1; }
+    --meta "$OUT/prom/_meta.json" > "$D/pod-coverage.json" || { echo "    로그를 다 읽지 못한 파드가 있다(pod-coverage.json)" >&2; BROKEN=1; }
 else
   echo "    api 파드 목록 조회 실패" >&2; BROKEN=1
 fi
 
-echo "==> 3/3 이벤트 유실(아웃박스 PUBLISHED vs 소비자 멱등 키)"
+echo "==> 3/4 이벤트 유실(아웃박스 PUBLISHED vs 소비자 멱등 키)"
 # 소비자는 처리한 이벤트를 dedup:order-event:<eventId>로 24시간 남긴다(OrderEventConsumer). 24시간 안에 돌린다.
 if printf "\\\\copy (SELECT id FROM outbox_events WHERE status = 'PUBLISHED' AND created_at >= '%s') TO STDOUT\n" "$SINCE_DB" \
      | psql_pod "loadtest-check-outbox" > "$D/published-ids.txt"; then
@@ -139,6 +143,30 @@ else
   echo "    아웃박스 조회 실패" >&2; BROKEN=1
 fi
 
+echo "==> 4/4 승격 처리 실패(내보낸 구간 — 실시간 판정 보완)"
+# 승격 실패 카운터는 앱이 뜰 때 항상 등록되므로 시계열이 없거나 파일을 못 읽으면 확인 불가(2)다.
+node -e '
+let b;
+try { b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); }
+catch (e) { console.log("파일을 읽지 못했다(export-prom.mjs를 먼저 돌린다): " + e.message.split("\n")[0]); process.exit(2); }
+if (b.status !== "success") { console.log("Prometheus 응답 status=" + b.status); process.exit(2); }
+const rs = b.data?.result ?? [];
+if (rs.length === 0) { console.log("시계열 없음"); process.exit(2); }
+let max = 0;
+for (const s of rs) for (const [, v] of s.values ?? []) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) { console.log("값이 숫자가 아니다: " + v); process.exit(2); }
+  if (n > max) max = n;
+}
+console.log("max_rate_per_sec=" + max);
+process.exit(max > 0 ? 1 : 0);
+' "$OUT/prom/queue_admit_tick_failures_rate.json" > "$D/tick-failures.txt" 2>&1
+case $? in
+  0) ;;
+  1) echo "    run 구간에 승격 처리 실패가 있다 — 실시간 판정 불가" >&2; BROKEN=1 ;;
+  *) echo "    승격 처리 실패를 확인하지 못했다(prom/queue_admit_tick_failures_rate.json)" >&2; BROKEN=1 ;;
+esac
+
 {
   echo "since=$SINCE"
   echo "--- sql (검사,위반 수)"; cat "$D/sql.csv" 2>/dev/null
@@ -146,6 +174,7 @@ fi
   echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
   echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null
   echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null
+  echo "--- 승격 처리 실패(내보낸 구간, 0보다 크면 실시간 판정 불가)"; cat "$D/tick-failures.txt" 2>/dev/null
   echo "--- 실효 입장 초과: 판정식 미확정(계획서 §3.3) — 판정하지 않음"
   # 검사 일부가 실패해도 이미 찾은 위반은 함께 보인다.
   if [ "$BROKEN" -ne 0 ] && [ "$FAIL" -ne 0 ]; then echo "판정: 정합성 위반 + 검사 일부 실패(결과 불완전)"
@@ -155,6 +184,6 @@ fi
 } > "$D/summary.txt"
 cat "$D/summary.txt"
 
-[ "$BROKEN" -ne 0 ] && exit 2
 [ "$FAIL" -ne 0 ] && exit 1
+[ "$BROKEN" -ne 0 ] && exit 2
 exit 0

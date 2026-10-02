@@ -28,23 +28,35 @@
 //   - 초과판매·승격 실패 카운터: 앱이 뜰 때 조건 없이 등록된다(OperationalMetrics, QueueMetrics). 비었다면
 //     스크랩 실패·스테일로 관측이 끊긴 것이다(gap). 한 틱이라도 있으면 판정 불가다 — 그 구간에서는 대기열 게이지가
 //     비어 있어도 "활성 이벤트 없음"인지 "관측 공백"인지 구분할 수 없다.
+//   - 값이 있어도 오래된 샘플이면 관측 공백이다. Prometheus는 스크랩이 늦어지면 5분(lookback) 안의 마지막 샘플을
+//     그대로 돌려준다. 항상 있어야 할 두 지표의 가장 오래된 샘플 나이가 --max-sample-age(기본 45초 = 스크랩 15초 × 3)를
+//     넘으면 그 틱은 관측 공백(freshness)이다.
+// --interval은 스크랩 주기(15초, servicemonitor-api.yaml) 이하만 받는다. 더 길면 그 사이의 샘플을 건너뛰어, 보지 않은
+// 구간을 "위반 없음"으로 세게 된다.
 // 조건별 집계는 watch-summary.json에 남는다.
 //
 // 종료(SIGINT·SIGTERM·--for 경과) 시 진행 중인 틱은 끝까지 기다린 뒤 판정한다. 조회마다 --query-timeout(기본 10초)이
 // 걸려 있어 포트포워드가 멈춰도 기다림은 유한하다(시간 초과는 조회 오류 = 판정 불가). 판정을 쓴 뒤에는 새 조회를
-// 하지 않는다. 단, 60초 안에 끝나지 않은 중단 명령의 출력은 판정 뒤에 violation-action.log에 덧붙을 수 있다.
+// 하지 않고 아무것도 기록하지 않는다. 중단 명령은 최대 60초 기다린다. 그때까지 끝나지 않으면 그 사실을
+// violation-action.log에 남기고 명령과의 연결을 끊은 뒤 종료한다(명령 자체는 계속 돌 수 있다).
+//
+// --on-violation은 child_process.exec로 실행한다 — Windows에서는 cmd.exe가 해석한다. 이 PC의 PowerShell·cmd에서는
+// `bash`가 WSL로 연결돼 실패한 적이 있으므로(G1 실측), 감시기를 Git Bash에서 띄우거나 명령에 bash 경로를 직접 쓴다.
+// --on-violation이 없으면 시작할 때 경고한다 — 위반이 나도 부하를 사람이 직접 멈춰야 한다.
 //
 // Prometheus는 클러스터 안에만 있다. 먼저 포트포워드한다:
 //   kubectl -n monitoring port-forward svc/prometheus-operated 9090:9090
 //
 //   node scripts/loadtest/watch-correctness.mjs --out artifacts/loadtest/<session>/<run> \
-//     [--interval 5] [--for 600] [--query-timeout 10] [--on-violation "bash scripts/loadtest/loadgen.sh exec -- pkill -INT k6"]
+//     [--interval 5] [--for 600] [--query-timeout 10] [--max-sample-age 45] [--on-violation "bash scripts/loadtest/loadgen.sh exec -- pkill -INT k6"]
 import { exec } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 const USAGE =
-  "사용: watch-correctness.mjs --out <run 디렉터리> [--interval 초(>0)] [--for 초(>0)] [--query-timeout 초(>0)] [--on-violation 명령]";
+  "사용: watch-correctness.mjs --out <run 디렉터리> [--interval 초(0<,≤15)] [--for 초(>0)] [--query-timeout 초(>0)] [--max-sample-age 초(>0)] [--on-violation 명령]";
+// 스크랩 주기(servicemonitor-api.yaml interval: 15s). 감시 간격은 이보다 길 수 없다.
+const SCRAPE_SEC = 15;
 let a;
 try {
   ({ values: a } = parseArgs({
@@ -54,6 +66,7 @@ try {
       interval: { type: "string", default: "5" },
       for: { type: "string" },
       "query-timeout": { type: "string", default: "10" },
+      "max-sample-age": { type: "string", default: "45" },
       "on-violation": { type: "string" },
     },
   }));
@@ -61,7 +74,8 @@ try {
   console.error(`${e.message}\n${USAGE}`);
 }
 const positive = (s) => s !== undefined && /^\d+(\.\d+)?$/.test(s) && Number(s) > 0;
-if (!a || !a.out || !positive(a.interval) || (a.for !== undefined && !positive(a.for)) || !positive(a["query-timeout"])) {
+if (!a || !a.out || !positive(a.interval) || Number(a.interval) > SCRAPE_SEC || (a.for !== undefined && !positive(a.for)) ||
+    !positive(a["query-timeout"]) || !positive(a["max-sample-age"])) {
   if (a) console.error(USAGE);
   process.exitCode = 2;
 } else {
@@ -72,6 +86,7 @@ function main() {
   const INTERVAL = Number(a.interval);
   const FOR = a.for === undefined ? null : Number(a.for);
   const QUERY_TIMEOUT_MS = Number(a["query-timeout"]) * 1000;
+  const MAX_SAMPLE_AGE = Number(a["max-sample-age"]);
 
   const CHECKS = {
     overAdmit: "max(max by (event) (flowticket_queue_admitted) - on() group_left() max(flowticket_queue_capacity))",
@@ -84,6 +99,9 @@ function main() {
   const START_TIME = 'process_start_time_seconds{namespace="flowticket"}';
   // 앱이 뜰 때 조건 없이 등록되는 지표. 비면 관측 공백이다.
   const ALWAYS_PRESENT = new Set(["oversold", "tickFailures"]);
+  // 항상 있어야 할 두 지표 중 가장 오래된 샘플의 나이(초). 스크랩이 늦어 오래된 값을 "현재 값"으로 읽는 것을 막는다.
+  const SAMPLE_AGE =
+    'max(time() - timestamp({__name__=~"flowticket_seat_oversold|flowticket_queue_admit_tick_failures_total"}))';
 
   // Prometheus 즉시 질의. 시간 초과·HTTP 오류·status≠success는 예외로 올린다.
   async function promQuery(q) {
@@ -108,7 +126,7 @@ function main() {
   mkdirSync(a.out, { recursive: true });
   const LOG = `${a.out}/watch-correctness.jsonl`;
   const stats = Object.fromEntries(
-    [...Object.keys(CHECKS), "tickFailures"].map((k) => [k, { value: 0, noSeries: 0, gap: 0, error: 0 }]),
+    [...Object.keys(CHECKS), "tickFailures", "freshness"].map((k) => [k, { value: 0, noSeries: 0, gap: 0, error: 0 }]),
   );
   // 승격 처리 실패: 시계열(레이블 묶음)별 마지막 값과, 감시 중 늘어난 양의 합
   const failSeries = new Map();
@@ -117,6 +135,8 @@ function main() {
   let ticks = 0;
   let violated = false;
   let action = null; // 위반 시 실행한 명령. 끝나기 전에 감시기가 종료되지 않게 기다린다
+  let actionChild = null;
+  let finalized = false; // 판정을 썼다. 이후에는 아무것도 기록하지 않는다
   let stopping = false;
   let crashed = false; // 감시 루프가 예외로 죽었다(파일 쓰기 실패 등)
   let inflight = null; // 진행 중인 틱. 종료 시 끝까지 기다린 뒤 판정한다
@@ -180,6 +200,16 @@ function main() {
       if (row[name] !== null && row[name] > 0) found.push(name);
     }
     await checkTickFailures(row);
+    try {
+      const age = await query(SAMPLE_AGE);
+      row.sampleAgeSec = age;
+      if (age === null || age > MAX_SAMPLE_AGE) stats.freshness.gap++;
+      else stats.freshness.value++;
+    } catch (e) {
+      row.sampleAgeSec = null;
+      row.freshnessError = String(e.message || e);
+      stats.freshness.error++;
+    }
     row.violations = found;
     appendFileSync(LOG, JSON.stringify(row) + "\n");
     if (found.length && !violated) {
@@ -188,9 +218,11 @@ function main() {
       console.error(`[watch] 정합성 위반: ${found.join(", ")} — 계획서 §3.3: 즉시 중단`);
       if (a["on-violation"]) {
         action = new Promise((resolve) => {
-          exec(a["on-violation"], (err, stdout, stderr) => {
-            appendFileSync(`${a.out}/violation-action.log`, `${stdout}\n${stderr}\n${err ? "exit " + err.code : "exit 0"}\n`);
-            resolve();
+          actionChild = exec(a["on-violation"], (err, stdout, stderr) => {
+            if (!finalized) {
+              appendFileSync(`${a.out}/violation-action.log`, `${stdout}\n${stderr}\n${err ? "exit " + err.code : "exit 0"}\n`);
+            }
+            resolve(true);
           });
         });
       }
@@ -217,8 +249,15 @@ function main() {
     // 중단 명령(예: 발생기의 k6 정지)이 아직 돌고 있으면 최대 60초 기다린다. 감시기가 먼저 끝나면 명령이 잘린다.
     if (action) {
       let t;
-      await Promise.race([action, new Promise((r) => { t = setTimeout(r, 60_000); })]);
+      const done = await Promise.race([action, new Promise((r) => { t = setTimeout(() => r(false), 60_000); })]);
       clearTimeout(t);
+      if (!done) {
+        // 끝나지 않은 명령을 기다리지 않는다. 출력 연결을 끊고 참조를 풀어야 이벤트 루프가 명령에 붙잡히지 않는다.
+        appendFileSync(`${a.out}/violation-action.log`, "60초 안에 끝나지 않음 — 감시기는 기다리지 않고 종료했다(명령은 계속 돌 수 있다)\n");
+        actionChild?.stdout?.destroy();
+        actionChild?.stderr?.destroy();
+        actionChild?.unref();
+      }
     }
     const anyError = Object.values(stats).some((s) => s.error > 0);
     const neverValued = Object.entries(stats).filter(([, s]) => s.value === 0).map(([k]) => k);
@@ -232,7 +271,7 @@ function main() {
       code = 4;
       verdict = "판정 불가" + (crashed ? " — 감시 루프가 예외로 멈췄다" : "") + (anyError ? " — 조회 오류가 있었다" : "") +
         (neverValued.length ? ` — 값이 한 번도 나오지 않은 조건: ${neverValued.join(", ")}` : "") +
-        (gaps.length ? ` — 관측 공백(항상 있어야 할 시계열 또는 프로세스 시작 시각이 빔): ${gaps.join(", ")}` : "") +
+        (gaps.length ? ` — 관측 공백(항상 있어야 할 시계열·프로세스 시작 시각이 비었거나 샘플이 오래됨): ${gaps.join(", ")}` : "") +
         (tickFailuresIncrease > 0 ? ` — 감시 중 승격 처리 실패 ${tickFailuresIncrease}건(대기열 게이지가 멈췄을 수 있다)` : "");
     } else {
       code = 0;
@@ -248,6 +287,7 @@ function main() {
       exitCode: code,
     };
     writeFileSync(`${a.out}/watch-summary.json`, JSON.stringify(summary, null, 2));
+    finalized = true;
     console.error(`[watch] 종료: ${verdict} — 틱 ${ticks}, ` +
       Object.entries(stats).map(([k, s]) => `${k} 값 ${s.value}/없음 ${s.noSeries}/공백 ${s.gap}/오류 ${s.error}`).join(", "));
     // process.exit 대신 종료 코드만 두고 자연스럽게 끝낸다(Windows에서 열린 핸들이 닫히는 중 exit하면 코드가 깨진 적이 있다).
@@ -261,6 +301,9 @@ function main() {
     });
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
+  if (!a["on-violation"]) {
+    console.error("[watch] 경고: --on-violation이 없다. 위반이 나도 부하를 자동으로 멈추지 않는다 — 사람이 직접 멈춰야 한다");
+  }
 
   (async () => {
     while (!stopping) {

@@ -42,23 +42,25 @@ async function main() {
   const TOL = Number(a["tolerance-ms"]);
 
   const byEvent = new Map(); // event → [{seq, at, token}]
-  let malformed = 0; // 승격 감사 줄인데 event·seq·at을 읽지 못한 줄(잘린 줄 등)
+  let malformed = 0; // 승격 감사 줄인데 형식대로 끝까지 읽지 못한 줄(잘린 줄 등)
   const malformedSamples = [];
+  // 감사 줄 형식(QueueAudit.admitted). 메시지가 줄 끝이다(Spring Boot 기본 콘솔 패턴). 마지막 필드까지 있어야
+  // 정상으로 받는다 — at 값이 숫자 중간에서 잘린 줄(at=17909172)은 숫자로는 읽혀도 마지막 필드가 없어 걸러진다.
+  const ADMIT = /queue\.audit kind=admit event=(\d+) token=(\S+) seq=(\d+(?:\.\d+)?) at=(\d+) keyAt=(\d+) admitExpAt=(\d+) admitKeyTtl=(\d+)\s*$/;
   for (const f of files) {
     const rl = createInterface({ input: createReadStream(f), crlfDelay: Infinity });
     for await (const line of rl) {
       if (!line.includes("queue.audit kind=admit")) continue;
-      const kv = Object.fromEntries([...line.matchAll(/(\w+)=(\S+)/g)].map((m) => [m[1], m[2]]));
-      const seq = Number(kv.seq);
-      const at = Number(kv.at);
-      if (!kv.event || !/^\d+(\.\d+)?$/.test(kv.seq ?? "") || !/^\d+$/.test(kv.at ?? "")) {
+      const m = ADMIT.exec(line);
+      if (!m) {
         // 조용히 버리면 그 줄의 역전을 놓친 채 0이 나온다. 세어서 검사 실패로 끝낸다.
         malformed++;
         if (malformedSamples.length < 5) malformedSamples.push(line.slice(0, 300));
         continue;
       }
-      if (!byEvent.has(kv.event)) byEvent.set(kv.event, []);
-      byEvent.get(kv.event).push({ seq, at, token: kv.token });
+      const [, event, token, seqStr, atStr] = m;
+      if (!byEvent.has(event)) byEvent.set(event, []);
+      byEvent.get(event).push({ seq: Number(seqStr), at: Number(atStr), token });
     }
   }
 

@@ -274,11 +274,13 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 
 | 도구 | 하는 일 |
 |---|---|
-| `scripts/loadtest/watch-correctness.mjs` | run 동안 Prometheus를 주기적으로 조회해 실시간 조건 셋(over-admit, 카운터 어긋남 — `admit_drift` 게이지, 초과판매)을 판정한다. 위반이면 `violation.json`을 남기고 `--on-violation` 명령(예: 발생기의 k6 정지)을 한 번 실행한다. 승격 처리 실패 카운터(`flowticket_queue_admit_tick_failures_total`)도 파드별로 추적한다 — 실패 중에는 대기열 게이지가 직전 값에 멈추므로 그 구간의 over-admit·카운터 어긋남 값은 현재 상태가 아니다. 종료 코드: 0 위반 없음(조회 오류가 한 번도 없고, 세 조건과 승격 실패 카운터 모두 값이 나왔고, 감시 중 승격 실패가 늘지 않았다), 2 인자 오류, 3 위반, 4 판정 불가(조회 오류·조회 시간 초과(`--query-timeout`, 기본 10초)가 한 번이라도 있었거나, 값이 한 번도 나오지 않은 조건이 있거나, 감시 중 승격 실패가 늘었다 — 감시가 끊기거나 게이지가 멈춘 구간에서는 위반이 없었다고 말할 수 없다). 종료 신호를 받으면 진행 중인 조회를 끝까지 기다린 뒤 판정한다. 시계열이 없는 틱(활성 이벤트 없음)은 오류가 아니다. 한계: 마지막 스크랩(15초) 이후의 승격 실패는 감시가 보지 못한다 — `prom/queue_admit_tick_failures_rate.json`으로 사후 확인한다 |
-| `scripts/loadtest/check-correctness.sh` | run이 끝난 뒤 사후 조건을 검사한다: SQL(`correctness.sql` — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스), 대기열 순서(`queue-order.mjs` — api 로그의 승격 감사 줄), 이벤트 유실(PUBLISHED 아웃박스 vs 소비자 멱등 키). 위반 1, 검사 실패 2 |
+| `scripts/loadtest/watch-correctness.mjs` | run 동안 Prometheus를 주기적으로 조회해 실시간 조건 셋(over-admit, 카운터 어긋남 — `admit_drift` 게이지, 초과판매)을 판정한다. 위반이면 `violation.json`을 남기고 `--on-violation` 명령(예: 발생기의 k6 정지)을 한 번 실행한다. 승격 처리 실패 카운터(`flowticket_queue_admit_tick_failures_total`)도 파드별로 추적한다 — 실패 중에는 대기열 게이지가 직전 값에 멈추므로 그 구간의 over-admit·카운터 어긋남 값은 현재 상태가 아니다. 종료 코드: 0 위반 없음(조회 오류가 한 번도 없고, 세 조건과 승격 실패 카운터 모두 값이 나왔고, 감시 중 승격 실패가 늘지 않았다), 2 인자 오류, 3 위반, 4 판정 불가(조회 오류·조회 시간 초과(`--query-timeout`, 기본 10초)가 한 번이라도 있었거나, 값이 한 번도 나오지 않은 조건이 있거나, 항상 있어야 할 시계열이 빈 틱(관측 공백)이 있었거나, 감시 중 승격 실패가 늘었다 — 감시가 끊기거나 게이지가 멈춘 구간에서는 위반이 없었다고 말할 수 없다). 종료 신호를 받으면 진행 중인 조회를 끝까지 기다린 뒤 판정한다. 시계열이 비는 것은 지표마다 다르게 본다: 대기열 게이지는 활성 이벤트가 없으면 지워지므로 오류가 아니다. 초과판매·승격 실패 카운터는 앱이 뜰 때 조건 없이 등록되므로, 비었다면 스크랩 실패·스테일로 관측이 끊긴 것(관측 공백)이다. 승격 실패 카운터의 재시작은 `process_start_time_seconds`가 바뀐 것으로 판별한다. 한계: 마지막 스크랩(15초) 이후의 승격 실패는 감시가 보지 못한다 — `prom/queue_admit_tick_failures_rate.json`으로 사후 확인한다 |
+| `scripts/loadtest/check-correctness.sh` | run이 끝난 뒤 사후 조건을 검사한다: SQL(`correctness.sql` — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스), 대기열 순서(`queue-order.mjs` — api 로그의 승격 감사 줄), 이벤트 유실(PUBLISHED 아웃박스 vs 소비자 멱등 키). 위반 1, 검사 실패 2. **`export-prom.mjs`를 먼저 돌린 뒤 실행한다** — 대기열 순서는 run 구간에 있었던 api 파드의 로그를 지금 전부 읽을 수 있을 때만 판정한다(`pod-coverage.mjs`가 `prom/api_pods.json`·`prom/api_restarts.json`과 현재 파드 목록을 대조). HPA 축소로 지워진 파드나 재시작한 컨테이너가 있으면 판정 불가(2)다 |
 
 실효 입장 초과는 판정식이 미확정이라 도구가 판정하지 않는다(재료인 승격·회수·이탈 로그만 함께 수집한다).
-대기열 순서 대조는 감사 시각이 파드마다의 시계라, 허용 폭(`--tolerance-ms`, 0 이상의 정수, 기본 1,000ms — 잠정값)을 넘어 뒤집힌 경우만 위반으로 센다. 종료 코드는 0 위반 없음, 1 위반, 2 검사 실패(인자 오류·예외·승격 기록 0건)이다.
+대기열 순서 대조는 감사 시각이 파드마다의 시계라, 허용 폭(`--tolerance-ms`, 0 이상의 정수, 기본 1,000ms — 잠정값)을 넘어 뒤집힌 경우만 위반으로 센다. 허용 폭은 0~60,000ms의 정수만 받는다(너무 크면 검사가 사실상 꺼진다). 종료 코드는 0 위반 없음, 1 위반, 2 검사 실패(인자 오류·예외·승격 기록 0건·읽지 못한 승격 줄)이다. 위반을 이미 찾았으면 1이 우선한다.
+
+**한계(미해결)**: kubelet이 컨테이너 로그를 회전하면 `kubectl logs`는 현재 파일만 읽어 앞부분이 빠진다. 위 파드 대조로는 이 경우를 알 수 없다. 회전 크기는 노드 설정(`containerLogMaxSize`)을 따르는데, 이 클러스터 노드의 값은 확인하지 않았다. 100K run의 승격 감사 줄만으로도 회전 크기를 넘을 수 있다(추론). 측정 세션 전에 노드 설정을 확인하거나, run 직후 바로 로그를 받아야 한다.
 
 **판정식은 "막는 장치가 유지하는 값"으로 세우지 않는다.** 같은 값으로 재면 장치가 깨져도 판정식은 계속 참이다.
 
@@ -588,7 +590,7 @@ artifacts/loadtest/<session-id>/<run-id>/
 |---|---|
 | `watch-correctness.jsonl`, `watch-summary.json`, `violation.json`, `violation-action.log` | 실시간 판정 기록, 조건별 값·시계열 없음·오류 틱 수, 감시 중 승격 처리 실패 증가량(`tickFailuresIncrease`)과 판정, 첫 위반, 중단 명령 출력(`watch-correctness.mjs`) |
 | `prom/<이름>.json`, `prom/_meta.json` | run 구간의 범위 질의 결과(`scripts/loadtest/export-prom.mjs`, 질의 목록은 스크립트에 있다) |
-| `correctness/` | 사후 검사 결과 — `sql.csv`, `api.log`, `queue-order.json`, `published-ids.txt`·`dedup-exists.txt`(이벤트 유실 대조의 입력과 Redis 응답), `event-loss.txt`, `summary.txt`(`check-correctness.sh`). 승격 기록이 0건이면 대기열 순서는 판정 불가 |
+| `correctness/` | 사후 검사 결과 — `sql.csv`, `api.log`, `queue-order.json`, `api-pods-now.txt`·`pod-coverage.json`(로그를 읽을 수 있는 파드 대조), `published-ids.txt`·`dedup-exists.txt`(이벤트 유실 대조의 입력과 Redis 응답), `event-loss.txt`, `summary.txt`(`check-correctness.sh`). 승격 기록이 0건이면 대기열 순서는 판정 불가 |
 
 CloudWatch 데이터(§5.3)는 아직 내보내는 도구가 없다. 측정 세션에서 콘솔·CLI로 받아 같은 디렉터리에 둔다.
 

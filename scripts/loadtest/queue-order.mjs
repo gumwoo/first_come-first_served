@@ -12,9 +12,10 @@ import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
 
-// 종료 코드: 0 위반 없음, 1 위반, 2 검사 실패(인자 오류·예외·승격 기록 0건). 셸이 1을 위반으로 분류하므로
+// 종료 코드: 0 위반 없음, 1 위반, 2 검사 실패(인자 오류·예외·승격 기록 0건·형식이 깨진 승격 줄). 셸이 1을 위반으로 분류하므로
 // (check-correctness.sh) 인자 오류나 예외가 1로 끝나면 안 된다.
-const USAGE = "사용: queue-order.mjs [--tolerance-ms 0 이상의 정수(기본 1000)] <api 로그 파일> [...]";
+const MAX_TOL = 60_000;
+const USAGE = `사용: queue-order.mjs [--tolerance-ms 0~${MAX_TOL} 정수(기본 1000)] <api 로그 파일> [...]`;
 let a;
 let files;
 try {
@@ -25,8 +26,9 @@ try {
 } catch (e) {
   console.error(`${e.message}\n${USAGE}`);
 }
-// 허용 폭이 숫자가 아니면(NaN) 모든 비교가 거짓이 돼 순서 검사가 통째로 꺼진다. 0 이상의 정수만 받는다.
-if (!a || files.length === 0 || !/^\d+$/.test(a["tolerance-ms"])) {
+// 허용 폭이 숫자가 아니면(NaN) 모든 비교가 거짓이 돼 순서 검사가 통째로 꺼진다. 너무 크면 사실상 꺼진다.
+// 0~60초의 정수만 받는다.
+if (!a || files.length === 0 || !/^\d+$/.test(a["tolerance-ms"]) || Number(a["tolerance-ms"]) > MAX_TOL) {
   if (a) console.error(USAGE);
   process.exitCode = 2;
 } else {
@@ -40,6 +42,8 @@ async function main() {
   const TOL = Number(a["tolerance-ms"]);
 
   const byEvent = new Map(); // event → [{seq, at, token}]
+  let malformed = 0; // 승격 감사 줄인데 event·seq·at을 읽지 못한 줄(잘린 줄 등)
+  const malformedSamples = [];
   for (const f of files) {
     const rl = createInterface({ input: createReadStream(f), crlfDelay: Infinity });
     for await (const line of rl) {
@@ -47,7 +51,12 @@ async function main() {
       const kv = Object.fromEntries([...line.matchAll(/(\w+)=(\S+)/g)].map((m) => [m[1], m[2]]));
       const seq = Number(kv.seq);
       const at = Number(kv.at);
-      if (!kv.event || !Number.isFinite(seq) || !Number.isFinite(at)) continue;
+      if (!kv.event || !/^\d+(\.\d+)?$/.test(kv.seq ?? "") || !/^\d+$/.test(kv.at ?? "")) {
+        // 조용히 버리면 그 줄의 역전을 놓친 채 0이 나온다. 세어서 검사 실패로 끝낸다.
+        malformed++;
+        if (malformedSamples.length < 5) malformedSamples.push(line.slice(0, 300));
+        continue;
+      }
       if (!byEvent.has(kv.event)) byEvent.set(kv.event, []);
       byEvent.get(kv.event).push({ seq, at, token: kv.token });
     }
@@ -80,7 +89,10 @@ async function main() {
   }
   result.violations = total;
   result.admits = [...byEvent.values()].reduce((n, xs) => n + xs.length, 0);
+  result.malformed = malformed;
+  result.malformedSamples = malformedSamples;
   console.log(JSON.stringify(result, null, 2));
-  // 승격 기록이 한 줄도 없으면 "위반 없음"이 아니라 "판정 불가"다(로그 수집 실패, 감사 로그 미배포).
-  process.exitCode = result.admits === 0 ? 2 : total ? 1 : 0;
+  // 승격 기록이 한 줄도 없거나 읽지 못한 승격 줄이 있으면 "위반 없음"이 아니라 "판정 불가"다
+  // (로그 수집 실패, 감사 로그 미배포, 잘린 줄). 위반을 이미 찾았으면 1이 우선한다.
+  process.exitCode = total ? 1 : result.admits === 0 || malformed > 0 ? 2 : 0;
 }

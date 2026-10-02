@@ -12,6 +12,9 @@
 #   event-loss.txt     — 발행된 아웃박스 이벤트 중 소비 기록(Redis 멱등 키)이 없는 수
 #   summary.txt        — 항목별 위반 수와 종합 판정
 #
+# 대기열 순서 대조는 run 동안 있었던 api 파드의 로그를 전부 읽을 수 있을 때만 판정한다(pod-coverage.mjs). 그래서
+# 먼저 export-prom.mjs로 <run>/prom/을 남긴 뒤 실행한다 — api_pods.json·api_restarts.json이 없으면 검사 실패(2)다.
+#
 # 실효 입장 초과는 판정식이 미확정이라(계획서 §3.3) 여기서 판정하지 않는다. 재료(승격·회수·이탈 감사 로그)는
 # api.log에 함께 남는다.
 #
@@ -75,10 +78,19 @@ else
 fi
 
 echo "==> 2/3 대기열 순서(api 로그)"
+# run 동안 있었던 파드의 로그를 지금 전부 읽을 수 있는지 먼저 본다. 빠진 파드가 있으면 대조는 하되 판정 불가다.
+if kubectl -n "$NS" get pods -l app=flowticket-api \
+     -o jsonpath='{range .items[*]}{.metadata.name} {.status.containerStatuses[?(@.name=="api")].restartCount}{"\n"}{end}' \
+     > "$D/api-pods-now.txt"; then
+  node "$HERE/pod-coverage.mjs" --pods "$OUT/prom/api_pods.json" --restarts "$OUT/prom/api_restarts.json" \
+    --existing "$D/api-pods-now.txt" > "$D/pod-coverage.json" || { echo "    로그를 읽을 수 없는 파드가 있다(pod-coverage.json)" >&2; BROKEN=1; }
+else
+  echo "    api 파드 목록 조회 실패" >&2; BROKEN=1
+fi
 if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 --prefix \
      --max-log-requests=20 > "$D/api.log"; then
   node "$HERE/queue-order.mjs" --tolerance-ms "$TOL" "$D/api.log" > "$D/queue-order.json"
-  # 2: 승격 기록 0건(판정 불가) 또는 실행 실패
+  # 2: 승격 기록 0건·읽지 못한 승격 줄(판정 불가) 또는 실행 실패
   case $? in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
 else
   echo "    api 로그 수집 실패(클러스터 접근)" >&2; BROKEN=1
@@ -118,7 +130,8 @@ fi
   echo "since=$SINCE"
   echo "--- sql (검사,위반 수)"; cat "$D/sql.csv" 2>/dev/null
   # require는 상대경로를 모듈 이름으로 읽는다. 파일로 읽는다.
-  echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
+  echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
+  echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"모든 파드의 로그를 읽음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null
   echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null
   echo "--- 실효 입장 초과: 판정식 미확정(계획서 §3.3) — 판정하지 않음"
   # 검사 일부가 실패해도 이미 찾은 위반은 함께 보인다.

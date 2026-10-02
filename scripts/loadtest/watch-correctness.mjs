@@ -11,7 +11,8 @@
 // 승격 처리 실패(flowticket_queue_admit_tick_failures_total)도 함께 본다. 승격 워커가 이벤트 처리에 실패하면
 // 대기열 게이지는 직전 값에 멈춘다. 그 구간의 over-admit·카운터 어긋남 값은 "현재 상태"가 아니므로, 감시 중
 // 실패가 한 번이라도 늘었으면 위반이 없었다고 말할 수 없다(판정 불가). 파드별 시계열을 따로 추적해 파드 재시작
-// (카운터 초기화)이나 감시 도중 새로 뜬 파드의 실패도 놓치지 않는다.
+// (카운터 초기화)이나 감시 도중 새로 뜬 파드의 실패도 놓치지 않는다. 재시작은 process_start_time_seconds가 바뀐
+// 것으로 판별한다 — 재시작 뒤 카운터가 이전 값 이상으로 올라와도 그만큼을 증가로 센다.
 //
 // 위반이 나오면 계획서의 "실시간 조건에 걸리면 즉시 중단"을 따른다: violation.json을 남기고, --on-violation 명령을
 // 한 번 실행한다(예: 발생기의 k6를 멈추는 명령). 감시는 계속하고, 끝날 때 종료 코드로 결과를 알린다:
@@ -20,14 +21,18 @@
 //   2 인자 오류
 //   3 위반 있음
 //   4 판정 불가 — 조회 오류(연결 끊김·HTTP 오류·조회 시간 초과)가 한 번이라도 있었거나, 값이 한 번도 나오지 않은
-//     조건이 있거나, 감시 중 승격 처리 실패가 늘었다. 감시가 끊긴 구간에서는 위반이 없었다고 말할 수 없다.
+//     조건이 있거나, 항상 있어야 할 시계열이 빈 틱(관측 공백)이 있었거나, 감시 중 승격 처리 실패가 늘었다. 감시가 끊긴 구간에서는 위반이 없었다고 말할 수 없다.
 //     over-admit·카운터 어긋남은 사후 검사가 없어 이 종료 코드가 유일한 근거다.
-// 시계열이 없는 틱(활성 이벤트가 없을 때)은 오류가 아니다. 대기열이 비면 대기열 게이지는 지워진다(QueueMetrics).
+// 시계열이 없는 틱은 지표에 따라 다르게 본다.
+//   - 대기열 게이지(over-admit·카운터 어긋남): 활성 이벤트가 없으면 지워진다(QueueMetrics). 오류가 아니다(noSeries).
+//   - 초과판매·승격 실패 카운터: 앱이 뜰 때 조건 없이 등록된다(OperationalMetrics, QueueMetrics). 비었다면
+//     스크랩 실패·스테일로 관측이 끊긴 것이다(gap). 한 틱이라도 있으면 판정 불가다 — 그 구간에서는 대기열 게이지가
+//     비어 있어도 "활성 이벤트 없음"인지 "관측 공백"인지 구분할 수 없다.
 // 조건별 집계는 watch-summary.json에 남는다.
 //
 // 종료(SIGINT·SIGTERM·--for 경과) 시 진행 중인 틱은 끝까지 기다린 뒤 판정한다. 조회마다 --query-timeout(기본 10초)이
-// 걸려 있어 포트포워드가 멈춰도 기다림은 유한하다(시간 초과는 조회 오류 = 판정 불가). 판정을 쓴 뒤에는 아무것도
-// 기록하지 않는다.
+// 걸려 있어 포트포워드가 멈춰도 기다림은 유한하다(시간 초과는 조회 오류 = 판정 불가). 판정을 쓴 뒤에는 새 조회를
+// 하지 않는다. 단, 60초 안에 끝나지 않은 중단 명령의 출력은 판정 뒤에 violation-action.log에 덧붙을 수 있다.
 //
 // Prometheus는 클러스터 안에만 있다. 먼저 포트포워드한다:
 //   kubectl -n monitoring port-forward svc/prometheus-operated 9090:9090
@@ -75,6 +80,9 @@ function main() {
   };
   // 파드별 시계열 그대로 읽는다(합치면 파드 재시작으로 줄어든 값과 다른 파드의 증가가 상쇄된다).
   const TICK_FAILURES = "flowticket_queue_admit_tick_failures_total";
+  const START_TIME = "process_start_time_seconds";
+  // 앱이 뜰 때 조건 없이 등록되는 지표. 비면 관측 공백이다.
+  const ALWAYS_PRESENT = new Set(["oversold", "tickFailures"]);
 
   // Prometheus 즉시 질의. 시간 초과·HTTP 오류·status≠success는 예외로 올린다.
   async function promQuery(q) {
@@ -99,7 +107,7 @@ function main() {
   mkdirSync(a.out, { recursive: true });
   const LOG = `${a.out}/watch-correctness.jsonl`;
   const stats = Object.fromEntries(
-    [...Object.keys(CHECKS), "tickFailures"].map((k) => [k, { value: 0, noSeries: 0, error: 0 }]),
+    [...Object.keys(CHECKS), "tickFailures"].map((k) => [k, { value: 0, noSeries: 0, gap: 0, error: 0 }]),
   );
   // 승격 처리 실패: 시계열(레이블 묶음)별 마지막 값과, 감시 중 늘어난 양의 합
   const failSeries = new Map();
@@ -117,19 +125,22 @@ function main() {
   async function checkTickFailures(row) {
     try {
       const series = await promQuery(TICK_FAILURES);
+      // 인스턴스별 프로세스 시작 시각. 바뀌었으면 재시작이다.
+      const starts = new Map((await promQuery(START_TIME)).map((s) => [s.metric?.instance, s.value?.[1]]));
       if (series.length === 0) {
-        stats.tickFailures.noSeries++;
+        stats.tickFailures.gap++;
         row.tickFailures = null;
       } else {
         stats.tickFailures.value++;
         let inc = 0;
         for (const s of series) {
-          const key = JSON.stringify(s.metric);
+          // 같은 파드라도 프로세스가 바뀌면 다른 시계열로 본다(재시작 = 카운터가 0부터 다시 센다).
+          const key = `${JSON.stringify(s.metric)}@${starts.get(s.metric?.instance) ?? "?"}`;
           const v = Number(s.value?.[1]);
           if (!Number.isFinite(v)) throw new Error(`승격 실패 카운터 값이 숫자가 아니다: ${s.value?.[1]}`);
           const prev = failSeries.get(key);
-          // 첫 틱에 본 값은 기준선이다. 감시 도중 처음 나타난 시계열(새 파드)은 값 전체가 감시 중 실패다.
-          // 값이 줄었으면 카운터가 초기화된 것(파드 재시작)이라 현재 값 전체가 그 뒤의 증가다.
+          // 첫 틱에 본 값은 기준선이다. 감시 도중 처음 나타난 시계열(새 파드·재시작한 프로세스)은 값 전체가
+          // 감시 중 실패다. 시작 시각을 못 읽었는데 값이 줄었으면 초기화로 보고 현재 값 전체를 증가로 센다.
           if (prev === undefined) inc += failFirstTick ? 0 : v;
           else inc += v >= prev ? v - prev : v;
           failSeries.set(key, v);
@@ -152,7 +163,7 @@ function main() {
     for (const [name, q] of Object.entries(CHECKS)) {
       try {
         row[name] = await query(q);
-        stats[name][row[name] === null ? "noSeries" : "value"]++;
+        stats[name][row[name] !== null ? "value" : ALWAYS_PRESENT.has(name) ? "gap" : "noSeries"]++;
       } catch (e) {
         row[name] = null;
         row[`${name}Error`] = String(e.message || e);
@@ -203,15 +214,17 @@ function main() {
     }
     const anyError = Object.values(stats).some((s) => s.error > 0);
     const neverValued = Object.entries(stats).filter(([, s]) => s.value === 0).map(([k]) => k);
+    const gaps = Object.entries(stats).filter(([, s]) => s.gap > 0).map(([k, s]) => `${k} ${s.gap}틱`);
     let code;
     let verdict;
     if (violated) {
       code = 3;
       verdict = "위반 있음(violation.json)";
-    } else if (crashed || anyError || neverValued.length || ticks === 0 || tickFailuresIncrease > 0) {
+    } else if (crashed || anyError || neverValued.length || gaps.length || ticks === 0 || tickFailuresIncrease > 0) {
       code = 4;
       verdict = "판정 불가" + (crashed ? " — 감시 루프가 예외로 멈췄다" : "") + (anyError ? " — 조회 오류가 있었다" : "") +
         (neverValued.length ? ` — 값이 한 번도 나오지 않은 조건: ${neverValued.join(", ")}` : "") +
+        (gaps.length ? ` — 관측 공백(항상 있어야 할 시계열이 빔): ${gaps.join(", ")}` : "") +
         (tickFailuresIncrease > 0 ? ` — 감시 중 승격 처리 실패 ${tickFailuresIncrease}건(대기열 게이지가 멈췄을 수 있다)` : "");
     } else {
       code = 0;
@@ -228,7 +241,7 @@ function main() {
     };
     writeFileSync(`${a.out}/watch-summary.json`, JSON.stringify(summary, null, 2));
     console.error(`[watch] 종료: ${verdict} — 틱 ${ticks}, ` +
-      Object.entries(stats).map(([k, s]) => `${k} 값 ${s.value}/없음 ${s.noSeries}/오류 ${s.error}`).join(", "));
+      Object.entries(stats).map(([k, s]) => `${k} 값 ${s.value}/없음 ${s.noSeries}/공백 ${s.gap}/오류 ${s.error}`).join(", "));
     // process.exit 대신 종료 코드만 두고 자연스럽게 끝낸다(Windows에서 열린 핸들이 닫히는 중 exit하면 코드가 깨진 적이 있다).
     process.exitCode = code;
   }

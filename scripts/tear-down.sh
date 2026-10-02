@@ -56,6 +56,10 @@ audit() {
   chk "ElastiCache"      "$(aws elasticache describe-cache-clusters --query "length(CacheClusters[?contains(CacheClusterId,'$CLUSTER')])" --output text 2>/dev/null)"
   chk "ALB(k8s-*)"       "$(aws elbv2 describe-load-balancers --query "length(LoadBalancers[?starts_with(LoadBalancerName,'k8s-')])" --output text 2>/dev/null)"
   chk "Target Group"     "$(aws elbv2 describe-target-groups --query "length(TargetGroups[?starts_with(TargetGroupName,'k8s-')])" --output text 2>/dev/null)"
+  # 부하 발생기(loadtest-100k-plan §4). 위 EC2 항목에도 잡히지만, 발생기만 따로 보이게 한다 —
+  # 측정 세션을 강제 종료한 경로에서 남기 쉬운 것이 이쪽이다. 결과 버킷은 force_destroy라 terraform이 지운다.
+  chk "EC2(부하 발생기)"  "$(aws ec2 describe-instances --filters "$TAG" Name=tag:Role,Values=loadgen Name=instance-state-name,Values=running,pending,stopping,stopped --query 'length(Reservations[])' --output text 2>/dev/null)"
+  chk "S3(발생기 결과)"   "$(aws s3api list-buckets --query "length(Buckets[?starts_with(Name,'$CLUSTER-loadgen-')])" --output text 2>/dev/null)"
   return $fail
 }
 

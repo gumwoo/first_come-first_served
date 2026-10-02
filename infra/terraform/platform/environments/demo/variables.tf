@@ -156,3 +156,18 @@ variable "redis_transit_encryption" {
   type        = bool
   default     = true
 }
+
+# ---------------------------------------------------------------------------
+# 부하 발생기(loadtest-100k-plan §4)
+# ---------------------------------------------------------------------------
+variable "loadgen_instance_count" {
+  description = "클러스터 밖 발생기 대수. 측정 세션에서만 loadtest.tfvars로 켠다(기본 0 = 생성 안 함)."
+  type        = number
+  default     = 0
+}
+
+variable "loadgen_instance_type" {
+  description = "발생기 인스턴스 타입. 상한은 계획서 §4에 고정한다."
+  type        = string
+  default     = "c6i.xlarge"
+}

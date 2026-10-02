@@ -15,8 +15,12 @@
 #   sql.csv            — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스(correctness.sql)
 #   queue-order.json   — 대기열 순서 위반(api 로그의 승격 감사 줄 대조, queue-order.mjs)
 #   event-loss.txt     — 발행된 아웃박스 이벤트 중 소비 기록(Redis 멱등 키)이 없는 수
-#   watch-summary.json — (같은 run 디렉터리) 실시간 감시기의 결과를 최종 판정에 넣는다. 3이면 위반, 0이 아니거나
-#                        파일이 없거나 감시 구간(startedAt~endedAt)이 run을 덮지 않으면 판정 불가 — 감시기 0과
+#   watch-summary.json — (같은 run 디렉터리) 실시간 감시기의 결과를 최종 판정에 넣는다. 감시 구간(startedAt~endedAt)이
+#                        run을 덮을 때만 그 결과를 이 run의 것으로 본다: 3이면 위반, 0이면 통과, 그 밖은 판정 불가.
+#                        덮지 않으면 결과가 3이어도 판정 불가다(감시가 run 중간에 시작돼 잡은 위반도 포함 — 그 위반이
+#                        실제였다면 4단계 재확인이 같은 식·같은 스크랩 데이터로 대체로 다시 잡을 것으로 본다(추론:
+#                        step 10초 < 스크랩 15초라 보통은 점에 잡히지만, 스크랩 지터로 두 샘플이 10초보다 가까우면
+#                        건너뛸 수 있어 보장은 아니다)). 파일이 없어도 판정 불가. 감시기 0과
 #                        4단계 통과가 함께 있어야 실시간 조건에 위반이 없었다.
 #   prom-recheck.json  — 실시간 조건(over-admit, 카운터 어긋남, 초과판매)과 승격 처리 실패를 내보낸 구간 데이터로
 #                        run 종료 + 30초까지 다시 본 결과(prom-recheck.mjs). 감시기는 run 끝을 보지 못하므로 여기서
@@ -43,10 +47,16 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="" SINCE="" UNTIL="" NS=flowticket TOL=1000
 while [ $# -gt 0 ]; do
   case "$1" in
-    --out) OUT="$2"; shift 2 ;;
-    --since) SINCE="$2"; shift 2 ;;
-    --until) UNTIL="$2"; shift 2 ;;
-    --tolerance-ms) TOL="$2"; shift 2 ;;
+    --out|--since|--until|--tolerance-ms)
+      # 값 없이 끝에 오면 set -u 때문에 "$2: unbound variable"로 죽어 종료 1(= 위반)이 된다. 인자 오류는 2다.
+      [ $# -ge 2 ] || { echo "$1에 값이 없다" >&2; exit 2; }
+      case "$1" in
+        --out) OUT="$2" ;;
+        --since) SINCE="$2" ;;
+        --until) UNTIL="$2" ;;
+        --tolerance-ms) TOL="$2" ;;
+      esac
+      shift 2 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2 ;;
   esac
 done
@@ -188,24 +198,38 @@ esac
 
 echo "==> 실시간 감시기 결과(watch-summary.json)"
 # 감시기 0과 4단계(사후 재확인) 통과가 함께 있어야 실시간 조건에 위반이 없었다. 감시기 결과를 최종 판정에 넣는다.
+# 해석 중 예외(빈 파일·null 등)는 모두 판정 불가(2)다 — node가 예외로 죽으면 종료 1(= 위반)로 읽히므로 잡는다.
 node -e '
-let s;
-try { s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); }
-catch { console.log("watch-summary.json이 없다 — 실시간 감시기를 같은 run 디렉터리로 돌리지 않았다"); process.exit(2); }
-console.log("exitCode=" + s.exitCode + " " + s.verdict + " (" + s.startedAt + " ~ " + s.endedAt + ")");
-if (s.exitCode === 3) process.exit(1);
-// 이 run을 감시한 결과인지 확인한다 — run 시작 전에 시작해 run 종료 뒤에 끝났어야 한다(다른 run의 결과·일찍 멈춘 감시 배제).
-const st = Date.parse(s.startedAt), en = Date.parse(s.endedAt);
-if (!(st <= Date.parse(process.argv[2])) || !(en >= Date.parse(process.argv[3]))) {
-  console.log("감시 구간이 run(" + process.argv[2] + " ~ " + process.argv[3] + ")을 덮지 않는다");
+try {
+  let s;
+  try { s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); }
+  catch { console.log("watch-summary.json이 없거나 읽을 수 없다 — 실시간 감시기를 같은 run 디렉터리로 돌리지 않았다"); process.exit(2); }
+  if (!s || typeof s !== "object") { console.log("watch-summary.json 내용이 객체가 아니다"); process.exit(2); }
+  console.log("exitCode=" + s.exitCode + " " + s.verdict + " (" + s.startedAt + " ~ " + s.endedAt + ")");
+  // 먼저 이 run을 감시한 결과인지 확인한다 — run 시작 전에 시작해 run 종료 뒤에 끝났어야 한다. 다른 run이 남긴
+  // 결과(위반 3 포함)를 이 run의 판정에 쓰지 않는다.
+  // 감시기는 toISOString()으로 쓴다. 그 형식만 받는다 — Date.parse는 "0"·"9999" 같은 값도 너그럽게 읽어
+  // 엉뚱한 구간을 "덮음"으로 볼 수 있다.
+  const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+  if (!ISO.test(String(s.startedAt)) || !ISO.test(String(s.endedAt))) {
+    console.log("감시 구간 시각(startedAt·endedAt)이 ISO UTC 형식이 아니다");
+    process.exit(2);
+  }
+  const st = Date.parse(s.startedAt), en = Date.parse(s.endedAt);
+  if (!(st <= Date.parse(process.argv[2])) || !(en >= Date.parse(process.argv[3]))) {
+    console.log("감시 구간이 run(" + process.argv[2] + " ~ " + process.argv[3] + ")을 덮지 않는다");
+    process.exit(2);
+  }
+  process.exit(s.exitCode === 3 ? 1 : s.exitCode === 0 ? 0 : 2);
+} catch (e) {
+  console.log("watch-summary.json 해석 실패: " + (e && e.message));
   process.exit(2);
 }
-process.exit(s.exitCode === 0 ? 0 : 2);
 ' "$OUT/watch-summary.json" "$SINCE" "$UNTIL" > "$D/watch-verdict.txt" 2>&1
 case $? in
   0) ;;
   1) echo "    실시간 감시기가 위반을 기록했다" >&2; FAIL=1 ;;
-  *) echo "    실시간 감시기 결과가 위반 없음(0)이 아니다 — $(tail -n 1 "$D/watch-verdict.txt")" >&2; BROKEN=1 ;;
+  *) echo "    실시간 감시기 결과를 이 run의 통과로 볼 수 없다 — $(tail -n 1 "$D/watch-verdict.txt")" >&2; BROKEN=1 ;;
 esac
 
 {

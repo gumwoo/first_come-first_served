@@ -43,10 +43,16 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="" SINCE="" UNTIL="" NS=flowticket TOL=1000
 while [ $# -gt 0 ]; do
   case "$1" in
-    --out) OUT="$2"; shift 2 ;;
-    --since) SINCE="$2"; shift 2 ;;
-    --until) UNTIL="$2"; shift 2 ;;
-    --tolerance-ms) TOL="$2"; shift 2 ;;
+    --out|--since|--until|--tolerance-ms)
+      # 값 없이 끝에 오면 set -u 때문에 "$2: unbound variable"로 죽어 종료 1(= 위반)이 된다. 인자 오류는 2다.
+      [ $# -ge 2 ] || { echo "$1에 값이 없다" >&2; exit 2; }
+      case "$1" in
+        --out) OUT="$2" ;;
+        --since) SINCE="$2" ;;
+        --until) UNTIL="$2" ;;
+        --tolerance-ms) TOL="$2" ;;
+      esac
+      shift 2 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2 ;;
   esac
 done
@@ -188,19 +194,26 @@ esac
 
 echo "==> 실시간 감시기 결과(watch-summary.json)"
 # 감시기 0과 4단계(사후 재확인) 통과가 함께 있어야 실시간 조건에 위반이 없었다. 감시기 결과를 최종 판정에 넣는다.
+# 해석 중 예외(빈 파일·null 등)는 모두 판정 불가(2)다 — node가 예외로 죽으면 종료 1(= 위반)로 읽히므로 잡는다.
 node -e '
-let s;
-try { s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); }
-catch { console.log("watch-summary.json이 없다 — 실시간 감시기를 같은 run 디렉터리로 돌리지 않았다"); process.exit(2); }
-console.log("exitCode=" + s.exitCode + " " + s.verdict + " (" + s.startedAt + " ~ " + s.endedAt + ")");
-if (s.exitCode === 3) process.exit(1);
-// 이 run을 감시한 결과인지 확인한다 — run 시작 전에 시작해 run 종료 뒤에 끝났어야 한다(다른 run의 결과·일찍 멈춘 감시 배제).
-const st = Date.parse(s.startedAt), en = Date.parse(s.endedAt);
-if (!(st <= Date.parse(process.argv[2])) || !(en >= Date.parse(process.argv[3]))) {
-  console.log("감시 구간이 run(" + process.argv[2] + " ~ " + process.argv[3] + ")을 덮지 않는다");
+try {
+  let s;
+  try { s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); }
+  catch { console.log("watch-summary.json이 없거나 읽을 수 없다 — 실시간 감시기를 같은 run 디렉터리로 돌리지 않았다"); process.exit(2); }
+  if (!s || typeof s !== "object") { console.log("watch-summary.json 내용이 객체가 아니다"); process.exit(2); }
+  console.log("exitCode=" + s.exitCode + " " + s.verdict + " (" + s.startedAt + " ~ " + s.endedAt + ")");
+  // 먼저 이 run을 감시한 결과인지 확인한다 — run 시작 전에 시작해 run 종료 뒤에 끝났어야 한다. 다른 run이 남긴
+  // 결과(위반 3 포함)를 이 run의 판정에 쓰지 않는다.
+  const st = Date.parse(s.startedAt), en = Date.parse(s.endedAt);
+  if (!(st <= Date.parse(process.argv[2])) || !(en >= Date.parse(process.argv[3]))) {
+    console.log("감시 구간이 run(" + process.argv[2] + " ~ " + process.argv[3] + ")을 덮지 않는다");
+    process.exit(2);
+  }
+  process.exit(s.exitCode === 3 ? 1 : s.exitCode === 0 ? 0 : 2);
+} catch (e) {
+  console.log("watch-summary.json 해석 실패: " + (e && e.message));
   process.exit(2);
 }
-process.exit(s.exitCode === 0 ? 0 : 2);
 ' "$OUT/watch-summary.json" "$SINCE" "$UNTIL" > "$D/watch-verdict.txt" 2>&1
 case $? in
   0) ;;

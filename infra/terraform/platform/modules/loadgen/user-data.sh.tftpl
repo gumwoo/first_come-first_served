@@ -1,0 +1,23 @@
+#!/bin/bash
+# 발생기 준비. 측정 스크립트는 저장소에서 받고, 실행할 커밋은 측정 세션에서 고정한다
+# (scripts/loadtest/loadgen.sh checkout <sha>).
+set -euxo pipefail
+
+dnf install -y git jq nodejs
+
+# 로컬 스모크에서 확인한 k6 버전과 같게 고정한다.
+curl -fsSL "https://github.com/grafana/k6/releases/download/v${k6_version}/k6-v${k6_version}-linux-amd64.tar.gz" \
+  | tar -xz -C /tmp
+install -m 0755 "/tmp/k6-v${k6_version}-linux-amd64/k6" /usr/local/bin/k6
+
+# 연결 수 한도. SSE 발생기는 연결 하나에 소켓 하나를 쓰고, 같은 목적지로 여는 연결 수는 출발 포트 범위에 묶인다.
+cat > /etc/sysctl.d/90-loadgen.conf <<'EOF'
+net.ipv4.ip_local_port_range = 1024 65535
+net.ipv4.tcp_tw_reuse = 1
+net.core.somaxconn = 65535
+fs.file-max = 2000000
+EOF
+sysctl --system
+
+git clone "${repo_url}" /opt/flowticket
+echo "${bucket}" > /opt/flowticket-results-bucket

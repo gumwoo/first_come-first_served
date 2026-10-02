@@ -19,9 +19,9 @@
 #   event-loss.txt     — 발행된 아웃박스 이벤트 중 소비 기록(Redis 멱등 키)이 없는 수
 #   watch-summary.json — (같은 run 디렉터리) 실시간 감시기의 결과를 최종 판정에 넣는다. 감시 구간(startedAt~endedAt)이
 #                        run을 덮을 때만 그 결과를 이 run의 것으로 본다: 3이면 위반, 0이면 통과, 그 밖은 판정 불가.
-#                        먼저 violation.json을 본다: 위반 시각이 [since, until + 30초] 안이면 감시 결과 상태와 상관없이
-#                        위반이다. 그 밖에, 덮지 않을 때:
-#                        그 밖은 판정 불가다(다른 run의 3, 위반 시각을 확인할 수 없는 3 포함 — 그 위반이
+#                        단, 먼저 violation.json을 본다: 위반 시각이 [since, until + 30초] 안이면 감시 결과 상태와
+#                        상관없이 위반이다. 위반 기록이 있는데 결과가 3이 아니면(두 파일이 섞임) 판정 불가다.
+#                        덮지 않으면 판정 불가다(다른 run의 3, 위반 시각을 확인할 수 없는 3 포함 — 그 위반이
 #                        실제였다면 4단계 재확인이 같은 식·같은 스크랩 데이터로 대체로 다시 잡을 것으로 본다(추론:
 #                        step 10초 < 스크랩 15초라 보통은 점에 잡히지만, 스크랩 지터로 두 샘플이 10초보다 가까우면
 #                        건너뛸 수 있어 보장은 아니다)). 파일이 없어도 판정 불가. 감시기 0과
@@ -134,6 +134,9 @@ const fail = (m) => { console.log(m); process.exit(2); };
 const iso = (x) => typeof x === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(x) && new Date(x).toISOString() === x.replace("Z", ".000Z");
 const files = fs.readdirSync(out);
 const metas = files.filter((f) => /^meta-.+\.json$/.test(f));
+// 시작 기록 없이 종료 기록만 있는 발생기도 이 run의 발생기다(시작 기록을 덜 회수했거나 섞임) — 판정 불가.
+const orphanEnds = files.filter((f) => /^end-.+\.json$/.test(f) && !files.includes("meta-" + f.slice(4)));
+if (orphanEnds.length) fail("시작 기록(meta) 없이 종료 기록만 있는 발생기가 있다: " + orphanEnds.join(", "));
 if (metas.length === 0) fail("발생기 실행 기록(meta-<gen>.json)이 없다 — run-entry.sh의 run 디렉터리를 --out으로 준다");
 // 인스턴스째 사라진 발생기는 결과 회수(loadgen.sh pull — 지금 running인 인스턴스만)에 나타나지 않아 기록이 통째로
 // 없다. 그래서 띄운 발생기 수(--generators)와 기록 수를 대조한다.
@@ -280,6 +283,12 @@ try {
     process.exit(2);
   }
   const covers = Date.parse(s.startedAt) <= since && Date.parse(s.endedAt) >= until;
+  // 감시기는 위반이 있을 때만 violation.json을 쓰고, 그러면 결과는 반드시 3이다. 위반 기록이 있는데 결과가 3이 아니면
+  // 두 파일이 다른 감시에서 왔다(섞임) — 어느 쪽도 믿을 수 없으므로 판정 불가다.
+  if (fs.existsSync(violationPath) && s.exitCode !== 3) {
+    console.log("violation.json이 있는데 감시 결과가 3이 아니다(" + s.exitCode + ") — 감시 결과 파일이 섞였다");
+    process.exit(2);
+  }
   if (s.exitCode === 3) {
     // 위반 기록이 구간 안이었다면 위에서 끝났다. 여기서는 위반 시각이 구간 밖이거나 확인할 수 없다.
     if (covers) {

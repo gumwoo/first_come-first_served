@@ -2,11 +2,11 @@
 # 정합성 사후 검증(loadtest-100k-plan §3.3). run이 끝난 뒤, 철거 전에 실행한다.
 #
 #   bash scripts/loadtest/check-correctness.sh --out artifacts/loadtest/<session>/<run> --since 2026-10-02T05:00:00Z \
-#     [--until 2026-10-02T05:12:00Z]
+#     --until 2026-10-02T05:12:00Z
 #
-# --until은 run 종료 시각(UTC)이다. 없으면 같은 run 디렉터리의 watch-summary.json(실시간 감시기)의 endedAt을 쓴다.
-# 내보낸 구간(prom/_meta.json)이 --since 이전부터 --until + 30초 이후까지를 덮어야 한다 — 파드 대조와 4단계(승격 처리
-# 실패)가 이 구간에 기댄다. 덮지 못하거나 run 종료 시각을 모르면 그 둘은 판정 불가(2)다.
+# --until은 run 종료 시각(UTC, 발생기가 멈춘 시각)이다. 내보낸 구간(prom/_meta.json)이 --since 이전부터 --until + 30초
+# 이후까지를 덮어야 한다 — 파드 대조와 4단계(실시간 조건 사후 재확인)가 이 구간에 기댄다. 덮지 못하면 판정 불가(2)다.
+# (감시기의 endedAt으로 대신하지 않는다 — 감시기가 일찍 멈췄으면 구간이 짧게 잡힌 채 통과한다.)
 #
 # --since는 run 시작 시각(UTC, run 메타의 startedAt과 같은 형식)이다. 이 시각 이후의 주문·이벤트·로그만 본다.
 # DB에는 같은 UTC 벽시계로 바꿔 넘긴다 — 앱 컨테이너가 TZ=UTC이고 DB에도 UTC 벽시계가 쌓인다(api-deployment.yaml).
@@ -15,9 +15,9 @@
 #   sql.csv            — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스(correctness.sql)
 #   queue-order.json   — 대기열 순서 위반(api 로그의 승격 감사 줄 대조, queue-order.mjs)
 #   event-loss.txt     — 발행된 아웃박스 이벤트 중 소비 기록(Redis 멱등 키)이 없는 수
-#   tick-failures.txt  — 내보낸 구간(prom/)의 승격 처리 실패. 실시간 감시기는 마지막 스크랩 이후를 보지 못하므로
-#                        여기서 다시 본다. 0보다 크면 대기열 게이지가 멈췄던 구간이 있어 실시간 판정(감시기의 0)을
-#                        믿을 수 없다 — 판정 불가로 센다. export-prom의 --end를 run 종료 + 30초 이후로 잡아야 덮인다.
+#   prom-recheck.json  — 실시간 조건(over-admit, 카운터 어긋남, 초과판매)과 승격 처리 실패를 내보낸 구간 데이터로
+#                        run 종료 + 30초까지 다시 본 결과(prom-recheck.mjs). 감시기는 run 끝을 보지 못하므로 여기서
+#                        덮는다. 위반이면 1, 그 구간을 신선하게 관측하지 못했거나 승격 처리 실패가 있으면 2.
 #   summary.txt        — 항목별 위반 수와 종합 판정
 #
 # 대기열 순서 대조는 run 동안 있었던 api 파드의 로그를 전부 읽을 수 있을 때만 판정한다(pod-coverage.mjs). 그래서
@@ -47,11 +47,11 @@ while [ $# -gt 0 ]; do
     *) echo "알 수 없는 인자: $1" >&2; exit 2 ;;
   esac
 done
-[ -n "$OUT" ] && [ -n "$SINCE" ] || { echo "--out과 --since가 필요하다" >&2; exit 2; }
+[ -n "$OUT" ] && [ -n "$SINCE" ] && [ -n "$UNTIL" ] || { echo "--out, --since, --until이 필요하다" >&2; exit 2; }
 # 형식을 좁혀 SQL에 그대로 넣어도 안전하게 한다(따옴표·세미콜론이 들어올 수 없다).
 [[ "$SINCE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
   echo "--since는 YYYY-MM-DDTHH:MM:SSZ(UTC)여야 한다: $SINCE" >&2; exit 2; }
-[ -z "$UNTIL" ] || [[ "$UNTIL" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
+[[ "$UNTIL" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
   echo "--until은 YYYY-MM-DDTHH:MM:SSZ(UTC)여야 한다: $UNTIL" >&2; exit 2; }
 SINCE_DB="${SINCE/T/ }"; SINCE_DB="${SINCE_DB%Z}"
 D="$OUT/correctness"
@@ -81,25 +81,18 @@ EOF
 FAIL=0 BROKEN=0
 
 echo "==> 0/4 내보낸 구간 확인(prom/_meta.json)"
-# 파드 대조·승격 처리 실패 검사는 내보낸 구간이 run 전체(+ 마지막 스크랩 30초)를 덮어야 믿을 수 있다.
+# 파드 대조와 4단계(실시간 조건 사후 재확인)는 내보낸 구간이 run 전체 + 꼬리 30초를 덮어야 믿을 수 있다.
 if node -e '
 const fs = require("fs");
-const [out, since, untilArg] = process.argv.slice(1);
+const [out, since, until] = process.argv.slice(1);
 const fail = (m) => { console.log(m); process.exit(2); };
-let until = untilArg ? Date.parse(untilArg) : NaN;
-let untilSrc = "--until";
-if (!untilArg) {
-  try { until = Date.parse(JSON.parse(fs.readFileSync(out + "/watch-summary.json", "utf8")).endedAt); untilSrc = "watch-summary.json endedAt"; }
-  catch { fail("run 종료 시각을 모른다 — --until을 주거나 실시간 감시기(watch-summary.json)를 같은 run 디렉터리에 남긴다"); }
-}
-if (!Number.isFinite(until)) fail("run 종료 시각을 읽지 못했다(" + untilSrc + ")");
 let meta;
 try { meta = JSON.parse(fs.readFileSync(out + "/prom/_meta.json", "utf8")); }
-catch { fail("prom/_meta.json을 읽지 못했다 — export-prom.mjs를 먼저 돌린다"); }
+catch { fail("prom/_meta.json을 읽지 못했다 — export-prom.mjs를 먼저 돌린다(도중에 죽었으면 다시 돌린다)"); }
 const s = Number(meta.startSec) * 1000, e = Number(meta.endSec) * 1000;
 if (!Number.isFinite(s) || !Number.isFinite(e)) fail("prom/_meta.json에 startSec·endSec가 없다 — export-prom.mjs로 다시 내보낸다");
-const need = until + 30000;
-console.log("export=" + new Date(s).toISOString() + "~" + new Date(e).toISOString() + " run=" + since + "~" + new Date(until).toISOString() + "(" + untilSrc + ")");
+const need = Date.parse(until) + 30000;
+console.log("export=" + new Date(s).toISOString() + "~" + new Date(e).toISOString() + " run=" + since + "~" + until);
 if (s > Date.parse(since)) fail("내보낸 구간이 run 시작보다 늦게 시작한다 — --start를 run 시작 이전으로 다시 내보낸다");
 if (e < need) fail("내보낸 구간이 run 종료 + 30초(" + new Date(need).toISOString() + ")를 덮지 않는다 — --end를 늘려 다시 내보낸다");
 ' "$OUT" "$SINCE" "$UNTIL" > "$D/export-window.txt" 2>&1; then :
@@ -180,28 +173,14 @@ else
   echo "    아웃박스 조회 실패" >&2; BROKEN=1
 fi
 
-echo "==> 4/4 승격 처리 실패(내보낸 구간 — 실시간 판정 보완)"
-# 승격 실패 카운터는 앱이 뜰 때 항상 등록되므로 시계열이 없거나 파일을 못 읽으면 확인 불가(2)다.
-node -e '
-let b;
-try { b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); }
-catch (e) { console.log("파일을 읽지 못했다(export-prom.mjs를 먼저 돌린다): " + e.message.split("\n")[0]); process.exit(2); }
-if (b.status !== "success") { console.log("Prometheus 응답 status=" + b.status); process.exit(2); }
-const rs = b.data?.result ?? [];
-if (rs.length === 0) { console.log("시계열 없음"); process.exit(2); }
-let max = 0;
-for (const s of rs) for (const [, v] of s.values ?? []) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) { console.log("값이 숫자가 아니다: " + v); process.exit(2); }
-  if (n > max) max = n;
-}
-console.log("max_rate_per_sec=" + max);
-process.exit(max > 0 ? 1 : 0);
-' "$OUT/prom/queue_admit_tick_failures_rate.json" > "$D/tick-failures.txt" 2>&1
+echo "==> 4/4 실시간 조건 사후 재확인(내보낸 구간 — run 종료 + 30초까지)"
+# 감시기는 run 끝을 보지 못한다. over-admit·카운터 어긋남·초과판매·승격 처리 실패를 내보낸 데이터로 다시 보고,
+# 그 구간을 실제로 신선하게 관측했는지(샘플 나이·점 연속성)도 확인한다(prom-recheck.mjs).
+node "$HERE/prom-recheck.mjs" --prom-dir "$OUT/prom" --since "$SINCE" --until "$UNTIL" > "$D/prom-recheck.json"
 case $? in
   0) ;;
-  1) echo "    run 구간에 승격 처리 실패가 있다 — 실시간 판정 불가" >&2; BROKEN=1 ;;
-  *) echo "    승격 처리 실패를 확인하지 못했다(prom/queue_admit_tick_failures_rate.json)" >&2; BROKEN=1 ;;
+  1) echo "    내보낸 구간에서 실시간 조건 위반을 찾았다(prom-recheck.json)" >&2; FAIL=1 ;;
+  *) echo "    실시간 조건을 다시 확인하지 못했다 — 관측 공백·승격 처리 실패·파일 문제(prom-recheck.json)" >&2; BROKEN=1 ;;
 esac
 
 {
@@ -212,7 +191,7 @@ esac
   echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null
   echo "--- 내보낸 구간(파드 대조·승격 처리 실패의 전제)"; cat "$D/export-window.txt" 2>/dev/null
   echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null
-  echo "--- 승격 처리 실패(내보낸 구간, 0보다 크면 실시간 판정 불가)"; cat "$D/tick-failures.txt" 2>/dev/null
+  echo "--- 실시간 조건 사후 재확인(내보낸 구간, run 종료 + 30초까지)"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.violations.length?"위반: "+r.violations.join("; ")+(r.problems.length?" / 판정 불가 사유도 있음: "+r.problems.join("; "):""):r.problems.length?"판정 불가: "+r.problems.join("; "):"위반 없음(관측 점 "+r.observedPoints+"개, 샘플 나이 최대 "+r.sampleAgeMaxSec+"초)")}catch{console.log("판정 불가(확인 실패)")}' "$D/prom-recheck.json" 2>/dev/null
   echo "--- 실효 입장 초과: 판정식 미확정(계획서 §3.3) — 판정하지 않음"
   # 검사 일부가 실패해도 이미 찾은 위반은 함께 보인다.
   if [ "$BROKEN" -ne 0 ] && [ "$FAIL" -ne 0 ]; then echo "판정: 정합성 위반 + 검사 일부 실패(결과 불완전)"

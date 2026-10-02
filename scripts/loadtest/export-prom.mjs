@@ -58,6 +58,11 @@ export const QUERIES = {
   sse_send_failures_rate: "sum by (phase) (rate(flowticket_queue_sse_send_failures_total[1m]))",
   // 정합성(§3.3)
   seat_oversold: "max(flowticket_seat_oversold)",
+  // 관측 신선도(prom-recheck.mjs). 항상 있어야 할 두 지표의 가장 오래된 샘플 나이 — 감시기의 신선도 질의와 같은 식.
+  // timestamp()는 지표 이름을 떼므로 지표마다 따로 걸고 구분 레이블을 붙여 or로 합친다(같은 레이블 묶음 오류 방지).
+  sample_age_max:
+    'max(label_replace(time() - timestamp(flowticket_seat_oversold), "m", "oversold", "", "")' +
+    ' or label_replace(time() - timestamp(flowticket_queue_admit_tick_failures_total), "m", "tickfail", "", ""))',
   // API 지연·처리량(§3.2 판정, §3.4 SLO)
   http_p95_by_uri: "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket[1m])))",
   http_rps_by_uri: "sum by (uri) (rate(http_server_requests_seconds_count[1m]))",
@@ -84,6 +89,9 @@ const start = toSec(a.start);
 const end = toSec(a.end);
 if (!(end > start)) usage(`구간이 잘못됐다: ${a.start} ~ ${a.end}`);
 mkdirSync(`${a.out}/prom`, { recursive: true });
+// 이전 내보내기의 _meta.json을 먼저 지운다. 도중에 죽으면 _meta.json이 없어 사후 검사가 판정 불가로 끝난다
+// (이전 구간의 _meta.json이 새 파일들과 섞여 읽히지 않게).
+rmSync(`${a.out}/prom/_meta.json`, { force: true });
 
 let failed = 0;
 for (const [name, q] of Object.entries(QUERIES)) {

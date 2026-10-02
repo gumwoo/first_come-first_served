@@ -23,18 +23,22 @@
 //   4 판정 불가 — 조회 오류(연결 끊김·HTTP 오류·조회 시간 초과)가 한 번이라도 있었거나, 값이 한 번도 나오지 않은
 //     조건이 있거나, 항상 있어야 할 시계열이 빈 틱(관측 공백)이 있었거나, 조회 간격이 스크랩 주기를 넘었거나,
 //     감시 중 승격 처리 실패가 늘었다. 감시가 끊긴 구간에서는 위반이 없었다고 말할 수 없다.
-//     over-admit·카운터 어긋남은 사후 검사가 없어 이 종료 코드가 유일한 근거다.
+//     over-admit·카운터 어긋남은 실시간 근거가 이 종료 코드뿐이다. run 끝 구간은 사후 재확인(prom-recheck.mjs)이 덮는다.
 // 시계열이 없는 틱은 지표에 따라 다르게 본다.
 //   - 대기열 게이지(over-admit·카운터 어긋남): 활성 이벤트가 없으면 지워진다(QueueMetrics). 오류가 아니다(noSeries).
 //   - 초과판매·승격 실패 카운터: 앱이 뜰 때 조건 없이 등록된다(OperationalMetrics, QueueMetrics). 비었다면
 //     스크랩 실패·스테일로 관측이 끊긴 것이다(gap). 한 틱이라도 있으면 판정 불가다 — 그 구간에서는 대기열 게이지가
 //     비어 있어도 "활성 이벤트 없음"인지 "관측 공백"인지 구분할 수 없다.
 //   - 값이 있어도 오래된 샘플이면 관측 공백이다. Prometheus는 스크랩이 늦어지면 5분(lookback) 안의 마지막 샘플을
-//     그대로 돌려준다. 항상 있어야 할 두 지표의 가장 오래된 샘플 나이가 --max-sample-age(기본 45초 = 스크랩 15초 × 3)를
-//     넘으면 그 틱은 관측 공백(freshness)이다.
-// --interval(틱 시작 사이 간격, 기본 5초)은 스크랩 주기(15초, servicemonitor-api.yaml) 이하만 받는다. 그래도 조회가
-// 느리면 실제 간격이 늘어나므로, 조건마다 연속 조회 사이의 실제 간격을 재서 15초를 넘은 적이 있으면 판정 불가로
-// 센다 — 그 사이 스크랩된 샘플(예: 순간적인 over-admit)을 보지 못했을 수 있다.
+//     그대로 돌려준다. 항상 있어야 할 두 지표의 가장 오래된 샘플 나이가 --max-sample-age(기본 30초 = 스크랩 주기 15초 +
+//     여유, 잠정값)를 넘으면 그 틱은 관측 공백(freshness)이다.
+// --interval(틱 시작 사이 간격, 기본 5초)은 10초 이하만 받는다. 그래도 조회가 느리면 실제 간격이 늘어나므로, 조건마다
+// 연속 조회 사이의 실제 간격을 재서 14초(스크랩 주기 15초 − 여유 1초, 잠정값)를 넘은 적이 있으면 판정 불가로 센다 —
+// 그 사이 스크랩된 샘플(예: 순간적인 over-admit)을 보지 못했을 수 있다.
+//
+// 감시기는 구조상 run 끝을 보지 못한다(마지막 조회가 run 종료보다 앞서고, 마지막 상태는 종료 뒤 스크랩에야 들어온다).
+// 그래서 감시기의 0만으로는 "위반 없음"이 아니다 — 사후 검사(check-correctness.sh → prom-recheck.mjs)가 내보낸 데이터로
+// 같은 조건을 run 종료 + 30초까지 다시 보고, 그 단계까지 통과해야 위반이 없었다고 말할 수 있다.
 // 조건별 집계는 watch-summary.json에 남는다.
 //
 // 종료(SIGINT·SIGTERM·--for 경과) 시 진행 중인 틱은 끝까지 기다린 뒤 판정한다. 조회마다 --query-timeout(기본 10초)이
@@ -50,15 +54,18 @@
 //   kubectl -n monitoring port-forward svc/prometheus-operated 9090:9090
 //
 //   node scripts/loadtest/watch-correctness.mjs --out artifacts/loadtest/<session>/<run> \
-//     [--interval 5] [--for 600] [--query-timeout 10] [--max-sample-age 45] [--on-violation "bash scripts/loadtest/loadgen.sh exec -- pkill -INT k6"]
+//     [--interval 5] [--for 600] [--query-timeout 10] [--max-sample-age 30] [--on-violation "bash scripts/loadtest/loadgen.sh exec -- pkill -INT k6"]
 import { exec } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 const USAGE =
-  "사용: watch-correctness.mjs --out <run 디렉터리> [--interval 초(0<,≤15)] [--for 초(>0)] [--query-timeout 초(>0)] [--max-sample-age 초(>0)] [--on-violation 명령]";
-// 스크랩 주기(servicemonitor-api.yaml interval: 15s). 감시 간격은 이보다 길 수 없다.
+  "사용: watch-correctness.mjs --out <run 디렉터리> [--interval 초(0<,≤10)] [--for 초(>0)] [--query-timeout 초(>0)] [--max-sample-age 초(>0)] [--on-violation 명령]";
+// 스크랩 주기(servicemonitor-api.yaml interval: 15s). 연속 조회 사이 간격이 이보다 1초 이상 짧아야 그 사이 샘플을
+// 놓치지 않는다고 본다(스크랩 처리 지연의 흔들림에 대한 여유 1초, 잠정값). --interval은 여유 있게 10초까지만 받는다.
 const SCRAPE_SEC = 15;
+const MAX_QUERY_GAP_SEC = SCRAPE_SEC - 1;
+const MAX_INTERVAL_SEC = 10;
 let a;
 try {
   ({ values: a } = parseArgs({
@@ -68,7 +75,7 @@ try {
       interval: { type: "string", default: "5" },
       for: { type: "string" },
       "query-timeout": { type: "string", default: "10" },
-      "max-sample-age": { type: "string", default: "45" },
+      "max-sample-age": { type: "string", default: "30" },
       "on-violation": { type: "string" },
     },
   }));
@@ -76,7 +83,7 @@ try {
   console.error(`${e.message}\n${USAGE}`);
 }
 const positive = (s) => s !== undefined && /^\d+(\.\d+)?$/.test(s) && Number(s) > 0;
-if (!a || !a.out || !positive(a.interval) || Number(a.interval) > SCRAPE_SEC || (a.for !== undefined && !positive(a.for)) ||
+if (!a || !a.out || !positive(a.interval) || Number(a.interval) > MAX_INTERVAL_SEC || (a.for !== undefined && !positive(a.for)) ||
     !positive(a["query-timeout"]) || !positive(a["max-sample-age"])) {
   if (a) console.error(USAGE);
   process.exitCode = 2;
@@ -148,8 +155,8 @@ function main() {
   let inflight = null; // 진행 중인 틱. 종료 시 끝까지 기다린 뒤 판정한다
   let sleeper = null;
   const startedAt = Date.now();
-  // 조건마다 직전 조회 시각과, 연속 조회 사이 간격의 최댓값. 간격이 스크랩 주기를 넘으면 그 사이 스크랩된 샘플을
-  // 보지 못했을 수 있다(--interval은 틱이 끝난 뒤의 쉼이라 실제 간격은 그보다 길다).
+  // 조건마다 직전 조회 시각과, 모든 조건을 통틀어 연속 조회 사이 간격의 최댓값. 간격이 14초를 넘으면 그 사이
+  // 스크랩된 샘플을 보지 못했을 수 있다(틱 시작 간격은 --interval이지만, 조회가 느리면 그보다 길어진다).
   const lastQueryAt = {};
   let maxQueryGapSec = 0;
   let cadenceGaps = 0;
@@ -204,7 +211,7 @@ function main() {
       if (lastQueryAt[name] !== undefined) {
         const gapSec = (now - lastQueryAt[name]) / 1000;
         if (gapSec > maxQueryGapSec) maxQueryGapSec = gapSec;
-        if (gapSec > SCRAPE_SEC) {
+        if (gapSec > MAX_QUERY_GAP_SEC) {
           cadenceGaps++;
           row[`${name}QueryGapSec`] = gapSec;
         }
@@ -293,7 +300,7 @@ function main() {
       verdict = "판정 불가" + (crashed ? " — 감시 루프가 예외로 멈췄다" : "") + (anyError ? " — 조회 오류가 있었다" : "") +
         (neverValued.length ? ` — 값이 한 번도 나오지 않은 조건: ${neverValued.join(", ")}` : "") +
         (gaps.length ? ` — 관측 공백(항상 있어야 할 시계열·프로세스 시작 시각이 비었거나 샘플이 오래됨): ${gaps.join(", ")}` : "") +
-        (cadenceGaps > 0 ? ` — 조회 간격이 스크랩 주기(${SCRAPE_SEC}초)를 넘은 적이 ${cadenceGaps}번(최대 ${maxQueryGapSec.toFixed(2)}초, 그 사이 샘플을 못 봤을 수 있다)` : "") +
+        (cadenceGaps > 0 ? ` — 조회 간격이 ${MAX_QUERY_GAP_SEC}초(스크랩 주기 ${SCRAPE_SEC}초 − 여유 1초)를 넘은 적이 ${cadenceGaps}번(최대 ${maxQueryGapSec.toFixed(2)}초, 그 사이 샘플을 못 봤을 수 있다)` : "") +
         (tickFailuresIncrease > 0 ? ` — 감시 중 승격 처리 실패 ${tickFailuresIncrease}건(대기열 게이지가 멈췄을 수 있다)` : "");
     } else {
       code = 0;

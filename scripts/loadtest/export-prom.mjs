@@ -6,9 +6,11 @@
 //
 //   kubectl -n monitoring port-forward svc/prometheus-operated 9090:9090
 //   node scripts/loadtest/export-prom.mjs --out artifacts/loadtest/<session>/<run> \
-//     --start 2026-10-02T05:00:00Z --end 2026-10-02T05:12:00Z [--step 15]
+//     --start 2026-10-02T05:00:00Z --end 2026-10-02T05:12:00Z [--step 10]
 //
-// --step 기본 15초는 Prometheus 수집 주기(servicemonitor-api.yaml)와 같다. 그보다 잘게 질의해도 새 정보가 없다.
+// --step 기본 10초는 수집 주기(15초, servicemonitor-api.yaml)보다 짧게 잡은 값이다. step이 수집 주기와 같으면 스크랩
+// 시각이 조금만 흔들려도 한 샘플이 두 step 사이에 끼어 빠진다(G1이 실서버 백필로 재현: step 15는 놓치고 14는 잡았다).
+// 사후 재확인(prom-recheck.mjs)은 step이 10초를 넘으면 판정 불가로 끝낸다.
 //
 // --start는 run 시작 이전, --end는 run 종료 + 30초(스크랩 두 주기) 이후로 잡는다. run 마지막 순간의 상태(특히 승격 처리
 // 실패)는 종료 뒤 스크랩에야 Prometheus에 들어오므로, --end를 run 종료 시각에 맞추면 그 구간이 빠진다. 사후 검사
@@ -32,7 +34,7 @@ try {
       out: { type: "string" },
       start: { type: "string" },
       end: { type: "string" },
-      step: { type: "string", default: "15" },
+      step: { type: "string", default: "10" },
       "query-timeout": { type: "string", default: "30" },
     },
   }));

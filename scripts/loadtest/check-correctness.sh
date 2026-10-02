@@ -15,6 +15,8 @@
 #   sql.csv            — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스(correctness.sql)
 #   queue-order.json   — 대기열 순서 위반(api 로그의 승격 감사 줄 대조, queue-order.mjs)
 #   event-loss.txt     — 발행된 아웃박스 이벤트 중 소비 기록(Redis 멱등 키)이 없는 수
+#   watch-summary.json — (같은 run 디렉터리) 실시간 감시기의 결과를 최종 판정에 넣는다. 3이면 위반, 0이 아니거나
+#                        파일이 없으면 판정 불가 — 감시기 0과 4단계 통과가 함께 있어야 실시간 조건에 위반이 없었다.
 #   prom-recheck.json  — 실시간 조건(over-admit, 카운터 어긋남, 초과판매)과 승격 처리 실패를 내보낸 구간 데이터로
 #                        run 종료 + 30초까지 다시 본 결과(prom-recheck.mjs). 감시기는 run 끝을 보지 못하므로 여기서
 #                        덮는다. 위반이면 1, 그 구간을 신선하게 관측하지 못했거나 승격 처리 실패가 있으면 2.
@@ -183,6 +185,21 @@ case $? in
   *) echo "    실시간 조건을 다시 확인하지 못했다 — 관측 공백·승격 처리 실패·파일 문제(prom-recheck.json)" >&2; BROKEN=1 ;;
 esac
 
+echo "==> 실시간 감시기 결과(watch-summary.json)"
+# 감시기 0과 4단계(사후 재확인) 통과가 함께 있어야 실시간 조건에 위반이 없었다. 감시기 결과를 최종 판정에 넣는다.
+node -e '
+let s;
+try { s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); }
+catch { console.log("watch-summary.json이 없다 — 실시간 감시기를 같은 run 디렉터리로 돌리지 않았다"); process.exit(2); }
+console.log("exitCode=" + s.exitCode + " " + s.verdict);
+process.exit(s.exitCode === 0 ? 0 : s.exitCode === 3 ? 1 : 2);
+' "$OUT/watch-summary.json" > "$D/watch-verdict.txt" 2>&1
+case $? in
+  0) ;;
+  1) echo "    실시간 감시기가 위반을 기록했다" >&2; FAIL=1 ;;
+  *) echo "    실시간 감시기 결과가 위반 없음(0)이 아니다 — $(tail -n 1 "$D/watch-verdict.txt")" >&2; BROKEN=1 ;;
+esac
+
 {
   echo "since=$SINCE"
   echo "--- sql (검사,위반 수)"; cat "$D/sql.csv" 2>/dev/null
@@ -192,6 +209,7 @@ esac
   echo "--- 내보낸 구간(파드 대조·승격 처리 실패의 전제)"; cat "$D/export-window.txt" 2>/dev/null
   echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null
   echo "--- 실시간 조건 사후 재확인(내보낸 구간, run 종료 + 30초까지)"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.violations.length?"위반: "+r.violations.join("; ")+(r.problems.length?" / 판정 불가 사유도 있음: "+r.problems.join("; "):""):r.problems.length?"판정 불가: "+r.problems.join("; "):"위반 없음(관측 점 "+r.observedPoints+"개, 샘플 나이 최대 "+r.sampleAgeMaxSec+"초)")}catch{console.log("판정 불가(확인 실패)")}' "$D/prom-recheck.json" 2>/dev/null
+  echo "--- 실시간 감시기(watch-summary.json)"; cat "$D/watch-verdict.txt" 2>/dev/null
   echo "--- 실효 입장 초과: 판정식 미확정(계획서 §3.3) — 판정하지 않음"
   # 검사 일부가 실패해도 이미 찾은 위반은 함께 보인다.
   if [ "$BROKEN" -ne 0 ] && [ "$FAIL" -ne 0 ]; then echo "판정: 정합성 위반 + 검사 일부 실패(결과 불완전)"

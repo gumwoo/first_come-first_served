@@ -60,7 +60,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 const USAGE =
-  "사용: watch-correctness.mjs --out <run 디렉터리> [--interval 초(0<,≤10)] [--for 초(>0)] [--query-timeout 초(>0)] [--max-sample-age 초(>0)] [--on-violation 명령]";
+  "사용: watch-correctness.mjs --out <run 디렉터리> [--interval 초(0<,≤10)] [--for 초(>0)] [--query-timeout 초(>0)] [--max-sample-age 초(0<,≤60)] [--on-violation 명령]";
 // 스크랩 주기(servicemonitor-api.yaml interval: 15s). 연속 조회 사이 간격이 이보다 1초 이상 짧아야 그 사이 샘플을
 // 놓치지 않는다고 본다(스크랩 처리 지연의 흔들림에 대한 여유 1초, 잠정값). --interval은 여유 있게 10초까지만 받는다.
 const SCRAPE_SEC = 15;
@@ -84,11 +84,17 @@ try {
 }
 const positive = (s) => s !== undefined && /^\d+(\.\d+)?$/.test(s) && Number(s) > 0;
 if (!a || !a.out || !positive(a.interval) || Number(a.interval) > MAX_INTERVAL_SEC || (a.for !== undefined && !positive(a.for)) ||
-    !positive(a["query-timeout"]) || !positive(a["max-sample-age"])) {
+    !positive(a["query-timeout"]) || !positive(a["max-sample-age"]) || Number(a["max-sample-age"]) > 60) {
   if (a) console.error(USAGE);
   process.exitCode = 2;
 } else {
-  main();
+  // 감시를 시작하기 전의 실패(--out 디렉터리를 만들 수 없음 등)는 인자·환경 오류(2)다. 잡지 않으면 Node 기본값 1이 된다.
+  try {
+    main();
+  } catch (e) {
+    console.error(`[watch] 시작 실패: ${e.message || e}`);
+    process.exitCode = 2;
+  }
 }
 
 function main() {

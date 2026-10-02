@@ -4,11 +4,14 @@
 //
 // 감시기는 구조상 run 끝을 보지 못한다. 마지막 조회가 run 종료보다 앞서고, run 마지막 순간의 게이지는 종료 뒤
 // 스크랩에야 Prometheus에 들어오기 때문이다. 그래서 over-admit·카운터 어긋남·초과판매·승격 처리 실패를 내보낸
-// 데이터로 다시 판정한다. 해상도는 내보내기 --step(기본 15초 = 스크랩 주기)이다.
+// 데이터로 다시 판정한다. 해상도는 내보내기 --step(기본 10초)이다. step이 MAX_STEP_SEC(10초)를 넘으면 판정 불가다 —
+// step이 수집 주기(15초)에 가깝거나 넘으면 두 점 사이에 낀 샘플(순간적인 over-admit)을 못 본다.
 //
 // 판정의 전제는 "그 구간을 실제로 관측했다"는 것이다. 항상 있어야 할 지표(초과판매, 승격 실패 카운터)의 샘플 나이
 // (prom/sample_age_max.json — 감시기의 신선도 질의와 같은 식)가 [since, until + 30초]의 모든 step에 있고
-// --max-sample-age(기본 30초, 잠정값) 이하여야 한다. 점이 빠졌거나 오래됐으면 그 구간은 관측 공백이라 판정 불가다.
+// --max-sample-age(기본 30초, 최대 60초, 잠정값) 이하여야 한다. 점이 빠졌거나 오래됐으면 그 구간은 관측 공백이라
+// 판정 불가다. 대기열 게이지(admitted·admit_drift)가 구간 내내 하나도 없어도 판정 불가다 — 측정 run에는 활성
+// 이벤트가 있어야 하므로, 없다면 지표 미배포·수집 실패다(감시기의 "값이 한 번도 나오지 않은 조건"과 같은 기준).
 //
 //   node scripts/loadtest/prom-recheck.mjs --prom-dir <run>/prom --since <run 시작 UTC ISO> --until <run 종료 UTC ISO> \
 //     [--max-sample-age 30]
@@ -19,6 +22,8 @@ import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 const TAIL_MS = 30_000; // run 마지막 상태가 스크랩돼 들어오는 데 필요한 꼬리(스크랩 두 주기)
+const MAX_STEP_SEC = 10; // 내보내기 step 상한(수집 주기 15초보다 충분히 짧게, 잠정값)
+const MAX_SAMPLE_AGE_CAP = 60; // --max-sample-age 상한. 크게 주면 lookback(5분) 안의 오래된 값을 그대로 받아들인다
 
 function main() {
   const { values: a } = parseArgs({
@@ -33,7 +38,9 @@ function main() {
   const since = Date.parse(a.since);
   const until = Date.parse(a.until);
   if (!Number.isFinite(since) || !Number.isFinite(until) || !(until > since)) throw new Error(`구간이 잘못됐다: ${a.since} ~ ${a.until}`);
-  if (!/^\d+(\.\d+)?$/.test(a["max-sample-age"]) || !(Number(a["max-sample-age"]) > 0)) throw new Error("--max-sample-age는 0보다 큰 수다");
+  if (!/^\d+(\.\d+)?$/.test(a["max-sample-age"]) || !(Number(a["max-sample-age"]) > 0) || Number(a["max-sample-age"]) > MAX_SAMPLE_AGE_CAP) {
+    throw new Error(`--max-sample-age는 0보다 크고 ${MAX_SAMPLE_AGE_CAP} 이하인 수다`);
+  }
   const maxAge = Number(a["max-sample-age"]);
   const winEnd = until + TAIL_MS;
 
@@ -56,6 +63,10 @@ function main() {
 
   const violations = [];
   const problems = [];
+  // 내보내기 조건: step 상한, 구간이 [since, until + 30초]를 덮음(사후 검사 0단계와 같은 확인 — 단독 실행 대비)
+  if (stepMs > MAX_STEP_SEC * 1000) problems.push(`내보내기 step ${stepMs / 1000}초가 ${MAX_STEP_SEC}초를 넘는다 — 두 점 사이 샘플을 놓칠 수 있다(--step ${MAX_STEP_SEC} 이하로 다시 내보낸다)`);
+  if (!(Number(meta.startSec) * 1000 <= since)) problems.push("내보낸 구간이 run 시작보다 늦게 시작한다(또는 startSec 없음)");
+  if (!(Number(meta.endSec) * 1000 >= winEnd)) problems.push("내보낸 구간이 run 종료 + 30초를 덮지 않는다(또는 endSec 없음)");
 
   // 1) 관측 연속성·신선도: sample_age_max는 시계열 하나(max)다. [since, winEnd]의 모든 step에 점이 있고 나이가 기준 이하.
   const ages = load("sample_age_max");
@@ -108,7 +119,9 @@ function main() {
   for (const s of load("queue_capacity")) for (const [t, v] of s.points) capacity.set(t, v);
   let overAdmitMax = null;
   const overAdmitAt = [];
-  for (const s of load("queue_admitted")) {
+  const admitted = load("queue_admitted");
+  if (admitted.every((s) => s.points.length === 0)) problems.push("구간 안에 대기열 게이지(admitted)가 하나도 없다 — 활성 이벤트가 없었거나 지표 미배포·수집 실패");
+  for (const s of admitted) {
     for (const [t, v] of s.points) {
       const cap = capacity.get(t);
       if (cap === undefined) { problems.push(`over-admit: ${new Date(t).toISOString()}에 admitted는 있는데 정원 값이 없다`); continue; }
@@ -121,7 +134,10 @@ function main() {
   if (overAdmitMax !== null && overAdmitMax > 0) violations.push(`over-admit 최대 +${overAdmitMax} (${overAdmitAt.join(", ")})`);
 
   // 5) 카운터 어긋남(|admit_drift|, 이벤트별)
-  const driftMax = maxOf(load("queue_admit_drift"), "queue_admit_drift");
+  // 내보내기 질의가 abs()를 걸지만 여기서도 절댓값으로 본다(질의가 바뀌어도 음수 어긋남을 놓치지 않게).
+  const drift = load("queue_admit_drift").map((s) => ({ ...s, points: s.points.map(([t, v]) => [t, Math.abs(v)]) }));
+  if (drift.every((s) => s.points.length === 0)) problems.push("구간 안에 카운터 어긋남 게이지가 하나도 없다");
+  const driftMax = maxOf(drift, "queue_admit_drift");
   if (driftMax !== null && driftMax > 0) violations.push(`카운터 어긋남 최대 ${driftMax}`);
 
   const result = {

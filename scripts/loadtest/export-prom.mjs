@@ -6,25 +6,43 @@
 //
 //   kubectl -n monitoring port-forward svc/prometheus-operated 9090:9090
 //   node scripts/loadtest/export-prom.mjs --out artifacts/loadtest/<session>/<run> \
-//     --start 2026-10-02T05:00:00Z --end 2026-10-02T05:12:00Z [--step 15]
+//     --start 2026-10-02T05:00:00Z --end 2026-10-02T05:12:00Z [--step 10]
 //
-// --step 기본 15초는 Prometheus 수집 주기(servicemonitor-api.yaml)와 같다. 그보다 잘게 질의해도 새 정보가 없다.
-import { mkdirSync, writeFileSync } from "node:fs";
+// --step 기본 10초는 수집 주기(15초, servicemonitor-api.yaml)보다 짧게 잡은 값이다. step이 수집 주기와 같으면 스크랩
+// 시각이 조금만 흔들려도 한 샘플이 두 step 사이에 끼어 빠진다(G1이 실서버 백필로 재현: step 15는 놓치고 14는 잡았다).
+// 사후 재확인(prom-recheck.mjs)은 step이 10초를 넘으면 판정 불가로 끝낸다.
+//
+// --start는 run 시작 이전, --end는 run 종료 + 30초(스크랩 두 주기) 이후로 잡는다. run 마지막 순간의 상태(특히 승격 처리
+// 실패)는 종료 뒤 스크랩에야 Prometheus에 들어오므로, --end를 run 종료 시각에 맞추면 그 구간이 빠진다. 사후 검사
+// (check-correctness.sh)는 이 파일들로 run 구간의 파드·재시작·승격 처리 실패를 확인하고, --start가 run 시작보다
+// 늦으면 판정 불가로 끝낸다.
+//
+// 종료 코드: 0 모든 질의 저장, 1 질의 일부 실패, 2 인자 오류.
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
-const { values: a } = parseArgs({
-  options: {
-    prom: { type: "string", default: "http://localhost:9090" },
-    out: { type: "string" },
-    start: { type: "string" },
-    end: { type: "string" },
-    step: { type: "string", default: "15" },
-  },
-});
-if (!a.out || !a.start || !a.end) {
-  console.error("사용: export-prom.mjs --out <run 디렉터리> --start <ISO> --end <ISO> [--step 초]");
+const USAGE = "사용: export-prom.mjs --out <run 디렉터리> --start <ISO> --end <ISO> [--step 초(>0)] [--query-timeout 초(>0)]";
+const usage = (msg) => {
+  console.error(`${msg ? msg + "\n" : ""}${USAGE}`);
   process.exit(2);
+};
+let a;
+try {
+  ({ values: a } = parseArgs({
+    options: {
+      prom: { type: "string", default: "http://localhost:9090" },
+      out: { type: "string" },
+      start: { type: "string" },
+      end: { type: "string" },
+      step: { type: "string", default: "10" },
+      "query-timeout": { type: "string", default: "30" },
+    },
+  }));
+} catch (e) {
+  usage(e.message);
 }
+const positive = (v) => /^\d+(\.\d+)?$/.test(v ?? "") && Number(v) > 0;
+if (!a.out || !a.start || !a.end || !positive(a.step) || !positive(a["query-timeout"])) usage();
 
 // 계획서 §3(판정)·§5(계측)에서 쓰는 값들. 이름이 파일 이름이 된다.
 export const QUERIES = {
@@ -42,6 +60,11 @@ export const QUERIES = {
   sse_send_failures_rate: "sum by (phase) (rate(flowticket_queue_sse_send_failures_total[1m]))",
   // 정합성(§3.3)
   seat_oversold: "max(flowticket_seat_oversold)",
+  // 관측 신선도(prom-recheck.mjs). 항상 있어야 할 두 지표의 가장 오래된 샘플 나이 — 감시기의 신선도 질의와 같은 식.
+  // timestamp()는 지표 이름을 떼므로 지표마다 따로 걸고 구분 레이블을 붙여 or로 합친다(같은 레이블 묶음 오류 방지).
+  sample_age_max:
+    'max(label_replace(time() - timestamp(flowticket_seat_oversold), "m", "oversold", "", "")' +
+    ' or label_replace(time() - timestamp(flowticket_queue_admit_tick_failures_total), "m", "tickfail", "", ""))',
   // API 지연·처리량(§3.2 판정, §3.4 SLO)
   http_p95_by_uri: "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket[1m])))",
   http_rps_by_uri: "sum by (uri) (rate(http_server_requests_seconds_count[1m]))",
@@ -63,17 +86,21 @@ export const QUERIES = {
   outbox_oldest_pending_age: "max(flowticket_outbox_oldest_pending_age_seconds)",
 };
 
-mkdirSync(`${a.out}/prom`, { recursive: true });
 const toSec = (s) => (/^\d+(\.\d+)?$/.test(s) ? Number(s) : Date.parse(s) / 1000);
 const start = toSec(a.start);
 const end = toSec(a.end);
-if (!(end > start)) throw new Error(`구간이 잘못됐다: ${a.start} ~ ${a.end}`);
+if (!(end > start)) usage(`구간이 잘못됐다: ${a.start} ~ ${a.end}`);
+mkdirSync(`${a.out}/prom`, { recursive: true });
+// 이전 내보내기의 _meta.json을 먼저 지운다. 도중에 죽으면 _meta.json이 없어 사후 검사가 판정 불가로 끝난다
+// (이전 구간의 _meta.json이 새 파일들과 섞여 읽히지 않게).
+rmSync(`${a.out}/prom/_meta.json`, { force: true });
 
 let failed = 0;
 for (const [name, q] of Object.entries(QUERIES)) {
   const url = `${a.prom}/api/v1/query_range?query=${encodeURIComponent(q)}&start=${start}&end=${end}&step=${a.step}`;
   try {
-    const res = await fetch(url);
+    // 포트포워드가 멈춰도 끝나도록 질의마다 시간 제한을 둔다(시간 초과 = 그 질의 실패).
+    const res = await fetch(url, { signal: AbortSignal.timeout(Number(a["query-timeout"]) * 1000) });
     const body = await res.text();
     writeFileSync(`${a.out}/prom/${name}.json`, body);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -81,8 +108,11 @@ for (const [name, q] of Object.entries(QUERIES)) {
     console.error(`[prom] ${name}: 시계열 ${n}개`);
   } catch (e) {
     failed++;
+    // 실패한 질의의 결과 파일은 지운다. 다시 내보내다 실패하면 이전 구간의 파일이 새 _meta.json과 함께 읽힐 수 있다
+    // (HTTP 오류 본문은 위에서 이미 썼으므로 그것도 지운다 — 사후 검사는 파일이 없으면 판정 불가로 센다).
+    rmSync(`${a.out}/prom/${name}.json`, { force: true });
     console.error(`[prom] ${name}: 실패 ${e.message || e}`);
   }
 }
-writeFileSync(`${a.out}/prom/_meta.json`, JSON.stringify({ prom: a.prom, start: a.start, end: a.end, step: Number(a.step), queries: QUERIES }, null, 2));
+writeFileSync(`${a.out}/prom/_meta.json`, JSON.stringify({ prom: a.prom, start: a.start, end: a.end, startSec: start, endSec: end, step: Number(a.step), queries: QUERIES }, null, 2));
 process.exitCode = failed ? 1 : 0;

@@ -16,3 +16,9 @@ node_instance_type = "m6i.large"
 # Cluster Autoscaler가 노드를 실제로 붙이는 구간을 보려면 상한에 여유가 있어야 한다.
 # 기본값(AZ당 2 = 6노드)이면 HPA 상한까지 늘려도 예산 안에 들어가 CA가 발동하지 않는다.
 node_max_size = 3
+
+# 클러스터 밖 부하 발생기(loadtest-100k-plan §4 "발생기 구성 상한"). 상한은 EC2 Standard vCPU 쿼터에서 나온 계산값이다:
+#   쿼터 32 − 현재 사용 0 − EKS 최대 18 = 14 vCPU → c6i.xlarge(4 vCPU) 최대 3대 = 12 vCPU, 여유 2.
+# 측정 세션의 단계 2에서 실제 발생 용량을 확인한다. 이 상한을 넘겨 늘리지 않는다.
+loadgen_instance_type  = "c6i.xlarge"
+loadgen_instance_count = 3

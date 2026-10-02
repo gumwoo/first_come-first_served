@@ -140,4 +140,10 @@ resource "aws_instance" "loadgen" {
   })
 
   tags = merge(var.tags, { Name = "${var.name}-loadgen-${count.index + 1}", Role = "loadgen" })
+
+  # AMI는 SSM 파라미터에서 "최신"을 받는다. 측정 세션 중간에 다시 apply했을 때 새 AMI가 나와 있으면
+  # 발생기가 교체되고, 아직 회수하지 않은 run 출력이 함께 사라진다. 세션 안에서는 AMI 변경을 무시한다.
+  lifecycle {
+    ignore_changes = [ami]
+  }
 }

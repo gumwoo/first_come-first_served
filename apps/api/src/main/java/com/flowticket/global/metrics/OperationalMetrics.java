@@ -5,6 +5,9 @@ import com.flowticket.dlq.repository.DlqMessageRepository;
 import com.flowticket.outbox.domain.OutboxStatus;
 import com.flowticket.outbox.repository.OutboxEventRepository;
 import io.micrometer.core.instrument.Gauge;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.function.ToDoubleFunction;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +30,8 @@ public class OperationalMetrics {
 
     public OperationalMetrics(MeterRegistry registry,
                               OutboxEventRepository outboxRepository,
-                              DlqMessageRepository dlqRepository) {
+                              DlqMessageRepository dlqRepository,
+                              Clock clock) {
         // 재시도로 풀리지 않아 격리된 이벤트. 0보다 크면 사람이 판단해야 한다(TS-032).
         register(registry, "flowticket.outbox.events", "DEAD",
                 r -> outboxRepository.countByStatus(OutboxStatus.DEAD),
@@ -36,10 +40,33 @@ public class OperationalMetrics {
         register(registry, "flowticket.outbox.events", "PENDING",
                 r -> outboxRepository.countByStatus(OutboxStatus.PENDING),
                 "아직 발행되지 않은 아웃박스 행 수");
+        // 가장 오래 기다린 미발행 행의 나이. 개수와 달리 "릴레이가 뒤처지는가"를 보여준다.
+        // 100건이 1초 만에 빠지는 것과 3건이 10분째 남아 있는 것은 개수로는 구분되지 않는다.
+        Gauge.builder("flowticket.outbox.oldest_pending.age", () -> oldestPendingAgeSeconds(outboxRepository, clock))
+                .baseUnit("seconds")
+                .description("가장 오래 기다린 미발행 아웃박스 행의 나이(초). 없으면 0")
+                .register(registry);
         // 소비 실패로 DLQ에 남은 메시지. 판단은 사람이 한다(ADR-008).
         register(registry, "flowticket.dlq.messages", "PENDING",
                 r -> dlqRepository.countByStatus(DlqStatus.PENDING),
                 "운영자 판단을 기다리는 DLQ 메시지 수");
+    }
+
+    /**
+     * 미발행 행이 없으면 0이다. NaN으로 두면 "적체 없음"과 "수집 실패"가 같은 값이 된다.
+     * 수집 자체가 실패한 경우에만 NaN을 돌려준다(아래 register와 같은 이유).
+     */
+    private static double oldestPendingAgeSeconds(OutboxEventRepository repository, Clock clock) {
+        try {
+            LocalDateTime oldest = repository.findOldestCreatedAt(OutboxStatus.PENDING);
+            if (oldest == null) {
+                return 0;
+            }
+            return Math.max(0, Duration.between(oldest, LocalDateTime.now(clock)).toMillis() / 1000.0);
+        } catch (Exception e) {
+            log.warn("[metrics] 미발행 최장 대기 수집 실패: {}", e.toString());
+            return Double.NaN;
+        }
     }
 
     /**

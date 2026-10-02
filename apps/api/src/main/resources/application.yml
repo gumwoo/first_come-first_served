@@ -138,6 +138,12 @@ management:
       # `histogram_quantile`로 파드 수와 무관하게 전체 백분위가 나온다.
       percentiles-histogram:
         http.server.requests: true
+        # 아웃박스 릴레이 지표도 같은 이유로 히스토그램이어야 한다(ADR-022).
+        # 파드가 여럿이라 클라이언트 백분위로는 "서비스 전체 발행 지연 p95"를 만들 수 없고,
+        # 그 값이 1·2번 문제 중 무엇을 먼저 고칠지 가르는 근거다.
+        flowticket.outbox.relay.tick: true
+        flowticket.outbox.publish.ack: true
+        flowticket.outbox.publish.lag: true
       # 버킷 범위를 좁혀 카디널리티를 억제한다(기본 범위는 훨씬 넓어 대부분이 빈 버킷이다).
       #
       # 하한을 1ms로 둔 이유: 평균이 6~14ms라고 개별 요청이 전부 그 위인 건 아니다.
@@ -145,6 +151,10 @@ management:
       # 것은 아니다. 잃는 것은 해상도다).
       minimum-expected-value:
         http.server.requests: 1ms
+        flowticket.outbox.relay.tick: 1ms
+        flowticket.outbox.publish.ack: 1ms
+        # 발행 지연은 폴링 주기(1초)보다 짧을 수 없다. 그 아래로 해상도를 둬도 빈 버킷만 는다.
+        flowticket.outbox.publish.lag: 100ms
       # 상한을 넘는 요청은 +Inf 한 칸에 뭉쳐 그 구간의 백분위를 복구할 수 없다.
       #
       # 그러면 histogram_quantile이 상한값을 그대로 돌려줘(예: "정확히 2000.0ms") 측정값처럼 보인다.
@@ -154,6 +164,13 @@ management:
       #   sum(rate(..._bucket{le="+Inf"}[5m])) - sum(rate(..._bucket{le="10.0"}[5m]))
       maximum-expected-value:
         http.server.requests: 10s
+        # 한 틱의 상한은 임차(60초)다. 그 위는 이미 규칙 ㉒가 막는 영역이라 해상도가 필요 없다.
+        flowticket.outbox.relay.tick: 60s
+        # ACK 상한은 send-timeout(3초)이다. 타임아웃 자체가 보이도록 조금 여유를 둔다.
+        flowticket.outbox.publish.ack: 5s
+        # 브로커 장애 때 지연은 분 단위로 벌어진다. 상한을 낮게 잡으면 그 구간이 +Inf로 뭉쳐
+        # "얼마나 밀렸는가"를 복구할 수 없다(http.server.requests와 같은 이유).
+        flowticket.outbox.publish.lag: 5m
 
 # 외부 연동 / 시크릿은 환경변수로만 주입 (application-local.yml은 gitignore)
 # KOPIS OPEN API 이용 제한 (공식)
@@ -231,7 +248,12 @@ order:
 outbox:
   relay-interval-ms: ${OUTBOX_RELAY_INTERVAL:1000}  # 폴링 주기(발행 지연 상한)
   batch-size: ${OUTBOX_BATCH_SIZE:100}              # 한 틱 최대 발행 건수
-  send-timeout-ms: ${OUTBOX_SEND_TIMEOUT:3000}      # 발행 확인 대기 상한(브로커 장애 시 틱 바운드)
+  send-timeout-ms: ${OUTBOX_SEND_TIMEOUT:3000}      # 발행 확인 대기 상한(한 건)
+  # 한 틱의 시간 상한(ADR-022). ShedLock 임차(OutboxRelay의 lockAtMostFor=PT1M)보다 짧아야 한다.
+  # 이 값이 없으면 상한이 batch-size × send-timeout(100 × 3초 = 300초)이라 임차를 넘긴다.
+  # 넘기는 순간 다른 파드가 같은 PENDING을 집어 "한 인스턴스만 돈다"가 깨진다.
+  # 마지막 한 건이 예산 직전에 시작될 수 있으므로 tick-budget + send-timeout ≤ 임차여야 한다.
+  tick-budget-ms: ${OUTBOX_TICK_BUDGET:45000}
   retention-days: ${OUTBOX_RETENTION_DAYS:7}        # PUBLISHED 보존 기간(운영 가시성): 이후 purge
   purge-cron: ${OUTBOX_PURGE_CRON:0 0 3 * * *}      # 매일 새벽 3시 정리(PENDING·실패는 제외)
 

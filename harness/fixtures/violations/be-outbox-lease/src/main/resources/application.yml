@@ -1,0 +1,6 @@
+# 위반 fixture: tick-budget(90초) + send-timeout(3초)가 임차(PT1M)를 넘는다.
+outbox:
+  relay-interval-ms: ${OUTBOX_RELAY_INTERVAL:1000}
+  batch-size: ${OUTBOX_BATCH_SIZE:100}
+  send-timeout-ms: ${OUTBOX_SEND_TIMEOUT:3000}
+  tick-budget-ms: ${OUTBOX_TICK_BUDGET:90000}

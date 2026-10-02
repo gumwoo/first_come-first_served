@@ -8,6 +8,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.flowticket.global.config.KafkaConfig;
@@ -27,6 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.kafka.KafkaException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -106,9 +109,29 @@ class OutboxDeliveryIntegrationTest {
         failingKafka = mock(KafkaTemplate.class);
         doThrow(new KafkaException("broker down"))
                 .when(failingKafka).send(anyString(), anyString(), any());
-        // 실제 릴레이와 동일한 설정값(배치 100 / 타임아웃 3s / 보존 7일)
-        relayDuringOutage = new OutboxRelay(outboxRepository, failingKafka, mapper, 100, 3000L, 7,
-                java.time.Clock.systemDefaultZone());
+        // 실제 릴레이와 동일한 설정값(배치 100 / 타임아웃 3s / 틱 예산 45s / 보존 7일)
+        relayDuringOutage = new OutboxRelay(outboxRepository, failingKafka, mapper, 100, 3000L, 45_000L, 7,
+                java.time.Clock.systemDefaultZone(), new SimpleMeterRegistry());
+    }
+
+    /**
+     * 틱 예산을 넘기면 남은 건을 다음 틱으로 넘긴다(ADR-022).
+     *
+     * 예산이 없으면 한 틱의 상한은 batch-size × send-timeout(100 × 3초 = 300초)이라 ShedLock
+     * 임차(1분)를 넘긴다. 넘기는 순간 다른 파드가 같은 PENDING을 집어 릴레이가 겹쳐 돈다.
+     * 예산을 0으로 두어 "첫 건을 집기 전에 예산이 끝난" 상황을 만든다.
+     */
+    @Test
+    void 틱_예산을_넘기면_남은_건은_PENDING으로_남는다() {
+        appendOutbox(9_100_001L);
+
+        OutboxRelay noBudget = new OutboxRelay(outboxRepository, failingKafka, mapper,
+                100, 3000L, 0L, 7, java.time.Clock.systemDefaultZone(), new SimpleMeterRegistry());
+        noBudget.publishPending();
+
+        assertThat(outboxRepository.countByStatus(OutboxStatus.PENDING))
+                .as("예산이 끝났으면 손대지 않고 다음 틱에 넘긴다").isEqualTo(1);
+        verify(failingKafka, never()).send(anyString(), anyString(), any());
     }
 
     @Test

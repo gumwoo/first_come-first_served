@@ -11,6 +11,10 @@ import com.flowticket.outbox.domain.OutboxStatus;
 import com.flowticket.outbox.repository.OutboxEventRepository;
 import io.micrometer.prometheusmetrics.PrometheusConfig;
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,7 +40,25 @@ class OperationalMetricsTest {
         when(outboxRepository.countByStatus(OutboxStatus.DEAD)).thenReturn(2L);
         when(outboxRepository.countByStatus(OutboxStatus.PENDING)).thenReturn(7L);
         when(dlqRepository.countByStatus(DlqStatus.PENDING)).thenReturn(3L);
-        new OperationalMetrics(registry, outboxRepository, dlqRepository);
+        // 가장 오래 기다린 미발행 행: 고정 시계에서 정확히 90초 전
+        when(outboxRepository.findOldestCreatedAt(OutboxStatus.PENDING))
+                .thenReturn(LocalDateTime.now(CLOCK).minusSeconds(90));
+        new OperationalMetrics(registry, outboxRepository, dlqRepository, CLOCK);
+    }
+
+    /** 나이를 재는 지표라 시계를 고정한다(ADR-018). */
+    private static final Clock CLOCK =
+            Clock.fixed(Instant.parse("2026-09-21T03:00:00Z"), ZoneId.systemDefault());
+
+    @Test
+    @DisplayName("미발행 최장 대기는 개수와 별개로 노출된다")
+    void 미발행_최장_대기가_노출된다() {
+        String scrape = registry.scrape();
+
+        // 적체 개수만으로는 "릴레이가 뒤처지는가"를 알 수 없다(ADR-022).
+        assertThat(scrape).contains("flowticket_outbox_oldest_pending_age_seconds");
+        assertThat(registry.get("flowticket.outbox.oldest_pending.age").gauge().value())
+                .isEqualTo(90.0);
     }
 
     @Test

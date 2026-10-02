@@ -72,3 +72,7 @@ backend.hcl
 /resilience-*/
 /rds-failover-*/
 /redis-failover-*/
+
+# 100K 부하 측정 원시 데이터(docs/testing/loadtest-100k-plan.md §7).
+# k6 원시 출력(요청별 타임스탬프)·Prometheus 덤프는 커질 수 있고, 결과 문서(IMP)에는 요약값·경로·실행 조건만 남긴다.
+/artifacts/

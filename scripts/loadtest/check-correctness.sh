@@ -2,8 +2,10 @@
 # 정합성 사후 검증(loadtest-100k-plan §3.3). run이 끝난 뒤, 철거 전에 실행한다.
 #
 #   bash scripts/loadtest/check-correctness.sh --out artifacts/loadtest/<session>/<run> --since 2026-10-02T05:00:00Z \
-#     --until 2026-10-02T05:12:00Z
+#     --until 2026-10-02T05:12:00Z --generators 3
 #
+# --generators는 이 run에 띄운 발생기 수다. run 디렉터리의 발생기 기록(meta-<gen>.json) 수와 맞아야 한다 —
+# 인스턴스째 사라진 발생기는 결과 회수에 나타나지 않아, 이 대조 없이는 보이지 않는다.
 # --until은 run 종료 시각(UTC, 발생기가 멈춘 시각)이다. 내보낸 구간(prom/_meta.json)이 --since 이전부터 --until + 30초
 # 이후까지를 덮어야 한다 — 파드 대조와 4단계(실시간 조건 사후 재확인)가 이 구간에 기댄다. 덮지 못하면 판정 불가(2)다.
 # (감시기의 endedAt으로 대신하지 않는다 — 감시기가 일찍 멈췄으면 구간이 짧게 잡힌 채 통과한다.)
@@ -17,7 +19,9 @@
 #   event-loss.txt     — 발행된 아웃박스 이벤트 중 소비 기록(Redis 멱등 키)이 없는 수
 #   watch-summary.json — (같은 run 디렉터리) 실시간 감시기의 결과를 최종 판정에 넣는다. 감시 구간(startedAt~endedAt)이
 #                        run을 덮을 때만 그 결과를 이 run의 것으로 본다: 3이면 위반, 0이면 통과, 그 밖은 판정 불가.
-#                        덮지 않으면 결과가 3이어도 판정 불가다(감시가 run 중간에 시작돼 잡은 위반도 포함 — 그 위반이
+#                        단, 먼저 violation.json을 본다: 위반 시각이 [since, until + 30초] 안이면 감시 결과 상태와
+#                        상관없이 위반이다. 위반 기록이 있는데 결과가 3이 아니면(두 파일이 섞임) 판정 불가다.
+#                        덮지 않으면 판정 불가다(다른 run의 3, 위반 시각을 확인할 수 없는 3 포함 — 그 위반이
 #                        실제였다면 4단계 재확인이 같은 식·같은 스크랩 데이터로 대체로 다시 잡을 것으로 본다(추론:
 #                        step 10초 < 스크랩 15초라 보통은 점에 잡히지만, 스크랩 지터로 두 샘플이 10초보다 가까우면
 #                        건너뛸 수 있어 보장은 아니다)). 파일이 없어도 판정 불가. 감시기 0과
@@ -37,35 +41,42 @@
 #
 # DB·Redis는 프라이빗이라 클러스터 안 일회용 파드로 붙는다. 자격증명은 api와 같은 ConfigMap·Secret에서 필요한 키만
 # 받고, 이 스크립트는 보지도 출력하지도 않는다(seed-users.sh와 같은 방식).
-# 종료 코드: 위반 없음 0, 위반 있음 1, 검사 자체 실패·판정 불가 2. 위반을 하나라도 찾았으면 검사 일부가 실패했어도
+# 종료 코드: 위반 없음 0, 위반 있음 1, 검사 자체 실패·판정 불가·인자 오류 2. 위반을 하나라도 찾았으면 검사 일부가 실패했어도
 # 1이다 — 감시기(3)·queue-order(1)와 같이 위반이 우선한다. 검사 실패도 함께 있었으면 summary에 둘 다 적는다.
 # run 직후 바로 돌리면 아직 발행 중인 아웃박스가 미발행으로 잡힐 수 있다. 아웃박스가 비워진 뒤
 # (flowticket_outbox_oldest_pending_age_seconds 0) 실행한다.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT="" SINCE="" UNTIL="" NS=flowticket TOL=1000
+OUT="" SINCE="" UNTIL="" GENS="" NS=flowticket TOL=1000
 while [ $# -gt 0 ]; do
   case "$1" in
-    --out|--since|--until|--tolerance-ms)
+    --out|--since|--until|--generators|--tolerance-ms)
       # 값 없이 끝에 오면 set -u 때문에 "$2: unbound variable"로 죽어 종료 1(= 위반)이 된다. 인자 오류는 2다.
       [ $# -ge 2 ] || { echo "$1에 값이 없다" >&2; exit 2; }
       case "$1" in
         --out) OUT="$2" ;;
         --since) SINCE="$2" ;;
         --until) UNTIL="$2" ;;
+        --generators) GENS="$2" ;;
         --tolerance-ms) TOL="$2" ;;
       esac
       shift 2 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2 ;;
   esac
 done
-[ -n "$OUT" ] && [ -n "$SINCE" ] && [ -n "$UNTIL" ] || { echo "--out, --since, --until이 필요하다" >&2; exit 2; }
+[ -n "$OUT" ] && [ -n "$SINCE" ] && [ -n "$UNTIL" ] && [ -n "$GENS" ] || {
+  echo "--out, --since, --until, --generators가 필요하다" >&2; exit 2; }
+[[ "$GENS" =~ ^[1-9][0-9]*$ ]] || { echo "--generators는 1 이상의 정수다: $GENS" >&2; exit 2; }
 # 형식을 좁혀 SQL에 그대로 넣어도 안전하게 한다(따옴표·세미콜론이 들어올 수 없다).
 [[ "$SINCE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
   echo "--since는 YYYY-MM-DDTHH:MM:SSZ(UTC)여야 한다: $SINCE" >&2; exit 2; }
 [[ "$UNTIL" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
   echo "--until은 YYYY-MM-DDTHH:MM:SSZ(UTC)여야 한다: $UNTIL" >&2; exit 2; }
+# 정규식은 형식만 본다. 달력상 없는 시각(2월 30일, 25시)은 왕복 변환으로 거른다 — Date.parse는 넘겨 읽고,
+# DB에는 그대로 넘어가 엉뚱한 구간이 된다.
+node -e 'for (const x of process.argv.slice(1)) { const d = new Date(x); if (isNaN(d) || d.toISOString() !== x.replace("Z", ".000Z")) { console.error("달력상 없는 시각: " + x); process.exit(2); } }' "$SINCE" "$UNTIL" || exit 2
+[[ "$UNTIL" > "$SINCE" ]] || { echo "--until은 --since보다 뒤여야 한다" >&2; exit 2; }
 SINCE_DB="${SINCE/T/ }"; SINCE_DB="${SINCE_DB%Z}"
 D="$OUT/correctness"
 mkdir -p "$D" || exit 2
@@ -112,6 +123,47 @@ if (e < need) fail("내보낸 구간이 run 종료 + 30초(" + new Date(need).to
 else
   BROKEN=1
   echo "    $(tail -n 1 "$D/export-window.txt")" >&2
+fi
+# --since·--until은 사람이 준다. 발생기가 남긴 시작(meta-<gen>.json)·종료(end-<gen>.json) 기록과 대조한다 —
+# --until을 실제 종료보다 이르게 주면 run 끝 구간이 잘린 채 판정된다. 종료 기록이 없는 발생기가 있으면 판정 불가.
+if node -e '
+const fs = require("fs");
+const [out, since, until, gens] = process.argv.slice(1);
+const fail = (m) => { console.log(m); process.exit(2); };
+// run-entry.sh는 date -u +%Y-%m-%dT%H:%M:%SZ로 쓴다. 그 형식이고 달력상 있는 시각만 받는다(Date.parse는 "0"도 읽는다).
+const iso = (x) => typeof x === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(x) && new Date(x).toISOString() === x.replace("Z", ".000Z");
+const files = fs.readdirSync(out);
+const metas = files.filter((f) => /^meta-.+\.json$/.test(f));
+// 시작 기록 없이 종료 기록만 있는 발생기도 이 run의 발생기다(시작 기록을 덜 회수했거나 섞임) — 판정 불가.
+const orphanEnds = files.filter((f) => /^end-.+\.json$/.test(f) && !files.includes("meta-" + f.slice(4)));
+if (orphanEnds.length) fail("시작 기록(meta) 없이 종료 기록만 있는 발생기가 있다: " + orphanEnds.join(", "));
+if (metas.length === 0) fail("발생기 실행 기록(meta-<gen>.json)이 없다 — run-entry.sh의 run 디렉터리를 --out으로 준다");
+// 인스턴스째 사라진 발생기는 결과 회수(loadgen.sh pull — 지금 running인 인스턴스만)에 나타나지 않아 기록이 통째로
+// 없다. 그래서 띄운 발생기 수(--generators)와 기록 수를 대조한다.
+if (metas.length !== Number(gens)) fail("발생기 기록이 " + metas.length + "개인데 --generators는 " + gens + "다 — 사라졌거나 덜 회수된 발생기가 있다");
+let firstStart = Infinity, lastEnd = -Infinity;
+const statuses = [];
+for (const m of metas) {
+  const gen = m.slice(5, -5);
+  let meta, end;
+  try { meta = JSON.parse(fs.readFileSync(out + "/" + m, "utf8")); } catch { fail(m + "을 읽지 못했다"); }
+  try { end = JSON.parse(fs.readFileSync(out + "/end-" + gen + ".json", "utf8")); }
+  catch { fail("발생기 " + gen + "의 종료 기록(end-" + gen + ".json)이 없다 — 발생기가 중간에 멈췄거나 결과를 덜 회수했다"); }
+  if (!iso(meta && meta.startedAt) || !iso(end && end.endedAt)) fail("발생기 " + gen + "의 시작·종료 시각이 형식(YYYY-MM-DDTHH:MM:SSZ)에 맞지 않거나 달력상 없는 시각이다");
+  const st = Date.parse(meta.startedAt), en = Date.parse(end.endedAt);
+  if (en < st) fail("발생기 " + gen + "의 종료(" + end.endedAt + ")가 시작(" + meta.startedAt + ")보다 앞선다");
+  // 종료 상태는 판정에 쓰지 않고 남기기만 한다. 0이 아니면 §3.1(시험 무효) 판단의 근거가 된다.
+  statuses.push(gen + "=" + end.status);
+  firstStart = Math.min(firstStart, st); lastEnd = Math.max(lastEnd, en);
+}
+console.log("generator status: " + statuses.join(", ") + (statuses.some((x) => !/=0$/.test(x)) ? " (0이 아닌 발생기가 있다 — §3.1 무효 조건을 본다)" : ""));
+console.log("generators=" + metas.length + " start=" + new Date(firstStart).toISOString() + " end=" + new Date(lastEnd).toISOString() + " given=" + since + "~" + until);
+if (Date.parse(since) > firstStart) fail("--since가 발생기 시작(" + new Date(firstStart).toISOString() + ")보다 늦다");
+if (Date.parse(until) < lastEnd) fail("--until이 발생기 종료(" + new Date(lastEnd).toISOString() + ")보다 이르다 — run 끝 구간이 잘린다");
+' "$OUT" "$SINCE" "$UNTIL" "$GENS" > "$D/run-window.txt" 2>&1; then :
+else
+  BROKEN=1
+  echo "    $(tail -n 1 "$D/run-window.txt")" >&2
 fi
 
 echo "==> 1/4 SQL 검사"
@@ -201,31 +253,61 @@ echo "==> 실시간 감시기 결과(watch-summary.json)"
 # 해석 중 예외(빈 파일·null 등)는 모두 판정 불가(2)다 — node가 예외로 죽으면 종료 1(= 위반)로 읽히므로 잡는다.
 node -e '
 try {
+  const fs = require("fs");
+  const [summaryPath, sinceArg, untilArg, violationPath] = process.argv.slice(1);
+  const since = Date.parse(sinceArg), until = Date.parse(untilArg);
+  // 감시기는 toISOString()으로 쓴다. 그 형식이고 달력상 있는 시각만 받는다 — Date.parse는 "0"·"9999"도 너그럽게
+  // 읽고, 2월 30일·24시는 넘겨 읽는다(왕복 변환이 같아야 한다).
+  const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+  const real = (x) => { if (!ISO.test(String(x))) return false; const d = new Date(x); return !isNaN(d) && d.toISOString() === (/\.\d{3}Z$/.test(x) ? x : x.replace(/(\.\d{1,2})?Z$/, (m, f) => (f ? f.padEnd(4, "0") : ".000") + "Z")); };
+
+  // 1) 위반 기록을 먼저 본다. 감시기가 이 run 구간(+ 꼬리 30초) 안에서 위반을 기록했다면, 감시 결과 파일의 상태
+  //    (덮음 여부, 결과 코드, 시각 형식, 같은 디렉터리에서 다시 돌려 덮어쓴 summary)와 상관없이 이 run의 위반이다.
+  //    위반은 판정 불가보다 우선한다.
+  let v = null;
+  try { v = JSON.parse(fs.readFileSync(violationPath, "utf8")); } catch {}
+  const vt = v && real(v.t) ? Date.parse(v.t) : NaN;
+  if (vt >= since && vt <= until + 30000) {
+    console.log("위반 시각 " + v.t + "이 이 run 구간 안이다(violation.json)");
+    process.exit(1);
+  }
+
+  // 2) 감시 결과. 이 run을 덮는 감시의 결과만 이 run의 것으로 본다.
   let s;
-  try { s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); }
+  try { s = JSON.parse(fs.readFileSync(summaryPath, "utf8")); }
   catch { console.log("watch-summary.json이 없거나 읽을 수 없다 — 실시간 감시기를 같은 run 디렉터리로 돌리지 않았다"); process.exit(2); }
   if (!s || typeof s !== "object") { console.log("watch-summary.json 내용이 객체가 아니다"); process.exit(2); }
   console.log("exitCode=" + s.exitCode + " " + s.verdict + " (" + s.startedAt + " ~ " + s.endedAt + ")");
-  // 먼저 이 run을 감시한 결과인지 확인한다 — run 시작 전에 시작해 run 종료 뒤에 끝났어야 한다. 다른 run이 남긴
-  // 결과(위반 3 포함)를 이 run의 판정에 쓰지 않는다.
-  // 감시기는 toISOString()으로 쓴다. 그 형식만 받는다 — Date.parse는 "0"·"9999" 같은 값도 너그럽게 읽어
-  // 엉뚱한 구간을 "덮음"으로 볼 수 있다.
-  const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
-  if (!ISO.test(String(s.startedAt)) || !ISO.test(String(s.endedAt))) {
-    console.log("감시 구간 시각(startedAt·endedAt)이 ISO UTC 형식이 아니다");
+  if (!real(s.startedAt) || !real(s.endedAt)) {
+    console.log("감시 구간 시각(startedAt·endedAt)이 ISO UTC 형식이 아니거나 달력상 없는 시각이다");
     process.exit(2);
   }
-  const st = Date.parse(s.startedAt), en = Date.parse(s.endedAt);
-  if (!(st <= Date.parse(process.argv[2])) || !(en >= Date.parse(process.argv[3]))) {
-    console.log("감시 구간이 run(" + process.argv[2] + " ~ " + process.argv[3] + ")을 덮지 않는다");
+  const covers = Date.parse(s.startedAt) <= since && Date.parse(s.endedAt) >= until;
+  // 감시기는 위반이 있을 때만 violation.json을 쓰고, 그러면 결과는 반드시 3이다. 위반 기록이 있는데 결과가 3이 아니면
+  // 두 파일이 다른 감시에서 왔다(섞임) — 어느 쪽도 믿을 수 없으므로 판정 불가다.
+  if (fs.existsSync(violationPath) && s.exitCode !== 3) {
+    console.log("violation.json이 있는데 감시 결과가 3이 아니다(" + s.exitCode + ") — 감시 결과 파일이 섞였다");
     process.exit(2);
   }
-  process.exit(s.exitCode === 3 ? 1 : s.exitCode === 0 ? 0 : 2);
+  if (s.exitCode === 3) {
+    // 위반 기록이 구간 안이었다면 위에서 끝났다. 여기서는 위반 시각이 구간 밖이거나 확인할 수 없다.
+    if (covers) {
+      console.log("감시가 run을 덮고 위반을 기록했다(violation.json의 시각은 " + (Number.isFinite(vt) ? "구간 밖 " + v.t : "확인 불가") + ")");
+      process.exit(1);
+    }
+    console.log("감시가 run을 덮지 않고, 위반 시각이 " + (Number.isFinite(vt) ? "이 run 구간 밖(" + v.t + ")" : "확인할 수 없다(violation.json 없음·형식 오류)") + " — 다른 run의 위반일 수 있다");
+    process.exit(2);
+  }
+  if (!covers) {
+    console.log("감시 구간이 run(" + sinceArg + " ~ " + untilArg + ")을 덮지 않는다");
+    process.exit(2);
+  }
+  process.exit(s.exitCode === 0 ? 0 : 2);
 } catch (e) {
   console.log("watch-summary.json 해석 실패: " + (e && e.message));
   process.exit(2);
 }
-' "$OUT/watch-summary.json" "$SINCE" "$UNTIL" > "$D/watch-verdict.txt" 2>&1
+' "$OUT/watch-summary.json" "$SINCE" "$UNTIL" "$OUT/violation.json" > "$D/watch-verdict.txt" 2>&1
 case $? in
   0) ;;
   1) echo "    실시간 감시기가 위반을 기록했다" >&2; FAIL=1 ;;
@@ -239,6 +321,7 @@ esac
   echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
   echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null
   echo "--- 내보낸 구간(파드 대조·승격 처리 실패의 전제)"; cat "$D/export-window.txt" 2>/dev/null
+  echo "--- run 시각 대조(발생기 시작·종료 기록 vs --since·--until)"; cat "$D/run-window.txt" 2>/dev/null
   echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null
   echo "--- 실시간 조건 사후 재확인(내보낸 구간, run 종료 + 30초까지)"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.violations.length?"위반: "+r.violations.join("; ")+(r.problems.length?" / 판정 불가 사유도 있음: "+r.problems.join("; "):""):r.problems.length?"판정 불가: "+r.problems.join("; "):"위반 없음(관측 점 "+r.observedPoints+"개, 샘플 나이 최대 "+r.sampleAgeMaxSec+"초)")}catch{console.log("판정 불가(확인 실패)")}' "$D/prom-recheck.json" 2>/dev/null
   echo "--- 실시간 감시기(watch-summary.json)"; cat "$D/watch-verdict.txt" 2>/dev/null

@@ -93,6 +93,10 @@ else
 fi
 RUN_STATUS=$?
 set -e
+# 발생기가 멈춘 시각(§3.3 사후 검사의 --until 대조). 이 파일이 없으면 사후 검사는 run 종료 시각을 확인할 수 없어
+# 판정 불가로 끝난다(발생기가 중간에 죽은 run).
+printf '{ "generator": "%s", "endedAt": "%s", "status": %s }\n' "$GEN" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$RUN_STATUS" \
+  > "$OUT/end-$GEN.json"
 
 node "$HERE/entry-arrivals.mjs" --entry-seconds "$ENTRY_SECONDS" --users-n "$USERS_N" "$OUT/entry-$GEN.json" \
   > "$OUT/arrivals-$GEN.json"

@@ -18,7 +18,7 @@
 // 한 번 실행한다(예: 발생기의 k6를 멈추는 명령). 감시는 계속하고, 끝날 때 종료 코드로 결과를 알린다:
 //   0 위반 없음 — 조회 오류가 한 번도 없었고, 세 조건과 승격 실패 카운터 모두 감시 중 한 번 이상 값이 나왔고,
 //     관측 공백이 한 틱도 없었고, 조회 간격이 14초(스크랩 주기 15초 − 여유 1초)를 넘은 적이 없고, 승격 실패가 늘지 않았다
-//   2 인자 오류
+//   2 인자 오류·시작 실패(--out을 만들 수 없음, 이전 감시 결과가 있는 디렉터리 등)
 //   3 위반 있음
 //   4 판정 불가 — 조회 오류(연결 끊김·HTTP 오류·조회 시간 초과)가 한 번이라도 있었거나, 값이 한 번도 나오지 않은
 //     조건이 있거나, 항상 있어야 할 시계열이 빈 틱(관측 공백)이 있었거나, 조회 간격이 스크랩 주기를 넘었거나,
@@ -56,7 +56,7 @@
 //   node scripts/loadtest/watch-correctness.mjs --out artifacts/loadtest/<session>/<run> \
 //     [--interval 5] [--for 600] [--query-timeout 10] [--max-sample-age 30] [--on-violation "bash scripts/loadtest/loadgen.sh exec -- pkill -INT k6"]
 import { exec } from "node:child_process";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 const USAGE =
@@ -143,7 +143,19 @@ function main() {
   }
 
   mkdirSync(a.out, { recursive: true });
+  // 같은 run 디렉터리에서 다시 돌리면 이전 감시의 결과(watch-summary.json)·첫 위반(violation.json)이 덮이거나 섞인다.
+  // 사후 검사가 둘을 이 run의 근거로 읽으므로, 이미 있으면 시작하지 않는다(새 run 디렉터리를 쓴다).
+  for (const f of ["watch-summary.json", "violation.json"]) {
+    if (existsSync(`${a.out}/${f}`)) throw new Error(`이미 감시 결과가 있다: ${a.out}/${f} — 새 run 디렉터리를 쓴다`);
+  }
   const LOG = `${a.out}/watch-correctness.jsonl`;
+  // 기록 파일은 배타적으로 만든다(wx). 확인과 생성 사이에 같은 디렉터리로 감시기가 둘 뜨면(경쟁) 둘째는 여기서
+  // 실패한다 — 존재 확인만으로는 둘 다 통과해 기록이 섞였다(G1 재현).
+  try {
+    writeFileSync(LOG, "", { flag: "wx" });
+  } catch (e) {
+    throw new Error(`이미 감시 결과가 있다(또는 다른 감시기가 쓰는 중): ${LOG} — 새 run 디렉터리를 쓴다 (${e.code || e.message})`);
+  }
   const stats = Object.fromEntries(
     [...Object.keys(CHECKS), "tickFailures", "freshness"].map((k) => [k, { value: 0, noSeries: 0, gap: 0, error: 0 }]),
   );

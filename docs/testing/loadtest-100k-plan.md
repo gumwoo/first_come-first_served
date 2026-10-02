@@ -386,16 +386,29 @@ Pod 수에서 노드 수를 바로 계산하지 않는다. 레포에 이미 걸�
 ### 원시 데이터
 
 결과 문서에는 원시 데이터를 넣지 않는다. 원시 데이터는 아래 경로에 두고, 문서에는 **요약값·경로·실행 조건**
-(재현에 필요한 workload 네 값, 발생기 구성, envelope, 커밋 SHA)만 남긴다.
+(재현에 필요한 workload 네 값, 발생기 구성, 측정 범위, 커밋 SHA)만 남긴다. **측정 범위**는 그 run에서
+허용한 인프라의 상한이다 — 노드 계열·최대 노드 수, 각 Deployment의 시작 replica 수와 HPA min/max.
+결과는 이 범위 안에서만 성립하므로(예: "`m6i.large` 최대 9노드에서 검증된 최대 workload") 함께 남긴다.
 
 ```
 artifacts/loadtest/<session-id>/<run-id>/
   session-id = YYYYMMDD-HHMM            (AWS 측정 세션 시작 시각)
-  run-id     = <단계>-<규모>-<분포>-<회차>  (예: s7-50k-constant-r2)
+  run-id     = <단계>-<변수>-<회차>
 ```
 
+`<변수>`는 그 단계에서 바꾸는 값이다.
+
+| 단계 | 변수 | 예 |
+|---|---|---|
+| 4 (단일 Pod baseline) | 목표 arrivals/s 또는 SSE 연결 수 | `s4-api-2000ps-r1`, `s4-sse-4000c-r1` |
+| 5 (scale-out) | Pod 수 | `s5-4pod-r1` |
+| 6 (보호 검증) | 규모 | `s6-10k-r1` |
+| 7 (사다리) | 규모 + 분포 | `s7-50k-constant-r2`, `s7-50k-frontloaded-r1` |
+
 `artifacts/`는 `.gitignore` 대상이다. k6 원시 출력·Prometheus 덤프는 커질 수 있고, 이 저장소는 public이다.
-**run이 끝날 때마다 즉시 저장한다.** 클러스터를 철거하면 Prometheus 데이터도 함께 사라진다.
+**run이 끝날 때마다 즉시 저장한다.** 클러스터를 철거하면 Prometheus 데이터도 함께 사라지고
+(`tear-down.sh`가 PVC를 지운다), 철거하지 않아도 보존 기간이 6시간이라(`kube-prometheus-stack.values.yaml`
+`retention: 6h`) 세션 초반 run의 데이터는 세션이 끝나기 전에 지워질 수 있다.
 
 knee에서 멈춘 것은 **실패가 아니다.** "S-100K 목표로 부하를 걸었고 X에서 SSE 연결 성공률이 떨어졌으며
 최초 병목은 Y였다"는 유효한 결과다. 반대로 발생기가 죽어서 멈춘 것은 아무것도 말해 주지 않는다(§3.1).

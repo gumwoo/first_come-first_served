@@ -154,8 +154,26 @@ arrival-rate executor로 새 스크립트를 쓴다. 이때 VU는 iteration 사�
 사용자 매핑을 **iteration 번호(`exec.scenario.iterationInTest`) 기준**으로 바꾼다.
 
 사용자 인증 토큰도 사용자 수만큼 미리 있어야 한다. 지금의 `seed-issue-tokens.js`는 **120개 고정**(`N=120`)이고
-로그인으로 받으므로, 10만 계정 시드와 발급 방식을 따로 준비해야 한다. 액세스 토큰 유효기간(`access-token-ttl`
-1,800초) 안에 시험이 끝나도록 발급 시점도 맞춘다.
+로그인으로 받는다. 10만 명을 로그인시키면 BCrypt 검증으로 측정 대상에 큰 CPU 부하를 얹고, 액세스 토큰 유효기간
+(`access-token-ttl` 1,800초)이 짧아 측정 세션 동안 여러 번 반복해야 한다. 그래서 **발급 방식을 다음으로 고정한다.**
+
+| 단계 | 방식 | 도구 |
+|---|---|---|
+| 계정 시드 | 측정 세션마다 SQL로 `loadseed+<n>@example.com` 계정을 넣는다. **비밀번호가 없다**(`password_hash` NULL) — 로그인할 수 없는 계정이라 공개 저장소에 비밀번호를 둘 필요가 없다 | `scripts/loadtest/seed-users.sh` |
+| 토큰 발급 | 앱과 같은 서명 키(`/flowticket/JWT_SECRET`)로 **직접 서명**한다. 인증 필터는 DB를 보지 않고 서명과 클레임만 검증하므로 앱이 발급한 것과 구별되지 않는다. **로그인을 거치지 않아 측정 대상에 부하가 없다** | `scripts/loadtest/mint-tokens.sh` → `infra/loadgen/mint-tokens.mjs` |
+| 유효기간 | 앱 설정과 같은 1,800초. **측정 프로파일의 TTL을 늘리지 않는다** — 측정 조건을 바꾸지 않는다 | |
+| run 전 점검 | 가장 먼저 만료되는 토큰의 남은 시간이 그 run에 필요한 시간보다 짧으면 다시 발급한다(몇 초 걸리고 측정 대상에 부하가 없다) | `mint-tokens.mjs check --need <초>` |
+| 형식 계약 | 발급기가 만든 토큰을 앱의 검증기(`JwtProvider`)가 받아들이는지 테스트로 고정한다 | `LoadgenTokenContractTest`, `mint-tokens.test.mjs` |
+
+측정 도중 토큰 만료로 생긴 실패(401)는 시스템 capacity 결과로 인정하지 않는다(§3.1 무효).
+
+로그인이 없어도 **run 시작 전 CPU 기준선 확인은 필요하다.** 직전 run의 부하(승격 워커, 아웃박스 발행, HPA가 늘린 파드)가
+남아 있으면 다음 run은 같은 조건이 아니다. 측정 세션 시작 직후의 CPU를 기준선으로 기록하고, 매 run 전에 그 근처로
+돌아올 때까지 기다린다(`scripts/loadtest/wait-baseline.mjs`, 허용 범위는 잠정값 — 기준선의 +10% 또는 +0.1 core 중 큰 쪽,
+3회 연속).
+
+서명 키는 환경변수로만 다룬다. 토큰 파일 자체도 자격증명이라 `artifacts/` 아래에만 두고(`.gitignore`), 발생기에는 결과 버킷을
+거쳐 나눠 준다. 결과 버킷과 RDS는 철거 때 함께 지워진다.
 
 **② 진입 iteration에 SSE를 넣지 않는다.** 레포의 k6 스크립트는 어느 것도 SSE를 쓰지 않고, k6 코어에는 SSE
 클라이언트가 없어 확장(xk6-sse 등)이 필요하다(외부 지식, 이 문서 작성 시 미확인). 또 iteration이 SSE를 붙든 채

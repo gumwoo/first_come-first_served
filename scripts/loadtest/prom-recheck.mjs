@@ -10,7 +10,10 @@
 // 판정의 전제는 "그 구간을 실제로 관측했다"는 것이다. 항상 있어야 할 지표(초과판매, 승격 실패 카운터)의 샘플 나이
 // (prom/sample_age_max.json — 감시기의 신선도 질의와 같은 식)가 [since, until + 30초]의 모든 step에 있고
 // --max-sample-age(기본 30초, 최대 60초, 잠정값) 이하여야 한다. 점이 빠졌거나 오래됐으면 그 구간은 관측 공백이라
-// 판정 불가다. 대기열 게이지(admitted·admit_drift)가 구간 내내 하나도 없어도 판정 불가다 — 측정 run에는 활성
+// 판정 불가다. 또 run 종료 뒤에 항상 있어야 할 모든 시계열이 한 번 이상 스크랩됐어야 한다 — 어떤 점에서든
+// (점 시각 − 가장 오래된 샘플 나이) ≥ until이면 그 시점의 모든 시계열 샘플이 run 종료 뒤의 것이다. 이것이 없으면
+// run 끝 상태를 관측하지 못한 것이다(샘플 나이 30초 기준만으로는 run 종료 10초 전 샘플로도 통과할 수 있다 — G1 재현).
+// 대기열 게이지(admitted·admit_drift)가 구간 내내 하나도 없어도 판정 불가다 — 측정 run에는 활성
 // 이벤트가 있어야 하므로, 없다면 지표 미배포·수집 실패다(감시기의 "값이 한 번도 나오지 않은 조건"과 같은 기준).
 //
 //   node scripts/loadtest/prom-recheck.mjs --prom-dir <run>/prom --since <run 시작 UTC ISO> --until <run 종료 UTC ISO> \
@@ -91,6 +94,12 @@ function main() {
   }
   if (holes.length) problems.push(`관측 점이 빠진 구간: ${holes.slice(0, 5).join(", ")}${holes.length > 5 ? ` 외 ${holes.length - 5}` : ""}`);
   if (stale.length) problems.push(`샘플이 ${maxAge}초보다 오래된 점: ${stale.slice(0, 5).join(", ")}${stale.length > 5 ? ` 외 ${stale.length - 5}` : ""}`);
+  // run 끝 상태 관측: 어떤 점에서 (점 시각 − 가장 오래된 샘플 나이) ≥ until이면, 그 시점에 항상 있어야 할 모든 시계열의
+  // 최신 샘플이 run 종료 뒤의 것이다. 그런 점이 없으면 run 종료 뒤 스크랩을 하나도 확인하지 못한 것이다.
+  const postUntil = agePts.find(([t, v]) => Number.isFinite(v) && t - v * 1000 >= until);
+  if (agePts.length && !postUntil) {
+    problems.push("run 종료 뒤에 스크랩된 샘플을 확인하지 못했다(모든 항상-있는 시계열 기준) — run 끝 상태를 관측하지 못했다");
+  }
 
   // 값이 숫자가 아니면 판정할 수 없다(수집 실패 NaN 등)
   const maxOf = (series, label) => {
@@ -144,6 +153,8 @@ function main() {
     window: { since: a.since, until: a.until, end: new Date(winEnd).toISOString(), stepSec: stepMs / 1000 },
     observedPoints: agePts.length,
     sampleAgeMaxSec: ageMax,
+    // run 종료 뒤 모든 시계열이 스크랩됐음을 처음 확인한 점(없으면 null)
+    postUntilObservedAt: postUntil ? new Date(postUntil[0]).toISOString() : null,
     maxSampleAgeSec: maxAge,
     tickFailuresMaxRate,
     oversoldMax,

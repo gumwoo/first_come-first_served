@@ -16,7 +16,8 @@
 #   queue-order.json   — 대기열 순서 위반(api 로그의 승격 감사 줄 대조, queue-order.mjs)
 #   event-loss.txt     — 발행된 아웃박스 이벤트 중 소비 기록(Redis 멱등 키)이 없는 수
 #   watch-summary.json — (같은 run 디렉터리) 실시간 감시기의 결과를 최종 판정에 넣는다. 3이면 위반, 0이 아니거나
-#                        파일이 없으면 판정 불가 — 감시기 0과 4단계 통과가 함께 있어야 실시간 조건에 위반이 없었다.
+#                        파일이 없거나 감시 구간(startedAt~endedAt)이 run을 덮지 않으면 판정 불가 — 감시기 0과
+#                        4단계 통과가 함께 있어야 실시간 조건에 위반이 없었다.
 #   prom-recheck.json  — 실시간 조건(over-admit, 카운터 어긋남, 초과판매)과 승격 처리 실패를 내보낸 구간 데이터로
 #                        run 종료 + 30초까지 다시 본 결과(prom-recheck.mjs). 감시기는 run 끝을 보지 못하므로 여기서
 #                        덮는다. 위반이면 1, 그 구간을 신선하게 관측하지 못했거나 승격 처리 실패가 있으면 2.
@@ -191,9 +192,16 @@ node -e '
 let s;
 try { s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); }
 catch { console.log("watch-summary.json이 없다 — 실시간 감시기를 같은 run 디렉터리로 돌리지 않았다"); process.exit(2); }
-console.log("exitCode=" + s.exitCode + " " + s.verdict);
-process.exit(s.exitCode === 0 ? 0 : s.exitCode === 3 ? 1 : 2);
-' "$OUT/watch-summary.json" > "$D/watch-verdict.txt" 2>&1
+console.log("exitCode=" + s.exitCode + " " + s.verdict + " (" + s.startedAt + " ~ " + s.endedAt + ")");
+if (s.exitCode === 3) process.exit(1);
+// 이 run을 감시한 결과인지 확인한다 — run 시작 전에 시작해 run 종료 뒤에 끝났어야 한다(다른 run의 결과·일찍 멈춘 감시 배제).
+const st = Date.parse(s.startedAt), en = Date.parse(s.endedAt);
+if (!(st <= Date.parse(process.argv[2])) || !(en >= Date.parse(process.argv[3]))) {
+  console.log("감시 구간이 run(" + process.argv[2] + " ~ " + process.argv[3] + ")을 덮지 않는다");
+  process.exit(2);
+}
+process.exit(s.exitCode === 0 ? 0 : 2);
+' "$OUT/watch-summary.json" "$SINCE" "$UNTIL" > "$D/watch-verdict.txt" 2>&1
 case $? in
   0) ;;
   1) echo "    실시간 감시기가 위반을 기록했다" >&2; FAIL=1 ;;

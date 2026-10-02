@@ -18,7 +18,9 @@
 #   watch-summary.json — (같은 run 디렉터리) 실시간 감시기의 결과를 최종 판정에 넣는다. 감시 구간(startedAt~endedAt)이
 #                        run을 덮을 때만 그 결과를 이 run의 것으로 본다: 3이면 위반, 0이면 통과, 그 밖은 판정 불가.
 #                        덮지 않으면 결과가 3이어도 판정 불가다(감시가 run 중간에 시작돼 잡은 위반도 포함 — 그 위반이
-#                        실제였다면 4단계 재확인이 같은 데이터로 다시 잡는다). 파일이 없어도 판정 불가. 감시기 0과
+#                        실제였다면 4단계 재확인이 같은 식·같은 스크랩 데이터로 대체로 다시 잡을 것으로 본다(추론:
+#                        step 10초 < 스크랩 15초라 보통은 점에 잡히지만, 스크랩 지터로 두 샘플이 10초보다 가까우면
+#                        건너뛸 수 있어 보장은 아니다)). 파일이 없어도 판정 불가. 감시기 0과
 #                        4단계 통과가 함께 있어야 실시간 조건에 위반이 없었다.
 #   prom-recheck.json  — 실시간 조건(over-admit, 카운터 어긋남, 초과판매)과 승격 처리 실패를 내보낸 구간 데이터로
 #                        run 종료 + 30초까지 다시 본 결과(prom-recheck.mjs). 감시기는 run 끝을 보지 못하므로 여기서
@@ -206,6 +208,13 @@ try {
   console.log("exitCode=" + s.exitCode + " " + s.verdict + " (" + s.startedAt + " ~ " + s.endedAt + ")");
   // 먼저 이 run을 감시한 결과인지 확인한다 — run 시작 전에 시작해 run 종료 뒤에 끝났어야 한다. 다른 run이 남긴
   // 결과(위반 3 포함)를 이 run의 판정에 쓰지 않는다.
+  // 감시기는 toISOString()으로 쓴다. 그 형식만 받는다 — Date.parse는 "0"·"9999" 같은 값도 너그럽게 읽어
+  // 엉뚱한 구간을 "덮음"으로 볼 수 있다.
+  const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+  if (!ISO.test(String(s.startedAt)) || !ISO.test(String(s.endedAt))) {
+    console.log("감시 구간 시각(startedAt·endedAt)이 ISO UTC 형식이 아니다");
+    process.exit(2);
+  }
   const st = Date.parse(s.startedAt), en = Date.parse(s.endedAt);
   if (!(st <= Date.parse(process.argv[2])) || !(en >= Date.parse(process.argv[3]))) {
     console.log("감시 구간이 run(" + process.argv[2] + " ~ " + process.argv[3] + ")을 덮지 않는다");
@@ -220,7 +229,7 @@ try {
 case $? in
   0) ;;
   1) echo "    실시간 감시기가 위반을 기록했다" >&2; FAIL=1 ;;
-  *) echo "    실시간 감시기 결과가 위반 없음(0)이 아니다 — $(tail -n 1 "$D/watch-verdict.txt")" >&2; BROKEN=1 ;;
+  *) echo "    실시간 감시기 결과를 이 run의 통과로 볼 수 없다 — $(tail -n 1 "$D/watch-verdict.txt")" >&2; BROKEN=1 ;;
 esac
 
 {

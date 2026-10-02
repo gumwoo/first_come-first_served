@@ -60,7 +60,7 @@ cat > "$OUT/meta-$GEN.json" <<EOF
 {
   "session": "$SESSION", "run": "$RUN", "generator": "$GEN", "host": "$(hostname)",
   "commit": "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)",
-  "dirty": $([ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ] && echo true || echo false),
+  "dirty": $(if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then echo null; elif [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then echo true; else echo false; fi),
   "startedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "base": "$BASE", "event": "$EVENT", "dist": "$DIST", "usersN": $USERS_N, "offset": $OFFSET,
   "entrySeconds": $ENTRY_SECONDS, "sseHoldSeconds": $SSE_HOLD, "sse": $([ "$NO_SSE" = 1 ] && echo false || echo true),

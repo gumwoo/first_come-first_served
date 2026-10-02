@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.flowticket.dlq.domain.DlqStatus;
 import com.flowticket.dlq.repository.DlqMessageRepository;
+import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.outbox.domain.OutboxStatus;
 import com.flowticket.outbox.repository.OutboxEventRepository;
 import io.micrometer.prometheusmetrics.PrometheusConfig;
@@ -31,19 +32,22 @@ class OperationalMetricsTest {
     private PrometheusMeterRegistry registry;
     private OutboxEventRepository outboxRepository;
     private DlqMessageRepository dlqRepository;
+    private OrderRepository orderRepository;
 
     @BeforeEach
     void setUp() {
         registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         outboxRepository = mock(OutboxEventRepository.class);
         dlqRepository = mock(DlqMessageRepository.class);
+        orderRepository = mock(OrderRepository.class);
+        when(orderRepository.countOversoldSeats()).thenReturn(0L);
         when(outboxRepository.countByStatus(OutboxStatus.DEAD)).thenReturn(2L);
         when(outboxRepository.countByStatus(OutboxStatus.PENDING)).thenReturn(7L);
         when(dlqRepository.countByStatus(DlqStatus.PENDING)).thenReturn(3L);
         // 가장 오래 기다린 미발행 행: 고정 시계에서 정확히 90초 전
         when(outboxRepository.findOldestCreatedAt(OutboxStatus.PENDING))
                 .thenReturn(LocalDateTime.now(CLOCK).minusSeconds(90));
-        new OperationalMetrics(registry, outboxRepository, dlqRepository, CLOCK);
+        new OperationalMetrics(registry, outboxRepository, dlqRepository, orderRepository, CLOCK);
     }
 
     /** 나이를 재는 지표라 시계를 고정한다(ADR-018). */
@@ -89,5 +93,23 @@ class OperationalMetricsTest {
         assertThat(scrape)
                 .as("무관한 지표는 살아 있어야 한다")
                 .contains("flowticket_dlq_messages{status=\"PENDING\"} 3.0");
+    }
+
+    /** 부하 시험의 초과판매 실시간 중단 조건이 이 이름을 읽는다(loadtest-100k-plan §3.3). */
+    @Test
+    @DisplayName("초과판매 좌석 수가 노출된다")
+    void 초과판매_좌석_수가_노출된다() {
+        when(orderRepository.countOversoldSeats()).thenReturn(1L);
+
+        assertThat(registry.scrape()).contains("flowticket_seat_oversold 1.0");
+    }
+
+    /** 질의 실패를 0으로 돌려주면 "초과판매 없음"과 구분되지 않는다. */
+    @Test
+    @DisplayName("초과판매 질의 실패는 0이 아니라 값 없음이다")
+    void 초과판매_질의_실패는_NaN이다() {
+        when(orderRepository.countOversoldSeats()).thenThrow(new RuntimeException("db down"));
+
+        assertThat(registry.get("flowticket.seat.oversold").gauge().value()).isNaN();
     }
 }

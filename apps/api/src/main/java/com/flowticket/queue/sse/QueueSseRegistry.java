@@ -2,6 +2,9 @@ package com.flowticket.queue.sse;
 
 import com.flowticket.global.sse.SsePubSub;
 import com.flowticket.global.sse.AfterCommit;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,10 +34,30 @@ public class QueueSseRegistry implements MessageListener {
     private final Map<String, SseEmitter> emitters = new ConcurrentHashMap<>();
     private final long timeoutMs;
     private final SsePubSub pubSub;
+    private final Counter openFailures;
+    private final Counter deliverFailures;
 
-    public QueueSseRegistry(@Value("${queue.token-ttl:1800}") long tokenTtl, SsePubSub pubSub) {
+    /**
+     * 연결 수·전송 실패 지표(loadtest-100k-plan §5.1). 연결은 이 파드가 든 것만 센다 —
+     * 파드마다 다른 값이라 집계는 합(sum)이다(대기열 상태 지표와 반대).
+     */
+    public QueueSseRegistry(@Value("${queue.token-ttl:1800}") long tokenTtl, SsePubSub pubSub,
+                            MeterRegistry meterRegistry) {
         this.timeoutMs = tokenTtl * 1000L;
         this.pubSub = pubSub;
+        Gauge.builder("flowticket.queue.sse.connections", emitters, Map::size)
+                .description("이 파드가 든 대기열 SSE 연결 수. 파드 합으로 집계")
+                .register(meterRegistry);
+        // 실패는 두 지점에서 다른 뜻이다: 열자마자 실패(연결 수립 문제)와 유지 중 실패(끊긴 클라이언트).
+        this.openFailures = failureCounter(meterRegistry, "open");
+        this.deliverFailures = failureCounter(meterRegistry, "deliver");
+    }
+
+    private static Counter failureCounter(MeterRegistry registry, String phase) {
+        return Counter.builder("flowticket.queue.sse.send.failures")
+                .description("대기열 SSE 전송 실패 수. 실패한 연결은 격리되고 클라이언트는 폴링으로 넘어간다")
+                .tag("phase", phase)
+                .register(registry);
     }
 
     /**
@@ -58,6 +81,7 @@ public class QueueSseRegistry implements MessageListener {
         } catch (Exception e) {
             // 구독 시작도 못 한 연결이다. 맵에 남기면 이후 전송이 계속 실패한다.
             emitters.remove(token);
+            openFailures.increment();
             log.debug("SSE 초기 프레임 전송 실패 token={}", token, e);
         }
         return emitter;
@@ -89,6 +113,7 @@ public class QueueSseRegistry implements MessageListener {
             emitter.send(SseEmitter.event().name(event).data(data));
         } catch (Exception e) {
             emitters.remove(token); // 전송 실패 → 격리
+            deliverFailures.increment();
         }
     }
 

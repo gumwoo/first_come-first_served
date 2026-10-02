@@ -4,6 +4,8 @@ import com.flowticket.queue.sse.QueueSseRegistry;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -58,10 +60,21 @@ public class QueueAdmissionService {
             return expired
             """;
 
+    // 관측용 스냅숏: 대기 수·입장 토큰 수·카운터를 한 번에 읽는다(loadtest-100k-plan §3.3).
+    // 따로 읽으면 그 사이에 다른 파드의 승격·회수가 끼어 카운터와 집합이 순간적으로 어긋나 보이고,
+    // 부하 시험의 "카운터 어긋남" 실시간 중단 조건이 오탐으로 발동한다. 스크립트는 원자라 끼어들 틈이 없다.
+    // 세 키는 ADMIT_LUA가 이미 함께 쓰는 키라 Redis Cluster 슬롯 제약을 새로 만들지 않는다.
+    private static final String SNAPSHOT_LUA = """
+            return {redis.call('ZCARD', KEYS[1]), redis.call('ZCARD', KEYS[2]),
+                    tonumber(redis.call('GET', KEYS[3]) or '0')}
+            """;
+
     @SuppressWarnings("rawtypes")
     private static final DefaultRedisScript<List> ADMIT_SCRIPT = new DefaultRedisScript<>(ADMIT_LUA, List.class);
     @SuppressWarnings("rawtypes")
     private static final DefaultRedisScript<List> RECLAIM_SCRIPT = new DefaultRedisScript<>(RECLAIM_LUA, List.class);
+    @SuppressWarnings("rawtypes")
+    private static final DefaultRedisScript<List> SNAPSHOT_SCRIPT = new DefaultRedisScript<>(SNAPSHOT_LUA, List.class);
 
     private final StringRedisTemplate redis;
     private final QueueSseRegistry sse;
@@ -69,11 +82,14 @@ public class QueueAdmissionService {
     private final long admitTtl;
 
     private final Clock clock;
+    private final QueueMetrics metrics;
 
     public QueueAdmissionService(StringRedisTemplate redis, QueueSseRegistry sse,
                                  @Value("${queue.capacity:100}") int capacity,
-                                 @Value("${queue.admit-ttl:300}") long admitTtl, Clock clock) {
+                                 @Value("${queue.admit-ttl:300}") long admitTtl, Clock clock,
+                                 QueueMetrics metrics) {
         this.clock = clock;
+        this.metrics = metrics;
         this.redis = redis;
         this.sse = sse;
         this.capacity = capacity;
@@ -97,6 +113,7 @@ public class QueueAdmissionService {
         for (int i = 0; i < popped.size(); i += 2) { // {member,score,...}
             String token = String.valueOf(popped.get(i));
             redis.opsForValue().set(QueueKeys.admit(token), "1", Duration.ofSeconds(admitTtl));
+            QueueAudit.admitted(eventId, token, clock.millis(), expiresAt, admitTtl);
             sse.send(token, "queue.admitted", Map.of("redirect", "/events/" + eventId + "/seats"));
             admitted++;
         }
@@ -112,7 +129,9 @@ public class QueueAdmissionService {
             return List.of();
         }
         List<String> expired = raw.stream().map(String::valueOf).toList();
+        long now = clock.millis();
         for (String token : expired) {
+            QueueAudit.reclaimed(eventId, token, now);
             sse.send(token, "queue.expired");   // 만료 알림
             sse.complete(token);                // 스트림 종료
         }
@@ -125,24 +144,46 @@ public class QueueAdmissionService {
     // 원자 조건부 연산=정합성(ADR-002/006).
     @Scheduled(fixedRateString = "${queue.admit-interval-ms:1500}")
     public void runOnce() {
+        metrics.tickTimer().record(this::tick);
+    }
+
+    private void tick() {
         Set<String> events = redis.opsForSet().members(QueueKeys.ACTIVE_EVENTS);
-        if (events == null) {
-            return;
-        }
-        for (String e : events) {
-            try {
-                Long eventId = Long.valueOf(e);
-                reclaim(eventId);
-                admit(eventId);
-                Long waiting = redis.opsForZSet().zCard(QueueKeys.wait(eventId));
-                String count = redis.opsForValue().get(QueueKeys.admitCount(eventId));
-                long admitted = count == null ? 0 : Long.parseLong(count);
-                if ((waiting == null || waiting == 0) && admitted <= 0) {
-                    redis.opsForSet().remove(QueueKeys.ACTIVE_EVENTS, e); // 정리
+        List<QueueMetrics.EventSnapshot> observed = new ArrayList<>();
+        Set<Long> retained = new HashSet<>();
+        if (events != null) {
+            for (String e : events) {
+                try {
+                    Long eventId = Long.valueOf(e);
+                    retained.add(eventId);
+                    reclaim(eventId);
+                    admit(eventId);
+                    QueueMetrics.EventSnapshot snapshot = snapshot(eventId);
+                    if (snapshot.waiting() == 0 && snapshot.admitCount() <= 0) {
+                        redis.opsForSet().remove(QueueKeys.ACTIVE_EVENTS, e); // 정리
+                        retained.remove(eventId);
+                        continue;
+                    }
+                    observed.add(snapshot);
+                } catch (Exception ex) {
+                    log.warn("[queue] 승격 처리 실패 event={}: {}", e, ex.getMessage());
                 }
-            } catch (Exception ex) {
-                log.warn("[queue] 승격 처리 실패 event={}: {}", e, ex.getMessage());
             }
         }
+        metrics.publish(observed, retained);
+    }
+
+    /** 대기 수·입장 토큰 수(admitExp)·카운터를 같은 시점에 읽는다(SNAPSHOT_LUA). */
+    private QueueMetrics.EventSnapshot snapshot(Long eventId) {
+        List<?> raw = redis.execute(SNAPSHOT_SCRIPT,
+                List.of(QueueKeys.wait(eventId), QueueKeys.admitExp(eventId), QueueKeys.admitCount(eventId)));
+        if (raw == null || raw.size() < 3) {
+            throw new IllegalStateException("대기열 스냅숏 응답 이상: " + raw);
+        }
+        return new QueueMetrics.EventSnapshot(eventId, asLong(raw.get(0)), asLong(raw.get(1)), asLong(raw.get(2)));
+    }
+
+    private static long asLong(Object v) {
+        return v instanceof Number n ? n.longValue() : Long.parseLong(String.valueOf(v));
     }
 }

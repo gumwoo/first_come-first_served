@@ -2,6 +2,7 @@ package com.flowticket.global.metrics;
 
 import com.flowticket.dlq.domain.DlqStatus;
 import com.flowticket.dlq.repository.DlqMessageRepository;
+import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.outbox.domain.OutboxStatus;
 import com.flowticket.outbox.repository.OutboxEventRepository;
 import io.micrometer.core.instrument.Gauge;
@@ -31,6 +32,7 @@ public class OperationalMetrics {
     public OperationalMetrics(MeterRegistry registry,
                               OutboxEventRepository outboxRepository,
                               DlqMessageRepository dlqRepository,
+                              OrderRepository orderRepository,
                               Clock clock) {
         // 재시도로 풀리지 않아 격리된 이벤트. 0보다 크면 사람이 판단해야 한다(TS-032).
         register(registry, "flowticket.outbox.events", "DEAD",
@@ -50,6 +52,17 @@ public class OperationalMetrics {
         register(registry, "flowticket.dlq.messages", "PENDING",
                 r -> dlqRepository.countByStatus(DlqStatus.PENDING),
                 "운영자 판단을 기다리는 DLQ 메시지 수");
+        // 정상이면 항상 0이다. 0보다 크면 성능 문제가 아니라 정합성 결함이다(loadtest-100k-plan §3.3).
+        Gauge.builder("flowticket.seat.oversold", () -> {
+                    try {
+                        return orderRepository.countOversoldSeats();
+                    } catch (Exception e) {
+                        log.warn("[metrics] 초과판매 좌석 수 수집 실패: {}", e.toString());
+                        return Double.NaN;
+                    }
+                })
+                .description("결제 완료 주문 둘 이상에 걸린 좌석 수(초과판매). 정상이면 0")
+                .register(registry);
     }
 
     /**

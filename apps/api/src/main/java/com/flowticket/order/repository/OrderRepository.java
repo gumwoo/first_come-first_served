@@ -34,6 +34,27 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     long sumPaidRevenue();
 
     /**
+     * 초과판매 감시: 결제 완료(PAID) 주문 둘 이상에 걸린 좌석 수. 정상이면 항상 0이다(ADR-003).
+     *
+     * seats.status로는 셀 수 없다. 좌석 행은 하나라 같은 좌석이 두 번 팔려도 SOLD 행은 하나다.
+     * 이중 판매의 흔적은 서로 다른 주문의 라인에 같은 seat_id로 남는다 — uq_order_items_seat는
+     * (order_id, seat_id) 유일이라 주문 사이의 중복은 막지 않는다(V8).
+     *
+     * 비용은 PAID 라인 수에 비례하고, 정상이라면 PAID 라인 수는 판매된 좌석 수를 넘지 않는다.
+     */
+    @Query(value = """
+            select count(*) from (
+                select oi.seat_id
+                  from orders o
+                  join order_items oi on oi.order_id = o.id
+                 where o.status = 'PAID'
+                 group by oi.seat_id
+                having count(*) > 1
+            ) oversold
+            """, nativeQuery = true)
+    long countOversoldSeats();
+
+    /**
      * 결제 성공 전이: 조건부 UPDATE로 원자화(ADR-006). from(PENDING 또는 VBANK_WAITING)인 주문만 PAID로.
      * 반환 1이면 이 요청이 전이의 주인, 0이면 이미 다른 경로가 전이(만료/타 결제)함.
      */

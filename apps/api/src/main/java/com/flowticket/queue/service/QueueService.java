@@ -163,6 +163,9 @@ public class QueueService {
         Long freed = redis.execute(LEAVE_ADMIT_SCRIPT,
                 List.of(QueueKeys.admitExp(eventId), QueueKeys.admitCount(eventId), QueueKeys.admit(token)),
                 token);
+        if (freed != null && freed == 1L) {
+            QueueAudit.leftAdmitted(eventId, token, clock.millis());
+        }
         if (freed == null || freed == 0L) {
             // 입장 상태가 아니었음 → 대기열에서 제거(ZREM은 멱등, 카운터 없음)
             redis.opsForZSet().remove(QueueKeys.wait(eventId), token);

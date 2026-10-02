@@ -36,6 +36,7 @@ class MetricsHistogramConfigTest {
             Timer.builder("flowticket.outbox.publish.lag").register(registry).record(Duration.ofSeconds(2));
             Timer.builder("flowticket.outbox.publish.ack").register(registry).record(Duration.ofMillis(120));
             Timer.builder("flowticket.outbox.relay.tick").register(registry).record(Duration.ofSeconds(1));
+            Timer.builder("flowticket.queue.admit.tick").register(registry).record(Duration.ofMillis(40));
 
             String scrape = registry.scrape();
 
@@ -43,6 +44,7 @@ class MetricsHistogramConfigTest {
             assertThat(scrape).contains("flowticket_outbox_publish_lag_seconds_bucket");
             assertThat(scrape).contains("flowticket_outbox_publish_ack_seconds_bucket");
             assertThat(scrape).contains("flowticket_outbox_relay_tick_seconds_bucket");
+            assertThat(scrape).contains("flowticket_queue_admit_tick_seconds_bucket");
         });
     }
 

@@ -107,6 +107,11 @@ server:
   port: 8080
   # 종료 신호를 받으면 새 요청을 막고 진행 중 요청을 마친 뒤 내려간다(K8s 롤링 배포 무중단의 전제).
   shutdown: graceful
+  tomcat:
+    # 톰캣 MBean을 등록해야 tomcat_* 지표(커넥션·스레드)가 나온다. 기본은 꺼져 있다.
+    # SSE는 연결을 오래 쥐는 부하라 병목이 CPU가 아니라 커넥션·스레드에 있을 수 있다(loadtest-100k-plan §5.1).
+    mbeanregistry:
+      enabled: true
 
 management:
   endpoints:
@@ -144,6 +149,8 @@ management:
         flowticket.outbox.relay.tick: true
         flowticket.outbox.publish.ack: true
         flowticket.outbox.publish.lag: true
+        # 승격 워커 한 틱. 파드마다 따로 돌아 전체 p95는 히스토그램으로만 낼 수 있다(loadtest-100k-plan §5.1).
+        flowticket.queue.admit.tick: true
       # 버킷 범위를 좁혀 카디널리티를 억제한다(기본 범위는 훨씬 넓어 대부분이 빈 버킷이다).
       #
       # 하한을 1ms로 둔 이유: 평균이 6~14ms라고 개별 요청이 전부 그 위인 건 아니다.
@@ -155,6 +162,7 @@ management:
         flowticket.outbox.publish.ack: 1ms
         # 발행 지연은 폴링 주기(1초)보다 짧을 수 없다. 그 아래로 해상도를 둬도 빈 버킷만 는다.
         flowticket.outbox.publish.lag: 100ms
+        flowticket.queue.admit.tick: 1ms
       # 상한을 넘는 요청은 +Inf 한 칸에 뭉쳐 그 구간의 백분위를 복구할 수 없다.
       #
       # 그러면 histogram_quantile이 상한값을 그대로 돌려줘(예: "정확히 2000.0ms") 측정값처럼 보인다.
@@ -171,6 +179,8 @@ management:
         # 브로커 장애 때 지연은 분 단위로 벌어진다. 상한을 낮게 잡으면 그 구간이 +Inf로 뭉쳐
         # "얼마나 밀렸는가"를 복구할 수 없다(http.server.requests와 같은 이유).
         flowticket.outbox.publish.lag: 5m
+        # 승격 주기가 1.5초라 그보다 길면 이미 밀리고 있다. 얼마나 밀렸는지 보이도록 여유를 둔다.
+        flowticket.queue.admit.tick: 10s
 
 # 외부 연동 / 시크릿은 환경변수로만 주입 (application-local.yml은 gitignore)
 # KOPIS OPEN API 이용 제한 (공식)

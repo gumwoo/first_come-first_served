@@ -17,7 +17,8 @@
 | `read-load.js` | ① 조회 API 부하 — VU 고정(closed model) | 있음 |
 | `read-load-rate.js` | ①' 조회 API 부하 — **도착률 고정(open model)**. 무릎 탐색은 이쪽이 정확하다 | 있음 |
 | `hold-contention.js` | ② 매진 경합 — 1석 vs 100명 동시, **초과판매 0** | 있음 |
-| (예정) `spike-queue.js` | ③ 스파이크 — 오픈 순간 대기열 진입, over-admit 0 | 다음 |
+| `spike-queue.js` | ③ 스파이크 — 오픈 순간 대기열 진입(VU 고정, closed model), over-admit 0 | 있음 |
+| `queue-entry-rate.js` | ③' 대기열 진입 — **도착률 고정(open model)**, Constant/Front-loaded. 100K 계획의 진입 발생기([loadtest-100k-plan.md](../../docs/testing/loadtest-100k-plan.md) §2.4). SSE 연결은 `infra/loadgen/sse-hold.mjs`가 따로 만든다 | 있음 |
 | (예정) `failure-dlq.js` | ④ 실패주입 → DLQ (Kafka 필요) | **S07 이후** |
 
 ## ⚠️ 옵션 이름에 `K6_` 접두사를 쓰지 않는다

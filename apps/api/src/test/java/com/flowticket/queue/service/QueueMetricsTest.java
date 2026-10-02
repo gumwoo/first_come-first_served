@@ -69,6 +69,27 @@ class QueueMetricsTest {
         assertThat(registry.get("flowticket.queue.admit.tick").timer().count()).isEqualTo(1);
     }
 
+    /**
+     * 어긋남은 같은 스냅숏에서 계산한 값이다. 스크랩이 admitted와 admit_count를 따로 읽으면 서로 다른 틱의 값이
+     * 섞일 수 있어, 판정은 이 게이지 하나만 본다.
+     */
+    @Test
+    void 어긋남은_같은_스냅숏에서_계산해_내보낸다() {
+        metrics.publish(List.of(new QueueMetrics.EventSnapshot(7L, 0, 98, 100)), Set.of(7L));
+        assertThat(gauge("flowticket.queue.admit_drift", "7")).isEqualTo(2);
+
+        metrics.publish(List.of(new QueueMetrics.EventSnapshot(7L, 0, 50, 50)), Set.of(7L));
+        assertThat(gauge("flowticket.queue.admit_drift", "7")).isZero();
+        assertThat(registry.scrape()).contains("flowticket_queue_admit_drift{event=\"7\"}");
+    }
+
+    @Test
+    void 승격_처리_실패_수를_센다() {
+        metrics.tickFailures().increment();
+
+        assertThat(registry.scrape()).contains("flowticket_queue_admit_tick_failures_total 1.0");
+    }
+
     @Test
     void 게이트_폴백_통과_수를_센다() {
         metrics.gateFallback().increment();

@@ -338,6 +338,7 @@ class QueueIntegrationTest extends IntegrationTestSupport {
         assertThat(meterRegistry.get("flowticket.queue.waiting").tag("event", event).gauge().value()).isEqualTo(2);
         assertThat(meterRegistry.get("flowticket.queue.admitted").tag("event", event).gauge().value()).isEqualTo(3);
         assertThat(meterRegistry.get("flowticket.queue.admit_count").tag("event", event).gauge().value()).isEqualTo(3);
+        assertThat(meterRegistry.get("flowticket.queue.admit_drift").tag("event", event).gauge().value()).isZero();
         assertThat(meterRegistry.get("flowticket.queue.capacity").gauge().value()).isEqualTo(3);
         assertThat(meterRegistry.get("flowticket.queue.admit.tick").timer().count()).isPositive();
     }

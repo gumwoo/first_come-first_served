@@ -28,6 +28,11 @@ import org.springframework.stereotype.Component;
  * over-admit은 {@code admitcount}가 아니라 {@code admitExp} 원소 수로 판정한다. 카운터는 승격 Lua가
  * 정원을 넘지 않게만 올리므로 구조상 정원을 넘지 않는다 — 막는 장치가 유지하는 값으로는 그 장치를 검사할 수 없다.
  * 둘을 함께 내보내 어긋남(누수·이중 차감, TS-024)도 본다.
+ *
+ * <b>어긋남은 따로 계산해 내보낸다(admit_drift).</b> 세 값을 한 Lua로 같은 시점에 읽어도 게이지마다 다른 AtomicLong에
+ * 담기면, 스크랩이 admitted와 admit_count를 읽는 사이에 다음 틱이 끼어 서로 다른 틱의 값이 섞일 수 있다.
+ * 그 둘을 빼서 판정하면 drain 구간처럼 값이 매 틱 바뀔 때 거짓 어긋남이 나온다. 그래서 같은 스냅숏에서 뺀
+ * 값을 한 게이지로 내보내고, 판정은 그 게이지 하나만 본다.
  */
 @Component
 public class QueueMetrics {
@@ -38,8 +43,10 @@ public class QueueMetrics {
     private final MultiGauge waiting;
     private final MultiGauge admitted;
     private final MultiGauge admitCount;
+    private final MultiGauge admitDrift;
     private final Timer tick;
     private final Counter gateFallback;
+    private final Counter tickFailures;
 
     /** 이벤트별 최신값. 게이지가 이 객체를 계속 읽으므로 틱마다 새로 등록하지 않는다. */
     private final Map<Long, Values> current = new ConcurrentHashMap<>();
@@ -54,6 +61,9 @@ public class QueueMetrics {
         this.admitCount = MultiGauge.builder("flowticket.queue.admit_count")
                 .description("입장 카운터 값(admitcount). admitted와 다르면 슬롯 누수 또는 이중 차감")
                 .register(registry);
+        this.admitDrift = MultiGauge.builder("flowticket.queue.admit_drift")
+                .description("같은 스냅숏의 admit_count − admitted. 0이 아니면 카운터 어긋남(실시간 판정은 이 값만 본다)")
+                .register(registry);
         Gauge.builder("flowticket.queue.capacity", () -> capacity)
                 .description("이벤트당 동시 입장 정원(queue.capacity). over-admit 비교 기준")
                 .register(registry);
@@ -65,6 +75,15 @@ public class QueueMetrics {
         this.gateFallback = Counter.builder("flowticket.queue.gate.fallback")
                 .description("이미 회수돼 admitExp에 없는 토큰을 입장 게이트가 admit 키로 통과시킨 횟수. 파드 합으로 집계")
                 .register(registry);
+        // 처리에 실패한 활성 이벤트는 직전 값을 유지한다. 실패가 이어지면 게이지가 마지막 값에 고정되므로,
+        // 실패 횟수를 따로 내보내 "값이 멈춘 것"과 "상태가 그대로인 것"을 구분한다.
+        this.tickFailures = Counter.builder("flowticket.queue.admit.tick.failures")
+                .description("승격 워커가 이벤트 하나를 처리하다 실패한 횟수. 0보다 크면 대기열 게이지가 멈췄을 수 있다")
+                .register(registry);
+    }
+
+    Counter tickFailures() {
+        return tickFailures;
     }
 
     Counter gateFallback() {
@@ -88,6 +107,7 @@ public class QueueMetrics {
             v.waiting.set(s.waiting());
             v.admitted.set(s.admitted());
             v.admitCount.set(s.admitCount());
+            v.admitDrift.set(s.admitCount() - s.admitted());
         }
         current.keySet().removeIf(id -> observed.stream().noneMatch(s -> s.eventId().equals(id))
                 && !retained.contains(id));
@@ -96,6 +116,7 @@ public class QueueMetrics {
         waiting.register(rows(v -> v.waiting), false);
         admitted.register(rows(v -> v.admitted), false);
         admitCount.register(rows(v -> v.admitCount), false);
+        admitDrift.register(rows(v -> v.admitDrift), false);
     }
 
     private List<MultiGauge.Row<?>> rows(Function<Values, AtomicLong> field) {
@@ -108,5 +129,6 @@ public class QueueMetrics {
         final AtomicLong waiting = new AtomicLong();
         final AtomicLong admitted = new AtomicLong();
         final AtomicLong admitCount = new AtomicLong();
+        final AtomicLong admitDrift = new AtomicLong();
     }
 }

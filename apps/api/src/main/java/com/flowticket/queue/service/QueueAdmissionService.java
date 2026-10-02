@@ -169,6 +169,7 @@ public class QueueAdmissionService {
                     }
                     observed.add(snapshot);
                 } catch (Exception ex) {
+                    metrics.tickFailures().increment();
                     log.warn("[queue] 승격 처리 실패 event={}: {}", e, ex.getMessage());
                 }
             }

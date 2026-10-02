@@ -403,8 +403,10 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 |---|---|---|
 | 대기 수 | `flowticket_queue_waiting{event}` | 파드마다 같은 값(승격 워커가 모든 파드에서 돈다) — `max by (event)` |
 | 입장 수 | `flowticket_queue_admitted{event}` | 위와 같다 |
-| 입장 카운터 · 정원 | `flowticket_queue_admit_count{event}`, `flowticket_queue_capacity` | 위와 같다. 카운터 어긋남은 **같은 시계열끼리**(같은 파드·이벤트) 뺀다 — 세 값은 한 Lua로 같은 시점에 읽혔다 |
+| 입장 카운터 · 정원 | `flowticket_queue_admit_count{event}`, `flowticket_queue_capacity` | 위와 같다 |
+| 카운터 어긋남 | `flowticket_queue_admit_drift{event}` | 같은 스냅숏(한 Lua로 같은 시점에 읽은 값)에서 `admit_count − admitted`를 계산해 내보낸다. **실시간 판정은 이 값만 본다** — 스크랩은 게이지를 따로 읽어 `admitted`와 `admit_count`가 서로 다른 틱의 값일 수 있으므로, 둘을 Prometheus에서 빼면 거짓 어긋남이 나온다. 파드마다 같은 값 — `max by (event) (abs(...))` |
 | 승격 지연 | `flowticket_queue_admit_tick_seconds`(히스토그램) | `histogram_quantile` |
+| 승격 처리 실패 | `flowticket_queue_admit_tick_failures_total` | 파드 합. 0보다 크면 대기열 게이지가 직전 값에 멈췄을 수 있다 |
 | 입장 게이트 폴백 통과 수 | `flowticket_queue_gate_fallback_total` | 파드 합 |
 | SSE 활성 연결 수 | `flowticket_queue_sse_connections` | 파드 합 |
 | SSE 전송 실패 수 | `flowticket_queue_sse_send_failures_total{phase=open\|deliver}` | 파드 합 |

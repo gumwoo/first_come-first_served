@@ -51,3 +51,13 @@ output "certificate_arn" {
 output "hosted_zone_id" {
   value = local.hosted_zone_id
 }
+
+output "loadgen_instance_ids" {
+  description = "부하 발생기 인스턴스. scripts/loadtest/loadgen.sh가 SSM으로 명령을 보낸다."
+  value       = module.loadgen.instance_ids
+}
+
+output "loadgen_results_bucket" {
+  description = "발생기 결과 버킷. 철거 때 함께 지워지므로 run마다 받아 둔다."
+  value       = module.loadgen.results_bucket
+}

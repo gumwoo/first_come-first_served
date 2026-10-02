@@ -56,6 +56,10 @@ audit() {
   chk "ElastiCache"      "$(aws elasticache describe-cache-clusters --query "length(CacheClusters[?contains(CacheClusterId,'$CLUSTER')])" --output text 2>/dev/null)"
   chk "ALB(k8s-*)"       "$(aws elbv2 describe-load-balancers --query "length(LoadBalancers[?starts_with(LoadBalancerName,'k8s-')])" --output text 2>/dev/null)"
   chk "Target Group"     "$(aws elbv2 describe-target-groups --query "length(TargetGroups[?starts_with(TargetGroupName,'k8s-')])" --output text 2>/dev/null)"
+  # 부하 발생기(loadtest-100k-plan §4). 위 EC2 항목에도 잡히지만, 발생기만 따로 보이게 한다 —
+  # 측정 세션을 강제 종료한 경로에서 남기 쉬운 것이 이쪽이다. 결과 버킷은 force_destroy라 terraform이 지운다.
+  chk "EC2(부하 발생기)"  "$(aws ec2 describe-instances --filters "$TAG" Name=tag:Role,Values=loadgen Name=instance-state-name,Values=running,pending,stopping,stopped --query 'length(Reservations[])' --output text 2>/dev/null)"
+  chk "S3(발생기 결과)"   "$(aws s3api list-buckets --query "length(Buckets[?starts_with(Name,'$CLUSTER-loadgen-')])" --output text 2>/dev/null)"
   return $fail
 }
 
@@ -91,7 +95,8 @@ if have_cluster; then
   # `kubernetes.io/created-for/pvc/name`만으로 고르면 같은 계정의 다른 클러스터 볼륨까지
   # 대상이 된다. 이 클러스터의 PV가 실제로 가리키는 ID를 읽어두면 그 문제가 사라진다.
   kubectl get pv -o jsonpath='{range .items[*]}{.spec.csi.volumeHandle}{"
-"}{end}' 2>/dev/null     | tr -d '' | grep -E '^vol-' > "$OWNED_VOLS" || true
+"}{end}' 2>/dev/null     | tr -d '
+' | grep -E '^vol-' > "$OWNED_VOLS" || true
   echo "    이 클러스터 소유 볼륨 $(grep -c . "$OWNED_VOLS" 2>/dev/null || echo 0)개 기록"
 
   # Prometheus가 PVC를 잡고 있으면 삭제가 타임아웃된다. helm 릴리스를 먼저 내린다.
@@ -105,7 +110,8 @@ echo "==> 4/7 고아 EBS 볼륨 정리"
 # 후보만 보고한다. 파괴 자동화는 소유를 증명하지 못하면 멈추는 편이 낫다.
 if [ ! -s "$OWNED_VOLS" ]; then
   echo "    소유 볼륨 목록이 없다(클러스터 접근 불가). 자동 삭제하지 않는다."
-  CAND="$(aws ec2 describe-volumes --filters Name=status,Values=available     --query "Volumes[?Tags[?Key=='kubernetes.io/created-for/pvc/name']].[VolumeId,Size,Tags[?Key=='kubernetes.io/created-for/pvc/name']|[0].Value]"     --output text 2>/dev/null | tr -d '')"
+  CAND="$(aws ec2 describe-volumes --filters Name=status,Values=available     --query "Volumes[?Tags[?Key=='kubernetes.io/created-for/pvc/name']].[VolumeId,Size,Tags[?Key=='kubernetes.io/created-for/pvc/name']|[0].Value]"     --output text 2>/dev/null | tr -d '
+')"
   if [ -n "$CAND" ]; then
     echo "    주의: 쿠버네티스가 만든 미사용 볼륨이 있다. 소유를 확인한 뒤 직접 지워라:" >&2
     echo "$CAND" | sed 's/^/      /' >&2
@@ -116,7 +122,8 @@ else
   n=0
   while read -r v; do
     [ -z "$v" ] && continue
-    st="$(aws ec2 describe-volumes --volume-ids "$v" --query 'Volumes[0].State' --output text 2>/dev/null | tr -d '')"
+    st="$(aws ec2 describe-volumes --volume-ids "$v" --query 'Volumes[0].State' --output text 2>/dev/null | tr -d '
+')"
     case "$st" in
       available) aws ec2 delete-volume --volume-id "$v" >/dev/null 2>&1 && { echo "    삭제 $v"; n=$((n+1)); } ;;
       "") ;;  # 이미 사라짐(PVC 삭제 시 함께 정리된 경우)

@@ -94,3 +94,17 @@ module "redis" {
 
   tags = local.tags
 }
+
+# 클러스터 밖 부하 발생기(loadtest-100k-plan §4). loadgen_instance_count = 0(기본)이면 아무것도 만들지 않는다.
+module "loadgen" {
+  source = "../../modules/loadgen"
+
+  name       = local.name
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.public_subnet_ids
+
+  instance_count = var.loadgen_instance_count
+  instance_type  = var.loadgen_instance_type
+
+  tags = local.tags
+}

@@ -383,6 +383,20 @@ Pod 수에서 노드 수를 바로 계산하지 않는다. 레포에 이미 걸�
 | 프로파일 분리·용량 결정 | `docs/decisions/ADR-XXX` |
 | HPA·requests 변경 | 해당 매니페스트 주석에 **측정값과 IMP 번호**로 근거를 교체 |
 
+### 원시 데이터
+
+결과 문서에는 원시 데이터를 넣지 않는다. 원시 데이터는 아래 경로에 두고, 문서에는 **요약값·경로·실행 조건**
+(재현에 필요한 workload 네 값, 발생기 구성, envelope, 커밋 SHA)만 남긴다.
+
+```
+artifacts/loadtest/<session-id>/<run-id>/
+  session-id = YYYYMMDD-HHMM            (AWS 측정 세션 시작 시각)
+  run-id     = <단계>-<규모>-<분포>-<회차>  (예: s7-50k-constant-r2)
+```
+
+`artifacts/`는 `.gitignore` 대상이다. k6 원시 출력·Prometheus 덤프는 커질 수 있고, 이 저장소는 public이다.
+**run이 끝날 때마다 즉시 저장한다.** 클러스터를 철거하면 Prometheus 데이터도 함께 사라진다.
+
 knee에서 멈춘 것은 **실패가 아니다.** "S-100K 목표로 부하를 걸었고 X에서 SSE 연결 성공률이 떨어졌으며
 최초 병목은 Y였다"는 유효한 결과다. 반대로 발생기가 죽어서 멈춘 것은 아무것도 말해 주지 않는다(§3.1).
 

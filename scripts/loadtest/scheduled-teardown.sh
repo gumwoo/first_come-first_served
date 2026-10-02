@@ -14,12 +14,17 @@ cd "$ROOT"
 
 mkdir -p "artifacts/loadtest/$SESSION"
 LOG="artifacts/loadtest/$SESSION/scheduled-teardown-$(date +%Y%m%d-%H%M%S).log"
+TEARDOWN_RC=0 AUDIT_RC=0
 {
   echo "[scheduled] start $(date -Is) session=$SESSION"
-  bash scripts/tear-down.sh
-  echo "[scheduled] tear-down exit=$?"
-  bash scripts/tear-down.sh --audit-only
-  echo "[scheduled] audit exit=$?"
+  bash scripts/tear-down.sh; TEARDOWN_RC=$?
+  echo "[scheduled] tear-down exit=$TEARDOWN_RC"
+  bash scripts/tear-down.sh --audit-only; AUDIT_RC=$?
+  echo "[scheduled] audit exit=$AUDIT_RC"
   echo "[scheduled] end $(date -Is)"
 } > "$LOG" 2>&1
 echo "로그: $LOG"
+# 철거와 감사 중 하나라도 실패하면 0이 아닌 값으로 끝낸다. 작업 스케줄러의 마지막 결과(LastTaskResult)가
+# 철거 실패를 가리지 않게 한다. 감사는 조회 실패도 실패로 센다(tear-down.sh audit).
+[ "$TEARDOWN_RC" -eq 0 ] && [ "$AUDIT_RC" -eq 0 ] && exit 0
+exit 1

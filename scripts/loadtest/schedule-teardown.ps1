@@ -14,18 +14,22 @@
   - PC가 켜져 있고 이 사용자로 로그온돼 있어야 실행된다. 절전 상태면 깨워서 실행한다(WakeToRun).
     전원이 꺼져 있으면 실행되지 않는다(켜진 뒤 StartWhenAvailable로 실행된다).
   - 이 사용자의 AWS 자격증명(SSO 캐시)을 그대로 쓴다. 실행 시각에 자격증명이 유효해야 한다.
+  - 등록한 체크아웃(이 스크립트가 있는 저장소)에서 실행된다. 그 체크아웃이 terraform init돼 있어야 철거할 수 있어
+    등록할 때 확인한다. 등록 뒤 그 체크아웃을 지우면 작업이 실패한다.
+  - 실행 중 뜨는 콘솔 창을 닫으면 철거가 중단된다.
 
 .EXAMPLE
   # 등록(측정 세션 시작 + 4시간 30분)
   powershell -File scripts/loadtest/schedule-teardown.ps1 -Session 20261002-1400 -At (Get-Date).AddMinutes(270)
   # 등록 내용만 보기
   powershell -File scripts/loadtest/schedule-teardown.ps1 -Session 20261002-1400 -At (Get-Date).AddMinutes(270) -DryRun
-  # 상태 / 해제
+  # 상태 / 해제 (세션 없이 -Status를 주면 남아 있는 FlowTicket 예약 철거를 모두 보여 준다)
+  powershell -File scripts/loadtest/schedule-teardown.ps1 -Status
   powershell -File scripts/loadtest/schedule-teardown.ps1 -Session 20261002-1400 -Status
   powershell -File scripts/loadtest/schedule-teardown.ps1 -Session 20261002-1400 -Unregister
 #>
 param(
-  [Parameter(Mandatory = $true)][ValidatePattern('^\d{8}-\d{4}$')][string]$Session,
+  [ValidatePattern('^\d{8}-\d{4}$')][string]$Session,
   [datetime]$At,
   [switch]$Unregister,
   [switch]$Status,
@@ -33,8 +37,21 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-$TaskName = "FlowTicket-Teardown-$Session"
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+
+# 세션 없이 -Status: 남아 있는 예약 철거를 모두 보여 준다. 새 측정 세션을 띄우기 전에 이전 세션의 작업이
+# 남아 있지 않은지 확인하는 용도다(남아 있으면 새 세션이 그 시각에 철거된다).
+if ($Status -and -not $Session) {
+  $all = @(Get-ScheduledTask -TaskName 'FlowTicket-Teardown-*' -ErrorAction SilentlyContinue)
+  if ($all.Count -eq 0) { '남아 있는 FlowTicket 예약 철거가 없다'; exit 0 }
+  $all | ForEach-Object {
+    $i = Get-ScheduledTaskInfo -TaskName $_.TaskName
+    [pscustomobject]@{ Task = $_.TaskName; State = $_.State; NextRun = $i.NextRunTime; LastRun = $i.LastRunTime; LastResult = $i.LastTaskResult }
+  }
+  exit 0
+}
+if (-not $Session) { throw '-Session이 필요하다(YYYYMMDD-HHMM)' }
+$TaskName = "FlowTicket-Teardown-$Session"
 
 if ($Status) {
   $t = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -56,6 +73,13 @@ if ($Unregister) {
 
 if (-not $At) { throw '-At(실행 시각)이 필요하다' }
 if ($At -le (Get-Date)) { throw "실행 시각이 이미 지났다: $At" }
+
+# 이 체크아웃에서 terraform이 state를 읽을 수 있어야 철거할 수 있다. init되지 않은 체크아웃에서 등록하면
+# 예약 철거가 state 조회에 실패해 아무것도 지우지 못한다(tear-down.sh는 이를 실패로 끝내고 감사를 남긴다).
+$TfData = Join-Path $Repo 'infra\terraform\platform\environments\demo\.terraform'
+if (-not (Test-Path (Join-Path $TfData 'terraform.tfstate'))) {
+  throw "이 체크아웃은 terraform init(backend)이 되지 않았다: $TfData — init한 체크아웃에서 등록한다"
+}
 
 # Git for Windows의 bash를 쓴다. System32\bash.exe는 WSL이라 이 저장소의 AWS 자격증명·경로를 보지 못한다.
 $Bash = @(

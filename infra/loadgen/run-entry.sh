@@ -45,9 +45,11 @@ done
 # k6의 open()은 상대경로를 스크립트 디렉터리(infra/k6) 기준으로 읽는다. 절대경로로 바꿔 넘긴다.
 [ -f "$USERS" ] || { echo "사용자 토큰 파일이 없다: $USERS" >&2; exit 2; }
 USERS="$(cd "$(dirname "$USERS")" && pwd)/$(basename "$USERS")"
-case "$USERS_N$ENTRY_SECONDS$OFFSET" in *[!0-9]*) echo "--users-n/--entry-seconds/--offset은 정수여야 한다" >&2; exit 2 ;; esac
+for v in "$USERS_N" "$ENTRY_SECONDS" "$OFFSET" "$SSE_HOLD"; do
+  case "$v" in ""|*[!0-9]*) echo "--users-n/--entry-seconds/--offset/--sse-hold는 정수여야 한다: $v" >&2; exit 2 ;; esac
+done
 # 앞자리 0(예: 08)은 JSON 숫자가 아니다. 10진수로 정규화한다.
-USERS_N=$((10#$USERS_N)); ENTRY_SECONDS=$((10#$ENTRY_SECONDS)); OFFSET=$((10#$OFFSET))
+USERS_N=$((10#$USERS_N)); ENTRY_SECONDS=$((10#$ENTRY_SECONDS)); OFFSET=$((10#$OFFSET)); SSE_HOLD=$((10#$SSE_HOLD))
 
 OUT="$ROOT/artifacts/loadtest/$SESSION/$RUN"
 mkdir -p "$OUT"
@@ -58,6 +60,7 @@ cat > "$OUT/meta-$GEN.json" <<EOF
 {
   "session": "$SESSION", "run": "$RUN", "generator": "$GEN", "host": "$(hostname)",
   "commit": "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)",
+  "dirty": $([ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ] && echo true || echo false),
   "startedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "base": "$BASE", "event": "$EVENT", "dist": "$DIST", "usersN": $USERS_N, "offset": $OFFSET,
   "entrySeconds": $ENTRY_SECONDS, "sseHoldSeconds": $SSE_HOLD, "sse": $([ "$NO_SSE" = 1 ] && echo false || echo true),

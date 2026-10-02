@@ -40,7 +40,7 @@ let lastMs = -Infinity;
 for (const f of files) {
   const rl = createInterface({ input: createReadStream(f), crlfDelay: Infinity });
   for await (const line of rl) {
-    if (!line.includes('"type":"Point"')) continue;
+    if (!line.trim()) continue;
     // 발생기가 강제 종료되면 마지막 줄이 잘려 있을 수 있다. 그 줄은 버리고 센다 — 잘린 줄 하나 때문에
     // 그때까지의 지표를 통째로 잃지 않는다.
     let p;
@@ -50,6 +50,7 @@ for (const f of files) {
       malformedLines++;
       continue;
     }
+    if (p.type !== "Point") continue;
     if (!(p.metric in sums)) continue;
     sums[p.metric] += p.data.value;
     if (p.metric === "entry_arrivals") {

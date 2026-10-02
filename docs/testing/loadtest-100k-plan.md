@@ -508,10 +508,10 @@ artifacts/loadtest/<session-id>/<run-id>/
 
 | 파일 | 내용 |
 |---|---|
-| `meta-<gen>.json` | 실행 조건(커밋 SHA, workload 값, 발생기, 시작 시각) |
+| `meta-<gen>.json` | 실행 조건(커밋 SHA와 작업 트리 수정 여부 `dirty`, workload 값, 발생기, 시작 시각) |
 | `entry-<gen>.json` | k6 원시 출력(`--out json`). `entry_arrivals` 시계열이 1초 peak의 유일한 출처다(§2.3) |
 | `k6-summary-<gen>.json`, `k6-<gen>.log` | k6 요약과 로그. `dropped_iterations`는 0이면 요약에 나타나지 않으므로 값은 `arrivals-<gen>.json`에서 읽는다 |
-| `arrivals-<gen>.json` | offered·achieved·dropped·처리된 진입·HTTP 요청 수·1초 peak(`entry-arrivals.mjs`) |
+| `arrivals-<gen>.json` | offered·achieved·dropped·처리된 진입·HTTP 요청 수·1초 peak(`entry-arrivals.mjs`). `malformedLines` > 0이면 원시 출력이 잘렸다(발생기 강제 종료) — 그 run은 §3.1 무효로 본다 |
 | `sse-<gen>/` | SSE 연결별 결과·1초 타임라인·요약(`sse-hold.mjs`) |
 | `gen-vmstat-<gen>.log`, `gen-netdev-<gen>.log` | 발생기 CPU·메모리·네트워크(§3.1 무효 판정, §8 Generator 축) |
 

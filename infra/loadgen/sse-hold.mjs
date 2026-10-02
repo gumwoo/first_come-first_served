@@ -22,7 +22,8 @@
 // 열지 못한 연결은 failed, 열리기 전에 Ctrl+C로 끊긴 연결은 stoppedBeforeOpen,
 // --max-conn을 넘어 버린 토큰은 skippedOverMax, Ctrl+C 뒤에 들어온 토큰은 skippedAfterStop으로 센다
 // (started = opened + failed + stoppedBeforeOpen + 아직 여는 중).
-// Ctrl+C를 누르면 새 연결을 더 열지 않고 입력을 닫는다. 두 번째 Ctrl+C는 즉시 종료한다.
+// Ctrl+C를 누르면 새 연결을 더 열지 않고 붙든 연결을 닫는다. 표준입력은 끝까지 읽어 k6 출력을 살린다(아래 SIGINT).
+// 두 번째 Ctrl+C는 즉시 종료한다.
 import http from "node:http";
 import https from "node:https";
 import { createHash } from "node:crypto";

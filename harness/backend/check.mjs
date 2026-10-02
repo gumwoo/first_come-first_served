@@ -692,9 +692,21 @@ const outboxYmlPath = path.join(REPO_ROOT, API, "src/main/resources/application.
 if (fs.existsSync(relayPath) && fs.existsSync(outboxYmlPath)) {
   const relaySrc = read(relayPath);
   const outboxYml = read(outboxYmlPath);
-  const lease = relaySrc.match(/@SchedulerLock\([^)]*lockAtMostFor\s*=\s*"([^"]+)"/);
+  // 임차는 이름으로 지목한다. 파일에는 purge용 @SchedulerLock(PT10M)도 있어서, 첫 번째 것을
+  // 집으면 메서드 순서가 바뀌는 순간 엉뚱한 값을 검사하고도 통과한다(규칙이 조용히 눈먼다).
+  const lease = relaySrc.match(/@SchedulerLock\(\s*name\s*=\s*"outbox-relay"[^)]*lockAtMostFor\s*=\s*"([^"]+)"/);
   const budget = outboxYml.match(/tick-budget-ms:\s*\$\{[^:]+:(\d+)\}/);
   const sendTimeout = outboxYml.match(/send-timeout-ms:\s*\$\{[^:]+:(\d+)\}/);
+  // 배포가 환경변수로 덮어쓰면 기본값 검사는 의미가 없다. 있으면 그 값으로 본다.
+  // resolve를 쓴다. join은 두 번째 인자가 절대경로여도 앞에 REPO_ROOT를 붙여 엉뚱한 경로를 만든다.
+  const configMapPath = path.resolve(REPO_ROOT, process.env.HARNESS_K8S_DIR || "k8s", "base/configmap.yaml");
+  const configMap = fs.existsSync(configMapPath) ? read(configMapPath) : "";
+  const overrideOf = (key, fallback) => {
+    // 이스케이프 없이 쓴다. 문자열 리터럴에서 \s·\d는 백슬래시가 사라져 s·d가 되고,
+    // 그러면 아무것도 매치되지 않는 정규식이 조용히 만들어진다.
+    const m = configMap.match(new RegExp(key + ':[ ]*"?([0-9]+)'));
+    return m ? m[1] : fallback;
+  };
 
   if (!lease || !budget || !sendTimeout) {
     r.fail(
@@ -704,12 +716,14 @@ if (fs.existsSync(relayPath) && fs.existsSync(outboxYmlPath)) {
     );
   } else {
     const leaseMs = isoDurationMs(lease[1]);
-    const needMs = Number(budget[1]) + Number(sendTimeout[1]);
+    const budgetMs = overrideOf("OUTBOX_TICK_BUDGET", budget[1]);
+    const timeoutMs = overrideOf("OUTBOX_SEND_TIMEOUT", sendTimeout[1]);
+    const needMs = Number(budgetMs) + Number(timeoutMs);
     if (leaseMs === null) {
       r.fail(`lockAtMostFor를 해석하지 못했다: "${lease[1]}" (PT#H#M#S 형태만 지원)`);
     } else if (needMs > leaseMs) {
       r.fail(
-        `아웃박스 틱이 임차보다 길 수 있다: tick-budget(${budget[1]}ms) + send-timeout(${sendTimeout[1]}ms) ` +
+        `아웃박스 틱이 임차보다 길 수 있다: tick-budget(${budgetMs}ms) + send-timeout(${timeoutMs}ms) ` +
           `= ${needMs}ms > lockAtMostFor(${lease[1]} = ${leaseMs}ms). ` +
           `임차가 먼저 끝나면 다른 파드가 같은 PENDING을 집는다(ADR-022)`
       );

@@ -75,13 +75,15 @@ public class QueueService {
     private final long admitIntervalMs;
 
     private final Clock clock;
+    private final QueueMetrics metrics;
 
     public QueueService(StringRedisTemplate redis, EventRepository eventRepository,
                         @Value("${queue.capacity:100}") int capacity,
                         @Value("${queue.token-ttl:1800}") long tokenTtl,
                         @Value("${queue.admit-interval-ms:1500}") long admitIntervalMs,
-                        Clock clock) {
+                        Clock clock, QueueMetrics metrics) {
         this.clock = clock;
+        this.metrics = metrics;
         this.redis = redis;
         this.eventRepository = eventRepository;
         this.capacity = capacity;
@@ -189,7 +191,13 @@ public class QueueService {
             return false;
         }
         Object tokenEvent = redis.opsForHash().get(QueueKeys.token(token), "eventId");
-        return tokenEvent != null && eventId.equals(Long.valueOf((String) tokenEvent));
+        boolean admitted = tokenEvent != null && eventId.equals(Long.valueOf((String) tokenEvent));
+        if (admitted) {
+            // admitExp에 유효한 입장이 없는데 admit 키로 통과했다. admitExp 만료 뒤(회수 전후) admit 키 TTL이
+            // 남은 창이라, 그 사이 빈 슬롯을 받은 사람과 함께 정원을 넘을 수 있다(loadtest-100k-plan §3.3 한계).
+            metrics.gateFallback().increment();
+        }
+        return admitted;
     }
 
     /** 소유자가 아직 대기열 등록 전(경합)이면 EXPIRED로 보일 수 있어 WAITING으로 낙관 처리. */

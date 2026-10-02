@@ -1,5 +1,6 @@
 package com.flowticket.queue.service;
 
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.MultiGauge;
@@ -38,6 +39,7 @@ public class QueueMetrics {
     private final MultiGauge admitted;
     private final MultiGauge admitCount;
     private final Timer tick;
+    private final Counter gateFallback;
 
     /** 이벤트별 최신값. 게이지가 이 객체를 계속 읽으므로 틱마다 새로 등록하지 않는다. */
     private final Map<Long, Values> current = new ConcurrentHashMap<>();
@@ -59,6 +61,14 @@ public class QueueMetrics {
         this.tick = Timer.builder("flowticket.queue.admit.tick")
                 .description("승격 워커 한 틱(전 이벤트 회수·승격·관측) 소요 시간")
                 .register(registry);
+        // admitExp 원소 수는 이 경로를 보지 못한다. 실효 입장 초과의 직접 신호다.
+        this.gateFallback = Counter.builder("flowticket.queue.gate.fallback")
+                .description("입장 게이트가 admitExp의 유효 입장 없이 admit 키로 통과시킨 횟수. 파드 합으로 집계")
+                .register(registry);
+    }
+
+    Counter gateFallback() {
+        return gateFallback;
     }
 
     Timer tickTimer() {

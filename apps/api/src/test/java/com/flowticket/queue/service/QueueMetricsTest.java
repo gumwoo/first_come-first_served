@@ -69,6 +69,13 @@ class QueueMetricsTest {
         assertThat(registry.get("flowticket.queue.admit.tick").timer().count()).isEqualTo(1);
     }
 
+    @Test
+    void 게이트_폴백_통과_수를_센다() {
+        metrics.gateFallback().increment();
+
+        assertThat(registry.scrape()).contains("flowticket_queue_gate_fallback_total 1.0");
+    }
+
     private double gauge(String name, String event) {
         return registry.get(name).tag("event", event).gauge().value();
     }

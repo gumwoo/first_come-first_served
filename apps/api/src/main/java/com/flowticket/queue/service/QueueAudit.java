@@ -14,6 +14,8 @@ import org.slf4j.LoggerFactory;
  * 승격 시각 + TTL까지 살아 있으므로, 토큰별로 "언제 들어와 언제까지 유효했나"를 시각으로 남겨야
  * 시점별 유효 입장 수를 다시 셀 수 있다.
  *
+ * 승격 기록에는 진입 순번(seq)도 남긴다. 대기열 순서 위반(§3.3 사후)을 대조하는 근거다.
+ *
  * 승격·회수·이탈만 남기고 발급은 남기지 않는다. 발급은 진입 수만큼(시험에서는 초당 수천 건) 생겨 측정 대상에
  * 로그 부하를 얹는다. 메타 만료 계산에 필요한 발급 시각은 발생기 쪽 기록(SSE 발생기의 연결 시작 시각)으로 갈음한다.
  * 승격 기록의 양은 입장한 사용자 수만큼이다.
@@ -31,10 +33,11 @@ final class QueueAudit {
      * admit 키를 쓴 시각(키 TTL 시작, admit 키는 이 시각 + admitTtl까지 유효). 둘 사이에는 앞 토큰들의
      * admit 키 기록과 SSE 발행이 끼어 있어 간격이 생긴다.
      */
-    static void admitted(Long eventId, String token, long admittedAtMillis, long keyWrittenAtMillis,
+    static void admitted(Long eventId, String token, String seq, long admittedAtMillis, long keyWrittenAtMillis,
                          long admitExpiresAtEpochSec, long admitTtlSec) {
-        log.info("queue.audit kind=admit event={} token={} at={} keyAt={} admitExpAt={} admitKeyTtl={}",
-                eventId, ref(token), admittedAtMillis, keyWrittenAtMillis, admitExpiresAtEpochSec, admitTtlSec);
+        // seq(진입 순번)는 대기열 순서 위반을 사후에 대조하는 근거다(loadtest-100k-plan §3.3).
+        log.info("queue.audit kind=admit event={} token={} seq={} at={} keyAt={} admitExpAt={} admitKeyTtl={}",
+                eventId, ref(token), seq, admittedAtMillis, keyWrittenAtMillis, admitExpiresAtEpochSec, admitTtlSec);
     }
 
     /** 만료 회수. admitExp에서는 빠졌지만 admit 키는 지우지 않는다(키 TTL까지 유효). */

@@ -114,8 +114,9 @@ public class QueueAdmissionService {
         int admitted = 0;
         for (int i = 0; i < popped.size(); i += 2) { // {member,score,...}
             String token = String.valueOf(popped.get(i));
+            String seq = String.valueOf(popped.get(i + 1)); // wait ZSet 점수 = 진입 순번(ISSUE_LUA의 INCR)
             redis.opsForValue().set(QueueKeys.admit(token), "1", Duration.ofSeconds(admitTtl));
-            QueueAudit.admitted(eventId, token, admittedAt, clock.millis(), expiresAt, admitTtl);
+            QueueAudit.admitted(eventId, token, seq, admittedAt, clock.millis(), expiresAt, admitTtl);
             sse.send(token, "queue.admitted", Map.of("redirect", "/events/" + eventId + "/seats"));
             admitted++;
         }

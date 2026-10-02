@@ -392,20 +392,41 @@ Pod 수에서 노드 수를 바로 계산하지 않는다. 레포에 이미 걸�
 
 ```
 artifacts/loadtest/<session-id>/<run-id>/
-  session-id = YYYYMMDD-HHMM            (AWS 측정 세션 시작 시각)
-  run-id     = <단계>-<변수>-<회차>
+  session-id = YYYYMMDD-HHMM                 (AWS 측정 세션 시작 시각)
+  run-id     = <시험>-<대상>-<조건>-r<회차>
 ```
 
-`<변수>`는 그 단계에서 바꾸는 값이다.
-
-| 단계 | 변수 | 예 |
+| 칸 | 값 | 뜻 |
 |---|---|---|
-| 4 (단일 Pod baseline) | 목표 arrivals/s 또는 SSE 연결 수 | `s4-api-2000ps-r1`, `s4-sse-4000c-r1` |
-| 5 (scale-out) | Pod 수 | `s5-4pod-r1` |
-| 6 (보호 검증) | 규모 | `s6-10k-r1` |
-| 7 (사다리) | 규모 + 분포 | `s7-50k-constant-r2`, `s7-50k-frontloaded-r1` |
+| `<시험>` | `step2` `step4` `step5` `step6` `step7` `step9` `e2e` `poll` | §6의 단계 번호, 또는 단계 밖 시험(E2E 입장자 시험 §2.1, 폴링 폭증 §2.5). 대문자 `S-10K`(§2.2 규모 표기)와 섞이지 않도록 `step`을 붙인다 |
+| `<대상>` | `api` `sse` `entry` `env` | 단계 4의 API/SSE 분리, 대기열 진입 시험, 단계 2의 환경 검증 |
+| `<조건>` | 아래 단위를 `_`로 이은 값 | 그 run에서 바꾼 변수 전부 |
+| `r<회차>` | `r1`, `r2`, … | **같은 조건을 반복한 순번만** 뜻한다. 조건이 하나라도 다르면 회차가 아니라 다른 run이다 |
+
+`<조건>`의 단위:
+
+| 단위 | 뜻 | 예 |
+|---|---|---|
+| `<n>aps` | 목표 queue-entry arrivals/s | `2000aps` |
+| `<n>conn` | 목표 SSE 동시 연결 수 | `4000conn` |
+| `<n>pod` | api Pod 수(고정) | `4pod` |
+| `<n>k` | 사용자 수(천 명) | `50k` |
+| `constant` `frontloaded` | 도착 분포(§2) | |
+| `cap<n>` | 입장 정원(E2E 시험) | `cap100` |
+
+| 시험 | 예 |
+|---|---|
+| 단계 2 환경 검증 | `step2-env-1000aps-r1` |
+| 단계 4 단일 Pod | `step4-api-1pod_2000aps-r1`, `step4-sse-1pod_4000conn-r1` |
+| 단계 5 scale-out | `step5-api-4pod_6000aps-r1` — Pod 수와 arrival rate를 함께 바꿔 knee를 찾으므로 둘 다 적는다 |
+| 단계 6 보호 검증 | `step6-entry-10k_constant-r1` |
+| 단계 7 사다리 | `step7-entry-50k_constant-r2`, `step7-entry-50k_frontloaded-r1` |
+| 단계 9 재시험 | `step9-entry-50k_constant-r1` — 비교 대상 run과 `<대상>-<조건>`이 **같아야** before/after가 된다 |
+| E2E 입장자 시험 | `e2e-entry-cap100-r1` |
+| 폴링 폭증 | `poll-entry-10k-r1` |
 
 `artifacts/`는 `.gitignore` 대상이다. k6 원시 출력·Prometheus 덤프는 커질 수 있고, 이 저장소는 public이다.
+Prometheus 데이터를 어떤 형식으로 내보낼지(범위 질의 결과 등)는 측정 도구를 만들 때 정해 이 절에 추가한다.
 **run이 끝날 때마다 즉시 저장한다.** 클러스터를 철거하면 Prometheus 데이터도 함께 사라지고
 (`tear-down.sh`가 PVC를 지운다), 철거하지 않아도 보존 기간이 6시간이라(`kube-prometheus-stack.values.yaml`
 `retention: 6h`) 세션 초반 run의 데이터는 세션이 끝나기 전에 지워질 수 있다.

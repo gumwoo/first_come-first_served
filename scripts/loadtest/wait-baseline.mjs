@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// run 시작 조건: 클러스터 CPU가 기준선으로 돌아왔는가(loadtest-100k-plan §2.4 ①, §6 회차 리셋).
+// run 시작 조건: 측정 대상의 CPU와 replica 수가 기준선으로 돌아왔는가(loadtest-100k-plan §2.4 ①, §6 회차 리셋).
 //
 // 직전 run의 부하(대기열 승격, 아웃박스 발행, GC, HPA가 늘린 파드)가 남아 있으면 다음 run은 같은 조건이 아니다.
-// 측정 세션 시작 직후(부하 전)의 CPU를 기준선으로 기록해 두고, 매 run 전에 그 근처로 돌아올 때까지 기다린다.
+// 측정 세션의 첫 run 전(부하 전, 앱 기동·워밍업이 끝난 뒤)의 CPU와 replica 수를 기준선으로 기록해 두고,
+// 매 run 전에 그 근처로 돌아올 때까지 기다린다. CPU만 보면 HPA가 늘린 파드가 남아 있어도 한가하면 통과하므로
+// replica 수도 함께 본다.
 //
 // Prometheus는 클러스터 안에만 있다. 먼저 포트포워드한다:
 //   kubectl -n monitoring port-forward svc/prometheus-operated 9090:9090
@@ -10,7 +12,8 @@
 //   기록: node scripts/loadtest/wait-baseline.mjs record --out artifacts/loadtest/<session-id>/baseline.json
 //   대기: node scripts/loadtest/wait-baseline.mjs wait --baseline artifacts/loadtest/<session-id>/baseline.json
 //
-// 허용 범위(기준선의 +10% 또는 +0.1 core 중 큰 쪽, 3회 연속)는 잠정값이다. 근거가 생기면 계획서에 고정한다.
+// 허용 범위(CPU는 기준선의 +10% 또는 +0.1 core 중 큰 쪽, replica 수는 기준선과 같음, 3회 연속)는 잠정값이다.
+// 근거가 생기면 계획서에 고정한다. 노드 CPU는 판정에 쓰지 않고 기록만 한다.
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
@@ -33,6 +36,8 @@ const { values: a } = parseArgs({
 const QUERIES = {
   appCores: 'sum(rate(container_cpu_usage_seconds_total{namespace="flowticket",container!=""}[1m]))',
   nodeBusy: '1 - avg(rate(node_cpu_seconds_total{mode="idle"}[1m]))',
+  // HPA가 늘린 파드가 줄어들었는가. api·web Deployment의 replica 합계.
+  replicas: 'sum(kube_deployment_status_replicas{namespace="flowticket"})',
 };
 
 async function sample() {
@@ -62,10 +67,11 @@ if (cmd === "record") {
     recordedAt: new Date().toISOString(),
     appCores: median(xs.map((x) => x.appCores)),
     nodeBusy: median(xs.map((x) => x.nodeBusy)),
+    replicas: median(xs.map((x) => x.replicas)),
     samples: xs,
   };
   writeFileSync(a.out, JSON.stringify(baseline, null, 2));
-  console.log(JSON.stringify({ appCores: baseline.appCores, nodeBusy: baseline.nodeBusy }));
+  console.log(JSON.stringify({ appCores: baseline.appCores, nodeBusy: baseline.nodeBusy, replicas: baseline.replicas }));
 } else if (cmd === "wait") {
   if (!a.baseline) throw new Error("--baseline이 필요하다");
   const base = JSON.parse(readFileSync(a.baseline, "utf8"));
@@ -75,8 +81,9 @@ if (cmd === "record") {
   let ok = 0;
   while (Date.now() < deadline) {
     const s = await sample();
-    ok = s.appCores <= appLimit ? ok + 1 : 0;
-    console.error(`[baseline] app ${s.appCores.toFixed(3)} core (한도 ${appLimit.toFixed(3)}), 노드 ${(s.nodeBusy * 100).toFixed(1)}% — 연속 ${ok}/${a.stable}`);
+    ok = s.appCores <= appLimit && s.replicas <= base.replicas ? ok + 1 : 0;
+    console.error(`[baseline] app ${s.appCores.toFixed(3)} core (한도 ${appLimit.toFixed(3)}), replica ${s.replicas} (기준 ${base.replicas}), ` +
+      `노드 ${(s.nodeBusy * 100).toFixed(1)}% — 연속 ${ok}/${a.stable}`);
     if (ok >= Number(a.stable)) {
       console.log(JSON.stringify({ ready: true, ...s }));
       process.exit(0);

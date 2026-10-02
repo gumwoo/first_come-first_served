@@ -35,7 +35,11 @@ ON CONFLICT DO NOTHING;
 \\copy (SELECT id, email FROM users WHERE email LIKE 'loadseed+%' ORDER BY id) TO STDOUT WITH (FORMAT csv)
 "
 
-# 파드 사양: api와 같은 설정·시크릿을 envFrom으로 받는다. psql은 PG* 환경변수를 읽는다.
+# 파드 사양: DB 접속에 필요한 값만 받는다. 시크릿 전체(JWT·OAuth 키 포함)를 envFrom으로 받지 않는다(최소 권한).
+# psql은 PG* 환경변수를 읽는다.
+#
+# stdinOnce: --overrides는 기본이 JSON Merge Patch라 containers 배열을 통째로 바꾼다. 그러면 kubectl run -i가 넣는
+# stdinOnce가 사라지고, 파이프 입력이 끝나도 psql이 EOF를 받지 못해 끝나지 않는다. 그래서 직접 넣는다.
 OVERRIDES="$(cat <<'EOF'
 {
   "spec": {
@@ -44,11 +48,16 @@ OVERRIDES="$(cat <<'EOF'
       "name": "psql",
       "image": "postgres:16",
       "stdin": true,
-      "envFrom": [
-        {"configMapRef": {"name": "flowticket-api-config"}},
-        {"secretRef": {"name": "flowticket-api-secrets"}}
+      "stdinOnce": true,
+      "env": [
+        {"name": "PGHOST", "valueFrom": {"configMapKeyRef": {"name": "flowticket-api-config", "key": "DB_HOST"}}},
+        {"name": "PGPORT", "valueFrom": {"configMapKeyRef": {"name": "flowticket-api-config", "key": "DB_PORT"}}},
+        {"name": "PGDATABASE", "valueFrom": {"configMapKeyRef": {"name": "flowticket-api-config", "key": "DB_NAME"}}},
+        {"name": "PGUSER", "valueFrom": {"secretKeyRef": {"name": "flowticket-api-secrets", "key": "DB_USERNAME"}}},
+        {"name": "PGPASSWORD", "valueFrom": {"secretKeyRef": {"name": "flowticket-api-secrets", "key": "DB_PASSWORD"}}},
+        {"name": "PGSSLMODE", "value": "prefer"}
       ],
-      "command": ["sh", "-c", "PGHOST=$DB_HOST PGPORT=$DB_PORT PGDATABASE=$DB_NAME PGUSER=$DB_USERNAME PGPASSWORD=$DB_PASSWORD PGSSLMODE=prefer psql -v ON_ERROR_STOP=1 -q -At -f -"]
+      "command": ["psql", "-v", "ON_ERROR_STOP=1", "-q", "-At", "-f", "-"]
     }]
   }
 }

@@ -10,6 +10,7 @@ import org.springframework.test.context.TestPropertySource;
 
 import com.flowticket.queue.service.QueueAdmissionService;
 import com.flowticket.queue.service.QueueService;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -33,6 +34,7 @@ class QueueIntegrationTest extends IntegrationTestSupport {
     @Autowired QueueService queueService;
     @Autowired QueueAdmissionService admissionService;
     @Autowired StringRedisTemplate redisTemplate;
+    @Autowired MeterRegistry meterRegistry;
 
     @Autowired EventRepository eventRepository;
 
@@ -318,6 +320,27 @@ class QueueIntegrationTest extends IntegrationTestSupport {
 
         Long dup = redisTemplate.opsForZSet().zCard("queue:wait:" + EVENT);
         assertThat(dup).isGreaterThan(1L); // 같은 유저인데 대기열에 여러 토큰(중복 발급)
+    }
+
+    /**
+     * 부하 시험의 실시간 중단 조건(over-admit, 카운터 어긋남)이 읽는 지표(loadtest-100k-plan §3.3).
+     * 승격 워커 한 틱이 실제 Redis 상태를 그대로 내보내는지 본다 — 이름이나 값이 틀리면 감시가 아무것도 못 본다.
+     */
+    @Test
+    void 승격_워커는_대기_입장_카운터를_지표로_내보낸다() {
+        for (long u = 400; u < 405; u++) {
+            queueService.issue(u, EVENT); // 5명 진입, 정원 3
+        }
+
+        admissionService.runOnce();
+
+        String event = String.valueOf(EVENT);
+        assertThat(meterRegistry.get("flowticket.queue.waiting").tag("event", event).gauge().value()).isEqualTo(2);
+        assertThat(meterRegistry.get("flowticket.queue.admitted").tag("event", event).gauge().value()).isEqualTo(3);
+        assertThat(meterRegistry.get("flowticket.queue.admit_count").tag("event", event).gauge().value()).isEqualTo(3);
+        assertThat(meterRegistry.get("flowticket.queue.admit_drift").tag("event", event).gauge().value()).isZero();
+        assertThat(meterRegistry.get("flowticket.queue.capacity").gauge().value()).isEqualTo(3);
+        assertThat(meterRegistry.get("flowticket.queue.admit.tick").timer().count()).isPositive();
     }
 
     private long admitCount() {

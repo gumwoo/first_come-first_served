@@ -75,13 +75,15 @@ public class QueueService {
     private final long admitIntervalMs;
 
     private final Clock clock;
+    private final QueueMetrics metrics;
 
     public QueueService(StringRedisTemplate redis, EventRepository eventRepository,
                         @Value("${queue.capacity:100}") int capacity,
                         @Value("${queue.token-ttl:1800}") long tokenTtl,
                         @Value("${queue.admit-interval-ms:1500}") long admitIntervalMs,
-                        Clock clock) {
+                        Clock clock, QueueMetrics metrics) {
         this.clock = clock;
+        this.metrics = metrics;
         this.redis = redis;
         this.eventRepository = eventRepository;
         this.capacity = capacity;
@@ -163,6 +165,9 @@ public class QueueService {
         Long freed = redis.execute(LEAVE_ADMIT_SCRIPT,
                 List.of(QueueKeys.admitExp(eventId), QueueKeys.admitCount(eventId), QueueKeys.admit(token)),
                 token);
+        if (freed != null && freed == 1L) {
+            QueueAudit.leftAdmitted(eventId, token, clock.millis());
+        }
         if (freed == null || freed == 0L) {
             // 입장 상태가 아니었음 → 대기열에서 제거(ZREM은 멱등, 카운터 없음)
             redis.opsForZSet().remove(QueueKeys.wait(eventId), token);
@@ -186,7 +191,15 @@ public class QueueService {
             return false;
         }
         Object tokenEvent = redis.opsForHash().get(QueueKeys.token(token), "eventId");
-        return tokenEvent != null && eventId.equals(Long.valueOf((String) tokenEvent));
+        boolean admitted = tokenEvent != null && eventId.equals(Long.valueOf((String) tokenEvent));
+        if (admitted && expiresAt == null) {
+            // 이미 회수돼 admitExp에 점수가 없는데 admit 키로 통과했다. 그 슬롯은 다른 사람에게 다시 승격됐을 수
+            // 있어 실효 입장자가 정원을 넘는 창이다(loadtest-100k-plan §3.3 한계).
+            // 점수가 있고 이미 지난(만료됐지만 회수 전) 토큰은 세지 않는다 — 아직 카운터와 admitExp에 남아
+            // 슬롯을 쥔 상태라 정원 초과가 아니다.
+            metrics.gateFallback().increment();
+        }
+        return admitted;
     }
 
     /** 소유자가 아직 대기열 등록 전(경합)이면 EXPIRED로 보일 수 있어 WAITING으로 낙관 처리. */

@@ -169,9 +169,11 @@ arrival-rate executor로 새 스크립트를 쓴다. 이때 VU는 iteration 사�
 측정 도중 토큰 만료로 생긴 실패(401)는 시스템 capacity 결과로 인정하지 않는다(§3.1 무효).
 
 로그인이 없어도 **run 시작 전 기준선 확인은 필요하다.** 직전 run의 부하(승격 워커, 아웃박스 발행, HPA가 늘린 파드)가
-남아 있으면 다음 run은 같은 조건이 아니다. 첫 run 전(앱 기동·워밍업이 끝난 뒤)의 CPU와 replica 수를 기준선으로 기록하고,
-매 run 전에 그 근처로 돌아올 때까지 기다린다(`scripts/loadtest/wait-baseline.mjs`, 허용 범위는 잠정값 — CPU는 기준선의
-+10% 또는 +0.1 core 중 큰 쪽, replica 수는 기준선 이하, 3회 연속).
+남아 있으면 다음 run은 같은 조건이 아니다. 기준선은 **측정 범위(시작 replica 구성)마다** 기록한다 — 단계 5처럼 Pod 수를
+바꾸거나 오픈 전에 사전 확장하면 시작 replica 수가 달라지기 때문이다. 구성을 바꾼 뒤(앱 기동·워밍업이 끝난 뒤) 그 구성의
+CPU와 replica 수를 기록하고(`baseline-<구성>.json`), 같은 구성의 run 전마다 그 근처로 돌아올 때까지 기다린다
+(`scripts/loadtest/wait-baseline.mjs`, 허용 범위는 잠정값 — CPU는 기준선의 +10% 또는 +0.1 core 중 큰 쪽, replica 수는
+기준선 이하, 3회 연속).
 
 서명 키는 환경변수로만 다룬다. 토큰 파일 자체도 자격증명이라 `artifacts/` 아래에만 두고(`.gitignore`), 발생기에는 결과 버킷을
 거쳐 나눠 준다. 결과 버킷과 RDS는 철거 때 함께 지워진다.

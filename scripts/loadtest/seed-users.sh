@@ -65,8 +65,9 @@ EOF
 )"
 
 echo "==> 시드 계정 $COUNT개 넣기 → $OUT"
+# 노드가 postgres 이미지를 처음 받으면 기본 대기(1분)를 넘길 수 있다(추론).
 printf '%s' "$SQL" | kubectl run loadseed-psql -n "$NS" --rm -i --quiet --restart=Never \
-  --image=postgres:16 --overrides="$OVERRIDES" > "$OUT"
+  --pod-running-timeout=5m --image=postgres:16 --overrides="$OVERRIDES" > "$OUT"
 
 n="$(grep -c '^[0-9]' "$OUT" || true)"
 echo "    시드 계정 $n개(loadseed+*) — 목표 $COUNT"

@@ -2,8 +2,10 @@
 # 정합성 사후 검증(loadtest-100k-plan §3.3). run이 끝난 뒤, 철거 전에 실행한다.
 #
 #   bash scripts/loadtest/check-correctness.sh --out artifacts/loadtest/<session>/<run> --since 2026-10-02T05:00:00Z \
-#     --until 2026-10-02T05:12:00Z
+#     --until 2026-10-02T05:12:00Z --generators 3
 #
+# --generators는 이 run에 띄운 발생기 수다. run 디렉터리의 발생기 기록(meta-<gen>.json) 수와 맞아야 한다 —
+# 인스턴스째 사라진 발생기는 결과 회수에 나타나지 않아, 이 대조 없이는 보이지 않는다.
 # --until은 run 종료 시각(UTC, 발생기가 멈춘 시각)이다. 내보낸 구간(prom/_meta.json)이 --since 이전부터 --until + 30초
 # 이후까지를 덮어야 한다 — 파드 대조와 4단계(실시간 조건 사후 재확인)가 이 구간에 기댄다. 덮지 못하면 판정 불가(2)다.
 # (감시기의 endedAt으로 대신하지 않는다 — 감시기가 일찍 멈췄으면 구간이 짧게 잡힌 채 통과한다.)
@@ -45,23 +47,26 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT="" SINCE="" UNTIL="" NS=flowticket TOL=1000
+OUT="" SINCE="" UNTIL="" GENS="" NS=flowticket TOL=1000
 while [ $# -gt 0 ]; do
   case "$1" in
-    --out|--since|--until|--tolerance-ms)
+    --out|--since|--until|--generators|--tolerance-ms)
       # 값 없이 끝에 오면 set -u 때문에 "$2: unbound variable"로 죽어 종료 1(= 위반)이 된다. 인자 오류는 2다.
       [ $# -ge 2 ] || { echo "$1에 값이 없다" >&2; exit 2; }
       case "$1" in
         --out) OUT="$2" ;;
         --since) SINCE="$2" ;;
         --until) UNTIL="$2" ;;
+        --generators) GENS="$2" ;;
         --tolerance-ms) TOL="$2" ;;
       esac
       shift 2 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2 ;;
   esac
 done
-[ -n "$OUT" ] && [ -n "$SINCE" ] && [ -n "$UNTIL" ] || { echo "--out, --since, --until이 필요하다" >&2; exit 2; }
+[ -n "$OUT" ] && [ -n "$SINCE" ] && [ -n "$UNTIL" ] && [ -n "$GENS" ] || {
+  echo "--out, --since, --until, --generators가 필요하다" >&2; exit 2; }
+[[ "$GENS" =~ ^[1-9][0-9]*$ ]] || { echo "--generators는 1 이상의 정수다: $GENS" >&2; exit 2; }
 # 형식을 좁혀 SQL에 그대로 넣어도 안전하게 한다(따옴표·세미콜론이 들어올 수 없다).
 [[ "$SINCE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
   echo "--since는 YYYY-MM-DDTHH:MM:SSZ(UTC)여야 한다: $SINCE" >&2; exit 2; }
@@ -122,11 +127,16 @@ fi
 # --until을 실제 종료보다 이르게 주면 run 끝 구간이 잘린 채 판정된다. 종료 기록이 없는 발생기가 있으면 판정 불가.
 if node -e '
 const fs = require("fs");
-const [out, since, until] = process.argv.slice(1);
+const [out, since, until, gens] = process.argv.slice(1);
 const fail = (m) => { console.log(m); process.exit(2); };
+// run-entry.sh는 date -u +%Y-%m-%dT%H:%M:%SZ로 쓴다. 그 형식이고 달력상 있는 시각만 받는다(Date.parse는 "0"도 읽는다).
+const iso = (x) => typeof x === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(x) && new Date(x).toISOString() === x.replace("Z", ".000Z");
 const files = fs.readdirSync(out);
 const metas = files.filter((f) => /^meta-.+\.json$/.test(f));
 if (metas.length === 0) fail("발생기 실행 기록(meta-<gen>.json)이 없다 — run-entry.sh의 run 디렉터리를 --out으로 준다");
+// 인스턴스째 사라진 발생기는 결과 회수(loadgen.sh pull — 지금 running인 인스턴스만)에 나타나지 않아 기록이 통째로
+// 없다. 그래서 띄운 발생기 수(--generators)와 기록 수를 대조한다.
+if (metas.length !== Number(gens)) fail("발생기 기록이 " + metas.length + "개인데 --generators는 " + gens + "다 — 사라졌거나 덜 회수된 발생기가 있다");
 let firstStart = Infinity, lastEnd = -Infinity;
 for (const m of metas) {
   const gen = m.slice(5, -5);
@@ -134,14 +144,15 @@ for (const m of metas) {
   try { meta = JSON.parse(fs.readFileSync(out + "/" + m, "utf8")); } catch { fail(m + "을 읽지 못했다"); }
   try { end = JSON.parse(fs.readFileSync(out + "/end-" + gen + ".json", "utf8")); }
   catch { fail("발생기 " + gen + "의 종료 기록(end-" + gen + ".json)이 없다 — 발생기가 중간에 멈췄거나 결과를 덜 회수했다"); }
-  const st = Date.parse(meta && meta.startedAt), en = Date.parse(end && end.endedAt);
-  if (!Number.isFinite(st) || !Number.isFinite(en)) fail("발생기 " + gen + "의 시작·종료 시각을 읽지 못했다");
+  if (!iso(meta && meta.startedAt) || !iso(end && end.endedAt)) fail("발생기 " + gen + "의 시작·종료 시각이 형식(YYYY-MM-DDTHH:MM:SSZ)에 맞지 않거나 달력상 없는 시각이다");
+  const st = Date.parse(meta.startedAt), en = Date.parse(end.endedAt);
+  if (en < st) fail("발생기 " + gen + "의 종료(" + end.endedAt + ")가 시작(" + meta.startedAt + ")보다 앞선다");
   firstStart = Math.min(firstStart, st); lastEnd = Math.max(lastEnd, en);
 }
 console.log("generators=" + metas.length + " start=" + new Date(firstStart).toISOString() + " end=" + new Date(lastEnd).toISOString() + " given=" + since + "~" + until);
 if (Date.parse(since) > firstStart) fail("--since가 발생기 시작(" + new Date(firstStart).toISOString() + ")보다 늦다");
 if (Date.parse(until) < lastEnd) fail("--until이 발생기 종료(" + new Date(lastEnd).toISOString() + ")보다 이르다 — run 끝 구간이 잘린다");
-' "$OUT" "$SINCE" "$UNTIL" > "$D/run-window.txt" 2>&1; then :
+' "$OUT" "$SINCE" "$UNTIL" "$GENS" > "$D/run-window.txt" 2>&1; then :
 else
   BROKEN=1
   echo "    $(tail -n 1 "$D/run-window.txt")" >&2
@@ -261,6 +272,8 @@ try {
       console.log("위반 시각 " + v.t + "이 이 run 구간 안이다(violation.json)");
       process.exit(1);
     }
+    // 구간 밖이거나 확인할 수 없는 위반 — 아래 구간 확인에서 판정 불가가 되면 원인을 함께 남긴다.
+    console.log(Number.isFinite(vt) ? "감시기 위반 시각 " + v.t + "이 이 run 구간 밖이다" : "감시기 위반 시각을 확인할 수 없다(violation.json 없음·형식 오류)");
   }
   if (!(st <= Date.parse(process.argv[2])) || !(en >= Date.parse(process.argv[3]))) {
     console.log("감시 구간이 run(" + process.argv[2] + " ~ " + process.argv[3] + ")을 덮지 않는다");

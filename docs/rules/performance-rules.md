@@ -3,6 +3,8 @@
 정적 하네스로 검증 불가 → **부하 테스트(k6) 결과로 관리**. (S10 슬라이스)
 
 - 실행 계획: [`docs/testing/loadtest-plan.md`](../testing/loadtest-plan.md)
+- 100K 검증 계획: [`docs/testing/loadtest-100k-plan.md`](../testing/loadtest-100k-plan.md) — §1의 p95·에러율
+  기준은 근거가 적혀 있지 않아, 그 문서의 baseline 측정 뒤에 유지 근거를 남기거나 수정한다
 - 실행 절차: [`infra/k6/README.md`](../../infra/k6/README.md)
 
 ## 1. 기준 지표 (목표 임계)

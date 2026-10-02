@@ -4,6 +4,8 @@
 - 대상: EKS 데모 클러스터(t3.large × 3)
 - 임계 기준: [`docs/rules/performance-rules.md`](../rules/performance-rules.md)
 - 실행 절차: [`infra/k6/README.md`](../../infra/k6/README.md)
+- **후속: [`loadtest-100k-plan.md`](loadtest-100k-plan.md)** — 이 문서의 knee(600~650 rps)는 [[TS-034]]에서
+  무효가 됐다. 측정 환경 통제·판정 조건·100K workload 정의는 후속 문서가 기준이다
 
 ## 이 문서가 답하려는 질문
 

@@ -19,7 +19,8 @@
 #   event-loss.txt     — 발행된 아웃박스 이벤트 중 소비 기록(Redis 멱등 키)이 없는 수
 #   watch-summary.json — (같은 run 디렉터리) 실시간 감시기의 결과를 최종 판정에 넣는다. 감시 구간(startedAt~endedAt)이
 #                        run을 덮을 때만 그 결과를 이 run의 것으로 본다: 3이면 위반, 0이면 통과, 그 밖은 판정 불가.
-#                        덮지 않을 때: 결과가 3이고 violation.json의 위반 시각이 [since, until + 30초] 안이면 위반,
+#                        먼저 violation.json을 본다: 위반 시각이 [since, until + 30초] 안이면 감시 결과 상태와 상관없이
+#                        위반이다. 그 밖에, 덮지 않을 때:
 #                        그 밖은 판정 불가다(다른 run의 3, 위반 시각을 확인할 수 없는 3 포함 — 그 위반이
 #                        실제였다면 4단계 재확인이 같은 식·같은 스크랩 데이터로 대체로 다시 잡을 것으로 본다(추론:
 #                        step 10초 < 스크랩 15초라 보통은 점에 잡히지만, 스크랩 지터로 두 샘플이 10초보다 가까우면
@@ -138,6 +139,7 @@ if (metas.length === 0) fail("발생기 실행 기록(meta-<gen>.json)이 없다
 // 없다. 그래서 띄운 발생기 수(--generators)와 기록 수를 대조한다.
 if (metas.length !== Number(gens)) fail("발생기 기록이 " + metas.length + "개인데 --generators는 " + gens + "다 — 사라졌거나 덜 회수된 발생기가 있다");
 let firstStart = Infinity, lastEnd = -Infinity;
+const statuses = [];
 for (const m of metas) {
   const gen = m.slice(5, -5);
   let meta, end;
@@ -147,8 +149,11 @@ for (const m of metas) {
   if (!iso(meta && meta.startedAt) || !iso(end && end.endedAt)) fail("발생기 " + gen + "의 시작·종료 시각이 형식(YYYY-MM-DDTHH:MM:SSZ)에 맞지 않거나 달력상 없는 시각이다");
   const st = Date.parse(meta.startedAt), en = Date.parse(end.endedAt);
   if (en < st) fail("발생기 " + gen + "의 종료(" + end.endedAt + ")가 시작(" + meta.startedAt + ")보다 앞선다");
+  // 종료 상태는 판정에 쓰지 않고 남기기만 한다. 0이 아니면 §3.1(시험 무효) 판단의 근거가 된다.
+  statuses.push(gen + "=" + end.status);
   firstStart = Math.min(firstStart, st); lastEnd = Math.max(lastEnd, en);
 }
+console.log("generator status: " + statuses.join(", ") + (statuses.some((x) => !/=0$/.test(x)) ? " (0이 아닌 발생기가 있다 — §3.1 무효 조건을 본다)" : ""));
 console.log("generators=" + metas.length + " start=" + new Date(firstStart).toISOString() + " end=" + new Date(lastEnd).toISOString() + " given=" + since + "~" + until);
 if (Date.parse(since) > firstStart) fail("--since가 발생기 시작(" + new Date(firstStart).toISOString() + ")보다 늦다");
 if (Date.parse(until) < lastEnd) fail("--until이 발생기 종료(" + new Date(lastEnd).toISOString() + ")보다 이르다 — run 끝 구간이 잘린다");
@@ -245,41 +250,50 @@ echo "==> 실시간 감시기 결과(watch-summary.json)"
 # 해석 중 예외(빈 파일·null 등)는 모두 판정 불가(2)다 — node가 예외로 죽으면 종료 1(= 위반)로 읽히므로 잡는다.
 node -e '
 try {
+  const fs = require("fs");
+  const [summaryPath, sinceArg, untilArg, violationPath] = process.argv.slice(1);
+  const since = Date.parse(sinceArg), until = Date.parse(untilArg);
+  // 감시기는 toISOString()으로 쓴다. 그 형식이고 달력상 있는 시각만 받는다 — Date.parse는 "0"·"9999"도 너그럽게
+  // 읽고, 2월 30일·24시는 넘겨 읽는다(왕복 변환이 같아야 한다).
+  const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+  const real = (x) => { if (!ISO.test(String(x))) return false; const d = new Date(x); return !isNaN(d) && d.toISOString() === (/\.\d{3}Z$/.test(x) ? x : x.replace(/(\.\d{1,2})?Z$/, (m, f) => (f ? f.padEnd(4, "0") : ".000") + "Z")); };
+
+  // 1) 위반 기록을 먼저 본다. 감시기가 이 run 구간(+ 꼬리 30초) 안에서 위반을 기록했다면, 감시 결과 파일의 상태
+  //    (덮음 여부, 결과 코드, 시각 형식, 같은 디렉터리에서 다시 돌려 덮어쓴 summary)와 상관없이 이 run의 위반이다.
+  //    위반은 판정 불가보다 우선한다.
+  let v = null;
+  try { v = JSON.parse(fs.readFileSync(violationPath, "utf8")); } catch {}
+  const vt = v && real(v.t) ? Date.parse(v.t) : NaN;
+  if (vt >= since && vt <= until + 30000) {
+    console.log("위반 시각 " + v.t + "이 이 run 구간 안이다(violation.json)");
+    process.exit(1);
+  }
+
+  // 2) 감시 결과. 이 run을 덮는 감시의 결과만 이 run의 것으로 본다.
   let s;
-  try { s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); }
+  try { s = JSON.parse(fs.readFileSync(summaryPath, "utf8")); }
   catch { console.log("watch-summary.json이 없거나 읽을 수 없다 — 실시간 감시기를 같은 run 디렉터리로 돌리지 않았다"); process.exit(2); }
   if (!s || typeof s !== "object") { console.log("watch-summary.json 내용이 객체가 아니다"); process.exit(2); }
   console.log("exitCode=" + s.exitCode + " " + s.verdict + " (" + s.startedAt + " ~ " + s.endedAt + ")");
-  // 먼저 이 run을 감시한 결과인지 확인한다 — run 시작 전에 시작해 run 종료 뒤에 끝났어야 한다. 다른 run이 남긴
-  // 결과(위반 3 포함)를 이 run의 판정에 쓰지 않는다.
-  // 감시기는 toISOString()으로 쓴다. 그 형식만 받는다 — Date.parse는 "0"·"9999" 같은 값도 너그럽게 읽어
-  // 엉뚱한 구간을 "덮음"으로 볼 수 있다.
-  const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
-  // 형식뿐 아니라 달력상 있는 시각인지도 본다(왕복 변환이 같아야 한다 — 2월 30일·24시 등을 거른다).
-  const real = (x) => { const d = new Date(x); return !isNaN(d) && d.toISOString() === (/\.\d{3}Z$/.test(x) ? x : x.replace(/(\.\d{1,2})?Z$/, (m, f) => (f ? f.padEnd(4, "0") : ".000") + "Z")); };
-  if (!ISO.test(String(s.startedAt)) || !ISO.test(String(s.endedAt)) || !real(String(s.startedAt)) || !real(String(s.endedAt))) {
+  if (!real(s.startedAt) || !real(s.endedAt)) {
     console.log("감시 구간 시각(startedAt·endedAt)이 ISO UTC 형식이 아니거나 달력상 없는 시각이다");
     process.exit(2);
   }
-  const st = Date.parse(s.startedAt), en = Date.parse(s.endedAt);
-  // 감시가 run을 덮지 않아도, 감시기가 이 run 구간 안에서 위반을 기록했다면(violation.json의 시각이
-  // [since, until + 30초] 안) 그 위반은 이 run의 것이다 — 위반은 판정 불가보다 우선한다.
+  const covers = Date.parse(s.startedAt) <= since && Date.parse(s.endedAt) >= until;
   if (s.exitCode === 3) {
-    let v = null;
-    try { v = JSON.parse(require("fs").readFileSync(process.argv[4], "utf8")); } catch {}
-    const vt = v && ISO.test(String(v.t)) && real(v.t) ? Date.parse(v.t) : NaN;
-    if (vt >= Date.parse(process.argv[2]) && vt <= Date.parse(process.argv[3]) + 30000) {
-      console.log("위반 시각 " + v.t + "이 이 run 구간 안이다(violation.json)");
+    // 위반 기록이 구간 안이었다면 위에서 끝났다. 여기서는 위반 시각이 구간 밖이거나 확인할 수 없다.
+    if (covers) {
+      console.log("감시가 run을 덮고 위반을 기록했다(violation.json의 시각은 " + (Number.isFinite(vt) ? "구간 밖 " + v.t : "확인 불가") + ")");
       process.exit(1);
     }
-    // 구간 밖이거나 확인할 수 없는 위반 — 아래 구간 확인에서 판정 불가가 되면 원인을 함께 남긴다.
-    console.log(Number.isFinite(vt) ? "감시기 위반 시각 " + v.t + "이 이 run 구간 밖이다" : "감시기 위반 시각을 확인할 수 없다(violation.json 없음·형식 오류)");
-  }
-  if (!(st <= Date.parse(process.argv[2])) || !(en >= Date.parse(process.argv[3]))) {
-    console.log("감시 구간이 run(" + process.argv[2] + " ~ " + process.argv[3] + ")을 덮지 않는다");
+    console.log("감시가 run을 덮지 않고, 위반 시각이 " + (Number.isFinite(vt) ? "이 run 구간 밖(" + v.t + ")" : "확인할 수 없다(violation.json 없음·형식 오류)") + " — 다른 run의 위반일 수 있다");
     process.exit(2);
   }
-  process.exit(s.exitCode === 3 ? 1 : s.exitCode === 0 ? 0 : 2);
+  if (!covers) {
+    console.log("감시 구간이 run(" + sinceArg + " ~ " + untilArg + ")을 덮지 않는다");
+    process.exit(2);
+  }
+  process.exit(s.exitCode === 0 ? 0 : 2);
 } catch (e) {
   console.log("watch-summary.json 해석 실패: " + (e && e.message));
   process.exit(2);

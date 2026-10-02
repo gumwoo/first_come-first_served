@@ -56,7 +56,7 @@
 //   node scripts/loadtest/watch-correctness.mjs --out artifacts/loadtest/<session>/<run> \
 //     [--interval 5] [--for 600] [--query-timeout 10] [--max-sample-age 30] [--on-violation "bash scripts/loadtest/loadgen.sh exec -- pkill -INT k6"]
 import { exec } from "node:child_process";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 const USAGE =
@@ -143,6 +143,11 @@ function main() {
   }
 
   mkdirSync(a.out, { recursive: true });
+  // 같은 run 디렉터리에서 다시 돌리면 이전 감시의 결과(watch-summary.json)·첫 위반(violation.json)이 덮이거나 섞인다.
+  // 사후 검사가 둘을 이 run의 근거로 읽으므로, 이미 있으면 시작하지 않는다(새 run 디렉터리를 쓴다).
+  for (const f of ["watch-summary.json", "violation.json", "watch-correctness.jsonl"]) {
+    if (existsSync(`${a.out}/${f}`)) throw new Error(`이미 감시 결과가 있다: ${a.out}/${f} — 새 run 디렉터리를 쓴다`);
+  }
   const LOG = `${a.out}/watch-correctness.jsonl`;
   const stats = Object.fromEntries(
     [...Object.keys(CHECKS), "tickFailures", "freshness"].map((k) => [k, { value: 0, noSeries: 0, gap: 0, error: 0 }]),

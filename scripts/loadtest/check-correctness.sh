@@ -14,8 +14,8 @@
 #
 # 대기열 순서 대조는 run 동안 있었던 api 파드의 로그를 전부 읽을 수 있을 때만 판정한다(pod-coverage.mjs). 그래서
 # 먼저 export-prom.mjs로 <run>/prom/을 남긴 뒤 실행한다 — api_pods.json·api_restarts.json이 없으면 검사 실패(2)다.
-# 한계(미해결, 계획서 §3.3): kubelet이 컨테이너 로그를 회전해 지운 앞부분은 이 대조로 알 수 없다. 그래서 대기열
-# 순서가 "위반 없음"이어도 "로그 회전 미확인" 단서를 summary에 함께 적는다.
+# kubelet이 컨테이너 로그를 회전해 지운 앞부분도 같은 대조에서 찾는다 — 파드별 현재 로그 파일의 첫 줄 시각이
+# run 시작·컨테이너 시작보다 늦으면 run 구간이 잘린 것이다(pod-coverage.mjs).
 #
 # 실효 입장 초과는 판정식이 미확정이라(계획서 §3.3) 여기서 판정하지 않는다. 재료(승격·회수·이탈 감사 로그)는
 # api.log에 함께 남는다.
@@ -93,10 +93,18 @@ fi
 # 로그를 받은 **뒤에** 파드 목록을 읽는다. 순서가 반대면 목록을 읽은 뒤 로그를 받기 전에 지워진 파드가 "읽음"으로
 # 남는다. 이 순서에서는 로그를 받은 뒤 지워진 파드가 "빠짐"으로 잡혀 판정 불가 쪽으로만 틀린다.
 if kubectl -n "$NS" get pods -l app=flowticket-api \
-     -o jsonpath='{range .items[*]}{.metadata.name} {.status.containerStatuses[?(@.name=="api")].restartCount}{"\n"}{end}' \
+     -o jsonpath='{range .items[*]}{.metadata.name} {.status.containerStatuses[?(@.name=="api")].restartCount} {.status.containerStatuses[?(@.name=="api")].state.running.startedAt}{"\n"}{end}' \
      > "$D/api-pods-now.txt"; then
+  # 파드별 현재 로그 파일의 첫 줄 시각(--since-time 없이 앞에서부터 1KiB만). 읽지 못하면 빈 값 = 확인 불가.
+  : > "$D/api-first-lines.txt"
+  while read -r pod _; do
+    [ -n "$pod" ] || continue
+    first="$(kubectl -n "$NS" logs "$pod" -c api --timestamps --limit-bytes=1024 </dev/null 2>/dev/null | head -n 1 | cut -d' ' -f1)"
+    echo "$pod $first" >> "$D/api-first-lines.txt"
+  done < "$D/api-pods-now.txt"
   node "$HERE/pod-coverage.mjs" --pods "$OUT/prom/api_pods.json" --restarts "$OUT/prom/api_restarts.json" \
-    --existing "$D/api-pods-now.txt" > "$D/pod-coverage.json" || { echo "    로그를 읽을 수 없는 파드가 있다(pod-coverage.json)" >&2; BROKEN=1; }
+    --existing "$D/api-pods-now.txt" --first-lines "$D/api-first-lines.txt" --since "$SINCE" \
+    > "$D/pod-coverage.json" || { echo "    로그를 다 읽지 못한 파드가 있다(pod-coverage.json)" >&2; BROKEN=1; }
 else
   echo "    api 파드 목록 조회 실패" >&2; BROKEN=1
 fi
@@ -136,14 +144,14 @@ fi
   echo "--- sql (검사,위반 수)"; cat "$D/sql.csv" 2>/dev/null
   # require는 상대경로를 모듈 이름으로 읽는다. 파일로 읽는다.
   echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
-  echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"지워진 파드·재시작 없음("+r.seen.length+"개). 로그 회전으로 빠진 앞부분 여부는 미확인 — 계획서 §3.3 한계":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null
+  echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null
   echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null
   echo "--- 실효 입장 초과: 판정식 미확정(계획서 §3.3) — 판정하지 않음"
   # 검사 일부가 실패해도 이미 찾은 위반은 함께 보인다.
   if [ "$BROKEN" -ne 0 ] && [ "$FAIL" -ne 0 ]; then echo "판정: 정합성 위반 + 검사 일부 실패(결과 불완전)"
   elif [ "$BROKEN" -ne 0 ]; then echo "판정: 검사 실패(결과 불완전)"
   elif [ "$FAIL" -ne 0 ]; then echo "판정: 정합성 위반"
-  else echo "판정: 위반 없음(단, 대기열 순서는 로그 회전 미확인 — 계획서 §3.3 한계)"; fi
+  else echo "판정: 위반 없음"; fi
 } > "$D/summary.txt"
 cat "$D/summary.txt"
 

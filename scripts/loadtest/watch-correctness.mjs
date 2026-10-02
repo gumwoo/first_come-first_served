@@ -17,7 +17,7 @@
 // 위반이 나오면 계획서의 "실시간 조건에 걸리면 즉시 중단"을 따른다: violation.json을 남기고, --on-violation 명령을
 // 한 번 실행한다(예: 발생기의 k6를 멈추는 명령). 감시는 계속하고, 끝날 때 종료 코드로 결과를 알린다:
 //   0 위반 없음 — 조회 오류가 한 번도 없었고, 세 조건과 승격 실패 카운터 모두 감시 중 한 번 이상 값이 나왔고,
-//     승격 실패가 늘지 않았다
+//     관측 공백이 한 틱도 없었고, 승격 실패가 늘지 않았다
 //   2 인자 오류
 //   3 위반 있음
 //   4 판정 불가 — 조회 오류(연결 끊김·HTTP 오류·조회 시간 초과)가 한 번이라도 있었거나, 값이 한 번도 나오지 않은
@@ -134,7 +134,10 @@ function main() {
       } else {
         stats.tickFailures.value++;
         let inc = 0;
+        let noStart = false;
         for (const s of series) {
+          // 시작 시각이 없으면 재시작 판별이 "값 감소"에만 기대게 된다(재시작 뒤 같은 값까지 올라오면 놓친다). 관측 공백으로 센다.
+          if (!starts.has(s.metric?.instance)) noStart = true;
           // 같은 파드라도 프로세스가 바뀌면 다른 시계열로 본다(재시작 = 카운터가 0부터 다시 센다).
           const key = `${JSON.stringify(s.metric)}@${starts.get(s.metric?.instance) ?? "?"}`;
           const v = Number(s.value?.[1]);
@@ -145,6 +148,10 @@ function main() {
           if (prev === undefined) inc += failFirstTick ? 0 : v;
           else inc += v >= prev ? v - prev : v;
           failSeries.set(key, v);
+        }
+        if (noStart) {
+          stats.tickFailures.gap++;
+          row.tickFailuresNoStartTime = true;
         }
         tickFailuresIncrease += inc;
         row.tickFailures = inc;
@@ -225,7 +232,7 @@ function main() {
       code = 4;
       verdict = "판정 불가" + (crashed ? " — 감시 루프가 예외로 멈췄다" : "") + (anyError ? " — 조회 오류가 있었다" : "") +
         (neverValued.length ? ` — 값이 한 번도 나오지 않은 조건: ${neverValued.join(", ")}` : "") +
-        (gaps.length ? ` — 관측 공백(항상 있어야 할 시계열이 빔): ${gaps.join(", ")}` : "") +
+        (gaps.length ? ` — 관측 공백(항상 있어야 할 시계열 또는 프로세스 시작 시각이 빔): ${gaps.join(", ")}` : "") +
         (tickFailuresIncrease > 0 ? ` — 감시 중 승격 처리 실패 ${tickFailuresIncrease}건(대기열 게이지가 멈췄을 수 있다)` : "");
     } else {
       code = 0;

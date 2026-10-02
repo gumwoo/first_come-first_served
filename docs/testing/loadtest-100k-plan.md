@@ -397,6 +397,21 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 | 톰캣 커넥션·스레드 | SSE의 연결 자원 진단 | **`server.tomcat.mbeanregistry.enabled=true` 필요** — 현재 꺼져 있어 `tomcat_*` 지표가 안 나온다 |
 | 초과판매 좌석 수 | **초과판매 실시간 판정** | PAID 주문이 둘 이상 걸린 좌석 수. 주기 질의 게이지(§3.3) |
 
+**구현된 이름**(Prometheus 이름 기준. 감시·내보내기 도구는 이 이름을 그대로 쓴다):
+
+| 지표 | 이름 | 집계 |
+|---|---|---|
+| 대기 수 | `flowticket_queue_waiting{event}` | 파드마다 같은 값(승격 워커가 모든 파드에서 돈다) — `max by (event)` |
+| 입장 수 | `flowticket_queue_admitted{event}` | 위와 같다 |
+| 입장 카운터 · 정원 | `flowticket_queue_admit_count{event}`, `flowticket_queue_capacity` | 위와 같다. 카운터 어긋남은 **같은 시계열끼리**(같은 파드·이벤트) 뺀다 — 세 값은 한 Lua로 같은 시점에 읽혔다 |
+| 승격 지연 | `flowticket_queue_admit_tick_seconds`(히스토그램) | `histogram_quantile` |
+| 입장 게이트 폴백 통과 수 | `flowticket_queue_gate_fallback_total` | 파드 합 |
+| SSE 활성 연결 수 | `flowticket_queue_sse_connections` | 파드 합 |
+| SSE 전송 실패 수 | `flowticket_queue_sse_send_failures_total{phase=open\|deliver}` | 파드 합 |
+| 톰캣 커넥션·스레드 | `tomcat_connections_*`, `tomcat_threads_*` | 파드별 |
+| 초과판매 좌석 수 | `flowticket_seat_oversold` | 파드마다 같은 DB 질의 — `max` |
+| 승격·회수·이탈 기록 | api 로그 `queue.audit kind=admit\|reclaim\|leave` | 토큰은 SHA-256 앞 16자만 남긴다. 승격 줄에는 진입 순번(`seq`)도 있다 |
+
 ### 5.2 이미 있는 것
 
 - `http_server_requests` 히스토그램(파드 합산 백분위 가능)

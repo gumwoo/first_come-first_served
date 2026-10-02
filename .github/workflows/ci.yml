@@ -76,6 +76,10 @@ jobs:
       - name: docs harness check (문서 ↔ 현재 상태 드리프트)
         working-directory: harness
         run: node docs/check.mjs
+      # 부하 발생기 쪽 계약 테스트. 앱 쪽(LoadgenTokenContractTest)은 백엔드 잡이 돌린다.
+      # 둘 중 한쪽만 돌면 발급기가 바뀌어도 계약 깨짐을 놓친다. 의존성이 없는 node 내장 테스트라 이 잡에 둔다.
+      - name: loadgen contract test (부하 시험 토큰 발급기)
+        run: node --test infra/loadgen/mint-tokens.test.mjs
 
   backend:
     name: 백엔드 (하네스 → 테스트)

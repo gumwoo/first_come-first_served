@@ -155,8 +155,28 @@ arrival-rate executor로 새 스크립트를 쓴다. 이때 VU는 iteration 사�
 사용자 매핑을 **iteration 번호(`exec.scenario.iterationInTest`) 기준**으로 바꾼다.
 
 사용자 인증 토큰도 사용자 수만큼 미리 있어야 한다. 지금의 `seed-issue-tokens.js`는 **120개 고정**(`N=120`)이고
-로그인으로 받으므로, 10만 계정 시드와 발급 방식을 따로 준비해야 한다. 액세스 토큰 유효기간(`access-token-ttl`
-1,800초) 안에 시험이 끝나도록 발급 시점도 맞춘다.
+로그인으로 받는다. 10만 명을 로그인시키면 BCrypt 검증으로 측정 대상에 큰 CPU 부하를 얹게 되고(추론, 미측정), 액세스 토큰 유효기간
+(`access-token-ttl` 1,800초)이 짧아 측정 세션 동안 여러 번 반복해야 한다. 그래서 **발급 방식을 다음으로 고정한다.**
+
+| 단계 | 방식 | 도구 |
+|---|---|---|
+| 계정 시드 | 측정 세션마다 SQL로 `loadseed+<n>@example.com` 계정을 넣는다. **비밀번호가 없다**(`password_hash` NULL) — 로그인할 수 없는 계정이라 공개 저장소에 비밀번호를 둘 필요가 없다 | `scripts/loadtest/seed-users.sh` |
+| 토큰 발급 | 앱과 같은 서명 키(`/flowticket/JWT_SECRET`)로 **직접 서명**한다. 인증 필터는 DB를 보지 않고 서명·클레임과 Redis 블랙리스트만 확인하므로 앱이 발급한 것과 구별되지 않는다. **로그인을 거치지 않아 측정 대상에 부하가 없다** | `scripts/loadtest/mint-tokens.sh` → `infra/loadgen/mint-tokens.mjs` |
+| 유효기간 | 앱 설정과 같은 1,800초. **측정 프로파일의 TTL을 늘리지 않는다** — 측정 조건을 바꾸지 않는다 | |
+| run 전 점검 | 가장 먼저 만료되는 토큰의 남은 시간이 그 run에 필요한 시간보다 짧으면 다시 발급한다(몇 초 걸리고 측정 대상에 부하가 없다) | `mint-tokens.mjs check --need <초>` |
+| 형식 계약 | 발급기가 만든 토큰을 앱의 검증기(`JwtProvider`)가 받아들이는지 테스트로 고정한다 | `LoadgenTokenContractTest`, `mint-tokens.test.mjs` |
+
+측정 도중 토큰 만료로 생긴 실패(401)는 시스템 capacity 결과로 인정하지 않는다(§3.1 무효).
+
+로그인이 없어도 **run 시작 전 기준선 확인은 필요하다.** 직전 run의 부하(승격 워커, 아웃박스 발행, HPA가 늘린 파드)가
+남아 있으면 다음 run은 같은 조건이 아니다. 기준선은 **측정 범위(시작 replica 구성)마다** 기록한다 — 단계 5처럼 Pod 수를
+바꾸거나 오픈 전에 사전 확장하면 시작 replica 수가 달라지기 때문이다. 구성을 바꾼 뒤(앱 기동·워밍업이 끝난 뒤) 그 구성의
+CPU와 replica 수를 기록하고(`baseline-<구성>.json`), 같은 구성의 run 전마다 그 근처로 돌아올 때까지 기다린다
+(`scripts/loadtest/wait-baseline.mjs`, 허용 범위는 잠정값 — CPU는 기준선의 +10% 또는 +0.1 core 중 큰 쪽, replica 수는
+기준선 이하, 3회 연속).
+
+서명 키는 환경변수로만 다룬다. 토큰 파일 자체도 자격증명이라 `artifacts/` 아래에만 두고(`.gitignore`), 발생기에는 결과 버킷을
+거쳐 나눠 준다. 결과 버킷과 RDS는 철거 때 함께 지워진다.
 
 **② 진입 iteration에 SSE를 넣지 않는다.** 레포의 k6 스크립트는 어느 것도 SSE를 쓰지 않고, k6 코어에는 SSE
 클라이언트가 없어 확장(xk6-sse 등)이 필요하다(외부 지식, 이 문서 작성 시 미확인). 또 iteration이 SSE를 붙든 채
@@ -198,6 +218,7 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 | k6 `dropped_iterations` > 0 | open model(arrival-rate executor, §2.4)에서 VU 부족 = 의도한 도착률이 안 나왔다 |
 | 발생기 네트워크 포화 | 위와 같다 |
 | 발생기와 측정 대상의 자원 경합 | 측정 대상의 CPU를 발생기가 쓴다([[TS-034]]: k6가 같은 노드에서 최대 0.59 core) |
+| 측정 중 사용자 토큰 만료(401) | 시스템이 아니라 발생기 준비가 틀렸다(§2.4 ①). run 전 `mint-tokens.mjs check`로 막는다 |
 | ALB → web → api가 아닌 경로 | api Service 직접 호출은 ALB·web을 우회한다([[TS-034]] ①) |
 
 ### 3.2 시스템 한계 — **판정**과 **진단**을 분리한다

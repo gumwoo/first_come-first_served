@@ -12,15 +12,30 @@ import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
 
-const { values: a, positionals: files } = parseArgs({
-  allowPositionals: true,
-  options: { "tolerance-ms": { type: "string", default: "1000" } },
-});
-if (files.length === 0) {
-  console.error("사용: queue-order.mjs [--tolerance-ms 1000] <api 로그 파일> [...]");
-  process.exit(2);
+// 종료 코드: 0 위반 없음, 1 위반, 2 검사 실패(인자 오류·예외·승격 기록 0건). 셸이 1을 위반으로 분류하므로
+// (check-correctness.sh) 인자 오류나 예외가 1로 끝나면 안 된다.
+const USAGE = "사용: queue-order.mjs [--tolerance-ms 0 이상의 정수(기본 1000)] <api 로그 파일> [...]";
+let a;
+let files;
+try {
+  ({ values: a, positionals: files } = parseArgs({
+    allowPositionals: true,
+    options: { "tolerance-ms": { type: "string", default: "1000" } },
+  }));
+} catch (e) {
+  console.error(`${e.message}\n${USAGE}`);
 }
-// 예외로 죽으면 "위반(1)"이 아니라 "검사 실패(2)"다. 셸이 종료 코드 1을 위반으로 분류한다(check-correctness.sh).
+// 허용 폭이 숫자가 아니면(NaN) 모든 비교가 거짓이 돼 순서 검사가 통째로 꺼진다. 0 이상의 정수만 받는다.
+if (!a || files.length === 0 || !/^\d+$/.test(a["tolerance-ms"])) {
+  if (a) console.error(USAGE);
+  process.exitCode = 2;
+} else {
+  main().catch((e) => {
+    console.error(`[queue-order] 검사 실패: ${e.stack || e}`);
+    process.exitCode = 2;
+  });
+}
+
 async function main() {
   const TOL = Number(a["tolerance-ms"]);
 
@@ -69,8 +84,3 @@ async function main() {
   // 승격 기록이 한 줄도 없으면 "위반 없음"이 아니라 "판정 불가"다(로그 수집 실패, 감사 로그 미배포).
   process.exitCode = result.admits === 0 ? 2 : total ? 1 : 0;
 }
-
-main().catch((e) => {
-  console.error(`[queue-order] 검사 실패: ${e.stack || e}`);
-  process.exitCode = 2;
-});

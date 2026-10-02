@@ -270,6 +270,16 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 
 실시간 조건에 걸리면 **즉시 중단**한다. 사후 조건에 걸리면 그 단계의 결과를 **정합성 실패**로 기록한다.
 
+**구현**(클러스터가 없어 실제 실행은 측정 세션에서 확인한다):
+
+| 도구 | 하는 일 |
+|---|---|
+| `scripts/loadtest/watch-correctness.mjs` | run 동안 Prometheus를 주기적으로 조회해 실시간 조건 셋(over-admit, 카운터 어긋남, 초과판매)을 판정한다. 위반이면 `violation.json`을 남기고 `--on-violation` 명령(예: 발생기의 k6 정지)을 한 번 실행한 뒤 종료 코드 3. 지표가 없거나 수집 실패(NaN)면 위반이 아니라 "판정 불가"로 기록한다 |
+| `scripts/loadtest/check-correctness.sh` | run이 끝난 뒤 사후 조건을 검사한다: SQL(`correctness.sql` — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스), 대기열 순서(`queue-order.mjs` — api 로그의 승격 감사 줄), 이벤트 유실(PUBLISHED 아웃박스 vs 소비자 멱등 키). 위반 1, 검사 실패 2 |
+
+실효 입장 초과는 판정식이 미확정이라 도구가 판정하지 않는다(재료인 승격·회수·이탈 로그만 함께 수집한다).
+대기열 순서 대조는 감사 시각이 파드마다의 시계라, 허용 폭(`--tolerance-ms`, 기본 1,000ms — 잠정값)을 넘어 뒤집힌 경우만 위반으로 센다.
+
 **판정식은 "막는 장치가 유지하는 값"으로 세우지 않는다.** 같은 값으로 재면 장치가 깨져도 판정식은 계속 참이다.
 
 - `admitcount`는 승격 Lua가 `free > 0`일 때만 올리는 카운터라 **구조상 정원을 넘지 않는다.** 그래서
@@ -572,8 +582,15 @@ artifacts/loadtest/<session-id>/<run-id>/
 | `sse-<gen>/` | SSE 연결별 결과·1초 타임라인·요약(`sse-hold.mjs`) |
 | `gen-vmstat-<gen>.log`, `gen-netdev-<gen>.log` | 발생기 CPU·메모리·네트워크(§3.1 무효 판정, §8 Generator 축) |
 
-Prometheus 데이터(범위 질의 결과)와 CloudWatch 데이터(§5.3), 정합성 SQL 결과는 정합성 감시 도구(§3.3)와 함께
-같은 run 디렉터리에 추가한다.
+정합성·Prometheus 출력도 같은 run 디렉터리에 둔다:
+
+| 파일 | 내용 |
+|---|---|
+| `watch-correctness.jsonl`, `violation.json`, `violation-action.log` | 실시간 판정 기록, 첫 위반, 중단 명령 출력(`watch-correctness.mjs`) |
+| `prom/<이름>.json`, `prom/_meta.json` | run 구간의 범위 질의 결과(`scripts/loadtest/export-prom.mjs`, 질의 목록은 스크립트에 있다) |
+| `correctness/` | 사후 검사 결과 — `sql.csv`, `api.log`, `queue-order.json`, `event-loss.txt`, `summary.txt`(`check-correctness.sh`) |
+
+CloudWatch 데이터(§5.3)는 아직 내보내는 도구가 없다. 측정 세션에서 콘솔·CLI로 받아 같은 디렉터리에 둔다.
 
 `artifacts/`는 `.gitignore` 대상이다. k6 원시 출력·Prometheus 데이터는 커질 수 있고, 이 저장소는 public이다.
 **run이 끝날 때마다 즉시 저장한다.** 클러스터를 철거하면 Prometheus 데이터도 함께 사라지고

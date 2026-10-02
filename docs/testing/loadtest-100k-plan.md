@@ -383,6 +383,27 @@ Pod 수에서 노드 수를 바로 계산하지 않는다. 레포에 이미 걸�
 | 프로파일 분리·용량 결정 | `docs/decisions/ADR-XXX` |
 | HPA·requests 변경 | 해당 매니페스트 주석에 **측정값과 IMP 번호**로 근거를 교체 |
 
+### 원시 데이터
+
+결과 문서에는 원시 데이터를 넣지 않는다. 원시 데이터는 아래 경로에 두고, 문서에는 **요약값·경로·실행 조건**만
+남긴다. 실행 조건은 재현에 필요한 것 전부다: workload 네 값(§2), 발생기 구성, 측정 범위, 커밋 SHA.
+
+**측정 범위**는 그 run의 인프라 조건이다 — 노드 계열과 최대 노드 수, 각 Deployment의 시작 replica 수와
+HPA min/max. 결과는 이 조건 안에서만 성립하므로 결과 문장에 함께 붙인다
+(예: "`m6i.large` 최대 9노드에서 검증된 최대 workload").
+
+```
+artifacts/loadtest/<session-id>/<run-id>/
+  session-id = YYYYMMDD-HHMM (AWS 측정 세션 시작 시각, KST)
+```
+
+`<run-id>`의 이름 규칙은 측정 도구를 만들 때 그 도구와 함께 정해 이 절에 추가한다.
+
+`artifacts/`는 `.gitignore` 대상이다. k6 원시 출력·Prometheus 덤프는 커질 수 있고, 이 저장소는 public이다.
+**run이 끝날 때마다 즉시 저장한다.** 클러스터를 철거하면 Prometheus 데이터도 함께 사라지고
+(`tear-down.sh`가 PVC를 지운다), 철거하지 않아도 보존 기간이 6시간이라(`kube-prometheus-stack.values.yaml`
+`retention: 6h`) 세션 초반 run의 데이터는 세션이 끝나기 전에 지워질 수 있다.
+
 knee에서 멈춘 것은 **실패가 아니다.** "S-100K 목표로 부하를 걸었고 X에서 SSE 연결 성공률이 떨어졌으며
 최초 병목은 Y였다"는 유효한 결과다. 반대로 발생기가 죽어서 멈춘 것은 아무것도 말해 주지 않는다(§3.1).
 

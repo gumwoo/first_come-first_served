@@ -80,7 +80,8 @@ function main() {
   };
   // 파드별 시계열 그대로 읽는다(합치면 파드 재시작으로 줄어든 값과 다른 파드의 증가가 상쇄된다).
   const TICK_FAILURES = "flowticket_queue_admit_tick_failures_total";
-  const START_TIME = "process_start_time_seconds";
+  // 같은 네임스페이스로 좁힌다(다른 대상의 instance와 겹치지 않게).
+  const START_TIME = 'process_start_time_seconds{namespace="flowticket"}';
   // 앱이 뜰 때 조건 없이 등록되는 지표. 비면 관측 공백이다.
   const ALWAYS_PRESENT = new Set(["oversold", "tickFailures"]);
 

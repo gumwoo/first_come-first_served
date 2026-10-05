@@ -91,7 +91,7 @@ class QueueMetricsTest {
     }
 
     @Test
-    void 게이트_폴백_통과_수를_센다() {
+    void 게이트_폴백_거부_수를_센다() {
         metrics.gateFallback().increment();
 
         assertThat(registry.scrape()).contains("flowticket_queue_gate_fallback_total 1.0");

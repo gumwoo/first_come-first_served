@@ -302,12 +302,26 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
         // 입장창 만료 시뮬레이션. admit 키만 지우는 것으로는 만료가 아니다(TS-024).
         // 승격은 pop+카운트+admitExp 등록까지 한 Lua로 확정되고 admit 키는 그 뒤에 붙으므로,
         // "admit 키 없음 + admitExp 미래"는 만료가 아니라 확정 직후 표시 전을 뜻한다.
-        // 실제 만료는 admit 키 TTL과 admitExp score가 같은 시점에 함께 지나는 것이다.
+        // 만료의 기준은 admitExp score다(admit 키 TTL은 승격 스크립트 뒤에 시작해 score보다 늦게 끝난다 — loadtest-100k-plan §3.3).
         redisTemplate.delete("queue:admit:" + token);
         redisTemplate.opsForZSet().add("queue:admitexp:" + eventId, token, 0); // score를 과거로
 
         assertThatThrownBy(() -> seatService.hold(12L, eventId, List.of(aSeatId), token))
                 .isInstanceOf(BusinessException.class); // QUEUE_NOT_ADMITTED
+    }
+
+    @Test
+    void 회수된_토큰은_admit키가_남아도_선점이_거부된다() {
+        // 회수는 admitExp만 지우고 admit 키는 TTL까지 남긴다. 게이트가 그 admit 키로 통과시키면, 같은 틱에 빈 슬롯을
+        // 받은 사용자와 함께 실효 입장자가 정원을 넘는다(loadtest-100k-plan §3.3). 실제 reclaim()으로 회수해 본다.
+        String token = admittedToken(13L, eventId);
+        redisTemplate.opsForZSet().add("queue:admitexp:" + eventId, token, 0); // 점수를 과거로 → 회수 대상
+        assertThat(admissionService.reclaim(eventId)).contains(token);
+        assertThat(redisTemplate.hasKey("queue:admit:" + token)).isTrue(); // admit 키는 남아 있다
+
+        assertThatThrownBy(() -> seatService.hold(13L, eventId, List.of(aSeatId), token))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.QUEUE_NOT_ADMITTED);
     }
 
     // --- helpers ---

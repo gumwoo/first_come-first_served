@@ -10,9 +10,9 @@ import org.slf4j.LoggerFactory;
 /**
  * 입장 슬롯의 생애(승격·회수·이탈)를 남긴다. 실효 입장 초과를 사후에 재구성하는 근거다(loadtest-100k-plan §3.3).
  *
- * 실시간 지표(admitExp 원소 수)는 입장 게이트의 admit 키 폴백을 보지 못한다. 회수 후에도 admit 키는
- * 승격 시각 + TTL까지 살아 있으므로, 토큰별로 "언제 들어와 언제까지 유효했나"를 시각으로 남겨야
- * 시점별 유효 입장 수를 다시 셀 수 있다.
+ * 실시간 지표(admitExp 원소 수)는 스크랩 사이(15초)에 생겼다 사라진 상태를 보지 못한다. 토큰별로 "언제 들어와 언제
+ * 나갔나"(승격 → 회수·이탈)를 시각으로 남겨야 시점별 슬롯 점유 수를 다시 셀 수 있다. 입장 게이트는 admitExp에 있는
+ * 토큰만 통과시키므로(QueueService.isAdmitted), 회수·이탈 시각에 유효 입장도 끝난다.
  *
  * 승격 기록에는 진입 순번(seq)도 남긴다. 대기열 순서 위반(§3.3 사후)을 대조하는 근거다.
  *
@@ -40,7 +40,10 @@ final class QueueAudit {
                 eventId, ref(token), seq, admittedAtMillis, keyWrittenAtMillis, admitExpiresAtEpochSec, admitTtlSec);
     }
 
-    /** 만료 회수. admitExp에서는 빠졌지만 admit 키는 지우지 않는다(키 TTL까지 유효). */
+    /**
+     * 만료 회수. admitExp에서 빠지는 이 시각에 슬롯 점유와 유효 입장이 끝난다. admit 키는 지우지 않고 TTL까지 남지만,
+     * 입장 게이트는 admitExp에 없는 토큰을 통과시키지 않는다(QueueService.isAdmitted).
+     */
     static void reclaimed(Long eventId, String token, long atMillis) {
         log.info("queue.audit kind=reclaim event={} token={} at={}", eventId, ref(token), atMillis);
     }

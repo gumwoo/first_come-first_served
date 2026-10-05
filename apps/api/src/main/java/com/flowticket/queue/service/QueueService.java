@@ -191,15 +191,22 @@ public class QueueService {
             return false;
         }
         Object tokenEvent = redis.opsForHash().get(QueueKeys.token(token), "eventId");
-        boolean admitted = tokenEvent != null && eventId.equals(Long.valueOf((String) tokenEvent));
-        if (admitted && expiresAt == null) {
-            // 이미 회수돼 admitExp에 점수가 없는데 admit 키로 통과했다. 그 슬롯은 다른 사람에게 다시 승격됐을 수
-            // 있어 실효 입장자가 정원을 넘는 창이다(loadtest-100k-plan §3.3 한계).
-            // 점수가 있고 이미 지난(만료됐지만 회수 전) 토큰은 세지 않는다 — 아직 카운터와 admitExp에 남아
-            // 슬롯을 쥔 상태라 정원 초과가 아니다.
-            metrics.gateFallback().increment();
+        boolean sameEvent = tokenEvent != null && eventId.equals(Long.valueOf((String) tokenEvent));
+        if (expiresAt == null) {
+            // 이미 회수(또는 이탈)돼 admitExp에 없는 토큰은 admit 키가 남아 있어도 통과시키지 않는다.
+            // 회수는 admitExp만 지우고 admit 키는 TTL까지 남기며(키 TTL은 승격 스크립트 뒤에 시작해 점수보다
+            // 늦게 끝난다), 같은 틱에서 빈 슬롯이 다른 사람에게 다시 승격된다. 여기서 통과시키면 그 창 동안
+            // 실효 입장자가 정원을 넘는다(loadtest-100k-plan §3.3). 게이트가 admitExp 원소만 받으면 실효 입장자는
+            // 항상 admitExp의 부분집합이라, over-admit 판정(admitExp 원소 수 > 정원)이 실효 입장 초과까지 덮는다.
+            // 거부한 횟수를 센다 — 0보다 크면 그 창이 실제로 생겼다는 뜻이다.
+            if (sameEvent) {
+                metrics.gateFallback().increment();
+            }
+            return false;
         }
-        return admitted;
+        // 점수가 있고 이미 지난(만료됐지만 아직 회수 전) 토큰은 admit 키로 통과시킨다. 아직 카운터와 admitExp에
+        // 남아 슬롯을 쥔 상태라 정원 초과가 아니고, 다음 회수 틱(최대 승격 주기)까지의 짧은 구간이다.
+        return sameEvent;
     }
 
     /** 소유자가 아직 대기열 등록 전(경합)이면 EXPIRED로 보일 수 있어 WAITING으로 낙관 처리. */

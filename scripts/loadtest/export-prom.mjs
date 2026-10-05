@@ -51,6 +51,8 @@ export const QUERIES = {
   queue_admitted: "max by (event) (flowticket_queue_admitted)",
   queue_admit_count: "max by (event) (flowticket_queue_admit_count)",
   queue_capacity: "max(flowticket_queue_capacity)",
+  // 실효 입장 초과 판정(admission-overlap.mjs)의 정원. 파드마다 따로 내보내 파드 사이에 값이 다른지도 본다(max는 그 차이를 가린다).
+  queue_capacity_by_pod: "max by (pod) (flowticket_queue_capacity)",
   queue_admit_drift: "max by (event) (abs(flowticket_queue_admit_drift))",
   queue_admit_tick_failures_rate: "sum(rate(flowticket_queue_admit_tick_failures_total[1m]))",
   queue_admit_tick_p95: "histogram_quantile(0.95, sum by (le) (rate(flowticket_queue_admit_tick_seconds_bucket[1m])))",

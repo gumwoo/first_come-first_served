@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // run 구간의 RDS·ElastiCache CloudWatch 지표를 run 디렉터리에 남긴다(loadtest-100k-plan §5.3, §7 "원시 데이터").
 //
-// RDS와 ElastiCache는 클러스터 밖 관리형 서비스라 Prometheus에 없다. 측정 envelope의 RDS·ElastiCache는 t4g(버스터블)라,
-// CPU 크레딧 상태가 결과에 섞일 수 있다 — 같은 workload라도 직전 부하에 따라 크레딧이 남았는지가 달라진다. 병목이
-// "용량"인지 "크레딧 소진"인지 가르려면 run마다 CPU와 크레딧 지표를 함께 남겨야 한다. CloudWatch도 철거 뒤 리소스가
-// 사라지면 조회 화면에서 찾기 어려우므로, run이 끝날 때마다 내보낸다.
+// RDS와 ElastiCache는 클러스터 밖 관리형 서비스라 Prometheus에 없다. 측정 envelope의 RDS·ElastiCache는 t4g(버스터블)다.
+//   - ElastiCache T4g는 standard 모드라 크레딧이 떨어지면 기준 성능으로 내려간다. 같은 workload라도 직전 부하에 따라
+//     크레딧이 남았는지가 달라 결과가 run 순서에 따라 바뀔 수 있다 — 병목이 "용량"인지 "크레딧 소진"인지 가를 근거가 필요하다.
+//   - RDS db.t4g는 Unlimited 모드라 크레딧이 떨어져도 성능이 깎이지 않는다(추가 과금). RDS 병목은 크레딧에 묶인 결과가
+//     아니라 용량 한계다. 다만 잉여 크레딧을 쓴 상태(CPUSurplusCreditBalance > 0)면 "Unlimited 버스트(추가 과금) 상태에서
+//     잰 용량"이라는 envelope 조건을 결과에 붙인다.
+// 그래서 run마다 CPU와 크레딧 지표를 함께 남긴다. 리소스를 철거하면 조회 화면에서 찾기 어려우므로 run이 끝날 때마다 내보낸다.
 //
 //   node scripts/loadtest/export-cloudwatch.mjs --out artifacts/loadtest/<session>/<run> \
 //     --start 2026-10-05T05:00:00Z --end 2026-10-05T05:12:00Z [--period 60] [--rds-id flowticket] [--redis-group flowticket-redis]
@@ -17,12 +20,14 @@
 //
 // 결과: <out>/cloudwatch/metrics.json(GetMetricData 응답의 MetricDataResults 그대로), <out>/cloudwatch/_meta.json(대상·
 // 정규화한 구간·질의 목록·질의별 점 수와 상태·응답 메시지).
+// 0은 "필수 질의마다 점이 하나 이상"이라는 뜻이지 구간 끝까지 다 받았다는 보장이 아니다 — 수집 지연 중에 내보내면 구간
+// 앞쪽 점만으로 0이 날 수 있다(그래서 run 종료 10분 뒤에 내보낸다). 인자 오류(2)일 때는 이전 결과를 지우지 않는다.
 // 종료 코드: 0 필수 질의가 모두 Complete이고 점이 하나 이상, 1 필수 질의가 빔·어떤 질의든 Complete가 아님(선택 질의의 응답
 // 없음은 제외)·응답이나 질의에 경고 메시지·복제 그룹 노드 없음·AWS 호출 실패·저장 실패(위반 아님), 2 인자 오류(달력상 없는
 // 시각 포함). RDS 잉여 크레딧(CPUSurplus*)은 값이 0이면 발행되지 않을 수 있어(추론) 비어도
 // 문제로 세지 않는다(선택 질의).
 import { execFile } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -32,9 +37,9 @@ import { parseArgs } from "node:util";
 export const RDS_METRICS = [
   ["CPUUtilization", "Average"], ["CPUUtilization", "Maximum"],
   ["CPUCreditBalance", "Minimum"], ["CPUCreditUsage", "Sum"],
-  // AWS 문서상 RDS db.t4g는 Unlimited 모드로 구성된다. 크레딧이 떨어져도 성능이 깎이지 않고, 그 뒤 쓴 잉여 크레딧이
-  // CPUSurplusCreditBalance에 쌓인다 — 크레딧 소진의 근거는 이 값이 0보다 큰 것이다. CPUSurplusCreditsCharged는 잉여가
-  // 24시간 최대치를 넘거나 인스턴스를 정지·종료할 때 과금이 확정된 양이라, 짧은 run에서는 소진돼도 0일 수 있다.
+  // AWS 문서상 RDS db.t4g는 Unlimited 모드로 구성된다. 크레딧이 떨어져도 성능이 깎이지 않고(용량 결과는 그대로 유효),
+  // 그 뒤 쓴 잉여 크레딧이 CPUSurplusCreditBalance에 쌓인다 — 이 값 > 0이면 "Unlimited 버스트 상태에서 잰 용량"으로 표기한다.
+  // CPUSurplusCreditsCharged는 잉여가 24시간 최대치를 넘거나 인스턴스를 정지·종료할 때 과금이 확정된 양이라 짧은 run에서는 0일 수 있다.
   // 둘 다 잉여가 없으면 발행되지 않을 수 있어(추론) 선택 질의로 둔다.
   ["CPUSurplusCreditBalance", "Maximum", true], ["CPUSurplusCreditsCharged", "Sum", true],
   ["DatabaseConnections", "Maximum"], ["ReadLatency", "Average"], ["WriteLatency", "Average"],
@@ -81,8 +86,9 @@ export function summarize(queries, results, messages = []) {
   const byId = new Map();
   for (const r of results) {
     const prev = byId.get(r.Id);
-    // 페이지가 나뉘면 같은 Id가 여러 번 온다. 점을 합치고, 하나라도 Complete가 아니면 그 상태를 남긴다.
-    if (prev) { prev.points += (r.Values || []).length; if (r.StatusCode !== "Complete") prev.status = r.StatusCode; }
+    // 페이지가 나뉘면 같은 Id가 여러 번 온다. 점을 합치고, 상태는 마지막 페이지 것을 쓴다 — 앞 페이지의 PartialData는
+    // "NextToken으로 이어 받으라"는 정상 신호다(AWS 문서). 마지막 페이지까지 Complete가 아니면 문제다.
+    if (prev) { prev.points += (r.Values || []).length; prev.status = r.StatusCode; }
     else byId.set(r.Id, { points: (r.Values || []).length, status: r.StatusCode });
   }
   const perQuery = queries.map((q) => ({ id: q.Id, label: q.Label, optional: !!q.optional, ...(byId.get(q.Id) || { points: 0, status: "Missing" }) }));
@@ -137,6 +143,13 @@ async function main() {
   };
   const start = zoned(a.start) ? Date.parse(a.start) : NaN, end = zoned(a.end) ? Date.parse(a.end) : NaN;
   const idOk = (s) => /^[A-Za-z0-9-]+$/.test(s ?? "");
+  // --end가 지금보다 뒤면 그 구간은 아직 오지 않았다. 앞쪽 점만으로 "필수 질의마다 점 1개 이상"을 채워 0이 나올 수 있으므로
+  // 인자 오류로 막는다(구간 끝의 데이터를 덜 받았는지는 이것으로 다 막지 못한다 — §5.3 한계).
+  if (Number.isFinite(end) && end > Date.now()) {
+    console.error(`--end(${a.end})가 지금보다 뒤다 — run이 끝나고 수집 지연을 기다린 뒤 내보낸다`);
+    process.exitCode = 2;
+    return;
+  }
   if (!a.out || !Number.isFinite(start) || !Number.isFinite(end) || !(end > start) || !/^[1-9]\d*$/.test(a.period) ||
       Number(a.period) % 60 !== 0 || !idOk(a["rds-id"]) || !idOk(a["redis-group"]) || !idOk(a.region)) {
     console.error(`${USAGE}\n(시각은 Z·오프셋이 붙은 ISO, --period는 60의 배수, 식별자는 영숫자·하이픈)`);
@@ -156,7 +169,9 @@ async function main() {
   if (cacheClusterIds.length === 0) throw new Error(`복제 그룹 ${a["redis-group"]}의 노드를 찾지 못했다`);
 
   const queries = buildQueries({ rdsId: a["rds-id"], cacheClusterIds, period: Number(a.period) });
-  const qfile = join(tmpdir(), `cw-queries-${process.pid}.json`);
+  // 질의 파일은 이 실행만의 임시 디렉터리에 둔다(공유 tmpdir의 예측 가능한 이름을 피한다).
+  const qdir = mkdtempSync(join(tmpdir(), "cw-queries-"));
+  const qfile = join(qdir, "queries.json");
   writeFileSync(qfile, JSON.stringify(toApi(queries)));
   const results = [];
   const messages = [];
@@ -178,7 +193,7 @@ async function main() {
       if (token) seen.add(token);
     } while (token);
   } finally {
-    rmSync(qfile, { force: true });
+    rmSync(qdir, { recursive: true, force: true });
   }
 
   const { perQuery, problems } = summarize(queries, results, messages);

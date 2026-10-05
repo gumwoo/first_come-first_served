@@ -56,13 +56,16 @@ test("빈 질의·Complete가 아닌 질의·응답 없는 질의를 문제로 �
   assert.equal(problems.length, 2); // 빈 질의 1개 + 응답 없는 질의 1개
 });
 
-test("페이지가 나뉜 같은 Id의 점을 합치고, 한 페이지라도 PartialData면 문제다", () => {
+test("페이지가 나뉜 같은 Id의 점을 합치고, 마지막 페이지가 Complete가 아니면 문제다", () => {
   const one = q.slice(0, 1);
   const ok = summarize(one, [{ Id: one[0].Id, StatusCode: "Complete", Values: [1] }, { Id: one[0].Id, StatusCode: "Complete", Values: [2, 3] }]);
   assert.equal(ok.perQuery[0].points, 3);
   assert.equal(ok.problems.length, 0);
-  const partial = summarize(one, [{ Id: one[0].Id, StatusCode: "PartialData", Values: [1] }, { Id: one[0].Id, StatusCode: "Complete", Values: [2] }]);
-  assert.equal(partial.problems.length, 1);
+  // 앞 페이지의 PartialData는 "이어 받으라"는 정상 신호다.
+  const paged = summarize(one, [{ Id: one[0].Id, StatusCode: "PartialData", Values: [1] }, { Id: one[0].Id, StatusCode: "Complete", Values: [2] }]);
+  assert.equal(paged.problems.length, 0);
+  const unfinished = summarize(one, [{ Id: one[0].Id, StatusCode: "Complete", Values: [1] }, { Id: one[0].Id, StatusCode: "PartialData", Values: [2] }]);
+  assert.equal(unfinished.problems.length, 1);
 });
 
 test("질의별 메시지도 문제로 센다", () => {

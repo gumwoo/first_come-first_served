@@ -342,7 +342,7 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 | **발생기 위치** | 클러스터 안 k8s Job(`infra/k6/k6-job.yaml`, nodeSelector 없음) — 앱과 노드를 나눠 쓴다 | **클러스터 밖** 별도 인스턴스. 단일 인스턴스로 부족하면 k6 분산 실행 |
 | **경로** | 시험마다 다름(api Service 직접 호출 이력) | **ALB 공인 경로만** — ALB → web → api |
 | **노드 계열** | t3 계열(버스터블) | [[ADR-012]] §5대로 측정 시 비버스터블(`m6i.large` 등) — CPU 크레딧이 결과를 오염시킨다 |
-| **RDS·ElastiCache 사양** | `db.t4g.micro`, `cache.t4g.micro` × 2(버스터블) | **바꾸지 않고 측정 envelope에 포함한다.** 이 시험의 목적은 지금 아키텍처에서 무엇이 먼저 깨지는지 찾는 것이라, 처음부터 사양을 올리면 그 답을 지운다. 대신 크레딧이 결과에 섞이는지 run마다 CloudWatch로 남겨 가른다(§5.3). RDS·ElastiCache가 실제 최초 병목으로 확인되면 단계 8~9 절차로 사양을 바꿔 같은 조건에서 다시 잰다. 결과 문장에는 이 사양을 envelope로 붙인다 |
+| **RDS·ElastiCache 사양** | `db.t4g.micro`, `cache.t4g.micro` × 2(버스터블) | **바꾸지 않고 측정 envelope에 포함한다.** 이 시험의 목적은 지금 아키텍처에서 무엇이 먼저 깨지는지 찾는 것이라, 처음부터 사양을 올리면 그 답을 지운다. 대신 크레딧 상태를 run마다 CloudWatch로 남겨 결과를 해석한다(§5.3 — ElastiCache는 크레딧 소진이 결과에 섞일 수 있고, RDS는 Unlimited라 용량 결과는 유효하되 버스트 상태를 envelope로 붙인다). RDS·ElastiCache가 실제 최초 병목으로 확인되면 단계 8~9 절차로 사양을 바꿔 같은 조건에서 다시 잰다. 결과 문장에는 이 사양을 envelope로 붙인다 |
 | **발생기 관측** | 없음 | 발생기 CPU·메모리·네트워크, k6 `dropped_iterations`를 함께 기록 |
 
 **발생기 인프라**(구현): `infra/terraform/platform/modules/loadgen`. 퍼블릭 서브넷의 EC2에서 ALB 공인 경로로 건다.
@@ -450,7 +450,10 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 
 - **ElastiCache**: Redis exporter가 없다. CPU·메모리·명령 지연은 **CloudWatch**로 본다
 - **RDS·ElastiCache 내보내기**(구현): `scripts/loadtest/export-cloudwatch.mjs`가 run 구간의 CloudWatch 지표를 `<run>/cloudwatch/`에 남긴다 — RDS(CPU 평균·최대, `CPUCreditBalance`·`CPUCreditUsage`, `CPUSurplusCreditBalance`·`CPUSurplusCreditsCharged`, 커넥션, 읽기·쓰기 지연, 여유 메모리, 디스크 큐)와 ElastiCache 노드마다(CPU·엔진 CPU, `CPUCreditBalance`·`CPUCreditUsage`, 커넥션, 네트워크, 메모리 사용률, eviction). 해상도는 일반 지표 60초(표준 모니터링), **CPU 크레딧 지표(`CPUCredit*`·`CPUSurplus*`)는 5분**이다(AWS 문서상 5분 주기로만 발행) — 크레딧 소진은 5분 단위로만 보인다. CloudWatch 수집 지연과 5분 집계를 감안해 run이 끝나고 10분쯤 뒤에, `--end`를 run 종료 + 5분 이후로 잡아 내보낸다(추론, 실측하지 않음). 시각은 Z·오프셋이 붙은 ISO만 받는다. ElastiCache 노드 지표는 `CacheClusterId`와 `CacheNodeId`(멤버 클러스터의 노드 `0001`) 두 차원으로 질의한다. 종료 코드는 §3.3 종료 코드 표를 따른다(0 필수 질의 모두 저장, 1 저장이 불완전 — 위반 아님, 2 인자 오류). RDS 잉여 크레딧(`CPUSurplus*`)은 잉여가 없으면 발행되지 않을 수 있어(추론) 비어도 문제로 세지 않는다.
-- **버스터블 크레딧의 해석**: 측정 envelope의 RDS·ElastiCache는 t4g(버스터블)다. 같은 workload라도 직전 부하에 따라 크레딧 잔량이 달라 결과가 run 순서에 따라 바뀔 수 있다. 그래서 병목 후보가 RDS·ElastiCache면 그 run의 크레딧 지표를 함께 본다 — ElastiCache `CPUCreditBalance`가 0 근처로 떨어졌으면 기준 성능으로 묶인 상태(크레딧 소진)일 수 있고, RDS db.t4g는 AWS 문서상 Unlimited 모드로 구성돼 크레딧이 떨어져도 성능이 깎이지 않고, 그 뒤 쓴 잉여 크레딧이 `CPUSurplusCreditBalance`에 쌓인다 — RDS 크레딧 소진의 근거는 `CPUSurplusCreditBalance` > 0이다. `CPUSurplusCreditsCharged`는 잉여가 24시간 최대치를 넘거나 인스턴스를 정지·종료할 때 과금이 확정된 양이라, 짧은 run에서는 소진돼도 0일 수 있어 판별에 쓰지 않는다(이 계정 설정은 측정 세션에서 `CPUSurplusCreditBalance`로 확인한다). ElastiCache T4g 노드는 standard로 구성돼 크레딧이 떨어지면 기준 성능으로 서서히 내려간다(AWS 문서). 크레딧 소진이 원인으로 보이면 "용량 knee"가 아니라 "크레딧 상태에 묶인 결과"로 기록하고, 병목 확인 뒤 단계 8~9 절차로 사양을 바꿔 같은 조건에서 다시 잰다.
+- **버스터블 크레딧의 해석**: 측정 envelope의 RDS·ElastiCache는 t4g(버스터블)지만, 크레딧 모드가 달라 해석도 다르다.
+  - **ElastiCache(T4g, standard 모드 — AWS 문서)**: 크레딧이 떨어지면 기준 성능으로 서서히 내려간다. 같은 workload라도 직전 부하에 따라 크레딧 잔량이 달라 결과가 run 순서에 따라 바뀔 수 있다. 병목 후보가 ElastiCache이고 그 run의 `CPUCreditBalance`가 0 근처로 떨어졌으면 "용량 knee"가 아니라 "크레딧 상태에 묶인 결과"로 기록하고, 병목 확인 뒤 단계 8~9 절차로 사양을 바꿔 같은 조건에서 다시 잰다.
+  - **RDS(db.t4g, Unlimited 모드 — AWS 문서)**: 크레딧이 떨어져도 성능이 깎이지 않는다(추가 과금). 그래서 RDS 병목은 크레딧에 묶인 결과가 아니라 **용량 한계**로 기록한다. 다만 그 run에서 잉여 크레딧을 썼으면(`CPUSurplusCreditBalance` > 0) 결과에 "Unlimited 버스트(추가 과금) 상태에서 잰 용량"이라는 envelope 조건을 붙인다 — 같은 사양이라도 크레딧을 다 쓴 뒤 계속 버스트한 값이다. `CPUSurplusCreditsCharged`는 잉여가 24시간 최대치를 넘거나 인스턴스를 정지·종료할 때 과금이 확정된 양이라 짧은 run에서는 0일 수 있어 판별에 쓰지 않는다. 이 계정의 실제 모드는 측정 세션에서 `CPUSurplusCreditBalance`로 확인한다.
+  - **한계**: 내보내기의 종료 0은 "필수 질의마다 점이 하나 이상"이라는 뜻이지 구간 끝까지 다 받았다는 보장이 아니다. 수집 지연 중에 내보내면 구간 앞쪽 점만으로 0이 날 수 있다. 그래서 `--end`가 지금보다 뒤면 인자 오류로 막고, run이 끝나고 10분쯤 뒤에 내보낸다.
 - **ALB**: 5xx·TargetResponseTime·RequestCount는 CloudWatch
 
 ---

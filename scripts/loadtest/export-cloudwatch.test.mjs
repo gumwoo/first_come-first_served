@@ -2,7 +2,7 @@
 //   node --test scripts/loadtest/export-cloudwatch.test.mjs
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildQueries, summarize, RDS_METRICS, REDIS_METRICS } from "./export-cloudwatch.mjs";
+import { buildQueries, summarize, toApi, RDS_METRICS, REDIS_METRICS, CREDIT_PERIOD } from "./export-cloudwatch.mjs";
 
 const q = buildQueries({ rdsId: "flowticket", cacheClusterIds: ["flowticket-redis-001", "flowticket-redis-002"], period: 60 });
 
@@ -23,7 +23,27 @@ test("차원과 통계가 지표마다 맞다", () => {
   assert.equal(r.MetricStat.Stat, "Maximum");
   const c = q.find((x) => x.Label === "redis/flowticket-redis-001/EngineCPUUtilization/Maximum");
   assert.equal(c.MetricStat.Metric.Namespace, "AWS/ElastiCache");
-  assert.deepEqual(c.MetricStat.Metric.Dimensions, [{ Name: "CacheClusterId", Value: "flowticket-redis-001" }]);
+  assert.deepEqual(c.MetricStat.Metric.Dimensions, [{ Name: "CacheClusterId", Value: "flowticket-redis-001" }, { Name: "CacheNodeId", Value: "0001" }]);
+});
+
+test("크레딧 지표는 5분, 나머지는 --period로 질의한다", () => {
+  for (const x of q) {
+    const credit = /^CPU(Credit|Surplus)/.test(x.MetricStat.Metric.MetricName);
+    assert.equal(x.MetricStat.Period, credit ? CREDIT_PERIOD : 60, x.Label);
+  }
+});
+
+test("AWS로 보내는 질의에는 우리 쪽 표시(optional)가 없다", () => {
+  for (const x of toApi(q)) assert.equal("optional" in x, false);
+});
+
+test("RDS 잉여 크레딧은 선택 질의라 비어도 문제가 아니고, 응답 메시지는 문제다", () => {
+  const surplus = q.filter((x) => x.optional);
+  assert.deepEqual(surplus.map((x) => x.MetricStat.Metric.MetricName).sort(), ["CPUSurplusCreditBalance", "CPUSurplusCreditsCharged"]);
+  const { problems } = summarize(surplus, []);
+  assert.equal(problems.length, 0);
+  const withMsg = summarize([], [], [{ Code: "MaxQueryTimeRangeExceed" }]);
+  assert.equal(withMsg.problems.length, 1);
 });
 
 test("빈 질의·Complete가 아닌 질의·응답 없는 질의를 문제로 센다", () => {

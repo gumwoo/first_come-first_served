@@ -9,27 +9,31 @@
 //   node scripts/loadtest/export-cloudwatch.mjs --out artifacts/loadtest/<session>/<run> \
 //     --start 2026-10-05T05:00:00Z --end 2026-10-05T05:12:00Z [--period 60] [--rds-id flowticket] [--redis-group flowticket-redis]
 //
-// --start는 run 시작 이전, --end는 run 종료 이후로 잡는다. CloudWatch 지표는 수집·집계에 몇 분 늦게 들어오므로(추론,
-// 표준 모니터링 기준) run이 끝나고 5분쯤 뒤에 내보낸다. --period 기본 60초는 RDS 표준 모니터링과 ElastiCache의 기본
-// 해상도다(Enhanced Monitoring은 켜지 않았다).
+// --start는 run 시작 이전, --end는 run 종료 이후로 잡는다(시각은 Z 또는 오프셋이 붙은 ISO만 받는다). 해상도는 두 가지다.
+//   - 일반 지표: --period(기본 60초) — RDS 표준 모니터링과 ElastiCache의 기본 해상도(Enhanced Monitoring은 켜지 않았다)
+//   - CPU 크레딧 지표(CPUCredit*, CPUSurplus*): 5분(300초) — AWS 문서상 이 지표들은 5분 주기로만 발행된다
+// 그래서 크레딧 소진은 5분 단위로만 보이고, 구간이 5분 경계를 하나 이상 덮어야 크레딧 점이 생긴다. CloudWatch 수집 지연과
+// 5분 집계를 감안해 run이 끝나고 10분쯤 뒤에 내보내고, --end는 run 종료 + 5분 이후로 잡는다(추론, 실측하지 않음).
 //
 // 결과: <out>/cloudwatch/metrics.json(GetMetricData 응답의 MetricDataResults 그대로), <out>/cloudwatch/_meta.json(대상·
-// 구간·질의 목록·질의별 점 수와 상태).
-// 종료 코드: 0 모든 질의가 Complete이고 점이 하나 이상, 1 일부 질의가 비었거나 Complete가 아님·AWS 호출 실패(위반 아님),
-// 2 인자 오류.
+// 정규화한 구간·질의 목록·질의별 점 수와 상태·응답 메시지).
+// 종료 코드: 0 필수 질의가 모두 Complete이고 점이 하나 이상, 1 필수 질의가 비었거나 Complete가 아님·응답에 경고 메시지·
+// AWS 호출 실패(위반 아님), 2 인자 오류. RDS 잉여 크레딧(CPUSurplus*)은 값이 0이면 발행되지 않을 수 있어(추론) 비어도
+// 문제로 세지 않는다(선택 질의).
 import { execFile } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
-// 지표 목록. 통계는 판정·진단에 쓰는 방향으로 고른다(크레딧은 최소, 사용량은 합, 지연은 평균·최대).
+// 지표 목록 [이름, 통계, 선택]. 통계는 판정·진단에 쓰는 방향으로 고른다(크레딧은 최소, 사용량은 합, 지연은 평균·최대).
+// 선택 질의는 비어도 문제로 세지 않는다.
 export const RDS_METRICS = [
   ["CPUUtilization", "Average"], ["CPUUtilization", "Maximum"],
   ["CPUCreditBalance", "Minimum"], ["CPUCreditUsage", "Sum"],
-  // RDS T 계열은 Unlimited 모드로 동작하는 것으로 알려져 있다(추론, 이 계정에서 확인하지 않음). 그러면 크레딧이 떨어져도
-  // 성능이 깎이지 않고 잉여 크레딧이 과금된다 — 그 흔적이 아래 두 지표다.
-  ["CPUSurplusCreditBalance", "Maximum"], ["CPUSurplusCreditsCharged", "Sum"],
+  // AWS 문서상 RDS db.t4g는 Unlimited 모드로 구성된다. 크레딧이 떨어져도 성능이 깎이지 않고 잉여 크레딧이 과금되며,
+  // 그 흔적이 아래 두 지표다. 잉여가 없으면(0) 발행되지 않을 수 있어(추론) 선택 질의로 둔다.
+  ["CPUSurplusCreditBalance", "Maximum", true], ["CPUSurplusCreditsCharged", "Sum", true],
   ["DatabaseConnections", "Maximum"], ["ReadLatency", "Average"], ["WriteLatency", "Average"],
   ["FreeableMemory", "Minimum"], ["DiskQueueDepth", "Maximum"],
 ];
@@ -40,25 +44,37 @@ export const REDIS_METRICS = [
   ["DatabaseMemoryUsagePercentage", "Maximum"], ["Evictions", "Sum"],
 ];
 
-// GetMetricData 질의. Id는 소문자로 시작하고 영숫자·밑줄만 쓴다.
+// CPU 크레딧 지표는 5분 주기로만 발행된다(AWS 문서). 더 잘게 질의해도 점이 늘지 않으므로 300초로 질의한다.
+export const CREDIT_PERIOD = 300;
+const isCredit = (m) => /^CPU(Credit|Surplus)/.test(m);
+
+// GetMetricData 질의. Id는 소문자로 시작하고 영숫자·밑줄만 쓴다. optional은 비어도 문제로 세지 않는 질의다(우리 쪽 표시 —
+// AWS에 보내기 전에 뺀다).
+// ElastiCache 노드 지표는 CacheClusterId와 CacheNodeId 두 차원으로 발행된다(AWS 문서 예시). 클러스터 모드가 꺼진 복제 그룹의
+// 멤버 클러스터는 노드가 하나라 CacheNodeId는 0001이다.
 export function buildQueries({ rdsId, cacheClusterIds, period }) {
   const q = [];
   const id = (s) => s.toLowerCase().replace(/[^a-z0-9_]/g, "_");
-  for (const [m, stat] of RDS_METRICS) {
-    q.push({ Id: id(`rds_${m}_${stat}`), Label: `rds/${rdsId}/${m}/${stat}`,
-      MetricStat: { Metric: { Namespace: "AWS/RDS", MetricName: m, Dimensions: [{ Name: "DBInstanceIdentifier", Value: rdsId }] }, Period: period, Stat: stat } });
+  for (const [m, stat, optional] of RDS_METRICS) {
+    q.push({ Id: id(`rds_${m}_${stat}`), Label: `rds/${rdsId}/${m}/${stat}`, optional: !!optional,
+      MetricStat: { Metric: { Namespace: "AWS/RDS", MetricName: m, Dimensions: [{ Name: "DBInstanceIdentifier", Value: rdsId }] }, Period: isCredit(m) ? CREDIT_PERIOD : period, Stat: stat } });
   }
   cacheClusterIds.forEach((cid, i) => {
-    for (const [m, stat] of REDIS_METRICS) {
-      q.push({ Id: id(`redis${i}_${m}_${stat}`), Label: `redis/${cid}/${m}/${stat}`,
-        MetricStat: { Metric: { Namespace: "AWS/ElastiCache", MetricName: m, Dimensions: [{ Name: "CacheClusterId", Value: cid }] }, Period: period, Stat: stat } });
+    for (const [m, stat, optional] of REDIS_METRICS) {
+      q.push({ Id: id(`redis${i}_${m}_${stat}`), Label: `redis/${cid}/${m}/${stat}`, optional: !!optional,
+        MetricStat: { Metric: { Namespace: "AWS/ElastiCache", MetricName: m,
+          Dimensions: [{ Name: "CacheClusterId", Value: cid }, { Name: "CacheNodeId", Value: "0001" }] },
+          Period: isCredit(m) ? CREDIT_PERIOD : period, Stat: stat } });
     }
   });
   return q;
 }
 
-// 질의별 점 수와 상태. 비었거나 Complete가 아니면 문제로 센다.
-export function summarize(queries, results) {
+// AWS에 보내는 질의(우리 쪽 표시 optional을 뺀다).
+export const toApi = (queries) => queries.map(({ optional, ...rest }) => rest);
+
+// 질의별 점 수와 상태. 필수 질의가 비었거나, 어떤 질의든 Complete가 아니면 문제로 센다. 응답 최상위 메시지(경고)도 문제다.
+export function summarize(queries, results, messages = []) {
   const byId = new Map();
   for (const r of results) {
     const prev = byId.get(r.Id);
@@ -66,8 +82,11 @@ export function summarize(queries, results) {
     if (prev) { prev.points += (r.Values || []).length; if (r.StatusCode !== "Complete") prev.status = r.StatusCode; }
     else byId.set(r.Id, { points: (r.Values || []).length, status: r.StatusCode });
   }
-  const perQuery = queries.map((q) => ({ id: q.Id, label: q.Label, ...(byId.get(q.Id) || { points: 0, status: "Missing" }) }));
-  const problems = perQuery.filter((p) => p.points === 0 || p.status !== "Complete").map((p) => `${p.label}: ${p.status}, 점 ${p.points}`);
+  const perQuery = queries.map((q) => ({ id: q.Id, label: q.Label, optional: !!q.optional, ...(byId.get(q.Id) || { points: 0, status: "Missing" }) }));
+  const problems = perQuery
+    .filter((p) => (p.points === 0 && !p.optional) || (p.status !== "Complete" && !(p.optional && p.status === "Missing")))
+    .map((p) => `${p.label}: ${p.status}, 점 ${p.points}`);
+  for (const m of messages) problems.push(`응답 메시지: ${m.Code}${m.Value ? " " + m.Value : ""}`);
   return { perQuery, problems };
 }
 
@@ -101,11 +120,13 @@ async function main() {
     process.exitCode = 2;
     return;
   }
-  const start = Date.parse(a.start ?? ""), end = Date.parse(a.end ?? "");
+  // 오프셋 없는 시각은 Date.parse가 로컬 시간으로 읽는다. Z나 ±hh:mm이 붙은 ISO만 받는다.
+  const zoned = (x) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.test(x ?? "");
+  const start = zoned(a.start) ? Date.parse(a.start) : NaN, end = zoned(a.end) ? Date.parse(a.end) : NaN;
   const idOk = (s) => /^[A-Za-z0-9-]+$/.test(s ?? "");
   if (!a.out || !Number.isFinite(start) || !Number.isFinite(end) || !(end > start) || !/^[1-9]\d*$/.test(a.period) ||
       Number(a.period) % 60 !== 0 || !idOk(a["rds-id"]) || !idOk(a["redis-group"]) || !idOk(a.region)) {
-    console.error(`${USAGE}\n(--period는 60의 배수, 식별자는 영숫자·하이픈)`);
+    console.error(`${USAGE}\n(시각은 Z·오프셋이 붙은 ISO, --period는 60의 배수, 식별자는 영숫자·하이픈)`);
     process.exitCode = 2;
     return;
   }
@@ -123,26 +144,31 @@ async function main() {
 
   const queries = buildQueries({ rdsId: a["rds-id"], cacheClusterIds, period: Number(a.period) });
   const qfile = join(tmpdir(), `cw-queries-${process.pid}.json`);
-  writeFileSync(qfile, JSON.stringify(queries));
+  writeFileSync(qfile, JSON.stringify(toApi(queries)));
   const results = [];
+  const messages = [];
   try {
     let token;
     do {
       const args = ["cloudwatch", "get-metric-data", "--metric-data-queries", `file://${qfile}`,
-        "--start-time", new Date(start).toISOString(), "--end-time", new Date(end).toISOString(), "--scan-by", "TimestampAscending", ...region];
+        "--start-time", new Date(start).toISOString(), "--end-time", new Date(end).toISOString(), "--scan-by", "TimestampAscending",
+        // 페이지는 직접 넘긴다(CLI 자동 페이지 처리와 섞이지 않게).
+        "--no-paginate", ...region];
       if (token) args.push("--next-token", token);
       const r = await aws(args);
       results.push(...(r.MetricDataResults ?? []));
+      messages.push(...(r.Messages ?? []));
       token = r.NextToken;
     } while (token);
   } finally {
     rmSync(qfile, { force: true });
   }
 
-  const { perQuery, problems } = summarize(queries, results);
+  const { perQuery, problems } = summarize(queries, results, messages);
   writeFileSync(`${dir}/metrics.json`, JSON.stringify(results, null, 2));
   writeFileSync(`${dir}/_meta.json`, JSON.stringify({
-    start: a.start, end: a.end, period: Number(a.period), region: a.region,
+    start: new Date(start).toISOString(), end: new Date(end).toISOString(), startArg: a.start, endArg: a.end,
+    period: Number(a.period), creditPeriod: CREDIT_PERIOD, region: a.region, messages,
     rdsId: a["rds-id"], redisGroup: a["redis-group"], cacheClusterIds, perQuery, problems,
   }, null, 2));
   for (const p of problems) console.error(`[cloudwatch] ${p}`);

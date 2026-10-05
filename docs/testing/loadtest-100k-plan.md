@@ -288,6 +288,7 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 | `prom-recheck.mjs` | 위반 없음 | 위반 | 판정 불가·인자 오류 | — | — |
 | `pod-coverage.mjs` | 로그를 다 읽음 | — | 빠진 로그 있음·확인 실패 | — | — |
 | `export-prom.mjs` | 모두 저장 | **일부 질의 실패·저장 실패**(위반 아님) | 인자 오류 | — | — |
+| `export-cloudwatch.mjs` | 필수 질의 모두 저장 | **필수 질의가 빔·응답 경고·AWS 호출 실패**(위반 아님) | 인자 오류 | — | — |
 
 대기열 순서 대조는 감사 시각이 파드마다의 시계라, 허용 폭(`--tolerance-ms`, 0 이상의 정수, 기본 1,000ms — 잠정값)을 넘어 뒤집힌 경우만 위반으로 센다. 허용 폭은 0~60,000ms의 정수만 받는다(너무 크면 검사가 사실상 꺼진다). 종료 코드는 0 위반 없음, 1 위반, 2 검사 실패(인자 오류·예외·승격 기록 0건·형식이 깨진 승격 줄)이다. 승격 줄은 마지막 필드(`admitKeyTtl`)까지 형식대로 있어야 정상으로 받는다 — `at` 값이 숫자 중간에서 잘린 줄도 마지막 필드가 없어 걸러진다. 위반을 이미 찾았으면 1이 우선한다.
 
@@ -447,8 +448,8 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 ### 5.3 레포 밖에서 봐야 하는 것
 
 - **ElastiCache**: Redis exporter가 없다. CPU·메모리·명령 지연은 **CloudWatch**로 본다
-- **RDS·ElastiCache 내보내기**(구현): `scripts/loadtest/export-cloudwatch.mjs`가 run 구간의 CloudWatch 지표를 `<run>/cloudwatch/`에 남긴다 — RDS(CPU 평균·최대, `CPUCreditBalance`·`CPUCreditUsage`, `CPUSurplusCreditBalance`·`CPUSurplusCreditsCharged`, 커넥션, 읽기·쓰기 지연, 여유 메모리, 디스크 큐)와 ElastiCache 노드마다(CPU·엔진 CPU, `CPUCreditBalance`·`CPUCreditUsage`, 커넥션, 네트워크, 메모리 사용률, eviction). 해상도는 60초(표준 모니터링). CloudWatch는 수집이 몇 분 늦으므로 run이 끝나고 5분쯤 뒤에 내보낸다(추론). 종료 코드 0 모두 저장, 1 일부 질의가 비었거나 AWS 호출 실패(위반 아님), 2 인자 오류.
-- **버스터블 크레딧의 해석**: 측정 envelope의 RDS·ElastiCache는 t4g(버스터블)다. 같은 workload라도 직전 부하에 따라 크레딧 잔량이 달라 결과가 run 순서에 따라 바뀔 수 있다. 그래서 병목 후보가 RDS·ElastiCache면 그 run의 크레딧 지표를 함께 본다 — ElastiCache `CPUCreditBalance`가 0 근처로 떨어졌으면 기준 성능으로 묶인 상태(크레딧 소진)일 수 있고, RDS는 T 계열이 Unlimited 모드로 동작하는 것으로 알려져 있어(추론, 이 계정에서 확인하지 않음) 크레딧이 떨어지면 성능이 깎이는 대신 `CPUSurplusCreditsCharged`가 생긴다. 크레딧 소진이 원인으로 보이면 "용량 knee"가 아니라 "크레딧 상태에 묶인 결과"로 기록하고, 병목 확인 뒤 단계 8~9 절차로 사양을 바꿔 같은 조건에서 다시 잰다.
+- **RDS·ElastiCache 내보내기**(구현): `scripts/loadtest/export-cloudwatch.mjs`가 run 구간의 CloudWatch 지표를 `<run>/cloudwatch/`에 남긴다 — RDS(CPU 평균·최대, `CPUCreditBalance`·`CPUCreditUsage`, `CPUSurplusCreditBalance`·`CPUSurplusCreditsCharged`, 커넥션, 읽기·쓰기 지연, 여유 메모리, 디스크 큐)와 ElastiCache 노드마다(CPU·엔진 CPU, `CPUCreditBalance`·`CPUCreditUsage`, 커넥션, 네트워크, 메모리 사용률, eviction). 해상도는 일반 지표 60초(표준 모니터링), **CPU 크레딧 지표(`CPUCredit*`·`CPUSurplus*`)는 5분**이다(AWS 문서상 5분 주기로만 발행) — 크레딧 소진은 5분 단위로만 보인다. CloudWatch 수집 지연과 5분 집계를 감안해 run이 끝나고 10분쯤 뒤에, `--end`를 run 종료 + 5분 이후로 잡아 내보낸다(추론, 실측하지 않음). 시각은 Z·오프셋이 붙은 ISO만 받는다. ElastiCache 노드 지표는 `CacheClusterId`와 `CacheNodeId`(멤버 클러스터의 노드 `0001`) 두 차원으로 질의한다. 종료 코드 0 필수 질의 모두 저장, 1 필수 질의가 비었거나 응답 경고·AWS 호출 실패(위반 아님), 2 인자 오류. RDS 잉여 크레딧(`CPUSurplus*`)은 잉여가 없으면 발행되지 않을 수 있어(추론) 비어도 문제로 세지 않는다.
+- **버스터블 크레딧의 해석**: 측정 envelope의 RDS·ElastiCache는 t4g(버스터블)다. 같은 workload라도 직전 부하에 따라 크레딧 잔량이 달라 결과가 run 순서에 따라 바뀔 수 있다. 그래서 병목 후보가 RDS·ElastiCache면 그 run의 크레딧 지표를 함께 본다 — ElastiCache `CPUCreditBalance`가 0 근처로 떨어졌으면 기준 성능으로 묶인 상태(크레딧 소진)일 수 있고, RDS db.t4g는 AWS 문서상 Unlimited 모드로 구성돼 크레딧이 떨어지면 성능이 깎이는 대신 `CPUSurplusCreditsCharged`가 생긴다(이 계정 설정은 측정 세션에서 지표로 확인한다). ElastiCache T4g 노드는 standard로 구성돼 크레딧이 떨어지면 기준 성능으로 서서히 내려간다(AWS 문서). 크레딧 소진이 원인으로 보이면 "용량 knee"가 아니라 "크레딧 상태에 묶인 결과"로 기록하고, 병목 확인 뒤 단계 8~9 절차로 사양을 바꿔 같은 조건에서 다시 잰다.
 - **ALB**: 5xx·TargetResponseTime·RequestCount는 CloudWatch
 
 ---
@@ -624,7 +625,7 @@ artifacts/loadtest/<session-id>/<run-id>/
 | `prom/<이름>.json`, `prom/_meta.json` | run 구간의 범위 질의 결과(`scripts/loadtest/export-prom.mjs`, 질의 목록은 스크립트에 있다). `--start`는 run 시작 이전, `--end`는 run 종료 + 30초 이후로 잡는다(마지막 스크랩까지 덮는다). `--step`은 기본 10초이고, 10초를 넘기면 사후 재확인이 판정 불가로 끝난다. 종료 코드 0 저장, 1 일부 질의 실패, 2 인자 오류 |
 | `correctness/` | 사후 검사 결과 — `sql.csv`, `api.log`, `queue-order.json`, `api-pods-now.txt`·`api-first-lines.txt`·`pod-coverage.json`(로그를 다 읽었는지 대조 — 지워진 파드·재시작·로그 회전), `published-ids.txt`·`dedup-exists.txt`(이벤트 유실 대조의 입력과 Redis 응답), `event-loss.txt`, `export-window.txt`(내보낸 구간이 run을 덮는지), `run-window.txt`(발생기 시작·종료 기록과 `--since`·`--until` 대조), `watch-verdict.txt`(감시기 결과와 감시 구간 확인), `prom-recheck.json`(실시간 조건을 내보낸 구간으로 run 종료 + 30초까지 다시 본 결과), `summary.txt`(`check-correctness.sh`). 승격 기록이 0건이면 대기열 순서는 판정 불가 |
 
-CloudWatch 데이터(§5.3)는 아직 내보내는 도구가 없다. 측정 세션에서 콘솔·CLI로 받아 같은 디렉터리에 둔다.
+CloudWatch 데이터(§5.3) 중 RDS·ElastiCache는 `export-cloudwatch.mjs`로 `cloudwatch/`에 남긴다. ALB 지표는 아직 내보내는 도구가 없다 — 측정 세션에서 콘솔·CLI로 받아 같은 디렉터리에 둔다.
 
 `artifacts/`는 `.gitignore` 대상이다. k6 원시 출력·Prometheus 데이터는 커질 수 있고, 이 저장소는 public이다.
 **run이 끝날 때마다 즉시 저장한다.** 클러스터를 철거하면 Prometheus 데이터도 함께 사라지고

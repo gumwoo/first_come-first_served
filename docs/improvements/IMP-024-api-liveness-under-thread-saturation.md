@@ -24,13 +24,16 @@ run `step9-10k_constant-r1`(S-10K, 메모리 2Gi, 원시 데이터 — 실측):
 | 지표 | 값 |
 |---|---|
 | api 재시작 | 3개 모두(`kube_pod_container_status_last_terminated_reason` = `Error`) |
-| 재시작 원인 | Kubernetes 이벤트 15:47:33~35Z `Liveness probe failed: … context deadline exceeded` → `failed liveness probe, will be restarted` |
+| 재시작 원인 | Kubernetes 이벤트 `Liveness probe failed: … context deadline exceeded`(3회) → 15:47:33~35Z `failed liveness probe, will be restarted`(`k8s-events.txt`의 시각은 마지막 발생 시각) |
 | 첫 도착 → 재시작 | 약 24~26초(첫 도착 15:47:09Z, `entry-g1.json`) |
-| 첫 liveness 실패 → 재시작 | 약 20초(예: jvd2x 15:47:13Z → 15:47:33Z) |
+| 첫 liveness 실패 → 재시작 | 약 20초(jvd2x·98q54·24q5h 첫 실패 15:47:13·14·15Z → 재시작 15:47:33·34·35Z — 클러스터 이벤트 `firstTimestamp`·`lastTimestamp`, 16:19Z 조회 보존본 `k8s-events-snapshot-161903Z.json`) |
 | 진입 지연 p50 / p95 | 10.71s / 23.04s |
 | 단계 6 사후 정합성 | 판정 불가(승격 감사 줄 0건, run 중 재시작 3) |
 
-- 포화가 얼마나 이어졌는지는 **모른다** — 재시작이 관측을 끊었다. 확인된 것은 하한뿐이다(step9: 톰캣 바쁜 스레드 200이 15:47:14·24의 두 점, 이후 수집 공백).
+- **요청 스레드 포화가 지표로 잡힌 파드는 3개 중 1개(98q54)뿐이다**(톰캣 바쁜 스레드 200이 15:47:14·24의 두 점). jvd2x·24q5h는 15:47:14에 1이었고
+  그 뒤 수집 공백이다(10초 간격 수집) — 두 파드의 liveness 첫 실패(15:47:13·15)는 그 사이다. 두 파드도 같은 이유로 막혔다는 것은 진단 run(§5)에서
+  미루어 본 **추론**이다.
+- 포화가 얼마나 이어졌는지는 **모른다** — 재시작이 관측을 끊었다. 확인된 것은 하한뿐이다(98q54: 10초 이상).
 - before(step6, 1Gi)에도 liveness 시간 초과 이벤트가 있었다(15:17:45·15:18:01Z). 그때는 OOM이 먼저 컨테이너를 끝냈다.
 
 ## 4. 가설
@@ -43,9 +46,9 @@ run `step9-10k_constant-r1`(S-10K, 메모리 2Gi, 원시 데이터 — 실측):
 
 | 파드 | 1회차(약 15:55:52Z) 요청 스레드 200개 | 2회차(약 15:56:04Z) | 결과 |
 |---|---|---|---|
-| 24q5h | Lettuce 응답 대기 159, **Hikari 커넥션 대기 37**(`QueueService.requireBookable` → `findById`) | **199개 BLOCKED** — 톰캣 `ConnectionHandler.register` 모니터 대기(락 보유 1개는 JMX `ObjectName.quote`). 톰캣 연결 6,118 | 15:56:05Z liveness 실패로 **재시작** |
-| jchdr | Lettuce 응답 대기 142, Hikari 대기 21 | 요청 스레드 유휴 | 회복(톰캣 연결 1,918) |
-| nrqsl | Lettuce 응답 대기 200 | 요청 스레드 유휴 | 회복(톰캣 연결 1,591) |
+| 24q5h | Lettuce 응답 대기 159, **Hikari 커넥션 대기 37**(`QueueService.requireBookable` → `findById`) | **199개 BLOCKED** — 톰캣 `ConnectionHandler.register` 모니터 대기(락 보유 1개는 JMX `ObjectName.quote`). 톰캣 연결 2,003(15:56:02 샘플) → 6,118(15:56:12) | 15:56:05Z liveness 실패로 **재시작**(이벤트 `Killing` count 2의 마지막 시각, 보존본) |
+| jchdr | Lettuce 응답 대기 142, Hikari 대기 21 | 요청 스레드 유휴 | 회복 — 단 liveness가 15:55:45·55Z에 2회 연속 실패(보존본). 톰캣 연결 1,918 |
+| nrqsl | Lettuce 응답 대기 200 | 요청 스레드 유휴 | 회복 — 단 liveness가 15:55:45·55Z에 2회 연속 실패(보존본). 톰캣 연결 1,591 |
 
 - Lettuce 대기의 호출 위치는 진입 경로(`QueueController.enter` → `QueueService.issue`·`admittedNow`·`card`·`rankOf`·`statusOf`)와 인증 필터의 블랙리스트 확인이다.
 - 커넥션 풀 설정이 없어 Lettuce는 Spring Boot 기본값대로 공유 연결 하나를 쓴다(코드 확인). 이벤트 루프 스레드 상태는 파드마다 달랐고(인코딩·`runAllTasks`·응답 처리),
@@ -53,14 +56,16 @@ run `step9-10k_constant-r1`(S-10K, 메모리 2Gi, 원시 데이터 — 실측):
 - ElastiCache 엔진 CPU는 같은 구성(2Gi) step9에서 최대 3.69%였다(CloudWatch 1분 해상도, 실측) — 진단 run 구간의 CloudWatch는 내보내지 않았다.
 - `hikaricp_connections_pending`은 10초 간격 샘플에서 0이었지만, 덤프 순간에는 Hikari 대기 스레드가 있었다.
 - **결론(추론)**: 요청 스레드를 묶는 원인은 하나로 확정되지 않았다 — Redis 응답 대기(공유 연결·순차 왕복), DB 커넥션 대기(풀 5),
-  SSE 연결이 많이 몰린 파드의 톰캣 등록 락 경합이 모두 관측됐다. 재시작된 파드는 마지막 덤프에서 등록 락 경합 상태였다.
+  톰캣 연결이 가장 많았던 파드의 톰캣 등록 락 경합이 모두 관측됐다(파드별 SSE 게이지가 없어 "SSE가 몰렸다"는 톰캣 연결 수로 미루어 본 것). 재시작된 파드는 마지막 덤프에서 등록 락 경합 상태였다.
   liveness 시간 초과는 원인이 아니라 결과다.
 
 ## 6. 조치
 `k8s/base/api-deployment.yaml`의 `livenessProbe.failureThreshold` 3 → **12**(period 10초 → 첫 실패 후 약 110초).
 
-- 근거: 측정에서 첫 liveness 실패 후 약 20초 만에 재시작됐고, 포화 지속 시간은 그 재시작 때문에 알 수 없었다. 12회는 진단 run에서
-  회복한 두 파드의 포화(약 10~20초)와 재시작된 파드의 관측 포화(40초 이상)를 덮도록 고른 선택값이다 — **충분한지는 재시험으로 확인한다**(추론).
+- 근거: 측정에서 첫 liveness 실패 후 약 20초(3회) 만에 재시작됐고, 포화 지속 시간은 그 재시작 때문에 알 수 없었다. 진단 run에서 회복한
+  두 파드도 liveness가 2회 연속 실패했다 — 기본값 3이면 한 번 더 실패했을 때 재시작이었다(실측). 톰캣 바쁜 스레드 샘플은 24q5h 199·199(15:55:42·52),
+  109(15:56:02), jchdr 200·200 뒤 1이다(10초 간격이라 지속 시간은 10~20초 이상이라는 하한만). 12회는 이 하한보다 넉넉한 여유를 두려고 고른
+  **선택값**이다 — 충분한지는 재시험으로 확인한다(추론).
 - readiness는 바꾸지 않는다 — 준비 안 됨은 트래픽에서 빼는 것이라 재시작을 일으키지 않는다.
 - 근본 해결 후보(이 PR의 범위 밖, 코드·설정 변경과 통합 테스트 필요): ① health를 관리 포트(별도 커넥터·스레드 풀)로 분리 —
   등록 락도 피한다 ② 진입 요청의 Redis 왕복 감소(한 Lua로 묶기)나 커넥션 풀 ③ 진입 경로의 DB 조회(`requireBookable`) 캐시나 풀 크기 재산정

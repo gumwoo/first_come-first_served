@@ -206,13 +206,16 @@ fi
 
 echo "==> 2/4 대기열 순서(api 로그)"
 # 이전 결과가 summary에 섞이지 않게, 로그 수집 성공 여부와 상관없이 먼저 지운다.
-rm -f "$D/queue-order.json" "$D/admission-overlap.json" "$D/admission-overlap.err"
+rm -f "$D/queue-order.json" "$D/queue-order.err" "$D/admission-overlap.json" "$D/admission-overlap.err"
 if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 --prefix \
      --max-log-requests=20 > "$D/api.log"; then
   node "$HERE/queue-order.mjs" --tolerance-ms "$TOL" "$D/api.log" > "$D/queue-order.json"
   QO=$?
+  # 판정 불가 사유는 queue-order.err에 남겨 summary에도 보인다.
   if { [ "$QO" = 0 ] || [ "$QO" = 1 ]; } && ! result_matches "$D/queue-order.json" "$QO"; then
-    echo "    queue-order의 종료 코드가 $QO인데 결과(queue-order.json)와 맞지 않는다 — 판정 불가" >&2; QO=2
+    echo "queue-order의 종료 코드가 $QO인데 결과(queue-order.json)와 맞지 않는다(없거나 읽지 못함 포함) — 판정 불가" >> "$D/queue-order.err"; QO=2
+  elif [ "$QO" != 0 ] && [ "$QO" != 1 ] && [ "$QO" != 2 ]; then
+    echo "queue-order가 예상 밖의 종료 코드 $QO로 끝났다(실행 실패) — 판정 불가" >> "$D/queue-order.err"; QO=2
   fi
   # 2: 승격 기록 0건·읽지 못한 승격 줄(판정 불가) 또는 실행 실패
   case $QO in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
@@ -354,8 +357,21 @@ fi
 echo "==> 4/4 실시간 조건 사후 재확인(내보낸 구간 — run 종료 + 30초까지)"
 # 감시기는 run 끝을 보지 못한다. over-admit·카운터 어긋남·초과판매·승격 처리 실패를 내보낸 데이터로 다시 보고,
 # 그 구간을 실제로 신선하게 관측했는지(샘플 나이·점 연속성)도 확인한다(prom-recheck.mjs).
+rm -f "$D/prom-recheck.json" "$D/prom-recheck.err"
 node "$HERE/prom-recheck.mjs" --prom-dir "$OUT/prom" --since "$SINCE" --until "$UNTIL" > "$D/prom-recheck.json"
-case $? in
+PR=$?
+# 종료 코드 0·1이 결과와 맞아야 믿는다(0이면 위반·판정 불가 사유 없음, 1이면 위반 있음). 모듈 로드 실패 같은 실행 오류의 1을
+# 위반으로 세지 않는다. 사유는 prom-recheck.err에 남겨 summary에도 보인다.
+if { [ "$PR" = 0 ] || [ "$PR" = 1 ]; } && ! node -e '
+const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const ok = Array.isArray(r.violations) && Array.isArray(r.problems) &&
+  (process.argv[2] === "1" ? r.violations.length > 0 : r.violations.length === 0 && r.problems.length === 0);
+process.exit(ok ? 0 : 1);' "$D/prom-recheck.json" "$PR" 2>/dev/null; then
+  echo "prom-recheck의 종료 코드가 $PR인데 결과(prom-recheck.json)와 맞지 않는다(없거나 읽지 못함 포함) — 판정 불가" >> "$D/prom-recheck.err"; PR=2
+elif [ "$PR" != 0 ] && [ "$PR" != 1 ] && [ "$PR" != 2 ]; then
+  echo "prom-recheck가 예상 밖의 종료 코드 $PR로 끝났다(실행 실패) — 판정 불가" >> "$D/prom-recheck.err"; PR=2
+fi
+case $PR in
   0) ;;
   1) echo "    내보낸 구간에서 실시간 조건 위반을 찾았다(prom-recheck.json)" >&2; FAIL=1 ;;
   *) echo "    실시간 조건을 다시 확인하지 못했다 — 관측 공백·승격 처리 실패·파일 문제(prom-recheck.json)" >&2; BROKEN=1 ;;
@@ -434,12 +450,12 @@ esac
   # 판정 불가 사유(run 시작 시점 입장 토큰, 정원 불일치, 승격 처리 실패·파드 로그 누락으로 낮춤, 도구 자체의 판정 불가)는
   # .err에 남는다. summary에도 보인다.
   echo "--- admission-overlap(실효 입장 초과)"; [ -s "$D/admission-overlap.err" ] && sed 's/^/  사유: /' "$D/admission-overlap.err"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"capacity="+r.capacity+" admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed+" duplicateAdmits="+r.duplicateAdmits+" endsBeforeAdmit="+r.endsBeforeAdmit+" maxConcurrent="+JSON.stringify(Object.fromEntries(Object.entries(r.events).map(([k,v])=>[k,v.maxConcurrent]))))}catch{console.log("판정 불가")}' "$D/admission-overlap.json" 2>/dev/null
-  echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
+  echo "--- queue-order"; [ -s "$D/queue-order.err" ] && sed 's/^/  사유: /' "$D/queue-order.err"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
   echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null
   echo "--- 내보낸 구간(파드 대조·승격 처리 실패의 전제)"; cat "$D/export-window.txt" 2>/dev/null
   echo "--- run 시각 대조(발생기 시작·종료 기록 vs --since·--until)"; cat "$D/run-window.txt" 2>/dev/null
   echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null
-  echo "--- 실시간 조건 사후 재확인(내보낸 구간, run 종료 + 30초까지)"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.violations.length?"위반: "+r.violations.join("; ")+(r.problems.length?" / 판정 불가 사유도 있음: "+r.problems.join("; "):""):r.problems.length?"판정 불가: "+r.problems.join("; "):"위반 없음(관측 점 "+r.observedPoints+"개, 샘플 나이 최대 "+r.sampleAgeMaxSec+"초)")}catch{console.log("판정 불가(확인 실패)")}' "$D/prom-recheck.json" 2>/dev/null
+  echo "--- 실시간 조건 사후 재확인(내보낸 구간, run 종료 + 30초까지)"; [ -s "$D/prom-recheck.err" ] && sed 's/^/  사유: /' "$D/prom-recheck.err"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.violations.length?"위반: "+r.violations.join("; ")+(r.problems.length?" / 판정 불가 사유도 있음: "+r.problems.join("; "):""):r.problems.length?"판정 불가: "+r.problems.join("; "):"위반 없음(관측 점 "+r.observedPoints+"개, 샘플 나이 최대 "+r.sampleAgeMaxSec+"초)")}catch{console.log("판정 불가(확인 실패)")}' "$D/prom-recheck.json" 2>/dev/null
   echo "--- 실시간 감시기(watch-summary.json)"; cat "$D/watch-verdict.txt" 2>/dev/null
   # 검사 일부가 실패해도 이미 찾은 위반은 함께 보인다.
   if [ "$BROKEN" -ne 0 ] && [ "$FAIL" -ne 0 ]; then echo "판정: 정합성 위반 + 검사 일부 실패(결과 불완전)"

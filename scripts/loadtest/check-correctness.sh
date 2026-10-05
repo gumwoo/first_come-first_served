@@ -54,10 +54,6 @@ set -uo pipefail
 # 이 파일을 링크로 실행해도 옆의 도구를 찾도록 실제 경로로 푼다(readlink -f가 없으면 그대로 쓴다).
 SELF="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
 HERE="$(cd "$(dirname "$SELF")" && pwd)"
-# 옆의 도구를 못 찾으면(링크를 실제 경로로 풀지 못한 경우 등) 각 단계가 node 오류(1)로 끝나 거짓 위반이 된다. 시작 전에 막는다.
-for f in correctness.sql queue-order.mjs admission-overlap.mjs pod-coverage.mjs prom-recheck.mjs; do
-  [ -f "$HERE/$f" ] || { echo "검사 도구를 찾지 못했다: $HERE/$f — 실제 경로로 실행한다" >&2; exit 2; }
-done
 OUT="" SINCE="" UNTIL="" GENS="" NS=flowticket TOL=1000
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -90,6 +86,23 @@ node -e 'for (const x of process.argv.slice(1)) { const d = new Date(x); if (isN
 SINCE_DB="${SINCE/T/ }"; SINCE_DB="${SINCE_DB%Z}"
 D="$OUT/correctness"
 mkdir -p "$D" || exit 2
+# 이 실행이 도중에 끝나도 이전 run의 종합 판정이 남아 이 run의 결과로 읽히지 않게 먼저 지운다.
+rm -f "$D/summary.txt"
+# 옆의 도구를 못 찾으면(링크를 실제 경로로 풀지 못한 경우 등) 각 단계가 node 오류(1)로 끝나 거짓 위반이 된다. 시작 전에 막는다.
+for f in correctness.sql queue-order.mjs admission-overlap.mjs pod-coverage.mjs prom-recheck.mjs; do
+  [ -f "$HERE/$f" ] || { echo "검사 도구를 찾지 못했다: $HERE/$f — 실제 경로로 실행한다" >&2; exit 2; }
+done
+
+# 판정 도구(queue-order·admission-overlap)의 종료 코드 0·1이 결과 JSON과 맞는가. 0이면 위반 0·승격 기록 있음·형식 깨진 줄 0,
+# 1이면 위반 > 0이어야 한다. 맞지 않으면(모듈 로드 실패 같은 실행 오류, main이 돌지 않음) 위반·위반 없음이 아니라 판정 불가다.
+result_matches() {
+  node -e '
+const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const num = (x) => typeof x === "number" && Number.isFinite(x);
+const ok = num(r.violations) && num(r.admits) && num(r.malformed) &&
+  (process.argv[2] === "1" ? r.violations > 0 : r.violations === 0 && r.admits > 0 && r.malformed === 0);
+process.exit(ok ? 0 : 1);' "$1" "$2" 2>/dev/null
+}
 
 # 일회용 파드 사양(seed-users.sh와 같은 이유로 stdinOnce를 직접 넣는다).
 psql_pod() {
@@ -197,8 +210,12 @@ rm -f "$D/queue-order.json" "$D/admission-overlap.json" "$D/admission-overlap.er
 if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 --prefix \
      --max-log-requests=20 > "$D/api.log"; then
   node "$HERE/queue-order.mjs" --tolerance-ms "$TOL" "$D/api.log" > "$D/queue-order.json"
+  QO=$?
+  if { [ "$QO" = 0 ] || [ "$QO" = 1 ]; } && ! result_matches "$D/queue-order.json" "$QO"; then
+    echo "    queue-order의 종료 코드가 $QO인데 결과(queue-order.json)와 맞지 않는다 — 판정 불가" >&2; QO=2
+  fi
   # 2: 승격 기록 0건·읽지 못한 승격 줄(판정 불가) 또는 실행 실패
-  case $? in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
+  case $QO in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
   # 실효 입장 초과(§3.3): 감사 줄로 토큰별 슬롯 점유 구간을 재구성해 동시 점유 수 > 정원인지 본다.
   # 정원은 내보낸 구간의 파드별 queue_capacity에서 읽는다. 구간 안에서, 또는 파드 사이에 값이 둘 이상이면(측정 중 정원 변경·
   # 파드마다 다른 설정) 판정 불가(이전 결과·사유는 2단계 시작에서 이미 지웠다).
@@ -229,13 +246,12 @@ for (const s of (b.data && b.data.result) || []) {
     node "$HERE/admission-overlap.mjs" --capacity "$CAP" --since "$SINCE" --until "$UNTIL" --tolerance-ms "$TOL" \
       "$D/api.log" > "$D/admission-overlap.json" 2>>"$D/admission-overlap.err"
     AO=$?; AO_RAW=$AO
-    # 도구의 0·1은 결과 JSON과 맞아야 믿는다. 0인데 결과를 읽지 못하거나 결과에 위반이 있거나(main이 돌지 않은 경우 등), 1인데 결과에 위반이
-    # 없으면(모듈 로드 실패 같은 실행 오류) "위반 없음"·"위반"이 아니라 판정 불가다.
-    if { [ "$AO" = 0 ] || [ "$AO" = 1 ]; } && ! node -e '
-const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-const ok = typeof r.violations === "number" && typeof r.admits === "number" && (process.argv[2] === "1" ? r.violations > 0 : r.violations === 0);
-process.exit(ok ? 0 : 1);' "$D/admission-overlap.json" "$AO" 2>/dev/null; then
-      echo "admission-overlap의 종료 코드가 $AO인데 그에 맞는 결과(admission-overlap.json)를 읽지 못했다 — 판정 불가" >> "$D/admission-overlap.err"
+    # 도구의 0·1은 결과 JSON과 맞아야 믿는다(result_matches). 맞지 않거나 0·1·2가 아닌 종료 코드면 판정 불가이고 사유를 남긴다.
+    if { [ "$AO" = 0 ] || [ "$AO" = 1 ]; } && ! result_matches "$D/admission-overlap.json" "$AO"; then
+      echo "admission-overlap의 종료 코드가 $AO인데 결과(admission-overlap.json)와 맞지 않는다(없거나 읽지 못함 포함) — 판정 불가" >> "$D/admission-overlap.err"
+      AO=2; AO_RAW=2
+    elif [ "$AO" != 0 ] && [ "$AO" != 1 ] && [ "$AO" != 2 ]; then
+      echo "admission-overlap이 예상 밖의 종료 코드 $AO로 끝났다(실행 실패) — 판정 불가" >> "$D/admission-overlap.err"
       AO=2; AO_RAW=2
     fi
     # 승격 처리 실패가 있던 run에서는 승격·회수 루프가 도중에 끊겨 감사 줄이 빠질 수 있다. 회수 줄이 빠진 토큰은 run 끝까지

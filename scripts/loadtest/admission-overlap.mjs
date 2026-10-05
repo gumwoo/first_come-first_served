@@ -34,9 +34,9 @@
 // 종료 코드: 0 위반 없음, 1 위반, 2 검사 실패(인자 오류·예외·승격 기록 0건·형식이 깨진 감사 줄·같은 토큰의 중복 승격·
 // 허용 폭보다 앞선 회수·이탈). 위반을 이미 찾았으면 1이 우선한다 — 단, 형식이 깨진 감사 줄이 있으면 위반도 2다(위).
 // 2로 끝날 때는 사유를 stderr에 한 줄씩 남긴다.
-import { createReadStream } from "node:fs";
+import { createReadStream, realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const TAIL_MS = 30_000;
@@ -174,8 +174,16 @@ async function main() {
 }
 
 // 테스트에서 analyze만 가져다 쓸 수 있게, 직접 실행할 때만 main을 돈다.
-// 파일 이름이 아니라 모듈 URL로 비교한다(다른 이름으로 복사해 실행해도 조용히 0으로 끝나지 않게).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// 파일 이름이 아니라 실제 경로로 비교한다. 다른 이름으로 복사해 실행해도, 심볼릭 링크·junction 경로로 실행해도
+// (Node는 메인 모듈의 import.meta.url을 실제 경로로 잡지만 argv[1]은 링크 경로 그대로다) 조용히 0으로 끝나지 않게.
+const isMain = () => {
+  try {
+    return !!process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+};
+if (isMain()) {
   main().catch((e) => {
     console.error(`[admission-overlap] 검사 실패: ${e.stack || e}`);
     process.exitCode = 2;

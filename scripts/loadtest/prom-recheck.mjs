@@ -79,6 +79,7 @@ function main() {
   let ageMax = null;
   const stale = [];
   const holes = [];
+  const badAge = [];
   if (agePts.length === 0) problems.push("구간 안에 관측(sample_age_max) 점이 없다");
   else {
     // 첫 점은 since에서 한 step 안, 마지막 점은 winEnd에서 한 step 안이어야 한다. 사이 간격은 step을 넘으면 안 된다.
@@ -88,12 +89,13 @@ function main() {
       if (agePts[i][0] - agePts[i - 1][0] > stepMs) holes.push(`${new Date(agePts[i - 1][0]).toISOString()} ~ ${new Date(agePts[i][0]).toISOString()}`);
     }
     for (const [t, v] of agePts) {
-      if (!Number.isFinite(v)) { stale.push(`${new Date(t).toISOString()}=${v}`); continue; }
+      if (!Number.isFinite(v)) { badAge.push(new Date(t).toISOString()); continue; }
       if (ageMax === null || v > ageMax) ageMax = v;
       if (v > maxAge) stale.push(`${new Date(t).toISOString()}=${v}s`);
     }
   }
   if (holes.length) problems.push(`관측 점이 빠진 구간: ${holes.slice(0, 5).join(", ")}${holes.length > 5 ? ` 외 ${holes.length - 5}` : ""}`);
+  if (badAge.length) problems.push(`sample_age_max: 숫자가 아닌 값(${badAge.slice(0, 5).join(", ")}${badAge.length > 5 ? ` 외 ${badAge.length - 5}` : ""})`);
   if (stale.length) problems.push(`샘플이 ${maxAge}초보다 오래된 점: ${stale.slice(0, 5).join(", ")}${stale.length > 5 ? ` 외 ${stale.length - 5}` : ""}`);
   // run 끝 상태 관측: 어떤 점에서 (점 시각 − 가장 오래된 샘플 나이) ≥ until이면, 그 시점에 항상 있어야 할 모든 시계열의
   // 최신 샘플이 run 종료 뒤의 것이다. 그런 점이 없으면 run 종료 뒤 스크랩을 하나도 확인하지 못한 것이다.

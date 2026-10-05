@@ -5,12 +5,12 @@
 // CPU 크레딧, EBS I/O 버킷, 네트워크 버스트처럼 직전 부하에 따라 잔량이 달라지는 자원이 있다. 이 신호가 knee 구간에 보이면
 // 그 knee가 용량 한계인지 버스트 소진인지 지표만으로는 가를 수 없다 — 그래서 자동으로 분류하지 않고 "버스트 영향 미분리"로
 // 표시해 사양을 바꿔 다시 재도록 한다(계획서 §5.3). 그 판단의 근거가 되도록 run마다 이 지표들을 남긴다. RDS 네트워크 버스트는
-// AWS/RDS에 한도·기준 사용률 지표가 없어 관측하지 못한다 — 처리량만 남기고, RDS knee는 늘 미분리로 둔다. 리소스를 철거하면 조회 화면에서 찾기 어려우므로 run이 끝날 때마다 내보낸다.
+// AWS/RDS에 한도·기준 사용률 지표가 없어 관측하지 못한다 — 처리량만 남기고, DB 커넥션 병목 knee는 늘 미분리로 둔다. 리소스를 철거하면 조회 화면에서 찾기 어려우므로 run이 끝날 때마다 내보낸다.
 //
 //   node scripts/loadtest/export-cloudwatch.mjs --out artifacts/loadtest/<session>/<run> \
 //     --start 2026-10-05T05:00:00Z --end 2026-10-05T05:12:00Z [--period 60] [--rds-id flowticket] [--redis-group flowticket-redis]
 //
-// --start는 run 시작 10분 이상 앞(5분 경계로 내림), --end는 run 종료 이후로 잡는다(시각은 Z 또는 오프셋이 붙은 ISO만
+// --start는 run 시작 10분 이상 앞(질의할 때 5분 경계로 내린다 — _meta.json의 queryStart), --end는 run 종료 이후로 잡는다(시각은 Z 또는 오프셋이 붙은 ISO만
 // 받는다). 계획서 §5.3의 판정 구간이 run 앞 5분 구간까지 보므로, --start가 run 직전이면 그 구간에 크레딧 점이 없어
 // "미확인"이 된다. 해상도는 두 가지다.
 //   - 일반 지표: --period(기본 60초) — RDS 표준 모니터링과 ElastiCache의 기본 해상도(Enhanced Monitoring은 켜지 않았다)
@@ -79,6 +79,10 @@ export const REDIS_METRICS = [
 
 // CPU 크레딧 지표는 5분 주기로만 발행된다(AWS 문서). 더 잘게 질의해도 점이 늘지 않으므로 300초로 질의한다.
 export const CREDIT_PERIOD = 300;
+
+// 질의 시작 시각을 5분 경계로 내린다. 크레딧 질의(300초)의 칸이 5분 경계와 맞아야 계획서 §5.3의 판정 구간(5분 칸)과
+// 대응한다. 내리면 구간이 앞으로 넓어질 뿐이라 run 구간을 잃지 않는다. --period(60의 배수)도 300의 약수이거나 배수다.
+export const alignStart = (ms) => Math.floor(ms / (CREDIT_PERIOD * 1000)) * CREDIT_PERIOD * 1000;
 const isCredit = (m) => /^CPU(Credit|Surplus)/.test(m);
 
 // GetMetricData 질의. Id는 소문자로 시작하고 영숫자·밑줄만 쓴다. optional은 비어도 문제로 세지 않는 질의다(우리 쪽 표시 —
@@ -203,6 +207,7 @@ async function main() {
   const qdir = mkdtempSync(join(tmpdir(), "cw-queries-"));
   const qfile = join(qdir, "queries.json");
   writeFileSync(qfile, JSON.stringify(toApi(queries)));
+  const qStart = alignStart(start);
   const results = [];
   const messages = [];
   try {
@@ -210,7 +215,7 @@ async function main() {
     const seen = new Set();
     do {
       const args = ["cloudwatch", "get-metric-data", "--metric-data-queries", `file://${qfile}`,
-        "--start-time", new Date(start).toISOString(), "--end-time", new Date(end).toISOString(), "--scan-by", "TimestampAscending",
+        "--start-time", new Date(qStart).toISOString(), "--end-time", new Date(end).toISOString(), "--scan-by", "TimestampAscending",
         // 페이지는 직접 넘긴다(CLI 자동 페이지 처리와 섞이지 않게).
         "--no-paginate", ...region];
       if (token) args.push("--next-token", token);
@@ -229,7 +234,8 @@ async function main() {
   const { perQuery, problems } = summarize(queries, results, messages);
   writeFileSync(`${dir}/metrics.json`, JSON.stringify(results, null, 2));
   writeFileSync(`${dir}/_meta.json`, JSON.stringify({
-    start: new Date(start).toISOString(), end: new Date(end).toISOString(), startArg: a.start, endArg: a.end,
+    start: new Date(start).toISOString(), queryStart: new Date(qStart).toISOString(), end: new Date(end).toISOString(),
+    startArg: a.start, endArg: a.end,
     period: Number(a.period), creditPeriod: CREDIT_PERIOD, region: a.region, messages,
     rdsId: a["rds-id"], redisGroup: a["redis-group"], cacheClusterIds, perQuery, problems,
   }, null, 2));

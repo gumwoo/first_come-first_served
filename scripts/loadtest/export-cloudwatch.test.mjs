@@ -2,7 +2,7 @@
 //   node --test scripts/loadtest/export-cloudwatch.test.mjs
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildQueries, summarize, toApi, RDS_METRICS, REDIS_METRICS, CREDIT_PERIOD } from "./export-cloudwatch.mjs";
+import { alignStart, buildQueries, summarize, toApi, RDS_METRICS, REDIS_METRICS, CREDIT_PERIOD } from "./export-cloudwatch.mjs";
 
 const q = buildQueries({ rdsId: "flowticket", cacheClusterIds: ["flowticket-redis-001", "flowticket-redis-002"], period: 60 });
 
@@ -34,6 +34,11 @@ test("크레딧 지표는 5분, 나머지는 --period로 질의한다", () => {
     const credit = /^CPU(Credit|Surplus)/.test(x.MetricStat.Metric.MetricName);
     assert.equal(x.MetricStat.Period, credit ? CREDIT_PERIOD : 60, x.Label);
   }
+});
+
+test("질의 시작은 5분 경계로 내린다(이미 경계면 그대로)", () => {
+  assert.equal(new Date(alignStart(Date.parse("2026-10-05T04:53:20Z"))).toISOString(), "2026-10-05T04:50:00.000Z");
+  assert.equal(new Date(alignStart(Date.parse("2026-10-05T04:55:00Z"))).toISOString(), "2026-10-05T04:55:00.000Z");
 });
 
 test("AWS로 보내는 질의에는 우리 쪽 표시(optional)가 없다", () => {

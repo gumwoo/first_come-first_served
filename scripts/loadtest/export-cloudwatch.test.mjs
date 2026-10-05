@@ -37,11 +37,13 @@ test("AWS로 보내는 질의에는 우리 쪽 표시(optional)가 없다", () =
   for (const x of toApi(q)) assert.equal("optional" in x, false);
 });
 
-test("RDS 잉여 크레딧은 선택 질의라 비어도 문제가 아니고, 응답 메시지는 문제다", () => {
+test("선택 질의는 점이 0개여도 문제가 아니지만 응답에서 빠지면 문제이고, 응답 메시지는 문제다", () => {
   const surplus = q.filter((x) => x.optional && /^CPUSurplus/.test(x.MetricStat.Metric.MetricName));
   assert.deepEqual(surplus.map((x) => x.MetricStat.Metric.MetricName).sort(), ["CPUSurplusCreditBalance", "CPUSurplusCreditsCharged"]);
-  const { problems } = summarize(surplus, []);
-  assert.equal(problems.length, 0);
+  const empty = summarize(surplus, surplus.map((x) => ({ Id: x.Id, StatusCode: "Complete", Values: [] })));
+  assert.equal(empty.problems.length, 0);
+  const missing = summarize(surplus, []);
+  assert.equal(missing.problems.length, 2);
   const withMsg = summarize([], [], [{ Code: "MaxQueryTimeRangeExceed" }]);
   assert.equal(withMsg.problems.length, 1);
 });

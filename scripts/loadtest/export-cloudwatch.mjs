@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 // run 구간의 RDS·ElastiCache CloudWatch 지표를 run 디렉터리에 남긴다(loadtest-100k-plan §5.3, §7 "원시 데이터").
 //
-// RDS와 ElastiCache는 클러스터 밖 관리형 서비스라 Prometheus에 없다. 측정 envelope의 RDS·ElastiCache는 t4g(버스터블)다.
-//   - ElastiCache T4g는 standard 모드라 크레딧이 떨어지면 기준 성능으로 내려간다. 같은 workload라도 직전 부하에 따라
-//     크레딧이 남았는지가 달라 결과가 run 순서에 따라 바뀔 수 있다 — 병목이 "용량"인지 "크레딧 소진"인지 가를 근거가 필요하다.
-//   - RDS db.t4g는 CPU 크레딧이 Unlimited 모드라 CPU 크레딧 소진은 성능을 깎지 않는다(추가 과금). 잉여 크레딧을 쓴
-//     상태(CPUSurplusCreditBalance > 0)면 "Unlimited 버스트(추가 과금) 상태에서 잰 용량"이라는 envelope 조건을 붙인다.
-//   - CPU 말고도 버스트 버킷이 있다. RDS의 EBS I/O·처리량(EBSIOBalance%·EBSByteBalance%)과 ElastiCache의 네트워크
-//     대역폭·패킷 한도(…AllowanceExceeded)다. 이것도 직전 부하에 따라 잔량이 달라, 바닥났으면 "버스트 버킷에 묶인 결과"다.
+// RDS와 ElastiCache는 클러스터 밖 관리형 서비스라 Prometheus에 없다. 측정 envelope의 RDS·ElastiCache는 t4g(버스터블)라
+// CPU 크레딧, EBS I/O 버킷, 네트워크 버스트처럼 직전 부하에 따라 잔량이 달라지는 자원이 있다. 이 신호가 knee 구간에 보이면
+// 그 knee가 용량 한계인지 버스트 소진인지 지표만으로는 가를 수 없다 — 그래서 자동으로 분류하지 않고 "버스트 영향 미분리"로
+// 표시해 사양을 바꿔 다시 재도록 한다(계획서 §5.3). 그 판단의 근거가 되도록 run마다 이 지표들을 남긴다.
 // 그래서 run마다 CPU와 크레딧 지표를 함께 남긴다. 리소스를 철거하면 조회 화면에서 찾기 어려우므로 run이 끝날 때마다 내보낸다.
 //
 //   node scripts/loadtest/export-cloudwatch.mjs --out artifacts/loadtest/<session>/<run> \
@@ -26,7 +23,8 @@
 // 종료 코드: 0 필수 질의가 모두 Complete이고 점이 하나 이상, 1 필수 질의가 빔·어떤 질의든 Complete가 아님(선택 질의의 응답
 // 없음은 제외, 앞 페이지의 InternalError·Forbidden 포함)·응답이나 질의에 경고 메시지·복제 그룹 노드 없음·페이지 무한(같은
 // 토큰 반복·100쪽 초과)·AWS 호출 실패·저장 실패(위반 아님), 2 인자 오류(달력상 없는 시각·미래 --end 포함).
-// 선택 질의(RDS 잉여 크레딧, 버스트 버킷, Redis 명령 지연)는 발행되지 않을 수 있어(추론) 비어도 문제로 세지 않는다.
+// 선택 질의(RDS 잉여 크레딧, 버스트 버킷, 네트워크 기준 사용률, 트래픽 관리, Redis 명령 지연)는 발행되지 않을 수 있어(추론)
+// 점이 0개여도 문제로 세지 않는다. 응답에서 아예 빠지면 문제다.
 import { execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -54,12 +52,18 @@ export const REDIS_METRICS = [
   ["CPUCreditBalance", "Minimum"], ["CPUCreditUsage", "Sum"],
   ["CurrConnections", "Maximum"], ["NetworkBytesIn", "Sum"], ["NetworkBytesOut", "Sum"],
   ["DatabaseMemoryUsagePercentage", "Maximum"], ["Evictions", "Sum"],
-  // 네트워크 버스트 한도(cache.t4g는 기준 대역폭 위로 네트워크 I/O 크레딧으로 버스트한다 — AWS 문서). 0보다 크면 한도에 걸린
-  // 패킷이 있었다. 발행 여부가 노드 타입·엔진에 따라 다를 수 있어(추론) 선택 질의다.
+  // 네트워크 한도 초과(AWS 문서: 인스턴스의 최대치를 넘어 대기·손실된 패킷 수). 크레딧 소진인지 인스턴스 상한인지는 이것만으로
+  // 가를 수 없다. 크레딧 소비 여부는 아래 NetworkBaseline* 백분율(100을 넘으면 버스트 크레딧을 쓰는 중 — AWS 문서)로 본다.
+  // 발행 여부가 노드 타입·엔진에 따라 다를 수 있어(추론) 선택 질의다.
   ["NetworkBandwidthInAllowanceExceeded", "Sum", true], ["NetworkBandwidthOutAllowanceExceeded", "Sum", true],
   ["NetworkPacketsPerSecondAllowanceExceeded", "Sum", true],
-  // 명령 지연(마이크로초, 명령 종류별 평균) — §3.2 진단 신호 "Redis 명령 지연". 대기열은 Lua(Eval)와 정렬 집합(ZSet) 명령이
-  // 대부분이다. 그 종류의 명령이 없던 구간은 발행되지 않을 수 있어(추론) 선택 질의다.
+  ["NetworkBaselineUsageInPercentage", "Maximum", true], ["NetworkBaselineUsageOutPercentage", "Maximum", true],
+  // AWS 문서가 "용량이 부족하다"는 신호로 드는 지표(트래픽 관리가 켜짐).
+  ["TrafficManagementActive", "Maximum", true],
+  // 명령 처리 지연(마이크로초) — §3.2 진단 신호 "Redis 명령 지연". AWS 문서상 ElastiCache가 명령을 처리하는 데 쓴 CPU 시간
+  // (delta(usec)/delta(calls))이라 큐 대기·네트워크 시간은 들어가지 않는다. 단일 스레드가 포화되면 클라이언트가 보는 지연은
+  // 커져도 이 값은 평탄할 수 있으므로 포화는 EngineCPUUtilization과 함께 본다. Eval·SortedSet은 명령 종류별, Get·Set은 읽기·
+  // 쓰기 명령 전체의 지연이다. 그 종류의 명령이 없던 구간은 발행되지 않을 수 있어(추론) 선택 질의다.
   ["EvalBasedCmdsLatency", "Average", true], ["SortedSetBasedCmdsLatency", "Average", true],
   ["GetTypeCmdsLatency", "Average", true], ["SetTypeCmdsLatency", "Average", true],
 ];
@@ -107,7 +111,9 @@ export function summarize(queries, results, messages = []) {
   }
   const perQuery = queries.map((q) => ({ id: q.Id, label: q.Label, optional: !!q.optional, ...(byId.get(q.Id) || { points: 0, status: "Missing" }) }));
   const problems = perQuery
-    .filter((p) => (p.points === 0 && !p.optional) || (p.status !== "Complete" && !(p.optional && p.status === "Missing")) || p.pageError)
+    // 선택 질의는 "점이 0개"만 봐준다. 응답에서 아예 빠진 질의(Missing)는 GetMetricData가 질의마다 결과를 돌려주므로(추론)
+    // 이상이라 선택 질의여도 문제로 센다.
+    .filter((p) => (p.points === 0 && !p.optional) || p.status !== "Complete" || p.pageError)
     .map((p) => `${p.label}: ${p.status}${p.pageError ? `(앞 페이지 ${p.pageError})` : ""}, 점 ${p.points}`);
   for (const m of messages) problems.push(`응답 메시지: ${m.Code}${m.Value ? " " + m.Value : ""}`);
   // 질의별 메시지(예: 일부 데이터 누락 경고)도 문제로 센다 — Complete여도 결과를 그대로 믿을 수 없다는 뜻이다.

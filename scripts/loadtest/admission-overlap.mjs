@@ -36,6 +36,7 @@
 // 2로 끝날 때는 사유를 stderr에 한 줄씩 남긴다.
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 const TAIL_MS = 30_000;
@@ -173,7 +174,8 @@ async function main() {
 }
 
 // 테스트에서 analyze만 가져다 쓸 수 있게, 직접 실행할 때만 main을 돈다.
-if (/admission-overlap\.mjs$/.test(process.argv[1] ?? "")) {
+// 파일 이름이 아니라 모듈 URL로 비교한다(다른 이름으로 복사해 실행해도 조용히 0으로 끝나지 않게).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((e) => {
     console.error(`[admission-overlap] 검사 실패: ${e.stack || e}`);
     process.exitCode = 2;

@@ -235,6 +235,7 @@ try {
   const lo = Date.parse(process.argv[2]) / 1000, hi = Date.parse(process.argv[3]) / 1000 + 30;
   let points = 0;
   for (const s of (b.data && b.data.result) || []) for (const [t, v] of s.values || []) {
+    if (!Number.isFinite(Number(t))) say("승격 처리 실패 기록에 시각을 읽지 못한 점이 있어 감사 줄 누락을 배제할 수 없다");
     if (!(Number(t) >= lo && Number(t) <= hi)) continue;
     points++;
     if (typeof v !== "string" || !/^[-+0-9.eE]+$/.test(v) || !(Number(v) === 0)) say("승격 처리 실패가 있었거나 그 값을 읽지 못해 감사 줄이 빠졌을 수 있다");

@@ -59,7 +59,8 @@ function main() {
     return (body.data?.result ?? []).map((s) => ({
       metric: s.metric ?? {},
       points: (s.values ?? [])
-        .map(([t, v]) => [Number(t) * 1000, Number(v)])
+        // Prometheus는 값을 숫자 문자열로 낸다. 그 밖의 값(""·null 등)은 Number()가 0으로 읽으므로 NaN으로 바꿔 "숫자가 아닌 값"으로 잡는다.
+        .map(([t, v]) => [Number(t) * 1000, typeof v === "string" && /^[-+0-9.eE]+$/.test(v) ? Number(v) : NaN])
         .filter(([t]) => t >= since && t <= winEnd),
     }));
   };

@@ -24,10 +24,18 @@ test("회수 전에 재승격되면(점유가 겹치면) 위반이다", () => {
   assert.equal(r.events["1"].maxConcurrent, 3);
 });
 
-test("허용 폭보다 짧은 겹침은 시계 차이로 보고 세지 않는다", () => {
-  const lines = [admit("aa", 0), admit("bb", 0), admit("cc", 59.5), end("reclaim", "aa", 60)];
-  assert.equal(run(lines, 2, 1000).violations, 0); // 0.5초 겹침 < 허용 폭 1초(양끝 1초씩 줄임)
-  assert.equal(run(lines, 2, 0).violations, 1);
+test("허용 폭 이하의 겹침은 시계 차이로 보고 세지 않고, 넘으면 센다", () => {
+  const at = (s) => [admit("aa", 0), admit("bb", 0), admit("cc", 60 - s), end("reclaim", "aa", 60)];
+  assert.equal(run(at(0.5), 2, 1000).violations, 0); // 0.5초 겹침 ≤ 1초
+  assert.equal(run(at(1.0), 2, 1000).violations, 0); // 정확히 허용 폭
+  assert.equal(run(at(1.001), 2, 1000).violations, 1); // 허용 폭을 넘음
+  assert.equal(run(at(0.5), 2, 0).violations, 1);
+});
+
+test("since 이전에 이미 끝난 토큰(승격 기록 없음)은 건너뛴다", () => {
+  const r = run([end("reclaim", "ee", -0.5), admit("aa", 0), admit("bb", 0)]);
+  assert.equal(r.violations, 0);
+  assert.equal(r.heldBeforeSince, 0);
 });
 
 test("끝나지 않은 토큰은 구간 끝까지 점유한다", () => {

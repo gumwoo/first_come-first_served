@@ -13,9 +13,14 @@
 // 실시간 over-admit(admitExp 원소 수 > 정원)과 같은 성질을 다른 출처(토큰별 감사 기록)로 다시 세는 것이고, 스크랩
 // 사이(15초)에 생겼다 사라진 초과도 여기서는 보인다.
 //
-// 시계: 감사 시각은 파드마다의 시계이고, 승격·회수 모두 스크립트가 끝난 뒤 찍힌다. 파드 사이 시계 차이로 겹침이
-// 생겨 보이는 오탐을 피하려고 구간을 양끝에서 --tolerance-ms(기본 1000, 잠정값)만큼 줄여서 센다. 그래서 그보다 짧게
-// 스친 초과는 놓칠 수 있다(한계). 같은 파드 안의 회수→승격은 한 틱에서 순서대로 찍히므로 시계 차이가 없다.
+// 시계: 감사 시각은 파드마다의 시계이고, 승격·회수 모두 스크립트가 끝난 뒤 찍힌다. 파드 사이 시계 차이가 최대
+// --tolerance-ms(기본 1000, 잠정값)라고 보고, 구간을 양끝에서 그 절반씩 줄여서 센다 — 두 파드의 구간이 시계 차이만큼
+// 겹쳐 보여도 세지 않는다. 그래서 허용 폭 이하로 겹친 초과, 그리고 점유가 허용 폭 이하인 토큰은 놓친다(한계 — 실시간
+// 감시는 15초 간격의 스크랩만 보므로 이 짧은 초과를 메우지 못한다). 같은 파드 안의 회수→승격은 한 틱에서 순서대로 찍힌다.
+//
+// 전제: 승격·회수·이탈이 모두 감사 줄로 남았을 것. 승격 루프 도중 예외(admit 키 쓰기·SSE 발행 실패)가 나면 나머지 승격은
+// 감사 줄 없이 남는다. 그 예외는 승격 처리 실패 카운터를 올리므로, 사후 검사 4단계(prom-recheck.mjs)가 그 run을 판정
+// 불가로 만든다 — 이 도구 단독의 0은 그 단계와 함께 읽어야 한다.
 //
 //   node scripts/loadtest/admission-overlap.mjs --capacity 100 --since <ISO> --until <ISO> [--tolerance-ms 1000] api.log
 //
@@ -71,11 +76,17 @@ export function analyze(lines, { capacity, since, until, tolMs }) {
     if (t.starts.length > 1) duplicateAdmits += t.starts.length - 1;
     let start;
     if (t.starts.length) start = t.starts[0];
-    else { start = since; heldBeforeSince++; }
+    else {
+      // 승격이 구간 앞이라 로그에 없다. 회수·이탈이 since 이후면 since부터 점유한 것으로 보고, since 이전에 끝났으면
+      // run 구간과 관계없는 토큰이라 건너뛴다.
+      if (!t.ends.some((e) => e >= since)) continue;
+      start = since;
+      heldBeforeSince++;
+    }
     const end = t.ends.find((e) => e >= start) ?? (openAtEnd++, winEnd);
-    // 양끝을 허용 폭만큼 줄인다(파드 사이 시계 차이로 생기는 거짓 겹침 제거).
-    const s = Math.max(start, since) + tolMs;
-    const e = Math.min(end, winEnd) - tolMs;
+    // 양끝을 허용 폭의 절반씩 줄인다 — 두 파드의 구간이 시계 차이(≤ 허용 폭)만큼 겹쳐 보이는 것을 지운다.
+    const s = Math.max(start, since) + tolMs / 2;
+    const e = Math.min(end, winEnd) - tolMs / 2;
     if (e <= s) continue;
     if (!byEvent.has(t.event)) byEvent.set(t.event, []);
     byEvent.get(t.event).push([s, e]);
@@ -129,10 +140,11 @@ async function main() {
     process.exitCode = 2;
     return;
   }
+  // 100K run의 api 로그는 크다. 감사 줄만 남기며 읽는다.
   const lines = [];
   for (const f of files) {
     const rl = createInterface({ input: createReadStream(f), crlfDelay: Infinity });
-    for await (const line of rl) lines.push(line);
+    for await (const line of rl) if (line.includes("queue.audit kind=")) lines.push(line);
   }
   const result = analyze(lines, { capacity: Number(a.capacity), since, until, tolMs: Number(a["tolerance-ms"]) });
   console.log(JSON.stringify(result, null, 2));

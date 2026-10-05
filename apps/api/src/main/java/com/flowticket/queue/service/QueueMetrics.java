@@ -71,7 +71,8 @@ public class QueueMetrics {
         this.tick = Timer.builder("flowticket.queue.admit.tick")
                 .description("승격 워커 한 틱(전 이벤트 회수·승격·관측) 소요 시간")
                 .register(registry);
-        // admitExp 원소 수는 이 경로를 보지 못한다. 실효 입장 초과의 직접 신호다(회수 전 만료 토큰은 세지 않는다).
+        // 회수된 토큰이 admit 키로 게이트에 온 횟수. 게이트가 거부하므로 정원 초과는 아니고, 그 창이 실제로 생겼다는 신호다
+        // (회수 전 만료 토큰은 세지 않는다 — 아직 슬롯을 쥔 상태라 통과시킨다).
         this.gateFallback = Counter.builder("flowticket.queue.gate.fallback")
                 .description("이미 회수돼 admitExp에 없는 토큰이 admit 키로 입장 게이트에 왔다가 거부된 횟수(실효 입장 초과 창). 파드 합으로 집계")
                 .register(registry);

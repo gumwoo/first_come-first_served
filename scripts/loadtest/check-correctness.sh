@@ -17,7 +17,7 @@
 #   sql.csv            — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스(correctness.sql)
 #   queue-order.json   — 대기열 순서 위반(api 로그의 승격 감사 줄 대조, queue-order.mjs)
 #   admission-overlap.json — 실효 입장 초과(감사 줄로 재구성한 토큰별 슬롯 점유 구간의 동시 수 > 정원,
-#                        admission-overlap.mjs). 정원은 prom/queue_capacity.json에서 읽는다
+#                        admission-overlap.mjs). 정원은 prom/queue_capacity_by_pod.json에서 읽는다(파드·시각 모두 한 값이어야 한다)
 #   event-loss.txt     — 발행된 아웃박스 이벤트 중 소비 기록(Redis 멱등 키)이 없는 수
 #   watch-summary.json — (같은 run 디렉터리) 실시간 감시기의 결과를 최종 판정에 넣는다. 감시 구간(startedAt~endedAt)이
 #                        run을 덮을 때만 그 결과를 이 run의 것으로 본다: 3이면 위반, 0이면 통과, 그 밖은 판정 불가.
@@ -186,20 +186,22 @@ if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 -
   # 2: 승격 기록 0건·읽지 못한 승격 줄(판정 불가) 또는 실행 실패
   case $? in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
   # 실효 입장 초과(§3.3): 감사 줄로 토큰별 슬롯 점유 구간을 재구성해 동시 점유 수 > 정원인지 본다.
-  # 정원은 내보낸 구간의 queue_capacity에서 읽는다. 구간 안에서 값이 둘 이상이면(측정 중 정원 변경) 판정 불가.
+  # 정원은 내보낸 구간의 파드별 queue_capacity에서 읽는다. 구간 안에서, 또는 파드 사이에 값이 둘 이상이면(측정 중 정원 변경·
+  # 파드마다 다른 설정) 판정 불가. 이전 결과가 summary에 섞이지 않게 먼저 지운다.
+  rm -f "$D/admission-overlap.json"
   if CAP="$(node -e '
 const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
 const vals = new Set();
 for (const s of (b.data && b.data.result) || []) for (const [, v] of s.values || []) vals.add(v);
-if (b.status !== "success" || vals.size !== 1) { console.error("queue_capacity 값이 " + vals.size + "개다"); process.exit(2); }
+if (b.status !== "success" || vals.size !== 1) { console.error("파드별 queue_capacity 값이 " + vals.size + "개다"); process.exit(2); }
 const c = Number([...vals][0]);
 if (!Number.isInteger(c) || c < 1) process.exit(2);
-console.log(c);' "$OUT/prom/queue_capacity.json" 2>"$D/admission-overlap.err")"; then
+console.log(c);' "$OUT/prom/queue_capacity_by_pod.json" 2>"$D/admission-overlap.err")"; then
     node "$HERE/admission-overlap.mjs" --capacity "$CAP" --since "$SINCE" --until "$UNTIL" --tolerance-ms "$TOL" \
       "$D/api.log" > "$D/admission-overlap.json" 2>>"$D/admission-overlap.err"
     case $? in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
   else
-    echo "    정원 값을 확인하지 못했다(prom/queue_capacity.json) — 실효 입장 초과 판정 불가" >&2; BROKEN=1
+    echo "    정원 값을 확인하지 못했다(prom/queue_capacity_by_pod.json) — 실효 입장 초과 판정 불가" >&2; BROKEN=1
   fi
 else
   echo "    api 로그 수집 실패(클러스터 접근)" >&2; BROKEN=1
@@ -335,7 +337,7 @@ esac
   echo "since=$SINCE"
   echo "--- sql (검사,위반 수)"; cat "$D/sql.csv" 2>/dev/null
   # require는 상대경로를 모듈 이름으로 읽는다. 파일로 읽는다.
-  echo "--- admission-overlap(실효 입장 초과)"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"capacity="+r.capacity+" admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed+" maxConcurrent="+JSON.stringify(Object.fromEntries(Object.entries(r.events).map(([k,v])=>[k,v.maxConcurrent]))))}catch{console.log("판정 불가")}' "$D/admission-overlap.json" 2>/dev/null
+  echo "--- admission-overlap(실효 입장 초과)"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"capacity="+r.capacity+" admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed+" duplicateAdmits="+r.duplicateAdmits+" maxConcurrent="+JSON.stringify(Object.fromEntries(Object.entries(r.events).map(([k,v])=>[k,v.maxConcurrent]))))}catch{console.log("판정 불가")}' "$D/admission-overlap.json" 2>/dev/null
   echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
   echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null
   echo "--- 내보낸 구간(파드 대조·승격 처리 실패의 전제)"; cat "$D/export-window.txt" 2>/dev/null

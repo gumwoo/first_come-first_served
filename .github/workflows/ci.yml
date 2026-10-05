@@ -83,6 +83,9 @@ jobs:
       # 실효 입장 초과 판정식(loadtest-100k-plan §3.3)의 단위 테스트. 의존성 없는 node 내장 테스트.
       - name: loadtest correctness test (실효 입장 초과 재구성)
         run: node --test scripts/loadtest/admission-overlap.test.mjs
+      # RDS·ElastiCache CloudWatch 내보내기(loadtest-100k-plan §5.3)의 질의 구성·결과 요약 테스트.
+      - name: loadtest cloudwatch export test (질의 구성)
+        run: node --test scripts/loadtest/export-cloudwatch.test.mjs
 
   backend:
     name: 백엔드 (하네스 → 테스트)

@@ -81,7 +81,8 @@ export const REDIS_METRICS = [
 export const CREDIT_PERIOD = 300;
 
 // 질의 시작 시각을 5분 경계로 내린다. 크레딧 질의(300초)의 칸이 5분 경계와 맞아야 계획서 §5.3의 판정 구간(5분 칸)과
-// 대응한다. 내리면 구간이 앞으로 넓어질 뿐이라 run 구간을 잃지 않는다. --period(60의 배수)도 300의 약수이거나 배수다.
+// 대응한다. 내리면 구간이 앞으로 넓어질 뿐이라 run 구간을 잃지 않는다. 일반 지표의 칸도 5분 경계를 걸치지 않도록 --period는
+// 60의 배수 중 300의 약수(60·300)이거나 300의 배수(600·900·…)만 받는다(120·180 등은 칸이 5분 경계를 걸친다).
 export const alignStart = (ms) => Math.floor(ms / (CREDIT_PERIOD * 1000)) * CREDIT_PERIOD * 1000;
 const isCredit = (m) => /^CPU(Credit|Surplus)/.test(m);
 
@@ -185,8 +186,8 @@ async function main() {
     return;
   }
   if (!a.out || !Number.isFinite(start) || !Number.isFinite(end) || !(end > start) || !/^[1-9]\d*$/.test(a.period) ||
-      Number(a.period) % 60 !== 0 || !idOk(a["rds-id"]) || !idOk(a["redis-group"]) || !idOk(a.region)) {
-    console.error(`${USAGE}\n(시각은 Z·오프셋이 붙은 ISO, --period는 60의 배수, 식별자는 영숫자·하이픈)`);
+      Number(a.period) % 60 !== 0 || (300 % Number(a.period) !== 0 && Number(a.period) % 300 !== 0) || !idOk(a["rds-id"]) || !idOk(a["redis-group"]) || !idOk(a.region)) {
+    console.error(`${USAGE}\n(시각은 Z·오프셋이 붙은 ISO, --period는 60·300 또는 300의 배수, 식별자는 영숫자·하이픈)`);
     process.exitCode = 2;
     return;
   }

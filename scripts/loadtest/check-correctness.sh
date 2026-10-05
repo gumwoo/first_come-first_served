@@ -108,7 +108,8 @@ EOF
 
 FAIL=0 BROKEN=0
 # AO: 실효 입장 초과(admission-overlap) 결과. 파드 대조(pod-coverage) 뒤에 확정한다(아래). POD_OK: 파드 로그를 다 읽었는가.
-AO="" POD_OK=0
+# AO_RAW: 낮추기 전 도구의 종료 코드(사유를 빠짐없이 남기려고 따로 둔다).
+AO="" AO_RAW="" POD_OK=0
 
 echo "==> 0/4 내보낸 구간 확인(prom/_meta.json)"
 # 파드 대조와 4단계(실시간 조건 사후 재확인)는 내보낸 구간이 run 전체 + 꼬리 30초를 덮어야 믿을 수 있다.
@@ -221,23 +222,26 @@ for (const s of (b.data && b.data.result) || []) {
     fi
     node "$HERE/admission-overlap.mjs" --capacity "$CAP" --since "$SINCE" --until "$UNTIL" --tolerance-ms "$TOL" \
       "$D/api.log" > "$D/admission-overlap.json" 2>>"$D/admission-overlap.err"
-    AO=$?
+    AO=$?; AO_RAW=$AO
     # 승격 처리 실패가 있던 run에서는 승격·회수 루프가 도중에 끊겨 감사 줄이 빠질 수 있다. 회수 줄이 빠진 토큰은 run 끝까지
     # 점유한 것으로 세어져 거짓 위반이 된다. 그래서 그런 run의 위반(1)은 판정 불가(2)로 낮춘다(진짜 위반이어도 0이 되지는 않는다).
-    # 승격 처리 실패 기록을 읽지 못했거나, 조회가 실패했거나, 점이 없으면 "실패가 없었다"를 확인하지 못한 것이라 똑같이 낮춘다.
+    # 승격 처리 실패 기록을 읽지 못했거나, 조회가 실패했거나, run 구간 [since, until + 30초] 안에 점이 없으면 "실패가 없었다"를
+    # 확인하지 못한 것이라 똑같이 낮춘다(4단계 prom-recheck의 "구간 안" 기준과 같다). 값은 숫자 문자열만 읽는다.
     if [ "$AO" = 1 ] && REASON="$(node -e '
 const say = (m) => { console.log(m); process.exit(0); };
 try {
   const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
   if (!b || b.status !== "success") say("승격 처리 실패 조회 상태가 " + (b && b.status) + "라 감사 줄 누락을 배제할 수 없다");
+  const lo = Date.parse(process.argv[2]) / 1000, hi = Date.parse(process.argv[3]) / 1000 + 30;
   let points = 0;
-  for (const s of (b.data && b.data.result) || []) for (const [, v] of s.values || []) {
+  for (const s of (b.data && b.data.result) || []) for (const [t, v] of s.values || []) {
+    if (!(Number(t) >= lo && Number(t) <= hi)) continue;
     points++;
-    if (typeof v !== "string" || !(Number(v) === 0)) say("승격 처리 실패가 있었거나 그 값을 읽지 못해 감사 줄이 빠졌을 수 있다");
+    if (typeof v !== "string" || !/^[-+0-9.eE]+$/.test(v) || !(Number(v) === 0)) say("승격 처리 실패가 있었거나 그 값을 읽지 못해 감사 줄이 빠졌을 수 있다");
   }
-  if (points === 0) say("승격 처리 실패 기록에 점이 없어 감사 줄 누락을 배제할 수 없다");
+  if (points === 0) say("승격 처리 실패 기록에 run 구간 안의 점이 없어 감사 줄 누락을 배제할 수 없다");
 } catch { say("승격 처리 실패 기록(prom/queue_admit_tick_failures_rate.json)을 읽지 못해 감사 줄 누락을 배제할 수 없다"); }
-process.exit(1);' "$OUT/prom/queue_admit_tick_failures_rate.json")"; then
+process.exit(1);' "$OUT/prom/queue_admit_tick_failures_rate.json" "$SINCE" "$UNTIL")"; then
       echo "$REASON — 위반을 판정 불가로 낮춘다" >> "$D/admission-overlap.err"
       AO=2
     fi
@@ -250,6 +254,8 @@ else
 fi
 
 # run 동안 있었던 파드의 로그를 전부 읽었는지 본다. 빠진 파드가 있으면 대조는 하되 판정 불가다.
+# 이전 결과가 summary에 섞이지 않게(목록 조회가 실패해도) 먼저 지운다.
+rm -f "$D/pod-coverage.json"
 # 로그를 받은 **뒤에** 파드 목록을 읽는다. 순서가 반대면 목록을 읽은 뒤 로그를 받기 전에 지워진 파드가 "읽음"으로
 # 남는다. 이 순서에서는 로그를 받은 뒤 지워진 파드가 "빠짐"으로 잡혀 판정 불가 쪽으로만 틀린다.
 if kubectl -n "$NS" get pods -l app=flowticket-api \
@@ -273,7 +279,8 @@ fi
 # 컨테이너·회전된 로그의 줄이 빠지면 그 토큰이 run 끝까지(또는 run 시작부터) 점유로 세어져 거짓 위반이 된다. 그래서 파드
 # 로그를 다 읽었다고 확인하지 못한 run의 위반(1)은 판정 불가(2)로 낮춘다(대기열 순서는 줄이 빠져도 거짓 위반이 생기지 않는다).
 if [ -n "$AO" ]; then
-  if [ "$AO" = 1 ] && [ "$POD_OK" != 1 ]; then
+  # 승격 처리 실패로 이미 낮췄어도 사유는 따로 남긴다.
+  if [ "$AO_RAW" = 1 ] && [ "$POD_OK" != 1 ]; then
     echo "run 동안 있었던 파드의 로그를 다 읽었다고 확인하지 못해(pod-coverage) 회수·이탈 줄이 빠졌을 수 있다 — 위반을 판정 불가로 낮춘다" >> "$D/admission-overlap.err"
     AO=2
   fi
@@ -281,6 +288,8 @@ if [ -n "$AO" ]; then
 fi
 
 echo "==> 3/4 이벤트 유실(아웃박스 PUBLISHED vs 소비자 멱등 키)"
+# 이전 결과가 summary에 섞이지 않게 먼저 지운다.
+rm -f "$D/event-loss.txt"
 # 소비자는 처리한 이벤트를 dedup:order-event:<eventId>로 24시간 남긴다(OrderEventConsumer). 24시간 안에 돌린다.
 if printf "\\\\copy (SELECT id FROM outbox_events WHERE status = 'PUBLISHED' AND created_at >= '%s') TO STDOUT\n" "$SINCE_DB" \
      | psql_pod "loadtest-check-outbox" > "$D/published-ids.txt"; then
@@ -390,7 +399,8 @@ esac
   echo "since=$SINCE"
   echo "--- sql (검사,위반 수)"; cat "$D/sql.csv" 2>/dev/null
   # require는 상대경로를 모듈 이름으로 읽는다. 파일로 읽는다.
-  # 판정 불가 사유(run 시작 시점 입장 토큰, 정원 불일치, 승격 처리 실패로 낮춤)는 .err에 남는다. summary에도 보인다.
+  # 판정 불가 사유(run 시작 시점 입장 토큰, 정원 불일치, 승격 처리 실패·파드 로그 누락으로 낮춤, 도구 자체의 판정 불가)는
+  # .err에 남는다. summary에도 보인다.
   echo "--- admission-overlap(실효 입장 초과)"; [ -s "$D/admission-overlap.err" ] && sed 's/^/  사유: /' "$D/admission-overlap.err"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"capacity="+r.capacity+" admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed+" duplicateAdmits="+r.duplicateAdmits+" endsBeforeAdmit="+r.endsBeforeAdmit+" maxConcurrent="+JSON.stringify(Object.fromEntries(Object.entries(r.events).map(([k,v])=>[k,v.maxConcurrent]))))}catch{console.log("판정 불가")}' "$D/admission-overlap.json" 2>/dev/null
   echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
   echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null

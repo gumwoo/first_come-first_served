@@ -83,7 +83,7 @@ spec:
             # limits.cpu는 두지 않는다. CPU는 압축 가능한 자원이라 limit을 걸면 스로틀링으로
             # p99가 튀고, 부하 실증에서 측정하려는 것이 바로 그 지연이다.
             # memory는 SSE 대기 연결이 정한다(IMP-023). 단일 Pod(limit 1Gi)에서 50초 유지 SSE 3,000 연결에
-            # working set 1,009MiB(한도 직전), 4,000 연결에서 OOMKilled였고, S-10K(api 3, 1만 연결)에서 api 2개가
+            # working set 1,009MiB(한도 1,024MiB), 4,000 목표 run에서는 동시 연결 약 3,300~3,500 시점에 OOMKilled였고, S-10K(api 3, 1만 연결)에서 api 2개가
             # OOMKilled됐다(측정 세션 20261005-1440, 실측). 2Gi로 올리면 힙(MaxRAMPercentage=75)이 약 1.5GiB가 된다.
             # 몇 연결까지 버티는지는 재시험으로 다시 잰다 — 이 값은 "1Gi는 부족하다"는 실측에서 나온 다음 후보이지
             # 용량 산정값이 아니다. requests도 함께 올려 스케줄러가 노드 메모리를 실제 사용에 가깝게 예약하게 한다.

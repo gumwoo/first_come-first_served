@@ -5,7 +5,7 @@
 - 유형: 정량(수치)
 - 관련 커밋/PR: `ee6d340`(before) → 이 PR(after)
 - 원시 데이터: `artifacts/loadtest/20261005-1440/`(레포에 커밋하지 않는다 — [loadtest-100k-plan §7](../testing/loadtest-100k-plan.md))
-- 상태: **after 측정 완료 — OOM은 사라졌으나 단계 6 판정 장애는 그대로**(재시작 원인이 liveness 실패로 이동, §7)
+- 상태: **after 측정 완료(1회) — OOM은 사라졌으나 재시작·단계 6 판정 불가는 그대로**(§7)
 
 ## 1. 상황 (Context)
 100K 부하 검증 계획([loadtest-100k-plan](../testing/loadtest-100k-plan.md))의 측정 세션 `20261005-1440`에서
@@ -82,21 +82,28 @@ OOM은 JVM 힙 소진이 아니라 컨테이너 메모리 한도 초과였다.
 
 ## 7. 결과 (재측정 — before와 동일 조건)
 같은 workload(S-10K, Constant 1,000/s × 10초, SSE 50초, 발생기 1대·VU 사전 할당 8,000)를 메모리 2Gi 배포 뒤 다시 걸었다
-(run `step9-10k_constant-r1`, 측정 세션 20261005-1440, 실측).
+(run `step9-10k_constant-r1`, 측정 세션 20261005-1440, 원시 데이터 재계산 — 실측, 각 1회).
 
-| 지표 | before(1Gi, step6) | after(2Gi, step9) | 변화 |
-|---|---|---|---|
-| api OOMKilled | 3개 중 2개 | 0 | 사라짐 |
-| api 재시작 | 2(OOM) | **3(liveness probe 실패)** | 원인만 바뀜 |
-| api working set 최대 | (OOM으로 최고점 미기록) | 1,356MiB(한도 2,048) | — |
-| 진입 지연 p50 / p95 | 7.19s / 14.26s | 10.71s / 23.04s | 악화 |
-| SSE 열림 | 9,111 / 10,000 | 8,941 / 10,000 | 감소 |
-| 단계 6 사후 정합성 | 판정 불가 | 판정 불가 | **개선 없음** |
+**조건 차이**: 이 PR은 limit(1Gi→2Gi)과 함께 request(768Mi→1536Mi)를 바꿨고, 힙 최대(풀 합)도 742→1,536MiB로 커졌다.
+api 파드는 롤아웃으로 모두 새 파드였고, step9에서는 3개 중 2개가 같은 노드에 배치됐다(step6은 노드마다 1개).
 
-- 재시작 원인(Kubernetes 이벤트): 15:47:34~35Z `Liveness probe failed … context deadline exceeded` → `failed liveness probe, will be restarted`.
-  api 3개 모두 종료 코드 143·137. HPA가 api를 7개까지 늘렸다.
-- **결론: 메모리 한도는 OOM을 없앴지만 단계 6 판정 장애는 그대로다.** 판정을 막는 재시작이 liveness 실패로 옮겨 갔다.
-  후속 조치와 원인 진단(스레드 덤프)은 [IMP-024](IMP-024-api-liveness-under-redis-wait.md).
+| 지표 | before(1Gi, step6) | after(2Gi, step9) |
+|---|---|---|
+| 처리된 진입(200) | 10,000 | 10,000 |
+| 진입 지연 p50 / p95 / p99 | 7.19 / 14.26 / 16.59s | 10.71 / 23.04 / 25.82s |
+| SSE 열림 / 시도(클라이언트) | 9,111 / 10,000 | 8,941 / 10,000 |
+| 서버 SSE 게이지 최대 → burst 뒤 | 5,507 → 2,256 | 5,264 → 0(15:48:04) |
+| api OOMKilled | 2 | 0 |
+| api 재시작(run 중) | 2(OOMKilled) | 3(사유 `Error` — liveness 실패 뒤 kubelet 재시작) |
+| HPA api replica | 3 유지 | 3→7 |
+| 단계 6 사후 정합성 | 판정 불가 | 판정 불가 |
+
+- step9 재시작: Kubernetes 이벤트 15:47:33~35Z `Liveness probe failed … context deadline exceeded` → `failed liveness probe, will be restarted`.
+  종료 코드는 원시 데이터에 남지 않았다.
+- **before에도 liveness 시간 초과가 있었다**(step6 이벤트 15:17:45·15:18:01Z) — 그때는 OOM이 먼저 컨테이너를 끝냈다.
+- **결론**: 메모리 한도 상향으로 OOM은 사라졌지만(1회) 재시작과 단계 6 판정 불가는 그대로였다. 지연·SSE 지표는 나빠졌지만,
+  파드 배치·HPA 반응·롤아웃 직후 JVM이 함께 달라 그 악화를 메모리 변경 탓으로 볼 근거는 없다(추론). 반복 측정이 필요하다.
+  후속 조치와 진단은 [IMP-024](IMP-024-api-liveness-under-redis-wait.md).
 
 ## 8. 트레이드오프 / 한계 / 다음 개선
 - 메모리 예약이 늘어 같은 노드에 들어가는 api 파드가 줄고, HPA 최대까지 늘면 노드가 더 필요하다. 데모 상시 운영 비용도 늘 수 있다.

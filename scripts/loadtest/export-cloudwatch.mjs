@@ -9,6 +9,7 @@
 //
 //   node scripts/loadtest/export-cloudwatch.mjs --out artifacts/loadtest/<session>/<run> \
 //     --start 2026-10-05T05:00:00Z --end 2026-10-05T05:12:00Z [--period 60] [--rds-id flowticket] [--redis-group flowticket-redis]
+//     [--region ap-northeast-2]   (기본: AWS_REGION 환경변수, 없으면 ap-northeast-2)
 //
 // --start는 run 시작 10분 이상 앞(질의할 때 5분 경계로 내린다 — _meta.json의 queryStart), --end는 run 종료 이후로 잡는다(시각은 Z 또는 오프셋이 붙은 ISO만
 // 받는다). 계획서 §5.3의 판정 구간이 run 앞 5분 구간까지 보므로, --start가 run 직전이면 그 구간에 크레딧 점이 없어
@@ -84,6 +85,9 @@ export const CREDIT_PERIOD = 300;
 // 대응한다. 내리면 구간이 앞으로 넓어질 뿐이라 run 구간을 잃지 않는다. 일반 지표의 칸도 5분 경계를 걸치지 않도록 --period는
 // 60의 배수 중 300의 약수(60·300)이거나 300의 배수(600·900·…)만 받는다(120·180 등은 칸이 5분 경계를 걸친다).
 export const alignStart = (ms) => Math.floor(ms / (CREDIT_PERIOD * 1000)) * CREDIT_PERIOD * 1000;
+// --period 검증: 양의 정수 문자열이고 60의 배수이며, 300의 약수(60·300)이거나 300의 배수(600·900·…)여야 한다.
+export const periodOk = (s) => /^[1-9]\d*$/.test(s ?? "") && Number(s) % 60 === 0 &&
+  (CREDIT_PERIOD % Number(s) === 0 || Number(s) % CREDIT_PERIOD === 0);
 const isCredit = (m) => /^CPU(Credit|Surplus)/.test(m);
 
 // GetMetricData 질의. Id는 소문자로 시작하고 영숫자·밑줄만 쓴다. optional은 비어도 문제로 세지 않는 질의다(우리 쪽 표시 —
@@ -148,7 +152,7 @@ function aws(args) {
 }
 
 async function main() {
-  const USAGE = "사용: export-cloudwatch.mjs --out <run 디렉터리> --start <ISO> --end <ISO> [--period 60] [--rds-id flowticket] [--redis-group flowticket-redis]";
+  const USAGE = "사용: export-cloudwatch.mjs --out <run 디렉터리> --start <ISO> --end <ISO> [--period 60] [--rds-id flowticket] [--redis-group flowticket-redis] [--region ap-northeast-2]";
   let a;
   try {
     ({ values: a } = parseArgs({
@@ -185,8 +189,8 @@ async function main() {
     process.exitCode = 2;
     return;
   }
-  if (!a.out || !Number.isFinite(start) || !Number.isFinite(end) || !(end > start) || !/^[1-9]\d*$/.test(a.period) ||
-      Number(a.period) % 60 !== 0 || (300 % Number(a.period) !== 0 && Number(a.period) % 300 !== 0) || !idOk(a["rds-id"]) || !idOk(a["redis-group"]) || !idOk(a.region)) {
+  if (!a.out || !Number.isFinite(start) || !Number.isFinite(end) || !(end > start) || !periodOk(a.period) ||
+      !idOk(a["rds-id"]) || !idOk(a["redis-group"]) || !idOk(a.region)) {
     console.error(`${USAGE}\n(시각은 Z·오프셋이 붙은 ISO, --period는 60·300 또는 300의 배수, 식별자는 영숫자·하이픈)`);
     process.exitCode = 2;
     return;

@@ -38,7 +38,7 @@ naive → 측정 → 개선 → 재측정 순서로 수치를 **커밋으로 박
 | [IMP-021](IMP-021-cluster-autoscaler-node-scaling.md) | Cluster Autoscaler 실증(노드 확장·축소) | 인프라 | Pending 4개 → 노드 **3→4(110초)** → 해소, 부하 제거 후 **4→3(739초)**. ⚠️ HPA 상한을 일부러 올린 조건 | 완료 |
 | [IMP-022](IMP-022-rds-connection-timeout.md) | Hikari `connection-timeout` 30초 → 3초 (RDS 페일오버 AS-IS/TO-BE) | 인프라 | **실패 요청의** 대기 총합 **4,514초 → 1,341초(−70%)**, 30초 부근 실패 **146건 → 3건**. ⚠️ 실패 건수는 **181 → 400(2.16% → 4.66%)** — 개선이 아니라 트레이드오프. ⚠️ 성공 요청의 대기 시간은 기록하지 않아 30초 대기의 효용은 판정 불가 | **측정 완료 · 채택 보류**(n=1) |
 | [IMP-023](IMP-023-api-memory-sse-connections.md) | api 메모리 한도 1Gi → 2Gi(SSE 대기 연결) | 인프라 | before: 단일 Pod SSE 3,000 연결 working set **1,009MiB**·약 3,300~3,500 연결 시점 **OOMKilled**, S-10K에서 api 3개 중 **2개 OOMKilled** → 사후 정합성 판정 불가. after(2Gi, 같은 workload, 1회): OOM **0**, liveness 실패 뒤 api **3개 재시작**(before에도 liveness 시간 초과 있었음), 진입 p95 14.26s → 23.04s(배치·HPA 차이로 원인 미분리) — 단계 6 판정 불가 **그대로** | **측정 완료 · 판정 장애 해소 안 됨** |
-| [IMP-024](IMP-024-api-liveness-under-thread-saturation.md) | api liveness 실패 허용 3회 → 12회(요청 스레드 포화 중 재시작 완화) | 인프라 | before(2Gi, S-10K): liveness 시간 초과로 api **3개 모두 재시작**(첫 실패 후 약 20초). 진단 덤프: Redis 응답 대기·Hikari(풀 5) 대기·톰캣 등록 락 경합(재시작된 파드)이 함께 관측 — 원인 미확정. after 미측정 | **조치 · 재시험 대기** |
+| [IMP-024](IMP-024-api-liveness-under-thread-saturation.md) | api liveness 실패 허용 3회 → 12회(요청 스레드 포화 중 재시작 완화) | 인프라 | before(2Gi, S-10K): liveness 시간 초과로 api **3개 모두 재시작**(첫 실패 후 약 20초). 진단 덤프: Redis 응답 대기·Hikari(풀 5) 대기·톰캣 등록 락 경합(재시작된 파드)이 함께 관측 — 원인 미확정. after(1회): 재시작 **3 → 0**, 단계 6 사후 정합성 판정 불가 → **0(위반 없음)**. 대신 ALB 504(웹 연결 실패) 6.48%가 새로 나타남 | 측정 완료 · 새 오류 원인 미확정 |
 
 ## 누적 지표 보드
 프로젝트 전체에서 모은 정량 성과 요약: [METRICS.md](METRICS.md)

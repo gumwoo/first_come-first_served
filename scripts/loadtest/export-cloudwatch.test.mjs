@@ -38,7 +38,7 @@ test("AWS로 보내는 질의에는 우리 쪽 표시(optional)가 없다", () =
 });
 
 test("RDS 잉여 크레딧은 선택 질의라 비어도 문제가 아니고, 응답 메시지는 문제다", () => {
-  const surplus = q.filter((x) => x.optional);
+  const surplus = q.filter((x) => x.optional && /^CPUSurplus/.test(x.MetricStat.Metric.MetricName));
   assert.deepEqual(surplus.map((x) => x.MetricStat.Metric.MetricName).sort(), ["CPUSurplusCreditBalance", "CPUSurplusCreditsCharged"]);
   const { problems } = summarize(surplus, []);
   assert.equal(problems.length, 0);
@@ -72,4 +72,19 @@ test("질의별 메시지도 문제로 센다", () => {
   const one = q.slice(0, 1);
   const r = summarize(one, [{ Id: one[0].Id, StatusCode: "Complete", Values: [1], Messages: [{ Code: "ArithmeticError", Value: "x" }] }]);
   assert.equal(r.problems.length, 1);
+});
+
+test("앞 페이지의 InternalError는 마지막 페이지가 Complete여도 문제다", () => {
+  const one = q.slice(0, 1);
+  const r = summarize(one, [{ Id: one[0].Id, StatusCode: "InternalError", Values: [1] }, { Id: one[0].Id, StatusCode: "Complete", Values: [2] }]);
+  assert.equal(r.problems.length, 1);
+});
+
+test("버스트 버킷과 Redis 명령 지연을 질의한다(선택 질의)", () => {
+  for (const label of ["rds/flowticket/EBSIOBalance%/Minimum", "redis/flowticket-redis-001/NetworkBandwidthOutAllowanceExceeded/Sum",
+    "redis/flowticket-redis-002/EvalBasedCmdsLatency/Average"]) {
+    const x = q.find((y) => y.Label === label);
+    assert.ok(x, label);
+    assert.equal(x.optional, true);
+  }
 });

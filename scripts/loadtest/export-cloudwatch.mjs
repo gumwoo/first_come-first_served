@@ -10,7 +10,9 @@
 //   node scripts/loadtest/export-cloudwatch.mjs --out artifacts/loadtest/<session>/<run> \
 //     --start 2026-10-05T05:00:00Z --end 2026-10-05T05:12:00Z [--period 60] [--rds-id flowticket] [--redis-group flowticket-redis]
 //
-// --start는 run 시작 이전, --end는 run 종료 이후로 잡는다(시각은 Z 또는 오프셋이 붙은 ISO만 받는다). 해상도는 두 가지다.
+// --start는 run 시작 10분 이상 앞(5분 경계로 내림), --end는 run 종료 이후로 잡는다(시각은 Z 또는 오프셋이 붙은 ISO만
+// 받는다). 계획서 §5.3의 판정 구간이 run 앞 5분 구간까지 보므로, --start가 run 직전이면 그 구간에 크레딧 점이 없어
+// "미확인"이 된다. 해상도는 두 가지다.
 //   - 일반 지표: --period(기본 60초) — RDS 표준 모니터링과 ElastiCache의 기본 해상도(Enhanced Monitoring은 켜지 않았다)
 //   - CPU 크레딧 지표(CPUCredit*, CPUSurplus*): 5분(300초) — AWS 문서상 이 지표들은 5분 주기로만 발행된다
 // 그래서 크레딧 소진은 5분 단위로만 보이고, 구간이 5분 경계를 하나 이상 덮어야 크레딧 점이 생긴다. CloudWatch 수집 지연과
@@ -20,8 +22,8 @@
 // 정규화한 구간·질의 목록·질의별 점 수와 상태·응답 메시지).
 // 0은 "필수 질의마다 점이 하나 이상"이라는 뜻이지 구간 끝까지 다 받았다는 보장이 아니다 — 수집 지연 중에 내보내면 구간
 // 앞쪽 점만으로 0이 날 수 있다(그래서 run 종료 10분 뒤에 내보낸다). 인자 오류(2)일 때는 이전 결과를 지우지 않는다.
-// 종료 코드: 0 필수 질의가 모두 Complete이고 점이 하나 이상, 1 필수 질의가 빔·어떤 질의든 Complete가 아님(선택 질의의 응답
-// 없음은 제외, 앞 페이지의 InternalError·Forbidden 포함)·응답이나 질의에 경고 메시지·복제 그룹 노드 없음·페이지 무한(같은
+// 종료 코드: 0 필수 질의가 모두 Complete이고 점이 하나 이상, 1 필수 질의가 빔(선택 질의의 점 0개는 제외)·어떤 질의든
+// 응답에서 빠짐·어떤 질의든 Complete가 아님(앞 페이지의 InternalError·Forbidden 포함)·응답이나 질의에 경고 메시지·복제 그룹 노드 없음·페이지 무한(같은
 // 토큰 반복·100쪽 초과)·AWS 호출 실패·저장 실패(위반 아님), 2 인자 오류(달력상 없는 시각·미래 --end 포함).
 // 선택 질의(RDS 잉여 크레딧, 버스트 버킷, 네트워크 기준 사용률, 트래픽 관리, Redis 명령 지연)는 발행되지 않을 수 있어(추론)
 // 점이 0개여도 문제로 세지 않는다. 응답에서 아예 빠지면 문제다.
@@ -169,7 +171,8 @@ async function main() {
       u.getUTCMinutes() === mi && u.getUTCSeconds() === s;
   };
   const start = zoned(a.start) ? Date.parse(a.start) : NaN, end = zoned(a.end) ? Date.parse(a.end) : NaN;
-  const idOk = (s) => /^[A-Za-z0-9-]+$/.test(s ?? "");
+  // 첫 글자는 영숫자로 제한한다 — "-"로 시작하는 값(--help 등)이 CLI 옵션으로 읽히지 않게 한다.
+  const idOk = (s) => /^[A-Za-z0-9][A-Za-z0-9-]*$/.test(s ?? "");
   // --end가 지금보다 뒤면 그 구간은 아직 오지 않았다. 앞쪽 점만으로 "필수 질의마다 점 1개 이상"을 채워 0이 나올 수 있으므로
   // 인자 오류로 막는다(구간 끝의 데이터를 덜 받았는지는 이것으로 다 막지 못한다 — §5.3 한계).
   if (Number.isFinite(end) && end > Date.now()) {

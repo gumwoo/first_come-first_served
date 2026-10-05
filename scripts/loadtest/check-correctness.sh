@@ -44,8 +44,9 @@
 # 받고, 이 스크립트는 보지도 출력하지도 않는다(seed-users.sh와 같은 방식).
 # 종료 코드: 위반 없음 0, 위반 있음 1, 검사 자체 실패·판정 불가·인자 오류 2. 위반을 하나라도 찾았으면 검사 일부가 실패했어도
 # 1이다 — 감시기(3)·queue-order(1)와 같이 위반이 우선한다. 검사 실패도 함께 있었으면 summary에 둘 다 적는다.
-# 예외: 승격 처리 실패가 있던 run(그 기록을 읽지 못한 경우 포함)의 admission-overlap 위반, 형식이 깨진 감사 줄이 있는 run의
-# admission-overlap 위반은 거짓 위반일 수 있어 판정 불가(2)로 낮춘다.
+# 예외: admission-overlap 위반은 감사 줄이 빠졌거나 깨졌을 수 있는 run에서는 거짓일 수 있어 판정 불가(2)로 낮춘다 —
+# 승격 처리 실패가 있던 run(그 기록을 확인하지 못한 경우 포함), 파드 로그를 다 읽었다고 확인하지 못한 run(pod-coverage),
+# 형식이 깨진 감사 줄이 있는 run.
 # run 직후 바로 돌리면 아직 발행 중인 아웃박스가 미발행으로 잡힐 수 있다. 아웃박스가 비워진 뒤
 # (flowticket_outbox_oldest_pending_age_seconds 0) 실행한다.
 set -uo pipefail
@@ -106,6 +107,8 @@ EOF
 
 
 FAIL=0 BROKEN=0
+# AO: 실효 입장 초과(admission-overlap) 결과. 파드 대조(pod-coverage) 뒤에 확정한다(아래). POD_OK: 파드 로그를 다 읽었는가.
+AO="" POD_OK=0
 
 echo "==> 0/4 내보낸 구간 확인(prom/_meta.json)"
 # 파드 대조와 4단계(실시간 조건 사후 재확인)는 내보낸 구간이 run 전체 + 꼬리 30초를 덮어야 믿을 수 있다.
@@ -230,7 +233,7 @@ try {
   let points = 0;
   for (const s of (b.data && b.data.result) || []) for (const [, v] of s.values || []) {
     points++;
-    if (!(Number(v) === 0)) say("승격 처리 실패가 있던 run이라 감사 줄이 빠졌을 수 있다");
+    if (typeof v !== "string" || !(Number(v) === 0)) say("승격 처리 실패가 있었거나 그 값을 읽지 못해 감사 줄이 빠졌을 수 있다");
   }
   if (points === 0) say("승격 처리 실패 기록에 점이 없어 감사 줄 누락을 배제할 수 없다");
 } catch { say("승격 처리 실패 기록(prom/queue_admit_tick_failures_rate.json)을 읽지 못해 감사 줄 누락을 배제할 수 없다"); }
@@ -238,7 +241,7 @@ process.exit(1);' "$OUT/prom/queue_admit_tick_failures_rate.json")"; then
       echo "$REASON — 위반을 판정 불가로 낮춘다" >> "$D/admission-overlap.err"
       AO=2
     fi
-    case $AO in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
+    # FAIL/BROKEN 반영은 파드 대조 뒤(아래)에 한다.
   else
     echo "    정원 값을 확인하지 못했다(prom/queue_capacity_by_pod.json) — 실효 입장 초과 판정 불가" >&2; BROKEN=1
   fi
@@ -261,9 +264,20 @@ if kubectl -n "$NS" get pods -l app=flowticket-api \
   done < "$D/api-pods-now.txt"
   node "$HERE/pod-coverage.mjs" --pods "$OUT/prom/api_pods.json" --restarts "$OUT/prom/api_restarts.json" \
     --existing "$D/api-pods-now.txt" --first-lines "$D/api-first-lines.txt" --since "$SINCE" \
-    --meta "$OUT/prom/_meta.json" > "$D/pod-coverage.json" || { echo "    로그를 다 읽지 못한 파드가 있다(pod-coverage.json)" >&2; BROKEN=1; }
+    --meta "$OUT/prom/_meta.json" > "$D/pod-coverage.json" && POD_OK=1 || { echo "    로그를 다 읽지 못한 파드가 있다(pod-coverage.json)" >&2; BROKEN=1; }
 else
   echo "    api 파드 목록 조회 실패" >&2; BROKEN=1
+fi
+
+# 실효 입장 초과 판정을 여기서 확정한다. 회수·이탈 줄은 그 회수를 처리한 파드의 로그에만 남으므로, 지워진 파드·재시작 전
+# 컨테이너·회전된 로그의 줄이 빠지면 그 토큰이 run 끝까지(또는 run 시작부터) 점유로 세어져 거짓 위반이 된다. 그래서 파드
+# 로그를 다 읽었다고 확인하지 못한 run의 위반(1)은 판정 불가(2)로 낮춘다(대기열 순서는 줄이 빠져도 거짓 위반이 생기지 않는다).
+if [ -n "$AO" ]; then
+  if [ "$AO" = 1 ] && [ "$POD_OK" != 1 ]; then
+    echo "run 동안 있었던 파드의 로그를 다 읽었다고 확인하지 못해(pod-coverage) 회수·이탈 줄이 빠졌을 수 있다 — 위반을 판정 불가로 낮춘다" >> "$D/admission-overlap.err"
+    AO=2
+  fi
+  case $AO in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
 fi
 
 echo "==> 3/4 이벤트 유실(아웃박스 PUBLISHED vs 소비자 멱등 키)"

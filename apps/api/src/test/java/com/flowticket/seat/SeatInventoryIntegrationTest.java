@@ -310,6 +310,20 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
                 .isInstanceOf(BusinessException.class); // QUEUE_NOT_ADMITTED
     }
 
+    @Test
+    void 회수된_토큰은_admit키가_남아도_선점이_거부된다() {
+        // 회수는 admitExp만 지우고 admit 키는 TTL까지 남긴다. 게이트가 그 admit 키로 통과시키면, 같은 틱에 빈 슬롯을
+        // 받은 사용자와 함께 실효 입장자가 정원을 넘는다(loadtest-100k-plan §3.3). 실제 reclaim()으로 회수해 본다.
+        String token = admittedToken(13L, eventId);
+        redisTemplate.opsForZSet().add("queue:admitexp:" + eventId, token, 0); // 점수를 과거로 → 회수 대상
+        assertThat(admissionService.reclaim(eventId)).contains(token);
+        assertThat(redisTemplate.hasKey("queue:admit:" + token)).isTrue(); // admit 키는 남아 있다
+
+        assertThatThrownBy(() -> seatService.hold(13L, eventId, List.of(aSeatId), token))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.QUEUE_NOT_ADMITTED);
+    }
+
     // --- helpers ---
 
     private String seatStatus(Long seatId) {

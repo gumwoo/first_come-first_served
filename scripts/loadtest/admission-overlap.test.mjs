@@ -65,3 +65,8 @@ test("형식이 깨진 감사 줄은 세고, 같은 토큰 중복 승격도 센�
   assert.equal(r.malformed, 1);
   assert.equal(r.duplicateAdmits, 1);
 });
+
+test("알 수 없는 감사 종류(잘린 kind=adm 등)도 형식이 깨진 줄로 센다", () => {
+  const r = run([admit("aa", 0), "[pod/a/api] x INFO queue.audit kind=adm"]);
+  assert.equal(r.malformed, 1);
+});

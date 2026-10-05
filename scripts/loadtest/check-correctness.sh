@@ -180,6 +180,8 @@ else
 fi
 
 echo "==> 2/4 대기열 순서(api 로그)"
+# 이전 결과가 summary에 섞이지 않게, 로그 수집 성공 여부와 상관없이 먼저 지운다.
+rm -f "$D/queue-order.json" "$D/admission-overlap.json"
 if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 --prefix \
      --max-log-requests=20 > "$D/api.log"; then
   node "$HERE/queue-order.mjs" --tolerance-ms "$TOL" "$D/api.log" > "$D/queue-order.json"
@@ -188,7 +190,6 @@ if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 -
   # 실효 입장 초과(§3.3): 감사 줄로 토큰별 슬롯 점유 구간을 재구성해 동시 점유 수 > 정원인지 본다.
   # 정원은 내보낸 구간의 파드별 queue_capacity에서 읽는다. 구간 안에서, 또는 파드 사이에 값이 둘 이상이면(측정 중 정원 변경·
   # 파드마다 다른 설정) 판정 불가. 이전 결과가 summary에 섞이지 않게 먼저 지운다.
-  rm -f "$D/admission-overlap.json"
   if CAP="$(node -e '
 const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
 const vals = new Set();
@@ -197,6 +198,18 @@ if (b.status !== "success" || vals.size !== 1) { console.error("파드별 queue_
 const c = Number([...vals][0]);
 if (!Number.isInteger(c) || c < 1) process.exit(2);
 console.log(c);' "$OUT/prom/queue_capacity_by_pod.json" 2>"$D/admission-overlap.err")"; then
+    # run 시작 시점에 이미 입장 중인 토큰이 있으면, 그 토큰은 승격 줄이 run 앞이라 로그에 없고 run 안에서 끝나지 않으면
+    # 회수 줄도 없어 점유를 통째로 놓친다. 계획서의 회차 리셋(admitexp·admitcount DEL)을 지켰는지 확인한다 —
+    # run 시작 직전 30초 안의 queue_admitted가 0(또는 시계열 없음)이 아니면 판정 불가.
+    if ! node -e '
+const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+if (b.status !== "success") process.exit(2);
+const since = Date.parse(process.argv[2]) / 1000;
+for (const s of (b.data && b.data.result) || []) for (const [t, v] of s.values || []) {
+  if (t >= since - 30 && t <= since && Number(v) !== 0) { console.error("run 시작 시점에 입장 중인 토큰 " + v + "개(event=" + (s.metric && s.metric.event) + ")"); process.exit(2); }
+}' "$OUT/prom/queue_admitted.json" "$SINCE" 2>>"$D/admission-overlap.err"; then
+      echo "    run 시작 시점에 이미 입장 중인 토큰이 있거나 확인하지 못했다(회차 리셋 확인) — 실효 입장 초과 판정 불가" >&2; BROKEN=1
+    fi
     node "$HERE/admission-overlap.mjs" --capacity "$CAP" --since "$SINCE" --until "$UNTIL" --tolerance-ms "$TOL" \
       "$D/api.log" > "$D/admission-overlap.json" 2>>"$D/admission-overlap.err"
     case $? in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac

@@ -24,7 +24,7 @@
 //
 //   node scripts/loadtest/admission-overlap.mjs --capacity 100 --since <ISO> --until <ISO> [--tolerance-ms 1000] api.log
 //
-// 종료 코드: 0 위반 없음, 1 위반, 2 검사 실패(인자 오류·예외·승격 기록 0건·형식이 깨진 감사 줄).
+// 종료 코드: 0 위반 없음, 1 위반, 2 검사 실패(인자 오류·예외·승격 기록 0건·형식이 깨진 감사 줄·같은 토큰의 중복 승격).
 // 위반을 이미 찾았으면 1이 우선한다.
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
@@ -47,7 +47,7 @@ export function analyze(lines, { capacity, since, until, tolMs }) {
   let admits = 0;
   for (const line of lines) {
     if (!line.includes("queue.audit kind=")) continue;
-    if (!/kind=(admit|reclaim|leave)\b/.test(line)) continue;
+    // 감사 줄의 종류는 admit·reclaim·leave뿐이다. 다른 종류(잘린 kind=adm 등)도 형식이 깨진 줄로 센다.
     let m;
     if ((m = ADMIT.exec(line))) {
       const k = `${m[1]}:${m[2]}`;
@@ -148,8 +148,9 @@ async function main() {
   }
   const result = analyze(lines, { capacity: Number(a.capacity), since, until, tolMs: Number(a["tolerance-ms"]) });
   console.log(JSON.stringify(result, null, 2));
-  // 승격 기록이 없거나 읽지 못한 감사 줄이 있으면 "위반 없음"이 아니라 판정 불가다. 위반을 찾았으면 1이 우선한다.
-  process.exitCode = result.violations ? 1 : result.admits === 0 || result.malformed > 0 ? 2 : 0;
+  // 승격 기록이 없거나, 읽지 못한 감사 줄이 있거나, 같은 토큰이 두 번 승격됐으면(첫 구간만 세므로 두 번째 점유가 빠진다)
+  // "위반 없음"이 아니라 판정 불가다. 위반을 찾았으면 1이 우선한다.
+  process.exitCode = result.violations ? 1 : result.admits === 0 || result.malformed > 0 || result.duplicateAdmits > 0 ? 2 : 0;
 }
 
 // 테스트에서 analyze만 가져다 쓸 수 있게, 직접 실행할 때만 main을 돈다.

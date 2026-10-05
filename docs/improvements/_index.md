@@ -37,6 +37,7 @@ naive → 측정 → 개선 → 재측정 순서로 수치를 **커밋으로 박
 | [IMP-020](IMP-020-seat-map-cache.md) | 좌석맵 조회 캐시 — 그리고 캐시만으로는 커넥션이 줄지 않았다 | S04·S10 | api CPU 2.55→1.56 ms/req(1.63배), node 5.39→3.89(1.38배), 서버 p99 24.5→9.7ms, 커넥션/요청 1.005→0.025 | 측정 완료 · **운영 미적용**(무효화 미구현) |
 | [IMP-021](IMP-021-cluster-autoscaler-node-scaling.md) | Cluster Autoscaler 실증(노드 확장·축소) | 인프라 | Pending 4개 → 노드 **3→4(110초)** → 해소, 부하 제거 후 **4→3(739초)**. ⚠️ HPA 상한을 일부러 올린 조건 | 완료 |
 | [IMP-022](IMP-022-rds-connection-timeout.md) | Hikari `connection-timeout` 30초 → 3초 (RDS 페일오버 AS-IS/TO-BE) | 인프라 | **실패 요청의** 대기 총합 **4,514초 → 1,341초(−70%)**, 30초 부근 실패 **146건 → 3건**. ⚠️ 실패 건수는 **181 → 400(2.16% → 4.66%)** — 개선이 아니라 트레이드오프. ⚠️ 성공 요청의 대기 시간은 기록하지 않아 30초 대기의 효용은 판정 불가 | **측정 완료 · 채택 보류**(n=1) |
+| [IMP-023](IMP-023-api-memory-sse-connections.md) | api 메모리 한도 1Gi → 2Gi(SSE 대기 연결) | 인프라 | before: 단일 Pod SSE 3,000 연결 working set **1,009MiB**(한도 직전)·4,000 연결 **OOMKilled**, S-10K에서 api 3개 중 **2개 OOMKilled** → 사후 정합성 판정 불가. after 미측정 | **조치 · 재시험 대기** |
 
 ## 누적 지표 보드
 프로젝트 전체에서 모은 정량 성과 요약: [METRICS.md](METRICS.md)

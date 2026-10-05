@@ -302,7 +302,7 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
         // 입장창 만료 시뮬레이션. admit 키만 지우는 것으로는 만료가 아니다(TS-024).
         // 승격은 pop+카운트+admitExp 등록까지 한 Lua로 확정되고 admit 키는 그 뒤에 붙으므로,
         // "admit 키 없음 + admitExp 미래"는 만료가 아니라 확정 직후 표시 전을 뜻한다.
-        // 실제 만료는 admit 키 TTL과 admitExp score가 같은 시점에 함께 지나는 것이다.
+        // 만료의 기준은 admitExp score다(admit 키 TTL은 승격 스크립트 뒤에 시작해 score보다 늦게 끝난다 — loadtest-100k-plan §3.3).
         redisTemplate.delete("queue:admit:" + token);
         redisTemplate.opsForZSet().add("queue:admitexp:" + eventId, token, 0); // score를 과거로
 

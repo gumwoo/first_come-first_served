@@ -221,15 +221,19 @@ for (const s of (b.data && b.data.result) || []) {
     AO=$?
     # 승격 처리 실패가 있던 run에서는 승격·회수 루프가 도중에 끊겨 감사 줄이 빠질 수 있다. 회수 줄이 빠진 토큰은 run 끝까지
     # 점유한 것으로 세어져 거짓 위반이 된다. 그래서 그런 run의 위반(1)은 판정 불가(2)로 낮춘다(진짜 위반이어도 0이 되지는 않는다).
-    # 승격 처리 실패 기록을 읽지 못했거나 조회가 실패했으면 "실패가 없었다"를 확인하지 못한 것이라 똑같이 낮춘다.
+    # 승격 처리 실패 기록을 읽지 못했거나, 조회가 실패했거나, 점이 없으면 "실패가 없었다"를 확인하지 못한 것이라 똑같이 낮춘다.
     if [ "$AO" = 1 ] && REASON="$(node -e '
-let b;
-try { b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); }
-catch { console.log("승격 처리 실패 기록(prom/queue_admit_tick_failures_rate.json)을 읽지 못해 감사 줄 누락을 배제할 수 없다"); process.exit(0); }
-if (b.status !== "success") { console.log("승격 처리 실패 조회 상태가 " + b.status + "라 감사 줄 누락을 배제할 수 없다"); process.exit(0); }
-for (const s of (b.data && b.data.result) || []) for (const [, v] of s.values || []) if (!(Number(v) === 0)) {
-  console.log("승격 처리 실패가 있던 run이라 감사 줄이 빠졌을 수 있다"); process.exit(0);
-}
+const say = (m) => { console.log(m); process.exit(0); };
+try {
+  const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  if (!b || b.status !== "success") say("승격 처리 실패 조회 상태가 " + (b && b.status) + "라 감사 줄 누락을 배제할 수 없다");
+  let points = 0;
+  for (const s of (b.data && b.data.result) || []) for (const [, v] of s.values || []) {
+    points++;
+    if (!(Number(v) === 0)) say("승격 처리 실패가 있던 run이라 감사 줄이 빠졌을 수 있다");
+  }
+  if (points === 0) say("승격 처리 실패 기록에 점이 없어 감사 줄 누락을 배제할 수 없다");
+} catch { say("승격 처리 실패 기록(prom/queue_admit_tick_failures_rate.json)을 읽지 못해 감사 줄 누락을 배제할 수 없다"); }
 process.exit(1);' "$OUT/prom/queue_admit_tick_failures_rate.json")"; then
       echo "$REASON — 위반을 판정 불가로 낮춘다" >> "$D/admission-overlap.err"
       AO=2

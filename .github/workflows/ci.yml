@@ -80,6 +80,9 @@ jobs:
       # 둘 중 한쪽만 돌면 발급기가 바뀌어도 계약 깨짐을 놓친다. 의존성이 없는 node 내장 테스트라 이 잡에 둔다.
       - name: loadgen contract test (부하 시험 토큰 발급기)
         run: node --test infra/loadgen/mint-tokens.test.mjs
+      # 실효 입장 초과 판정식(loadtest-100k-plan §3.3)의 단위 테스트. 의존성 없는 node 내장 테스트.
+      - name: loadtest correctness test (실효 입장 초과 재구성)
+        run: node --test scripts/loadtest/admission-overlap.test.mjs
 
   backend:
     name: 백엔드 (하네스 → 테스트)

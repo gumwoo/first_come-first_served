@@ -67,32 +67,54 @@ class QueueAdmitVisibilityIntegrationTest extends IntegrationTestSupport {
     }
 
     /**
-     * 회수 뒤에도 admit 키가 남아 게이트를 통과하는 창(loadtest-100k-plan §3.3 한계)이 지표에 잡히는지 본다.
-     * admitExp 원소 수는 이 경로를 보지 못하므로, 실효 입장 초과의 직접 신호는 이 카운터뿐이다.
+     * 회수 뒤에도 admit 키가 남는 창(loadtest-100k-plan §3.3)에서 게이트가 통과시키지 않는지 본다.
+     * 회수는 admitExp만 지우고 같은 틱에서 빈 슬롯을 다른 사람에게 다시 승격하므로, 여기서 통과시키면 실효 입장자가
+     * 정원을 넘는다. 게이트가 admitExp 원소만 받아야 over-admit 판정(admitExp 원소 수 > 정원)이 실효 입장 초과까지 덮는다.
+     * 거부는 카운터에 남아 그 창이 실제로 생겼는지 볼 수 있다.
      */
     @Test
-    void admitExp_없이_admit키로_통과하면_폴백_카운터가_오른다() {
+    void 회수돼_admitExp에_없는_토큰은_admit키가_남아도_거부하고_센다() {
         String token = queueService.issue(930L, EVENT).token();
         admissionService.admit(EVENT);
         // 회수가 admitExp만 지우고 admit 키는 남긴 상태를 결정적으로 만든다.
         redisTemplate.opsForZSet().remove("queue:admitexp:" + EVENT, token);
+        assertThat(redisTemplate.hasKey("queue:admit:" + token)).isTrue();
         double before = meterRegistry.get("flowticket.queue.gate.fallback").counter().count();
 
-        assertThat(queueService.isAdmitted(token, EVENT)).isTrue();
+        assertThat(queueService.isAdmitted(token, EVENT)).isFalse();
 
         assertThat(meterRegistry.get("flowticket.queue.gate.fallback").counter().count()).isEqualTo(before + 1);
     }
 
-    /** 만료됐지만 아직 회수 전인 토큰은 슬롯을 쥔 상태라 정원 초과가 아니다. 폴백으로 통과해도 세지 않는다. */
+    /** 다른 이벤트로 온 회수 토큰은 이 이벤트의 실효 입장 초과 창이 아니다 — 거부하되 세지 않는다. */
     @Test
-    void 회수_전_만료_토큰의_폴백은_세지_않는다() {
+    void 다른_이벤트의_회수_토큰은_거부하고_세지_않는다() {
+        String token = queueService.issue(932L, EVENT).token();
+        admissionService.admit(EVENT);
+        redisTemplate.opsForZSet().remove("queue:admitexp:" + EVENT, token);
+        Long otherEvent = eventRepository.save(Event.builder()
+                .kopisId("QUEUE-ADMIT-OTHER").title("다른 공연").genre("연극").status(EventStatus.ON_SALE).build())
+                .getId();
+        double before = meterRegistry.get("flowticket.queue.gate.fallback").counter().count();
+
+        assertThat(queueService.isAdmitted(token, otherEvent)).isFalse();
+
+        assertThat(meterRegistry.get("flowticket.queue.gate.fallback").counter().count()).isEqualTo(before);
+    }
+
+    /**
+     * 만료됐지만 아직 회수 전인 토큰은 admitExp와 카운터에 남아 슬롯을 쥔 상태라 정원 초과가 아니다.
+     * admit 키로 통과시키고(다음 회수 틱까지의 짧은 구간), 거부 카운터에도 세지 않는다.
+     */
+    @Test
+    void 회수_전_만료_토큰은_admit키로_통과하고_세지_않는다() {
         String token = queueService.issue(931L, EVENT).token();
         admissionService.admit(EVENT);
         // 점수를 과거로 돌려 "만료됐지만 회수 전" 상태를 만든다. admit 키는 남아 있다.
         redisTemplate.opsForZSet().add("queue:admitexp:" + EVENT, token, 1);
         double before = meterRegistry.get("flowticket.queue.gate.fallback").counter().count();
 
-        queueService.isAdmitted(token, EVENT);
+        assertThat(queueService.isAdmitted(token, EVENT)).isTrue();
 
         assertThat(meterRegistry.get("flowticket.queue.gate.fallback").counter().count()).isEqualTo(before);
     }

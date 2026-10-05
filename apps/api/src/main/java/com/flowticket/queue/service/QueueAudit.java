@@ -40,7 +40,10 @@ final class QueueAudit {
                 eventId, ref(token), seq, admittedAtMillis, keyWrittenAtMillis, admitExpiresAtEpochSec, admitTtlSec);
     }
 
-    /** 만료 회수. admitExp에서는 빠졌지만 admit 키는 지우지 않는다(키 TTL까지 유효). */
+    /**
+     * 만료 회수. admitExp에서 빠지는 이 시각에 슬롯 점유와 유효 입장이 끝난다. admit 키는 지우지 않고 TTL까지 남지만,
+     * 입장 게이트는 admitExp에 없는 토큰을 통과시키지 않는다(QueueService.isAdmitted).
+     */
     static void reclaimed(Long eventId, String token, long atMillis) {
         log.info("queue.audit kind=reclaim event={} token={} at={}", eventId, ref(token), atMillis);
     }

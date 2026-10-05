@@ -16,6 +16,8 @@
 # 검사(결과는 <run>/correctness/ 아래):
 #   sql.csv            — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스(correctness.sql)
 #   queue-order.json   — 대기열 순서 위반(api 로그의 승격 감사 줄 대조, queue-order.mjs)
+#   admission-overlap.json — 실효 입장 초과(감사 줄로 재구성한 토큰별 슬롯 점유 구간의 동시 수 > 정원,
+#                        admission-overlap.mjs). 정원은 prom/queue_capacity.json에서 읽는다
 #   event-loss.txt     — 발행된 아웃박스 이벤트 중 소비 기록(Redis 멱등 키)이 없는 수
 #   watch-summary.json — (같은 run 디렉터리) 실시간 감시기의 결과를 최종 판정에 넣는다. 감시 구간(startedAt~endedAt)이
 #                        run을 덮을 때만 그 결과를 이 run의 것으로 본다: 3이면 위반, 0이면 통과, 그 밖은 판정 불가.
@@ -36,8 +38,7 @@
 # kubelet이 컨테이너 로그를 회전해 지운 앞부분도 같은 대조에서 찾는다 — 파드별 현재 로그 파일의 첫 줄 시각이
 # run 시작·컨테이너 시작보다 늦으면 run 구간이 잘린 것이다(pod-coverage.mjs).
 #
-# 실효 입장 초과는 판정식이 미확정이라(계획서 §3.3) 여기서 판정하지 않는다. 재료(승격·회수·이탈 감사 로그)는
-# api.log에 함께 남는다.
+# 실효 입장 초과는 감사 로그(승격·회수·이탈)로 토큰별 점유 구간을 재구성해 판정한다(admission-overlap.mjs).
 #
 # DB·Redis는 프라이빗이라 클러스터 안 일회용 파드로 붙는다. 자격증명은 api와 같은 ConfigMap·Secret에서 필요한 키만
 # 받고, 이 스크립트는 보지도 출력하지도 않는다(seed-users.sh와 같은 방식).
@@ -184,6 +185,22 @@ if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 -
   node "$HERE/queue-order.mjs" --tolerance-ms "$TOL" "$D/api.log" > "$D/queue-order.json"
   # 2: 승격 기록 0건·읽지 못한 승격 줄(판정 불가) 또는 실행 실패
   case $? in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
+  # 실효 입장 초과(§3.3): 감사 줄로 토큰별 슬롯 점유 구간을 재구성해 동시 점유 수 > 정원인지 본다.
+  # 정원은 내보낸 구간의 queue_capacity에서 읽는다. 구간 안에서 값이 둘 이상이면(측정 중 정원 변경) 판정 불가.
+  if CAP="$(node -e '
+const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const vals = new Set();
+for (const s of (b.data && b.data.result) || []) for (const [, v] of s.values || []) vals.add(v);
+if (b.status !== "success" || vals.size !== 1) { console.error("queue_capacity 값이 " + vals.size + "개다"); process.exit(2); }
+const c = Number([...vals][0]);
+if (!Number.isInteger(c) || c < 1) process.exit(2);
+console.log(c);' "$OUT/prom/queue_capacity.json" 2>"$D/admission-overlap.err")"; then
+    node "$HERE/admission-overlap.mjs" --capacity "$CAP" --since "$SINCE" --until "$UNTIL" --tolerance-ms "$TOL" \
+      "$D/api.log" > "$D/admission-overlap.json" 2>>"$D/admission-overlap.err"
+    case $? in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
+  else
+    echo "    정원 값을 확인하지 못했다(prom/queue_capacity.json) — 실효 입장 초과 판정 불가" >&2; BROKEN=1
+  fi
 else
   echo "    api 로그 수집 실패(클러스터 접근)" >&2; BROKEN=1
 fi
@@ -318,6 +335,7 @@ esac
   echo "since=$SINCE"
   echo "--- sql (검사,위반 수)"; cat "$D/sql.csv" 2>/dev/null
   # require는 상대경로를 모듈 이름으로 읽는다. 파일로 읽는다.
+  echo "--- admission-overlap(실효 입장 초과)"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"capacity="+r.capacity+" admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed+" maxConcurrent="+JSON.stringify(Object.fromEntries(Object.entries(r.events).map(([k,v])=>[k,v.maxConcurrent]))))}catch{console.log("판정 불가")}' "$D/admission-overlap.json" 2>/dev/null
   echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
   echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null
   echo "--- 내보낸 구간(파드 대조·승격 처리 실패의 전제)"; cat "$D/export-window.txt" 2>/dev/null
@@ -325,7 +343,6 @@ esac
   echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null
   echo "--- 실시간 조건 사후 재확인(내보낸 구간, run 종료 + 30초까지)"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.violations.length?"위반: "+r.violations.join("; ")+(r.problems.length?" / 판정 불가 사유도 있음: "+r.problems.join("; "):""):r.problems.length?"판정 불가: "+r.problems.join("; "):"위반 없음(관측 점 "+r.observedPoints+"개, 샘플 나이 최대 "+r.sampleAgeMaxSec+"초)")}catch{console.log("판정 불가(확인 실패)")}' "$D/prom-recheck.json" 2>/dev/null
   echo "--- 실시간 감시기(watch-summary.json)"; cat "$D/watch-verdict.txt" 2>/dev/null
-  echo "--- 실효 입장 초과: 판정식 미확정(계획서 §3.3) — 판정하지 않음"
   # 검사 일부가 실패해도 이미 찾은 위반은 함께 보인다.
   if [ "$BROKEN" -ne 0 ] && [ "$FAIL" -ne 0 ]; then echo "판정: 정합성 위반 + 검사 일부 실패(결과 불완전)"
   elif [ "$BROKEN" -ne 0 ]; then echo "판정: 검사 실패(결과 불완전)"

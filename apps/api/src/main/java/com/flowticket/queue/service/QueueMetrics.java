@@ -73,7 +73,7 @@ public class QueueMetrics {
                 .register(registry);
         // admitExp 원소 수는 이 경로를 보지 못한다. 실효 입장 초과의 직접 신호다(회수 전 만료 토큰은 세지 않는다).
         this.gateFallback = Counter.builder("flowticket.queue.gate.fallback")
-                .description("이미 회수돼 admitExp에 없는 토큰을 입장 게이트가 admit 키로 통과시킨 횟수. 파드 합으로 집계")
+                .description("이미 회수돼 admitExp에 없는 토큰이 admit 키로 입장 게이트에 왔다가 거부된 횟수(실효 입장 초과 창). 파드 합으로 집계")
                 .register(registry);
         // 처리에 실패한 활성 이벤트는 직전 값을 유지한다. 실패가 이어지면 게이지가 마지막 값에 고정되므로,
         // 실패 횟수를 따로 내보내 "값이 멈춘 것"과 "상태가 그대로인 것"을 구분한다.

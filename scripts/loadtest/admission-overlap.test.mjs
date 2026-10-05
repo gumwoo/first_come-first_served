@@ -70,3 +70,18 @@ test("알 수 없는 감사 종류(잘린 kind=adm 등)도 형식이 깨진 줄�
   const r = run([admit("aa", 0), "[pod/a/api] x INFO queue.audit kind=adm"]);
   assert.equal(r.malformed, 1);
 });
+
+test("시계가 늦은 파드가 승격보다 허용 폭 이내로 앞서 찍은 이탈은 그 승격의 끝으로 본다", () => {
+  // 실제 순서는 승격 → 이탈이지만, 이탈 파드의 시계가 0.5초 늦어 승격보다 앞선 시각으로 찍혔다.
+  const lines = [admit("aa", 0), admit("bb", 0), admit("cc", 60), end("leave", "cc", 59.5), admit("dd", 61)];
+  const r = run(lines, 3, 1000);
+  assert.equal(r.violations, 0); // cc를 run 끝까지 열어 두면 aa·bb·cc·dd 4개로 거짓 위반이 된다
+  assert.equal(r.endsBeforeAdmit, 0);
+  assert.equal(r.openAtEnd, 3);
+});
+
+test("허용 폭보다 앞선 끝만 있는 토큰은 세지 않고 따로 센다(판정 불가 재료)", () => {
+  const r = run([admit("aa", 0), admit("cc", 60), end("leave", "cc", 58)], 2, 1000);
+  assert.equal(r.endsBeforeAdmit, 1);
+  assert.equal(r.events["1"].tokens, 1);
+});

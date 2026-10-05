@@ -17,14 +17,20 @@
 // --tolerance-ms(기본 1000, 잠정값)라고 보고, 구간을 양끝에서 그 절반씩 줄여서 센다 — 두 파드의 구간이 시계 차이만큼
 // 겹쳐 보여도 세지 않는다. 그래서 허용 폭 이하로 겹친 초과, 그리고 점유가 허용 폭 이하인 토큰은 놓친다(한계 — 실시간
 // 감시는 15초 간격의 스크랩만 보므로 이 짧은 초과를 메우지 못한다). 같은 파드 안의 회수→승격은 한 틱에서 순서대로 찍힌다.
+// 회수·이탈 줄은 admitExp에서 실제로 뺀 경우에만 찍히므로 실제로는 언제나 그 토큰의 승격 뒤다. 그런데 이탈을 처리한 파드의
+// 시계가 늦으면 승격보다 앞선 시각으로 찍힐 수 있다. 그래서 승격보다 허용 폭 이내로 앞선 끝도 그 승격의 끝으로 본다(빼면
+// 구간이 run 끝까지 열린 채 남아 거짓 위반이 된다). 허용 폭보다 앞선 끝만 있으면 시계 전제가 깨진 것이라 그 토큰은 세지
+// 않고 판정 불가로 둔다.
 //
 // 전제: 승격·회수·이탈이 모두 감사 줄로 남았을 것. 승격 루프 도중 예외(admit 키 쓰기·SSE 발행 실패)가 나면 나머지 승격은
-// 감사 줄 없이 남는다. 그 예외는 승격 처리 실패 카운터를 올리므로, 사후 검사 4단계(prom-recheck.mjs)가 그 run을 판정
-// 불가로 만든다 — 이 도구 단독의 0은 그 단계와 함께 읽어야 한다.
+// 감사 줄 없이 남는다. 회수 루프 도중 예외가 나면 나머지 회수 줄이 빠져 거짓 위반이 된다. 두 예외 모두 승격 처리 실패
+// 카운터를 올리므로, check-correctness.sh가 그런 run의 위반(1)을 판정 불가(2)로 낮추고 4단계(prom-recheck.mjs)도 그 run을
+// 판정 불가로 만든다 — 이 도구 단독의 0·1은 그 단계와 함께 읽어야 한다.
 //
 //   node scripts/loadtest/admission-overlap.mjs --capacity 100 --since <ISO> --until <ISO> [--tolerance-ms 1000] api.log
 //
-// 종료 코드: 0 위반 없음, 1 위반, 2 검사 실패(인자 오류·예외·승격 기록 0건·형식이 깨진 감사 줄·같은 토큰의 중복 승격).
+// 종료 코드: 0 위반 없음, 1 위반, 2 검사 실패(인자 오류·예외·승격 기록 0건·형식이 깨진 감사 줄·같은 토큰의 중복 승격·
+// 허용 폭보다 앞선 회수·이탈).
 // 위반을 이미 찾았으면 1이 우선한다.
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
@@ -70,6 +76,7 @@ export function analyze(lines, { capacity, since, until, tolMs }) {
   let duplicateAdmits = 0;
   let openAtEnd = 0;
   let heldBeforeSince = 0;
+  let endsBeforeAdmit = 0;
   for (const t of tokens.values()) {
     t.starts.sort((a, b) => a - b);
     t.ends.sort((a, b) => a - b);
@@ -83,7 +90,10 @@ export function analyze(lines, { capacity, since, until, tolMs }) {
       start = since;
       heldBeforeSince++;
     }
-    const end = t.ends.find((e) => e >= start) ?? (openAtEnd++, winEnd);
+    // 승격 기록이 있으면 허용 폭 이내로 앞선 끝(시계 차이)도 이 승격의 끝이다. 위 머리말의 "시계" 참고.
+    let end = t.ends.find((e) => e >= (t.starts.length ? start - tolMs : start));
+    if (end === undefined && t.ends.length && t.starts.length) { endsBeforeAdmit++; continue; }
+    if (end === undefined) { openAtEnd++; end = winEnd; }
     // 양끝을 허용 폭의 절반씩 줄인다 — 두 파드의 구간이 시계 차이(≤ 허용 폭)만큼 겹쳐 보이는 것을 지운다.
     const s = Math.max(start, since) + tolMs / 2;
     const e = Math.min(end, winEnd) - tolMs / 2;
@@ -113,7 +123,7 @@ export function analyze(lines, { capacity, since, until, tolMs }) {
     events[event] = { tokens: iv.length, maxConcurrent: max, maxAt: maxAt === null ? null : new Date(maxAt).toISOString(), overCapacityIntervals: over, samples };
     violations += over;
   }
-  return { capacity, toleranceMs: tolMs, admits, malformed, malformedSamples, duplicateAdmits, openAtEnd, heldBeforeSince, violations, events };
+  return { capacity, toleranceMs: tolMs, admits, malformed, malformedSamples, duplicateAdmits, openAtEnd, heldBeforeSince, endsBeforeAdmit, violations, events };
 }
 
 async function main() {
@@ -148,9 +158,11 @@ async function main() {
   }
   const result = analyze(lines, { capacity: Number(a.capacity), since, until, tolMs: Number(a["tolerance-ms"]) });
   console.log(JSON.stringify(result, null, 2));
-  // 승격 기록이 없거나, 읽지 못한 감사 줄이 있거나, 같은 토큰이 두 번 승격됐으면(첫 구간만 세므로 두 번째 점유가 빠진다)
-  // "위반 없음"이 아니라 판정 불가다. 위반을 찾았으면 1이 우선한다.
-  process.exitCode = result.violations ? 1 : result.admits === 0 || result.malformed > 0 || result.duplicateAdmits > 0 ? 2 : 0;
+  // 승격 기록이 없거나, 읽지 못한 감사 줄이 있거나, 같은 토큰이 두 번 승격됐거나(첫 구간만 세므로 두 번째 점유가 빠진다),
+  // 허용 폭보다 앞선 회수·이탈만 있는 토큰이 있으면(시계 전제가 깨져 그 토큰을 세지 않았다) "위반 없음"이 아니라 판정
+  // 불가다. 위반을 찾았으면 1이 우선한다.
+  process.exitCode = result.violations ? 1
+    : result.admits === 0 || result.malformed > 0 || result.duplicateAdmits > 0 || result.endsBeforeAdmit > 0 ? 2 : 0;
 }
 
 // 테스트에서 analyze만 가져다 쓸 수 있게, 직접 실행할 때만 main을 돈다.

@@ -44,6 +44,7 @@
 # 받고, 이 스크립트는 보지도 출력하지도 않는다(seed-users.sh와 같은 방식).
 # 종료 코드: 위반 없음 0, 위반 있음 1, 검사 자체 실패·판정 불가·인자 오류 2. 위반을 하나라도 찾았으면 검사 일부가 실패했어도
 # 1이다 — 감시기(3)·queue-order(1)와 같이 위반이 우선한다. 검사 실패도 함께 있었으면 summary에 둘 다 적는다.
+# 예외: 승격 처리 실패가 있던 run의 admission-overlap 위반은 감사 줄 누락에 의한 거짓 위반일 수 있어 판정 불가(2)로 낮춘다.
 # run 직후 바로 돌리면 아직 발행 중인 아웃박스가 미발행으로 잡힐 수 있다. 아웃박스가 비워진 뒤
 # (flowticket_outbox_oldest_pending_age_seconds 0) 실행한다.
 set -uo pipefail
@@ -181,7 +182,7 @@ fi
 
 echo "==> 2/4 대기열 순서(api 로그)"
 # 이전 결과가 summary에 섞이지 않게, 로그 수집 성공 여부와 상관없이 먼저 지운다.
-rm -f "$D/queue-order.json" "$D/admission-overlap.json"
+rm -f "$D/queue-order.json" "$D/admission-overlap.json" "$D/admission-overlap.err"
 if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 --prefix \
      --max-log-requests=20 > "$D/api.log"; then
   node "$HERE/queue-order.mjs" --tolerance-ms "$TOL" "$D/api.log" > "$D/queue-order.json"
@@ -194,19 +195,23 @@ if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 -
 const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
 const vals = new Set();
 for (const s of (b.data && b.data.result) || []) for (const [, v] of s.values || []) vals.add(v);
-if (b.status !== "success" || vals.size !== 1) { console.error("파드별 queue_capacity 값이 " + vals.size + "개다"); process.exit(2); }
+if (b.status !== "success") { console.error("queue_capacity_by_pod 조회 상태가 " + b.status + "다"); process.exit(2); }
+if (vals.size !== 1) { console.error("파드별 queue_capacity 값이 " + vals.size + "개다"); process.exit(2); }
 const c = Number([...vals][0]);
-if (!Number.isInteger(c) || c < 1) process.exit(2);
+if (!Number.isInteger(c) || c < 1) { console.error("queue_capacity 값이 1 이상 정수가 아니다: " + [...vals][0]); process.exit(2); }
 console.log(c);' "$OUT/prom/queue_capacity_by_pod.json" 2>"$D/admission-overlap.err")"; then
     # run 시작 시점에 이미 입장 중인 토큰이 있으면, 그 토큰은 승격 줄이 run 앞이라 로그에 없고 run 안에서 끝나지 않으면
     # 회수 줄도 없어 점유를 통째로 놓친다. 계획서의 회차 리셋(admitexp·admitcount DEL)을 지켰는지 확인한다 —
-    # run 시작 직전 30초 안의 queue_admitted가 0(또는 시계열 없음)이 아니면 판정 불가.
+    # 이벤트별로 run 시작 시각 이하의 마지막 queue_admitted 점이 0이 아니면 판정 불가(시계열이 없거나 run 시작 뒤에야
+    # 생긴 시계열은 통과 — 계획서 §3.3의 한계).
     if ! node -e '
 const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-if (b.status !== "success") process.exit(2);
+if (b.status !== "success") { console.error("queue_admitted 조회 상태가 " + b.status + "다"); process.exit(2); }
 const since = Date.parse(process.argv[2]) / 1000;
-for (const s of (b.data && b.data.result) || []) for (const [t, v] of s.values || []) {
-  if (t >= since - 30 && t <= since && Number(v) !== 0) { console.error("run 시작 시점에 입장 중인 토큰 " + v + "개(event=" + (s.metric && s.metric.event) + ")"); process.exit(2); }
+for (const s of (b.data && b.data.result) || []) {
+  let last = null;
+  for (const [t, v] of s.values || []) if (Number(t) <= since && (last === null || Number(t) > Number(last[0]))) last = [t, v];
+  if (last && Number(last[1]) !== 0) { console.error("run 시작 시점에 입장 중인 토큰 " + last[1] + "개(event=" + (s.metric && s.metric.event) + ", 시각 " + new Date(Number(last[0]) * 1000).toISOString() + ")"); process.exit(2); }
 }' "$OUT/prom/queue_admitted.json" "$SINCE" 2>>"$D/admission-overlap.err"; then
       echo "    run 시작 시점에 이미 입장 중인 토큰이 있거나 확인하지 못했다(회차 리셋 확인) — 실효 입장 초과 판정 불가" >&2; BROKEN=1
     fi
@@ -362,7 +367,7 @@ esac
   echo "--- sql (검사,위반 수)"; cat "$D/sql.csv" 2>/dev/null
   # require는 상대경로를 모듈 이름으로 읽는다. 파일로 읽는다.
   # 판정 불가 사유(run 시작 시점 입장 토큰, 정원 불일치, 승격 처리 실패로 낮춤)는 .err에 남는다. summary에도 보인다.
-  echo "--- admission-overlap(실효 입장 초과)"; [ -s "$D/admission-overlap.err" ] && sed 's/^/  사유: /' "$D/admission-overlap.err"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"capacity="+r.capacity+" admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed+" duplicateAdmits="+r.duplicateAdmits+" maxConcurrent="+JSON.stringify(Object.fromEntries(Object.entries(r.events).map(([k,v])=>[k,v.maxConcurrent]))))}catch{console.log("판정 불가")}' "$D/admission-overlap.json" 2>/dev/null
+  echo "--- admission-overlap(실효 입장 초과)"; [ -s "$D/admission-overlap.err" ] && sed 's/^/  사유: /' "$D/admission-overlap.err"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"capacity="+r.capacity+" admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed+" duplicateAdmits="+r.duplicateAdmits+" endsBeforeAdmit="+r.endsBeforeAdmit+" maxConcurrent="+JSON.stringify(Object.fromEntries(Object.entries(r.events).map(([k,v])=>[k,v.maxConcurrent]))))}catch{console.log("판정 불가")}' "$D/admission-overlap.json" 2>/dev/null
   echo "--- queue-order"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
   echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null
   echo "--- 내보낸 구간(파드 대조·승격 처리 실패의 전제)"; cat "$D/export-window.txt" 2>/dev/null

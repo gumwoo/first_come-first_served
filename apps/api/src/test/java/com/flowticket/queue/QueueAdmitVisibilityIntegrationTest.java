@@ -86,12 +86,15 @@ class QueueAdmitVisibilityIntegrationTest extends IntegrationTestSupport {
         assertThat(meterRegistry.get("flowticket.queue.gate.fallback").counter().count()).isEqualTo(before + 1);
     }
 
-    /** 다른 이벤트로 온 회수 토큰은 이 이벤트의 실효 입장 초과 창이 아니다 — 거부하되 세지 않는다. */
+    /**
+     * 다른 이벤트로 온 토큰은 그 이벤트의 admitExp에 없어 거부되지만, 실효 입장 초과 창(같은 이벤트의 회수 토큰)이
+     * 아니므로 세지 않는다. 원래 이벤트의 admitExp에는 그대로 두어, 소속 확인(sameEvent)만으로 갈리는 경로를 본다.
+     */
     @Test
-    void 다른_이벤트의_회수_토큰은_거부하고_세지_않는다() {
+    void 다른_이벤트로_온_토큰은_거부하고_세지_않는다() {
         String token = queueService.issue(932L, EVENT).token();
         admissionService.admit(EVENT);
-        redisTemplate.opsForZSet().remove("queue:admitexp:" + EVENT, token);
+        assertThat(queueService.isAdmitted(token, EVENT)).isTrue();
         Long otherEvent = eventRepository.save(Event.builder()
                 .kopisId("QUEUE-ADMIT-OTHER").title("다른 공연").genre("연극").status(EventStatus.ON_SALE).build())
                 .getId();

@@ -447,6 +447,8 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 ### 5.3 레포 밖에서 봐야 하는 것
 
 - **ElastiCache**: Redis exporter가 없다. CPU·메모리·명령 지연은 **CloudWatch**로 본다
+- **RDS·ElastiCache 내보내기**(구현): `scripts/loadtest/export-cloudwatch.mjs`가 run 구간의 CloudWatch 지표를 `<run>/cloudwatch/`에 남긴다 — RDS(CPU 평균·최대, `CPUCreditBalance`·`CPUCreditUsage`, `CPUSurplusCreditBalance`·`CPUSurplusCreditsCharged`, 커넥션, 읽기·쓰기 지연, 여유 메모리, 디스크 큐)와 ElastiCache 노드마다(CPU·엔진 CPU, `CPUCreditBalance`·`CPUCreditUsage`, 커넥션, 네트워크, 메모리 사용률, eviction). 해상도는 60초(표준 모니터링). CloudWatch는 수집이 몇 분 늦으므로 run이 끝나고 5분쯤 뒤에 내보낸다(추론). 종료 코드 0 모두 저장, 1 일부 질의가 비었거나 AWS 호출 실패(위반 아님), 2 인자 오류.
+- **버스터블 크레딧의 해석**: 측정 envelope의 RDS·ElastiCache는 t4g(버스터블)다. 같은 workload라도 직전 부하에 따라 크레딧 잔량이 달라 결과가 run 순서에 따라 바뀔 수 있다. 그래서 병목 후보가 RDS·ElastiCache면 그 run의 크레딧 지표를 함께 본다 — ElastiCache `CPUCreditBalance`가 0 근처로 떨어졌으면 기준 성능으로 묶인 상태(크레딧 소진)일 수 있고, RDS는 T 계열이 Unlimited 모드로 동작하는 것으로 알려져 있어(추론, 이 계정에서 확인하지 않음) 크레딧이 떨어지면 성능이 깎이는 대신 `CPUSurplusCreditsCharged`가 생긴다. 크레딧 소진이 원인으로 보이면 "용량 knee"가 아니라 "크레딧 상태에 묶인 결과"로 기록하고, 병목 확인 뒤 단계 8~9 절차로 사양을 바꿔 같은 조건에서 다시 잰다.
 - **ALB**: 5xx·TargetResponseTime·RequestCount는 CloudWatch
 
 ---
@@ -618,6 +620,7 @@ artifacts/loadtest/<session-id>/<run-id>/
 | 파일 | 내용 |
 |---|---|
 | `watch-correctness.jsonl`, `watch-summary.json`, `violation.json`, `violation-action.log` | 실시간 판정 기록, 조건별 값·시계열 없음·관측 공백(`gap`)·오류 틱 수, 감시 중 승격 처리 실패 증가량(`tickFailuresIncrease`), 조건 전체에서 연속 조회 간격의 최댓값과 14초 초과 횟수(`maxQueryGapSec`, `cadenceGaps`)과 판정, 첫 위반, 중단 명령 출력(`watch-correctness.mjs`) |
+| `cloudwatch/metrics.json`, `cloudwatch/_meta.json` | run 구간의 RDS·ElastiCache CloudWatch 지표(`scripts/loadtest/export-cloudwatch.mjs`, §5.3). `_meta.json`에 질의별 점 수·상태와 노드 목록 |
 | `prom/<이름>.json`, `prom/_meta.json` | run 구간의 범위 질의 결과(`scripts/loadtest/export-prom.mjs`, 질의 목록은 스크립트에 있다). `--start`는 run 시작 이전, `--end`는 run 종료 + 30초 이후로 잡는다(마지막 스크랩까지 덮는다). `--step`은 기본 10초이고, 10초를 넘기면 사후 재확인이 판정 불가로 끝난다. 종료 코드 0 저장, 1 일부 질의 실패, 2 인자 오류 |
 | `correctness/` | 사후 검사 결과 — `sql.csv`, `api.log`, `queue-order.json`, `api-pods-now.txt`·`api-first-lines.txt`·`pod-coverage.json`(로그를 다 읽었는지 대조 — 지워진 파드·재시작·로그 회전), `published-ids.txt`·`dedup-exists.txt`(이벤트 유실 대조의 입력과 Redis 응답), `event-loss.txt`, `export-window.txt`(내보낸 구간이 run을 덮는지), `run-window.txt`(발생기 시작·종료 기록과 `--since`·`--until` 대조), `watch-verdict.txt`(감시기 결과와 감시 구간 확인), `prom-recheck.json`(실시간 조건을 내보낸 구간으로 run 종료 + 30초까지 다시 본 결과), `summary.txt`(`check-correctness.sh`). 승격 기록이 0건이면 대기열 순서는 판정 불가 |
 

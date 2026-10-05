@@ -17,8 +17,9 @@
 //
 // 결과: <out>/cloudwatch/metrics.json(GetMetricData 응답의 MetricDataResults 그대로), <out>/cloudwatch/_meta.json(대상·
 // 정규화한 구간·질의 목록·질의별 점 수와 상태·응답 메시지).
-// 종료 코드: 0 필수 질의가 모두 Complete이고 점이 하나 이상, 1 필수 질의가 비었거나 Complete가 아님·응답에 경고 메시지·
-// AWS 호출 실패(위반 아님), 2 인자 오류. RDS 잉여 크레딧(CPUSurplus*)은 값이 0이면 발행되지 않을 수 있어(추론) 비어도
+// 종료 코드: 0 필수 질의가 모두 Complete이고 점이 하나 이상, 1 필수 질의가 빔·어떤 질의든 Complete가 아님(선택 질의의 응답
+// 없음은 제외)·응답이나 질의에 경고 메시지·복제 그룹 노드 없음·AWS 호출 실패·저장 실패(위반 아님), 2 인자 오류(달력상 없는
+// 시각 포함). RDS 잉여 크레딧(CPUSurplus*)은 값이 0이면 발행되지 않을 수 있어(추론) 비어도
 // 문제로 세지 않는다(선택 질의).
 import { execFile } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -31,8 +32,10 @@ import { parseArgs } from "node:util";
 export const RDS_METRICS = [
   ["CPUUtilization", "Average"], ["CPUUtilization", "Maximum"],
   ["CPUCreditBalance", "Minimum"], ["CPUCreditUsage", "Sum"],
-  // AWS 문서상 RDS db.t4g는 Unlimited 모드로 구성된다. 크레딧이 떨어져도 성능이 깎이지 않고 잉여 크레딧이 과금되며,
-  // 그 흔적이 아래 두 지표다. 잉여가 없으면(0) 발행되지 않을 수 있어(추론) 선택 질의로 둔다.
+  // AWS 문서상 RDS db.t4g는 Unlimited 모드로 구성된다. 크레딧이 떨어져도 성능이 깎이지 않고, 그 뒤 쓴 잉여 크레딧이
+  // CPUSurplusCreditBalance에 쌓인다 — 크레딧 소진의 근거는 이 값이 0보다 큰 것이다. CPUSurplusCreditsCharged는 잉여가
+  // 24시간 최대치를 넘거나 인스턴스를 정지·종료할 때 과금이 확정된 양이라, 짧은 run에서는 소진돼도 0일 수 있다.
+  // 둘 다 잉여가 없으면 발행되지 않을 수 있어(추론) 선택 질의로 둔다.
   ["CPUSurplusCreditBalance", "Maximum", true], ["CPUSurplusCreditsCharged", "Sum", true],
   ["DatabaseConnections", "Maximum"], ["ReadLatency", "Average"], ["WriteLatency", "Average"],
   ["FreeableMemory", "Minimum"], ["DiskQueueDepth", "Maximum"],
@@ -87,6 +90,8 @@ export function summarize(queries, results, messages = []) {
     .filter((p) => (p.points === 0 && !p.optional) || (p.status !== "Complete" && !(p.optional && p.status === "Missing")))
     .map((p) => `${p.label}: ${p.status}, 점 ${p.points}`);
   for (const m of messages) problems.push(`응답 메시지: ${m.Code}${m.Value ? " " + m.Value : ""}`);
+  // 질의별 메시지(예: 일부 데이터 누락 경고)도 문제로 센다 — Complete여도 결과를 그대로 믿을 수 없다는 뜻이다.
+  for (const r of results) for (const m of r.Messages || []) problems.push(`질의 메시지(${r.Id}): ${m.Code}${m.Value ? " " + m.Value : ""}`);
   return { perQuery, problems };
 }
 
@@ -121,7 +126,15 @@ async function main() {
     return;
   }
   // 오프셋 없는 시각은 Date.parse가 로컬 시간으로 읽는다. Z나 ±hh:mm이 붙은 ISO만 받는다.
-  const zoned = (x) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.test(x ?? "");
+  // 달력상 있는 시각인지도 본다(2월 30일·24시를 Date.parse가 넘겨 읽는 것을 막는다). 오프셋과 무관하게 날짜·시각 칸만 대조한다.
+  const zoned = (x) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.exec(x ?? "");
+    if (!m) return false;
+    const [y, mo, d, h, mi, s] = [m[1], m[2], m[3], m[4], m[5], m[6] ?? "0"].map(Number);
+    const u = new Date(Date.UTC(y, mo - 1, d, h, mi, s));
+    return u.getUTCFullYear() === y && u.getUTCMonth() === mo - 1 && u.getUTCDate() === d && u.getUTCHours() === h &&
+      u.getUTCMinutes() === mi && u.getUTCSeconds() === s;
+  };
   const start = zoned(a.start) ? Date.parse(a.start) : NaN, end = zoned(a.end) ? Date.parse(a.end) : NaN;
   const idOk = (s) => /^[A-Za-z0-9-]+$/.test(s ?? "");
   if (!a.out || !Number.isFinite(start) || !Number.isFinite(end) || !(end > start) || !/^[1-9]\d*$/.test(a.period) ||
@@ -149,6 +162,7 @@ async function main() {
   const messages = [];
   try {
     let token;
+    const seen = new Set();
     do {
       const args = ["cloudwatch", "get-metric-data", "--metric-data-queries", `file://${qfile}`,
         "--start-time", new Date(start).toISOString(), "--end-time", new Date(end).toISOString(), "--scan-by", "TimestampAscending",
@@ -159,6 +173,9 @@ async function main() {
       results.push(...(r.MetricDataResults ?? []));
       messages.push(...(r.Messages ?? []));
       token = r.NextToken;
+      // 같은 토큰이 다시 오거나 페이지가 비정상적으로 많으면 끝나지 않으므로 실패로 끝낸다.
+      if (token && (seen.has(token) || seen.size >= 100)) throw new Error("get-metric-data 페이지가 끝나지 않는다(같은 NextToken 반복 또는 100쪽 초과)");
+      if (token) seen.add(token);
     } while (token);
   } finally {
     rmSync(qfile, { force: true });

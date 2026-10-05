@@ -64,3 +64,9 @@ test("페이지가 나뉜 같은 Id의 점을 합치고, 한 페이지라도 Par
   const partial = summarize(one, [{ Id: one[0].Id, StatusCode: "PartialData", Values: [1] }, { Id: one[0].Id, StatusCode: "Complete", Values: [2] }]);
   assert.equal(partial.problems.length, 1);
 });
+
+test("질의별 메시지도 문제로 센다", () => {
+  const one = q.slice(0, 1);
+  const r = summarize(one, [{ Id: one[0].Id, StatusCode: "Complete", Values: [1], Messages: [{ Code: "ArithmeticError", Value: "x" }] }]);
+  assert.equal(r.problems.length, 1);
+});

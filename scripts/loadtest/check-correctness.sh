@@ -51,7 +51,9 @@
 # (flowticket_outbox_oldest_pending_age_seconds 0) 실행한다.
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 이 파일을 링크로 실행해도 옆의 도구를 찾도록 실제 경로로 푼다(readlink -f가 없으면 그대로 쓴다).
+SELF="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+HERE="$(cd "$(dirname "$SELF")" && pwd)"
 OUT="" SINCE="" UNTIL="" GENS="" NS=flowticket TOL=1000
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -216,18 +218,20 @@ const since = Date.parse(process.argv[2]) / 1000;
 for (const s of (b.data && b.data.result) || []) {
   let last = null;
   for (const [t, v] of s.values || []) if (Number(t) <= since && (last === null || Number(t) > Number(last[0]))) last = [t, v];
-  if (last && (typeof last[1] !== "string" || !/^[-+0-9.eE]+$/.test(last[1]) || Number(last[1]) !== 0)) { console.error("run 시작 시점에 입장 중인 토큰 " + JSON.stringify(last[1]) + "개 — 0이 아니거나 값을 읽지 못했다(event=" + (s.metric && s.metric.event) + ", 시각 " + new Date(Number(last[0]) * 1000).toISOString() + ")"); process.exit(2); }
+  if (last && (typeof last[1] !== "string" || !/^[-+0-9.eE]+$/.test(last[1]) || Number(last[1]) !== 0)) { console.error((typeof last[1] === "string" && /^[-+0-9.eE]+$/.test(last[1]) ? "run 시작 시점에 입장 중인 토큰 " + last[1] + "개" : "run 시작 시점 입장 수 값을 읽지 못했다: " + JSON.stringify(last[1])) + "(event=" + (s.metric && s.metric.event) + ", 시각 " + new Date(Number(last[0]) * 1000).toISOString() + ")"); process.exit(2); }
 }' "$OUT/prom/queue_admitted.json" "$SINCE" 2>>"$D/admission-overlap.err"; then
       echo "    run 시작 시점에 이미 입장 중인 토큰이 있거나 확인하지 못했다(회차 리셋 확인) — 실효 입장 초과 판정 불가" >&2; BROKEN=1
     fi
     node "$HERE/admission-overlap.mjs" --capacity "$CAP" --since "$SINCE" --until "$UNTIL" --tolerance-ms "$TOL" \
       "$D/api.log" > "$D/admission-overlap.json" 2>>"$D/admission-overlap.err"
     AO=$?; AO_RAW=$AO
-    # 도구가 0으로 끝났는데 결과를 읽을 수 없으면(실행 판정 실패 등으로 main이 돌지 않은 경우) "위반 없음"이 아니라 판정 불가다.
-    if [ "$AO" = 0 ] && ! node -e '
+    # 도구의 0·1은 결과 JSON과 맞아야 믿는다. 0인데 결과를 읽지 못하거나(main이 돌지 않은 경우 등), 1인데 결과에 위반이
+    # 없으면(모듈 로드 실패 같은 실행 오류) "위반 없음"·"위반"이 아니라 판정 불가다.
+    if { [ "$AO" = 0 ] || [ "$AO" = 1 ]; } && ! node -e '
 const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-process.exit(typeof r.violations === "number" && typeof r.admits === "number" ? 0 : 1);' "$D/admission-overlap.json" 2>/dev/null; then
-      echo "admission-overlap이 0으로 끝났지만 결과(admission-overlap.json)를 읽지 못했다 — 판정 불가" >> "$D/admission-overlap.err"
+const ok = typeof r.violations === "number" && typeof r.admits === "number" && (process.argv[2] === "1" ? r.violations > 0 : true);
+process.exit(ok ? 0 : 1);' "$D/admission-overlap.json" "$AO" 2>/dev/null; then
+      echo "admission-overlap의 종료 코드가 $AO인데 그에 맞는 결과(admission-overlap.json)를 읽지 못했다 — 판정 불가" >> "$D/admission-overlap.err"
       AO=2; AO_RAW=2
     fi
     # 승격 처리 실패가 있던 run에서는 승격·회수 루프가 도중에 끊겨 감사 줄이 빠질 수 있다. 회수 줄이 빠진 토큰은 run 끝까지

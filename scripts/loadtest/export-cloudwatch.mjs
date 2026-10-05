@@ -29,9 +29,10 @@
 // 선택 질의(RDS 잉여 크레딧, 버스트 버킷, 네트워크 기준 사용률, 트래픽 관리, Redis 명령 지연)는 발행되지 않을 수 있어(추론)
 // 점이 0개여도 문제로 세지 않는다. 응답에서 아예 빠지면 문제다.
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 // 지표 목록 [이름, 통계, 선택]. 통계는 판정·진단에 쓰는 방향으로 고른다(크레딧은 최소, 사용량은 합, 지연은 평균·최대).
@@ -249,7 +250,16 @@ async function main() {
   process.exitCode = problems.length ? 1 : 0;
 }
 
-if (/export-cloudwatch\.mjs$/.test(process.argv[1] ?? "")) {
+// 직접 실행할 때만 main을 돈다. 파일 이름이 아니라 실제 경로로 비교한다(다른 이름의 복사본·링크 경로로 실행해도
+// 조용히 0으로 끝나지 않게 — admission-overlap.mjs와 같은 방식).
+const isMain = () => {
+  try {
+    return !!process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+};
+if (isMain()) {
   main().catch((e) => {
     // AWS 호출 실패는 위반이 아니라 "일부 실패"(1)다. 인자 오류(2)와 구분한다.
     console.error(`[cloudwatch] 실패: ${e.message || e}`);

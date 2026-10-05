@@ -5,7 +5,7 @@
 - 유형: 정량(수치)
 - 관련 커밋/PR: `ee6d340`(before) → 이 PR(after)
 - 원시 데이터: `artifacts/loadtest/20261005-1440/`(레포에 커밋하지 않는다 — [loadtest-100k-plan §7](../testing/loadtest-100k-plan.md))
-- 상태: **before 측정 완료 · after(같은 조건 재시험) 미측정** — 재시험 뒤 §7을 채운다
+- 상태: **after 측정 완료 — OOM은 사라졌으나 단계 6 판정 장애는 그대로**(재시작 원인이 liveness 실패로 이동, §7)
 
 ## 1. 상황 (Context)
 100K 부하 검증 계획([loadtest-100k-plan](../testing/loadtest-100k-plan.md))의 측정 세션 `20261005-1440`에서
@@ -81,7 +81,22 @@ OOM은 JVM 힙 소진이 아니라 컨테이너 메모리 한도 초과였다.
   노드 단위 OOM 위험이 사라지지는 않는다 — 요청/한도 비율은 75%로 전과 같고 그 차이는 파드당 256Mi에서 512Mi로 커진다.
 
 ## 7. 결과 (재측정 — before와 동일 조건)
-**미측정.** 같은 workload(S-10K, Constant, SSE 50초)로 재시험(계획서 §6 단계 9) 뒤 채운다.
+같은 workload(S-10K, Constant 1,000/s × 10초, SSE 50초, 발생기 1대·VU 사전 할당 8,000)를 메모리 2Gi 배포 뒤 다시 걸었다
+(run `step9-10k_constant-r1`, 측정 세션 20261005-1440, 실측).
+
+| 지표 | before(1Gi, step6) | after(2Gi, step9) | 변화 |
+|---|---|---|---|
+| api OOMKilled | 3개 중 2개 | 0 | 사라짐 |
+| api 재시작 | 2(OOM) | **3(liveness probe 실패)** | 원인만 바뀜 |
+| api working set 최대 | (OOM으로 최고점 미기록) | 1,356MiB(한도 2,048) | — |
+| 진입 지연 p50 / p95 | 7.19s / 14.26s | 10.71s / 23.04s | 악화 |
+| SSE 열림 | 9,111 / 10,000 | 8,941 / 10,000 | 감소 |
+| 단계 6 사후 정합성 | 판정 불가 | 판정 불가 | **개선 없음** |
+
+- 재시작 원인(Kubernetes 이벤트): 15:47:34~35Z `Liveness probe failed … context deadline exceeded` → `failed liveness probe, will be restarted`.
+  api 3개 모두 종료 코드 143·137. HPA가 api를 7개까지 늘렸다.
+- **결론: 메모리 한도는 OOM을 없앴지만 단계 6 판정 장애는 그대로다.** 판정을 막는 재시작이 liveness 실패로 옮겨 갔다.
+  후속 조치와 원인 진단(스레드 덤프)은 [IMP-024](IMP-024-api-liveness-under-redis-wait.md).
 
 ## 8. 트레이드오프 / 한계 / 다음 개선
 - 메모리 예약이 늘어 같은 노드에 들어가는 api 파드가 줄고, HPA 최대까지 늘면 노드가 더 필요하다. 데모 상시 운영 비용도 늘 수 있다.

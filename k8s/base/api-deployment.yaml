@@ -60,7 +60,12 @@ spec:
           livenessProbe:
             httpGet: { path: /actuator/health/liveness, port: 8080 }
             periodSeconds: 10
-            failureThreshold: 3
+            # 12회(약 2분): health 요청도 진입 요청과 같은 톰캣 스레드 풀(200)에서 처리된다. 측정 세션 20261005-1440의
+            # S-10K 재시험(실측)에서 요청 스레드가 Redis 응답 대기로 모두 막힌 30~40초 동안 liveness가 시간 초과돼(기본
+            # timeoutSeconds 1초), 3회(약 30초)에서 kubelet이 살아 있는 api 3개를 모두 재시작했다 — 재시작이 감사 로그를 지워
+            # 단계 6을 판정할 수 없었다(IMP-024). 이 값은 바쁜 파드를 죽이지 않게 하는 완화이고, 근본 해결(health를 관리 포트로
+            # 분리, 진입 요청의 Redis 왕복 감소)은 따로 한다. 진짜로 멈춘 프로세스의 재시작은 그만큼(최대 약 2분) 늦어진다.
+            failureThreshold: 12
           # 기동이 느린 JVM을 liveness가 죽이지 않게 startupProbe로 분리한다.
           # liveness의 initialDelay를 늘리는 방식은 기동 후에도 계속 느슨해진다.
           startupProbe:

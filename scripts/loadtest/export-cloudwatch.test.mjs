@@ -10,6 +10,9 @@ test("RDS 지표와 노드마다의 ElastiCache 지표를 모두 질의한다", 
   assert.equal(q.length, RDS_METRICS.length + 2 * REDIS_METRICS.length);
   assert.ok(q.some((x) => x.Label === "rds/flowticket/CPUCreditBalance/Minimum"));
   assert.ok(q.some((x) => x.Label === "redis/flowticket-redis-002/CPUCreditBalance/Minimum"));
+  // RDS 네트워크는 처리량만 있다(한도·기준 사용률 지표 없음). ElastiCache는 순간 버스트 사용률까지 본다.
+  assert.ok(q.some((x) => x.Label === "rds/flowticket/NetworkReceiveThroughput/Maximum" && !x.optional));
+  assert.ok(q.some((x) => x.Label === "redis/flowticket-redis-001/NetworkBaselineMaxUsageOutPercentage/Maximum" && x.optional));
 });
 
 test("질의 Id는 GetMetricData 규칙(소문자 시작, 영숫자·밑줄)을 지키고 서로 다르다", () => {

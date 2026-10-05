@@ -4,8 +4,8 @@
 // RDS와 ElastiCache는 클러스터 밖 관리형 서비스라 Prometheus에 없다. 측정 envelope의 RDS·ElastiCache는 t4g(버스터블)라
 // CPU 크레딧, EBS I/O 버킷, 네트워크 버스트처럼 직전 부하에 따라 잔량이 달라지는 자원이 있다. 이 신호가 knee 구간에 보이면
 // 그 knee가 용량 한계인지 버스트 소진인지 지표만으로는 가를 수 없다 — 그래서 자동으로 분류하지 않고 "버스트 영향 미분리"로
-// 표시해 사양을 바꿔 다시 재도록 한다(계획서 §5.3). 그 판단의 근거가 되도록 run마다 이 지표들을 남긴다.
-// 그래서 run마다 CPU와 크레딧 지표를 함께 남긴다. 리소스를 철거하면 조회 화면에서 찾기 어려우므로 run이 끝날 때마다 내보낸다.
+// 표시해 사양을 바꿔 다시 재도록 한다(계획서 §5.3). 그 판단의 근거가 되도록 run마다 이 지표들을 남긴다. RDS 네트워크 버스트는
+// AWS/RDS에 한도·기준 사용률 지표가 없어 관측하지 못한다 — 처리량만 남기고, RDS knee는 늘 미분리로 둔다. 리소스를 철거하면 조회 화면에서 찾기 어려우므로 run이 끝날 때마다 내보낸다.
 //
 //   node scripts/loadtest/export-cloudwatch.mjs --out artifacts/loadtest/<session>/<run> \
 //     --start 2026-10-05T05:00:00Z --end 2026-10-05T05:12:00Z [--period 60] [--rds-id flowticket] [--redis-group flowticket-redis]
@@ -43,6 +43,10 @@ export const RDS_METRICS = [
   ["CPUSurplusCreditBalance", "Maximum", true], ["CPUSurplusCreditsCharged", "Sum", true],
   ["DatabaseConnections", "Maximum"], ["ReadLatency", "Average"], ["WriteLatency", "Average"],
   ["FreeableMemory", "Minimum"], ["DiskQueueDepth", "Maximum"],
+  // 네트워크 처리량(bytes/s). AWS/RDS에는 네트워크 한도 초과나 기준 대비 사용률 지표가 없어 RDS 네트워크 버스트는 관측할 수 없다.
+  // 처리량을 인스턴스 기준 대역폭과 견주는 것은 참고일 뿐이다(db.t4g.micro의 기준 대역폭을 EC2 t4g.micro와 같다고 보는 것은
+  // 추론) — 그래서 이 값으로 미분리를 풀지 않는다(계획서 §5.3).
+  ["NetworkReceiveThroughput", "Maximum"], ["NetworkTransmitThroughput", "Maximum"],
   // EBS 버스트 버킷(인스턴스의 EBS I/O·처리량 크레딧, 백분율). 인스턴스 클래스에 따라 발행되지 않을 수 있어(추론) 선택 질의다 —
   // 비어 있으면 그 버킷에 묶였는지는 "미확인"으로 남는다.
   ["EBSIOBalance%", "Minimum", true], ["EBSByteBalance%", "Minimum", true],
@@ -58,7 +62,10 @@ export const REDIS_METRICS = [
   ["NetworkBandwidthInAllowanceExceeded", "Sum", true], ["NetworkBandwidthOutAllowanceExceeded", "Sum", true],
   ["NetworkPacketsPerSecondAllowanceExceeded", "Sum", true],
   ["NetworkBaselineUsageInPercentage", "Maximum", true], ["NetworkBaselineUsageOutPercentage", "Maximum", true],
-  // AWS 문서가 "용량이 부족하다"는 신호로 드는 지표(트래픽 관리가 켜짐).
+  // 초당 최대 사용률(분 평균이 가리는 순간 버스트를 잡는다 — AWS 문서). 100을 넘으면 그 순간 버스트 크레딧을 쓴다.
+  ["NetworkBaselineMaxUsageInPercentage", "Maximum", true], ["NetworkBaselineMaxUsageOutPercentage", "Maximum", true],
+  // AWS 문서가 "용량이 부족하다(underscaled)"는 신호로 드는 지표(트래픽 관리가 켜짐). 버스트 신호가 아니라 용량 신호지만,
+  // 켜지면 처리량이 엔진이 아니라 트래픽 관리에 묶여 knee를 가를 수 없어 계획서 §5.3은 미분리 조건에 함께 넣는다.
   ["TrafficManagementActive", "Maximum", true],
   // 명령 처리 지연(마이크로초) — §3.2 진단 신호 "Redis 명령 지연". AWS 문서상 ElastiCache가 명령을 처리하는 데 쓴 CPU 시간
   // (delta(usec)/delta(calls))이라 큐 대기·네트워크 시간은 들어가지 않는다. 단일 스레드가 포화되면 클라이언트가 보는 지연은

@@ -26,12 +26,14 @@
 // 감사 줄 없이 남는다. 회수 루프 도중 예외가 나면 나머지 회수 줄이 빠져 거짓 위반이 된다. 두 예외 모두 승격 처리 실패
 // 카운터를 올리므로, check-correctness.sh가 그런 run의 위반(1)을 판정 불가(2)로 낮추고 4단계(prom-recheck.mjs)도 그 run을
 // 판정 불가로 만든다 — 이 도구 단독의 0·1은 그 단계와 함께 읽어야 한다.
+// 형식이 깨진 감사 줄이 회수·이탈 줄이었으면 그 토큰이 run 끝까지 점유로 세어져 거짓 위반이 된다. 그래서 형식이 깨진 줄이
+// 있으면 위반을 찾았어도 1이 아니라 판정 불가(2)로 끝낸다(진짜 위반이어도 0이 되지는 않는다).
 //
 //   node scripts/loadtest/admission-overlap.mjs --capacity 100 --since <ISO> --until <ISO> [--tolerance-ms 1000] api.log
 //
 // 종료 코드: 0 위반 없음, 1 위반, 2 검사 실패(인자 오류·예외·승격 기록 0건·형식이 깨진 감사 줄·같은 토큰의 중복 승격·
-// 허용 폭보다 앞선 회수·이탈).
-// 위반을 이미 찾았으면 1이 우선한다.
+// 허용 폭보다 앞선 회수·이탈). 위반을 이미 찾았으면 1이 우선한다 — 단, 형식이 깨진 감사 줄이 있으면 위반도 2다(위).
+// 2로 끝날 때는 사유를 stderr에 한 줄씩 남긴다.
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
@@ -160,9 +162,14 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
   // 승격 기록이 없거나, 읽지 못한 감사 줄이 있거나, 같은 토큰이 두 번 승격됐거나(첫 구간만 세므로 두 번째 점유가 빠진다),
   // 허용 폭보다 앞선 회수·이탈만 있는 토큰이 있으면(시계 전제가 깨져 그 토큰을 세지 않았다) "위반 없음"이 아니라 판정
-  // 불가다. 위반을 찾았으면 1이 우선한다.
-  process.exitCode = result.violations ? 1
-    : result.admits === 0 || result.malformed > 0 || result.duplicateAdmits > 0 || result.endsBeforeAdmit > 0 ? 2 : 0;
+  // 불가다. 위반을 찾았으면 1이 우선한다 — 단, 읽지 못한 감사 줄이 회수·이탈 줄이었다면 위반 자체가 거짓일 수 있어 2다.
+  const reasons = [];
+  if (result.admits === 0) reasons.push("승격 기록이 0건이다");
+  if (result.malformed > 0) reasons.push(`형식이 깨진 감사 줄 ${result.malformed}개(회수·이탈 줄이었으면 거짓 위반·거짓 0 모두 가능)`);
+  if (result.duplicateAdmits > 0) reasons.push(`같은 토큰의 중복 승격 ${result.duplicateAdmits}건(두 번째 점유를 세지 못한다)`);
+  if (result.endsBeforeAdmit > 0) reasons.push(`승격보다 허용 폭(${result.toleranceMs}ms)보다 앞선 회수·이탈만 있는 토큰 ${result.endsBeforeAdmit}개(시계 전제가 깨져 세지 않았다)`);
+  process.exitCode = result.violations && result.malformed === 0 ? 1 : reasons.length || result.violations ? 2 : 0;
+  if (process.exitCode === 2) for (const r of reasons) console.error(r);
 }
 
 // 테스트에서 analyze만 가져다 쓸 수 있게, 직접 실행할 때만 main을 돈다.

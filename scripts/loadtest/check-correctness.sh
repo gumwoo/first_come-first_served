@@ -44,7 +44,8 @@
 # 받고, 이 스크립트는 보지도 출력하지도 않는다(seed-users.sh와 같은 방식).
 # 종료 코드: 위반 없음 0, 위반 있음 1, 검사 자체 실패·판정 불가·인자 오류 2. 위반을 하나라도 찾았으면 검사 일부가 실패했어도
 # 1이다 — 감시기(3)·queue-order(1)와 같이 위반이 우선한다. 검사 실패도 함께 있었으면 summary에 둘 다 적는다.
-# 예외: 승격 처리 실패가 있던 run의 admission-overlap 위반은 감사 줄 누락에 의한 거짓 위반일 수 있어 판정 불가(2)로 낮춘다.
+# 예외: 승격 처리 실패가 있던 run(그 기록을 읽지 못한 경우 포함)의 admission-overlap 위반, 형식이 깨진 감사 줄이 있는 run의
+# admission-overlap 위반은 거짓 위반일 수 있어 판정 불가(2)로 낮춘다.
 # run 직후 바로 돌리면 아직 발행 중인 아웃박스가 미발행으로 잡힐 수 있다. 아웃박스가 비워진 뒤
 # (flowticket_outbox_oldest_pending_age_seconds 0) 실행한다.
 set -uo pipefail
@@ -190,7 +191,7 @@ if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 -
   case $? in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
   # 실효 입장 초과(§3.3): 감사 줄로 토큰별 슬롯 점유 구간을 재구성해 동시 점유 수 > 정원인지 본다.
   # 정원은 내보낸 구간의 파드별 queue_capacity에서 읽는다. 구간 안에서, 또는 파드 사이에 값이 둘 이상이면(측정 중 정원 변경·
-  # 파드마다 다른 설정) 판정 불가. 이전 결과가 summary에 섞이지 않게 먼저 지운다.
+  # 파드마다 다른 설정) 판정 불가(이전 결과·사유는 2단계 시작에서 이미 지웠다).
   if CAP="$(node -e '
 const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
 const vals = new Set();
@@ -220,12 +221,17 @@ for (const s of (b.data && b.data.result) || []) {
     AO=$?
     # 승격 처리 실패가 있던 run에서는 승격·회수 루프가 도중에 끊겨 감사 줄이 빠질 수 있다. 회수 줄이 빠진 토큰은 run 끝까지
     # 점유한 것으로 세어져 거짓 위반이 된다. 그래서 그런 run의 위반(1)은 판정 불가(2)로 낮춘다(진짜 위반이어도 0이 되지는 않는다).
-    if [ "$AO" = 1 ] && node -e '
-const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-let any = b.status !== "success";
-for (const s of (b.data && b.data.result) || []) for (const [, v] of s.values || []) if (!(Number(v) === 0)) any = true;
-process.exit(any ? 0 : 1);' "$OUT/prom/queue_admit_tick_failures_rate.json" 2>/dev/null; then
-      echo "승격 처리 실패가 있던 run이라 감사 줄이 빠졌을 수 있다 — 위반을 판정 불가로 낮춘다" >> "$D/admission-overlap.err"
+    # 승격 처리 실패 기록을 읽지 못했거나 조회가 실패했으면 "실패가 없었다"를 확인하지 못한 것이라 똑같이 낮춘다.
+    if [ "$AO" = 1 ] && REASON="$(node -e '
+let b;
+try { b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); }
+catch { console.log("승격 처리 실패 기록(prom/queue_admit_tick_failures_rate.json)을 읽지 못해 감사 줄 누락을 배제할 수 없다"); process.exit(0); }
+if (b.status !== "success") { console.log("승격 처리 실패 조회 상태가 " + b.status + "라 감사 줄 누락을 배제할 수 없다"); process.exit(0); }
+for (const s of (b.data && b.data.result) || []) for (const [, v] of s.values || []) if (!(Number(v) === 0)) {
+  console.log("승격 처리 실패가 있던 run이라 감사 줄이 빠졌을 수 있다"); process.exit(0);
+}
+process.exit(1);' "$OUT/prom/queue_admit_tick_failures_rate.json")"; then
+      echo "$REASON — 위반을 판정 불가로 낮춘다" >> "$D/admission-overlap.err"
       AO=2
     fi
     case $AO in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac

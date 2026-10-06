@@ -26,13 +26,13 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
-SESSION="" RUN="" GEN="g1" BASE="" EVENT="" USERS="" USERS_N="" OFFSET=0
+SESSION="" RUN="" GEN="g1" GEN_SET=0 BASE="" EVENT="" USERS="" USERS_N="" OFFSET=0
 ENTRY_SECONDS=10 DIST=constant SSE_HOLD=300 PRE_VUS="" MAX_VUS="" NO_SSE=0 GENS="" START_AT="" PRINT_PLAN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --session) SESSION="$2"; shift 2 ;;
     --run) RUN="$2"; shift 2 ;;
-    --gen) GEN="$2"; shift 2 ;;
+    --gen) GEN="$2"; GEN_SET=1; shift 2 ;;
     --base) BASE="$2"; shift 2 ;;
     --event) EVENT="$2"; shift 2 ;;
     --users) USERS="$2"; shift 2 ;;
@@ -68,10 +68,14 @@ USERS_TOTAL=$USERS_N OFFSET_BASE=$OFFSET
 if [ -n "$GENS" ]; then
   case "$GENS" in ""|*[!0-9]*) echo "--gens는 정수여야 한다: $GENS" >&2; exit 2 ;; esac
   GENS=$((10#$GENS))
+  # 여러 발생기에서 --gen을 빠뜨리면 모두 기본값 g1로 같은 몫(같은 사용자)을 건다 — 명시를 강제한다.
+  [ "$GEN_SET" = 1 ] || { echo "--gens를 쓸 때는 --gen gK를 반드시 준다(빠뜨리면 발생기들이 같은 사용자를 중복으로 쓴다)" >&2; exit 2; }
   [[ "$GEN" =~ ^g([0-9]+)$ ]] || { echo "--gens를 쓸 때 --gen은 gK 형식이어야 한다: $GEN" >&2; exit 2; }
   K=$((10#${BASH_REMATCH[1]}))
   [ "$GENS" -ge 1 ] && [ "$K" -ge 1 ] && [ "$K" -le "$GENS" ] || { echo "--gen $GEN이 --gens $GENS 범위 밖이다" >&2; exit 2; }
   SHARE=$((USERS_TOTAL / GENS))
+  # 발생기 수가 전체 사용자보다 많으면 몫이 0인 발생기가 생긴다 — 일부만 도는 run이 되지 않게 모든 발생기에서 거부한다.
+  [ "$SHARE" -ge 1 ] || { echo "발생기 수($GENS)가 전체 사용자($USERS_TOTAL)보다 많다" >&2; exit 2; }
   OFFSET=$((OFFSET_BASE + (K - 1) * SHARE))
   USERS_N=$SHARE
   [ "$K" -eq "$GENS" ] && USERS_N=$((USERS_TOTAL - (GENS - 1) * SHARE))
@@ -80,6 +84,9 @@ fi
 if [ -n "$START_AT" ]; then
   [[ "$START_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] || {
     echo "--start-at은 UTC ISO(YYYY-MM-DDTHH:MM:SSZ)여야 한다: $START_AT" >&2; exit 2; }
+  # 달력상 없는 날짜(2026-13-45, 02-30)는 형식 검사를 통과하므로 따로 거부한다.
+  node -e 'const x=process.argv[1];const d=new Date(x);if(isNaN(d)||d.toISOString().slice(0,19)!==x.slice(0,19))process.exit(1)' "$START_AT" || {
+    echo "--start-at이 달력상 없는 시각이다: $START_AT" >&2; exit 2; }
 fi
 
 if [ "$PRINT_PLAN" = 1 ]; then
@@ -87,6 +94,12 @@ if [ "$PRINT_PLAN" = 1 ]; then
   printf '{"gen":"%s","gens":%s,"usersN":%s,"offset":%s,"usersTotal":%s,"startAt":%s}\n' \
     "$GEN" "${GENS:-null}" "$USERS_N" "$OFFSET" "$USERS_TOTAL" "$SA"
   exit 0
+fi
+
+# 시작 대기 시간 검사: 이미 지났거나 k6 setupTimeout(SETUP_TIMEOUT, 기본 900s)보다 멀면 기다리기 전에 거부한다
+# (k6에서 실패하면 토큰 파싱·VU 할당을 다 하고 나서야, 멀면 setupTimeout 뒤에야 끝난다).
+if [ -n "$START_AT" ]; then
+  node -e 'const t=Date.parse(process.argv[1]);const lim=parseInt(process.env.SETUP_TIMEOUT||"900",10);const w=(t-Date.now())/1000;if(w<0){console.error("--start-at이 이미 "+(-w).toFixed(1)+"초 지났다");process.exit(1)}if(w>lim-30){console.error("--start-at까지 "+w.toFixed(0)+"초 — SETUP_TIMEOUT("+lim+"s)에서 init 여유 30초를 뺀 값보다 멀다");process.exit(1)}' "$START_AT" || exit 2
 fi
 
 OUT="$ROOT/artifacts/loadtest/$SESSION/$RUN"
@@ -139,7 +152,8 @@ set -e
 printf '{ "generator": "%s", "endedAt": "%s", "status": %s }\n' "$GEN" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$RUN_STATUS" \
   > "$OUT/end-$GEN.json"
 
-node "$HERE/entry-arrivals.mjs" --entry-seconds "$ENTRY_SECONDS" --users-n "$USERS_N" "$OUT/entry-$GEN.json" \
+T0_ARGS=(); [ -n "$START_AT" ] && T0_ARGS=(--t0 "$START_AT")
+node "$HERE/entry-arrivals.mjs" --entry-seconds "$ENTRY_SECONDS" --users-n "$USERS_N" "${T0_ARGS[@]}" "$OUT/entry-$GEN.json" \
   > "$OUT/arrivals-$GEN.json"
 echo "run 출력: $OUT"
 [ "$RUN_STATUS" = 0 ] || echo "발생기가 0이 아닌 코드로 끝났다($RUN_STATUS) — 이 run의 유효성을 §3.1로 판정한다" >&2

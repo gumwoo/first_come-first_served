@@ -51,14 +51,15 @@ if (opts.t0 && !Number.isFinite(t0)) {
   console.error(`--t0을 읽지 못했다: ${opts.t0}`);
   process.exit(2);
 }
-if (t0 !== null && !opts["entry-seconds"]) {
-  console.error("--t0을 쓰려면 --entry-seconds가 필요하다(창 길이)");
+if (t0 !== null && !/^[1-9]\d*$/.test(opts["entry-seconds"] ?? "")) {
+  console.error("--t0을 쓰려면 --entry-seconds(양의 정수, 창 길이)가 필요하다");
   process.exit(2);
 }
 const firstByFile = new Map(); // 파일(발생기) → 첫 도착 ms
 const arrivalMs = []; // [ms, value] — 고정 창 계산용
 
 for (const f of files) {
+  if (!firstByFile.has(f)) firstByFile.set(f, null); // 도착이 0인 발생기도 남긴다
   const rl = createInterface({ input: createReadStream(f), crlfDelay: Infinity });
   for await (const line of rl) {
     if (!line.trim()) continue;
@@ -80,7 +81,7 @@ for (const f of files) {
       perSecond.set(sec, (perSecond.get(sec) || 0) + p.data.value);
       firstMs = Math.min(firstMs, ms);
       lastMs = Math.max(lastMs, ms);
-      if (!firstByFile.has(f) || ms < firstByFile.get(f)) firstByFile.set(f, ms);
+      if (firstByFile.get(f) == null || ms < firstByFile.get(f)) firstByFile.set(f, ms);
       if (t0 !== null) arrivalMs.push([ms, p.data.value]);
     }
   }
@@ -96,8 +97,10 @@ const usersN = opts["users-n"] ? Number(opts["users-n"]) : null;
 const offered = sums.entry_arrivals + sums.entry_no_user + sums.dropped_iterations;
 
 // 발생기별 첫 도착과 시작 어긋남(가장 이른 첫 도착 대비).
-const firsts = [...firstByFile.entries()].map(([file, ms]) => ({ file, firstArrival: new Date(ms).toISOString() }));
-const firstVals = [...firstByFile.values()];
+// 도착이 0인 발생기는 firstArrival: null로 남긴다(시작하지 못한 발생기를 숨기지 않는다).
+const firsts = [...firstByFile.entries()].map(([file, ms]) => ({ file, firstArrival: ms == null ? null : new Date(ms).toISOString() }));
+const firstVals = [...firstByFile.values()].filter((ms) => ms != null);
+const generatorsWithoutArrivals = firsts.filter((g) => g.firstArrival === null).map((g) => g.file);
 const startSkewMs = firstVals.length > 1 ? Math.max(...firstVals) - Math.min(...firstVals) : 0;
 
 // 고정 창 [T0, T0 + entrySeconds)
@@ -156,6 +159,7 @@ const result = {
   peak1sArrivals: peak,
   generators: firsts,
   generatorStartSkewMs: startSkewMs,
+  generatorsWithoutArrivals,
   window,
   // 첫·마지막 1초 창은 부분 구간일 수 있다. peak 해석 때 함께 본다.
   perSecond: series,

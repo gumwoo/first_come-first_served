@@ -2,8 +2,6 @@ package com.flowticket.queue.service;
 
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
-import com.flowticket.event.domain.Event;
-import com.flowticket.event.repository.EventRepository;
 import com.flowticket.queue.domain.QueueStatus;
 import com.flowticket.queue.dto.QueueStatusResponse;
 import com.flowticket.queue.dto.QueueTokenResponse;
@@ -69,7 +67,7 @@ public class QueueService {
             new DefaultRedisScript<>(TAKEOVER_LUA, Long.class);
 
     private final StringRedisTemplate redis;
-    private final EventRepository eventRepository;
+    private final BookableEventCache bookableEvents;
     private final int capacity;
     private final long tokenTtl;
     private final long admitIntervalMs;
@@ -77,7 +75,7 @@ public class QueueService {
     private final Clock clock;
     private final QueueMetrics metrics;
 
-    public QueueService(StringRedisTemplate redis, EventRepository eventRepository,
+    public QueueService(StringRedisTemplate redis, BookableEventCache bookableEvents,
                         @Value("${queue.capacity:100}") int capacity,
                         @Value("${queue.token-ttl:1800}") long tokenTtl,
                         @Value("${queue.admit-interval-ms:1500}") long admitIntervalMs,
@@ -85,7 +83,7 @@ public class QueueService {
         this.clock = clock;
         this.metrics = metrics;
         this.redis = redis;
-        this.eventRepository = eventRepository;
+        this.bookableEvents = bookableEvents;
         this.capacity = capacity;
         this.tokenTtl = tokenTtl;
         this.admitIntervalMs = admitIntervalMs;
@@ -132,13 +130,11 @@ public class QueueService {
      * 승격 워커가 그 집합을 1.5초마다 순회하므로, 임의의 id로 발급을 반복하면 Redis 키와
      * 순회 대상이 무한히 쌓인다.
      *
-     * 진입 경로에 DB 조회가 하나 늘어난다. PK 단건이라 싸지만 공짜는 아니다.
-     * 스파이크(정원의 30배 도착)에서는 그만큼의 조회가 더 발생한다. 측정하지 않았다.
+     * 진입 경로에 DB 조회가 하나 늘어난다(측정: 진입 1건당 커넥션 획득 1.01회). 버스트에서는 진입 요청마다 그대로 DB 부하가 되어,
+     * 짧은 TTL로 파드 메모리에 기억할 수 있게 했다(BookableEventCache — 기본은 꺼져 있어 매번 DB).
      */
     private void requireBookable(Long eventId) {
-        Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-        if (!event.getStatus().isBookable()) {
+        if (!bookableEvents.status(eventId).isBookable()) {
             throw new BusinessException(ErrorCode.EVENT_NOT_ON_SALE);
         }
     }

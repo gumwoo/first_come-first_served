@@ -1,0 +1,19 @@
+# 위반 fixture: 기본 경로를 `/` Prefix로 남겼다 — 컨트롤러가 Prefix를 ImplementationSpecific보다 앞에 둬
+# 진입 POST(/api/events/*/queue/token)가 오류 없이 web으로 간다(ADR-024).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flowticket
+  annotations:
+    alb.ingress.kubernetes.io/transforms.flowticket-api: >-
+      [{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/api/(events/[0-9]+/queue/token.*|queue/status.*)$","replace":"/$1"}]}}]
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api/events/*/queue/token
+            pathType: ImplementationSpecific
+            backend: { service: { name: flowticket-api, port: { number: 80 } } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: flowticket-web, port: { number: 80 } } }

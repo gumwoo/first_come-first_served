@@ -121,6 +121,10 @@ kind: Service
 metadata:
   name: flowticket-api
   namespace: flowticket
+  annotations:
+    # 공개 ALB가 대기열 두 경로를 이 Service로 보낸다(ADR-024). Ingress 전역 healthcheck-path `/`는 web용이라 api에서는 401 →
+    # unhealthy가 된다. Service 주석이 Ingress 주석보다 우선한다. probe와 같은 메인 포트 readiness 경로를 본다(TS-041).
+    alb.ingress.kubernetes.io/healthcheck-path: /readyz
   # ServiceMonitor의 selector가 보는 건 Service의 metadata.labels다(아래 spec.selector가 아니다.
   # 그건 Pod를 고르는 것). 없으면 매칭이 0건인데 에러가 아니라 그냥 타깃이 안 생긴다.
   labels: { app: flowticket-api }

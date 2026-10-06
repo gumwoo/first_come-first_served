@@ -45,17 +45,18 @@ Next는 인코딩된 경로를 그대로 비교·전달하고, api(톰캣)는 `%
 N에서 앱이 두 방식을 모두 받게 만들고(경로 추가, 포트는 기본값 = 메인 포트 — 동작 변화 없음) 운영에 반영한 뒤 N+1에서 매니페스트를 바꾼다.
 **N이 없애는 것은 "새 probe + 옛 이미지" 조합 하나뿐이다.** 관리 포트 값을 고정 이름 ConfigMap에 넣으면 "옛 템플릿 파드 + 새 ConfigMap"(관리 포트 8081을 읽었는데
 probe는 옛 `/actuator/health/*`:8080 → 404 → 재시작 반복)과 "새 템플릿 + 옛 ConfigMap"(probe는 통과하지만 8080에 actuator가 남아 조용히 열린 채)이
-이미지와 무관하게 생길 수 있다 — 롤아웃 중 옛 ReplicaSet 컨테이너 재시작·HPA 스케일·부분 동기화에서. 이 조합은 N+1 설계로 막는다(포트 값을 probe와 같은
-Deployment 템플릿에 두는 등, N+1 PR에서 결정). ServiceMonitor는 ArgoCD 추적 밖(`kubectl apply -k k8s/monitoring`)이라 N+1 절차에 적용·수집 확인을 넣는다.
+이미지와 무관하게 생길 수 있다 — 롤아웃 중 옛 ReplicaSet 컨테이너 재시작·HPA 스케일·부분 동기화에서. 그래서 N+1은 포트 값을 공용 ConfigMap이 아니라 **probe와 같은
+Deployment 파드 템플릿의 env**에 둔다 — 포트와 probe가 한 템플릿에서 함께 바뀌어 어긋난 조합이 생기지 않는다(사용자 결정). 롤아웃 중 수집 공백은 짧게 허용한다(사용자 결정). ServiceMonitor는 ArgoCD 추적 밖(`kubectl apply -k k8s/monitoring`)이라 N+1 절차에 적용·수집 확인을 넣는다.
 
 **actuator를 관리 포트(8081)로 분리한다.** 인터넷에서 닿는 경로는 전부 메인 포트(8080, Service 80)로만 가므로 경로 표기와 무관하게 actuator에 닿지 않는다.
 
-- `application.yml`: `management.server.port: ${MANAGEMENT_SERVER_PORT:}` — 비우면 메인 포트와 같다(로컬·CI는 지금과 동일). 운영 ConfigMap에 `MANAGEMENT_SERVER_PORT: "8081"`.
+- `application.yml`: `management.server.port: ${MANAGEMENT_SERVER_PORT:}` — 비우면 메인 포트와 같다(로컬·CI는 지금과 동일). 운영은 api Deployment 컨테이너 env `MANAGEMENT_SERVER_PORT: "8081"`(N+1).
 - api Service에 `management`(8081) 포트, ServiceMonitor는 그 포트로 `/actuator/prometheus`를 긁는다. 장애 시험 스크립트도 8081로.
 - **probe는 관리 포트로 옮기지 않는다.** 관리 포트는 별도 톰캣이라 8080 요청 스레드가 포화돼도 성공한다 — readiness는 요청을 못 받는 파드에
   트래픽을 계속 보내고, liveness는 멈춘 메인 포트를 놓친다([[IMP-024]]에서 겪은 상황). 대신 `management.endpoint.health.probes.add-additional-paths: true`로
   같은 health 그룹을 메인 포트의 `/livez`·`/readyz`에 내고 probe가 그 경로를 쓴다. 두 경로는 `SecurityConfig`에서 permitAll(상태 문자열만 응답).
-- (N+1) 하네스 k8s 규칙 ⑩: ConfigMap에 `MANAGEMENT_SERVER_PORT`가 없거나 8080이면 실패, api probe가 관리 포트나 `/actuator` 경로를 보면 실패(위반 fixture 2개).
+- (N+1) 하네스 k8s 규칙 ⑩: api 컨테이너 env `MANAGEMENT_SERVER_PORT`가 없거나 8080이면 실패, ConfigMap에 그 키가 있으면 실패, api probe가 관리 포트(번호·이름)나
+  `/actuator` 경로를 보면 실패(위반 fixture 4개).
 - 통합 테스트(`ManagementPortIntegrationTest`, N): 메인 포트 `/actuator/prometheus`·`/%61ctuator/prometheus` 404, `/livez`·`/readyz` 200,
   관리 포트 `/actuator/prometheus` 200, 관리 포트 `/actuator/metrics` 401. `@SpringBootTest`는 메트릭 내보내기를 기본으로 꺼서
   `@AutoConfigureObservability` 없이는 prometheus 엔드포인트가 없어 "메인 포트 404"가 분리와 무관하게 통과한다(첫 CI에서 관리 포트 200 단언이 404로 실패해 드러남).

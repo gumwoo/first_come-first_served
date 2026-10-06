@@ -1,0 +1,26 @@
+# 위반: probe가 관리 포트(8081)의 actuator 경로를 본다 — 관리 포트는 별도 톰캣이라 메인 포트가 포화돼도 성공한다(TS-041).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  selector:
+    matchLabels: { app: flowticket-api }
+  template:
+    metadata:
+      labels: { app: flowticket-api }
+    spec:
+      containers:
+        - name: api
+          image: flowticket-api:REPLACE_TAG
+          ports:
+            - { containerPort: 8080, name: http }
+            - { containerPort: 8081, name: management }
+          env:
+            - name: TZ
+              value: UTC
+            - name: MANAGEMENT_SERVER_PORT
+              value: "8081"
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8081 }

@@ -1,0 +1,34 @@
+# 위반: 관리 포트를 공용 ConfigMap에 두었다 — probe와 다른 리소스라 롤아웃 중 옛 템플릿·새 값 조합이 생긴다(TS-041).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flowticket-api-config
+  namespace: flowticket
+data:
+  MANAGEMENT_SERVER_PORT: "8081"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  selector:
+    matchLabels: { app: flowticket-api }
+  template:
+    metadata:
+      labels: { app: flowticket-api }
+    spec:
+      containers:
+        - name: api
+          image: flowticket-api:REPLACE_TAG
+          ports:
+            - { containerPort: 8080, name: http }
+            - { containerPort: 8081, name: management }
+          env:
+            - name: TZ
+              value: UTC
+            - name: MANAGEMENT_SERVER_PORT
+              value: "8081"
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }

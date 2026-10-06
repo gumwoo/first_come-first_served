@@ -68,7 +68,8 @@ api 몫을 바꾸는 변경이라 한쪽만 보면 판단할 수 없다. 이 해
 
 - 진입·상태 요청은 web을 거치지 않는다 — 측정에서 web이 쓰던 몫이 빠질 것으로 본다(예측; 실제 감소량은 IMP에서 잰다).
 - ALB 대상 그룹이 둘(web, api)이 된다. Ingress 전역 `healthcheck-path: /`를 api에 그대로 쓰면 api의 `/`는 인증 필요라 401 → unhealthy가 된다.
-  헬스체크 주석은 Service 주석이 Ingress 주석보다 우선하므로 `flowticket-api` Service에 `alb.ingress.kubernetes.io/healthcheck-path: /actuator/health/readiness`(permitAll)를 둔다.
+  헬스체크 주석은 Service 주석이 Ingress 주석보다 우선하므로 `flowticket-api` Service에 `alb.ingress.kubernetes.io/healthcheck-path: /readyz`(메인 포트 8080, permitAll)를 둔다.
+  actuator는 관리 포트(8081)로 분리됐다([[TS-041]]) — 헬스체크도 probe와 같은 메인 포트 경로를 본다.
 - api 파드가 ALB 대상이 된다. 대상 해제 지연(`deregistration_delay` 10초, Ingress 전역)과 preStop이 api에도 적용되는지, 스케일아웃 시 ALB 등록·헬스체크만큼
   새 파드가 늦게 트래픽을 받는다는 점을 적용 PR에서 확인한다. Pod readiness gate는 쓰지 않는다(flowticket 네임스페이스에 주입 라벨 없음, 2026-10-06 확인) —
   그래서 api 파드의 Ready가 ALB 상태에 묶이지 않는다.

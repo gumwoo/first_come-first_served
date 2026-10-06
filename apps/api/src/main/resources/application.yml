@@ -115,7 +115,7 @@ server:
 
 management:
   server:
-    # actuator 전용 포트. 운영은 k8s ConfigMap으로 관리 포트를 따로 줘 일반 API 포트(8080)에서 actuator를 아예 없앤다
+    # actuator 전용 포트. 운영은 api Deployment env로 관리 포트를 따로 줘 일반 API 포트(8080)에서 actuator를 아예 없앤다
     # (두 릴리스로 적용 — 이 앱 변경이 먼저 배포된 뒤 매니페스트를 바꾼다, TS-041).
     # 8080은 Next rewrite(/api/:path* → api)로 인터넷에서 닿는 포트라, 경로 규칙으로 막으면 인코딩 변형
     # (/api/%61ctuator/prometheus)으로 우회된다(2026-10-06 운영에서 200 확인, TS-041). 포트를 나누면 경로와 무관하게 닿지 않는다.

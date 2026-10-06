@@ -40,6 +40,7 @@ spec:
         paths:
           # /actuator는 공개하지 않는다. ALB 헬스체크는 타깃그룹이 Pod IP로 직접 검사하므로
           # 규칙이 필요 없고, 두면 metrics·prometheus까지 인터넷에 열린다.
+          # 아래 web 경로의 Next rewrite(/api/:path*)로도 닿지 않는다 — api가 actuator를 관리 포트(8081)에만 둔다(TS-041).
           - path: /
             pathType: Prefix
             backend: { service: { name: flowticket-web, port: { number: 80 } } }

@@ -241,6 +241,60 @@ for (const { doc, file } of docs) {
   );
 }
 
+// ---------- 10) actuator는 관리 포트에만 두고, probe는 메인 포트에 둔다(TS-041) ----------
+//
+// 8080(메인 포트)은 공개 경로(ALB → web → Next rewrite /api/:path*)로 인터넷에서 닿는다. 경로 규칙으로 /actuator를
+// 막으면 인코딩 변형(/api/%61ctuator/prometheus)이 그대로 넘어가 api가 디코딩해 응답했다(운영에서 200 확인).
+// 그래서 actuator를 관리 포트로 분리한다. 값이 지워지면 아무 증상 없이 다시 열리므로 규칙으로 못박는다.
+//
+// 값은 api Deployment의 컨테이너 env에 둔다(공용 ConfigMap 금지). probe와 같은 파드 템플릿이어야 둘이 한 번에 바뀐다 —
+// ConfigMap에 두면 옛 템플릿 파드가 새 값을 읽어(옛 probe 404 → 재시작 반복) 또는 새 템플릿이 옛 값을 읽어(8080에 actuator가
+// 조용히 남음) 롤아웃·재시작·스케일 중에 어긋난다. Spring은 env를 자리표시자 없이도 management.server.port로 묶는다.
+//
+// 반대로 probe를 관리 포트로 옮기면 그 포트는 별도 톰캣이라 메인 포트 요청 스레드가 포화돼도 성공해 버린다 —
+// readiness는 요청을 못 받는 파드에 트래픽을 계속 보내고, liveness는 멈춘 메인 포트를 놓친다. probe는 메인 포트의
+// /livez·/readyz(management.endpoint.health.probes.add-additional-paths)를 쓴다.
+for (const { doc, file } of docs) {
+  if (doc.kind === "ConfigMap" && doc.data && Object.prototype.hasOwnProperty.call(doc.data, "MANAGEMENT_SERVER_PORT")) {
+    r.fail(
+      `관리 포트를 ConfigMap에 두었다: ${path.relative(REPO_ROOT, file)} → ${doc.metadata?.name}. ` +
+        `probe와 다른 리소스라 롤아웃 중 옛 템플릿·새 값(또는 반대) 조합이 생긴다. api Deployment 컨테이너 env에 둬라(TS-041)`
+    );
+  }
+}
+const apiDeployDoc = docs.find(({ doc }) => doc.kind === "Deployment" && doc.metadata?.name === "flowticket-api");
+const apiContainer = (apiDeployDoc?.doc.spec?.template?.spec?.containers ?? []).find((c) => c?.name === "api");
+if (!apiContainer) {
+  r.fail("flowticket-api Deployment의 api 컨테이너를 못 찾았다. 규칙 ⑩이 무력화된 상태");
+} else {
+  const rel = path.relative(REPO_ROOT, apiDeployDoc.file);
+  const c = apiContainer;
+  const envEntry = (c.env ?? []).find((e) => e?.name === "MANAGEMENT_SERVER_PORT");
+  const v = String(envEntry?.value ?? "").trim();
+  let mgmtPort = null;
+  if (!/^\d+$/.test(v) || v === "8080") {
+    r.fail(
+      `actuator가 일반 API 포트에 있다: ${rel} → ${c.name}.env MANAGEMENT_SERVER_PORT=${v || "(없음/참조)"}. ` +
+        `8080은 Next rewrite(/api/:path*)로 인터넷에서 닿아 경로 규칙으로는 인코딩 변형을 막지 못한다(TS-041). 관리 포트를 분리하라`
+    );
+  } else {
+    mgmtPort = Number(v);
+  }
+  // probe 포트는 이름(`port: management`)으로도 쓸 수 있다 — 컨테이너 포트 이름을 번호로 푼다.
+  const named = Object.fromEntries((c.ports ?? []).filter((p) => p?.name).map((p) => [p.name, Number(p.containerPort)]));
+  for (const kind of ["readinessProbe", "livenessProbe", "startupProbe"]) {
+    const g = c[kind]?.httpGet;
+    if (!g) continue;
+    const portNum = typeof g.port === "string" && !/^\d+$/.test(g.port) ? named[g.port] : Number(g.port);
+    if (String(g.path ?? "").startsWith("/actuator") || (mgmtPort !== null && portNum === mgmtPort)) {
+      r.fail(
+        `probe가 관리 포트를 본다: ${rel} → ${c.name}.${kind} ${g.path}:${g.port}. ` +
+          `관리 포트는 별도 톰캣이라 메인 포트가 포화돼도 성공한다. 메인 포트의 /livez·/readyz를 써라(TS-041)`
+      );
+    }
+  }
+}
+
 // ---------- 9) ExternalSecret이 실제 적용 경로에 연결돼 있는가 ----------
 //
 // ArgoCD Application은 `k8s/overlays/demo-local` 하나만 동기화한다. 그래서

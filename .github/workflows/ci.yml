@@ -265,7 +265,8 @@ jobs:
       - name: wait for backend
         run: |
           for i in $(seq 1 60); do
-            curl -sf http://localhost:8080/actuator/health && { echo "backend up"; exit 0; }
+            # /readyz: 관리 포트를 따로 주지 않은(같은 포트) 구성에서도 probe 추가 경로가 메인 포트에 있는지 함께 확인한다(TS-041).
+            curl -sf http://localhost:8080/actuator/health && curl -sf http://localhost:8080/readyz && { echo "backend up"; exit 0; }
             sleep 3
           done
           echo "::error::backend failed to start"; tail -120 backend.log; exit 1

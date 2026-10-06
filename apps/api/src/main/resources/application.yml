@@ -114,15 +114,26 @@ server:
       enabled: true
 
 management:
+  server:
+    # actuator 전용 포트. 운영은 k8s ConfigMap으로 관리 포트를 따로 줘 일반 API 포트(8080)에서 actuator를 아예 없앤다
+    # (두 릴리스로 적용 — 이 앱 변경이 먼저 배포된 뒤 매니페스트를 바꾼다, TS-041).
+    # 8080은 Next rewrite(/api/:path* → api)로 인터넷에서 닿는 포트라, 경로 규칙으로 막으면 인코딩 변형
+    # (/api/%61ctuator/prometheus)으로 우회된다(2026-10-06 운영에서 200 확인, TS-041). 포트를 나누면 경로와 무관하게 닿지 않는다.
+    # 비우면(로컬·CI 기본) 메인 포트와 같다 — 지금까지와 동작이 같다.
+    port: ${MANAGEMENT_SERVER_PORT:}
   endpoints:
     web:
       exposure:
         include: health, info, metrics, prometheus
   endpoint:
     health:
-      # /actuator/health/liveness · /actuator/health/readiness 노출(K8s probe용).
+      # /actuator/health/liveness · /actuator/health/readiness 노출.
       probes:
         enabled: true
+        # 같은 그룹을 메인 포트(8080)의 /livez · /readyz로도 낸다. K8s probe는 관리 포트를 분리하는 매니페스트 릴리스부터 이 경로를 쓴다.
+        # probe를 관리 포트(8081, 별도 톰캣)로 옮기면 8080 요청 스레드가 포화돼도 probe가 계속 성공해
+        # 요청을 못 받는 파드에 트래픽이 가고(readiness) 멈춘 메인 포트를 놓친다(liveness, IMP-024 참고).
+        add-additional-paths: true
       group:
         # readiness = "지금 트래픽을 받아도 되는가". DB·Redis는 없으면 요청을 못 처리하니 포함한다.
         # Kafka는 일부러 뺀다. 브로커 장애는 알림 지연일 뿐이고(아웃박스가 유실을 막는다, ADR-008/010),

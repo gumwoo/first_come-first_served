@@ -94,3 +94,61 @@ test("--t0에는 --entry-seconds가 필요하다", () => {
   const { code } = arrivals([[point(at(0))]], "--t0", "2026-10-07T01:00:00Z");
   assert.equal(code, 2);
 });
+
+test("--gens를 쓰면서 --gen을 빠뜨리면 거부한다(발생기들이 같은 사용자를 중복으로 쓰지 않게)", () => {
+  const r = plan("--users-n", "100", "--gens", "3");
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /--gen gK를 반드시/);
+});
+
+test("발생기 수가 전체 사용자보다 많으면 모든 발생기에서 거부한다", () => {
+  for (const g of ["g1", "g2", "g3"]) assert.equal(plan("--users-n", "2", "--gen", g, "--gens", "3").code, 2);
+});
+
+test("--start-at이 달력상 없는 시각이면 거부한다", () => {
+  assert.equal(plan("--users-n", "100", "--start-at", "2026-02-30T00:00:00Z").code, 2);
+  assert.equal(plan("--users-n", "100", "--start-at", "2026-13-01T00:00:00Z").code, 2);
+});
+
+// 실행 경로(--print-plan 없음)의 시작 대기 검사는 디렉터리를 만들기 전에 끝난다.
+const runNoPlan = (startAt) => spawnSync("bash", [RUN_ENTRY, "--session", "s-test", "--run", `r-${Date.now()}`,
+  "--base", "b", "--event", "1", "--users", users, "--users-n", "10", "--start-at", startAt], { encoding: "utf8" });
+const isoSec = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
+
+test("--start-at이 이미 지났으면 실행 전에 거부한다", () => {
+  const r = runNoPlan(isoSec(Date.now() - 5000));
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /이미 .*초 지났다/);
+});
+
+test("--start-at이 SETUP_TIMEOUT − 30초보다 멀면 실행 전에 거부한다", () => {
+  const r = runNoPlan(isoSec(Date.now() + 2 * 3600 * 1000));
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /SETUP_TIMEOUT/);
+});
+
+test("T0 정각에 찍힌 도착은 창 안이다(왼쪽 경계 포함)", () => {
+  const { out } = arrivals([[point(at(0)), point(at(-1))]], "--entry-seconds", "1", "--t0", "2026-10-07T01:00:00Z");
+  assert.equal(out.window.arrivalsInWindow, 1);
+  assert.equal(out.window.arrivalsBeforeT0, 1);
+});
+
+test("허용 범위 경계값(정확히 ±X%)은 범위 안이다", () => {
+  // 목표 4/s, 허용 ±25% → 3건(−25%)은 안, 2건(−50%)은 밖
+  const g = [0, 1, 2].map((i) => point(at(i * 100))).concat([1000, 1100].map((ms) => point(at(ms))));
+  const { out } = arrivals([g], "--entry-seconds", "2", "--users-n", "8", "--t0", "2026-10-07T01:00:00Z", "--rate-tolerance-pct", "25");
+  assert.deepEqual(out.window.perSecondFromT0, [3, 2]);
+  assert.deepEqual(out.window.bucketsOutOfTolerance.map((b) => b.bucket), [1]);
+});
+
+test("도착이 0인 발생기도 결과에 남는다(시작 못 한 발생기를 숨기지 않는다)", () => {
+  const { out } = arrivals([[point(at(0))], [point(at(0), "http_reqs")]], "--entry-seconds", "1");
+  assert.equal(out.generators.length, 2);
+  assert.equal(out.generators.filter((g) => g.firstArrival === null).length, 1);
+  assert.equal(out.generatorsWithoutArrivals.length, 1);
+});
+
+test("--t0과 함께 쓰는 --entry-seconds는 양의 정수여야 한다", () => {
+  assert.equal(arrivals([[point(at(0))]], "--t0", "2026-10-07T01:00:00Z", "--entry-seconds", "2.5").code, 2);
+  assert.equal(arrivals([[point(at(0))]], "--t0", "2026-10-07T01:00:00Z", "--entry-seconds", "abc").code, 2);
+});

@@ -65,11 +65,12 @@ Deployment 파드 템플릿의 env**에 둔다 — 포트와 probe가 한 템플
 
 - [x] N(#340): CI 통합 테스트 통과(관리 포트 분리 5건 포함, 대기 단계에서 같은 포트 `/readyz` UP). 운영 반영(이미지 ef589a3) 뒤 파드 안에서
   `/livez`·`/readyz` 200, 기존 `/actuator/health/liveness`·`/actuator/prometheus`(8080) 200 — 같은 포트라 동작 변화 없음, Prometheus api 타깃 3 up.
-- [x] N+1(#341): 이미지 22feb7b 동기화 → 롤아웃 완료 2초 뒤 `kubectl apply -k k8s/monitoring`. 실측(2026-10-06 13:03 UTC):
+- [x] N+1(#341): 배포 커밋 22feb7b(이미지 8a2d3aa) 동기화(13:01:07~13:02:30 UTC) → 롤아웃 완료 2초 뒤 `kubectl apply -k k8s/monitoring`. 실측(2026-10-06 13:02:32~13:03:30 UTC):
 
   | 확인 | 결과 |
   |---|---|
-  | 외부 `/api/actuator/prometheus`, `/api/%61ctuator/prometheus`, `/api/actuator/health` | **404**(반영 전 200) |
+  | 외부 `/api/actuator/prometheus`, `/api/%61ctuator/prometheus` | **404**(반영 전 200 — §1) |
+  | 외부 `/api/actuator/health` | 404(반영 전 값은 재지 않았다) |
   | 외부 `/api/livez`, `/api/readyz` | 200(상태 문자열) |
   | 파드 8080 `/actuator/prometheus`·`/%61ctuator/prometheus` | 404 |
   | 파드 8080 `/livez`·`/readyz` | 200 — probe가 이 경로로 통과(파드 3개 Ready) |
@@ -77,8 +78,10 @@ Deployment 파드 템플릿의 env**에 둔다 — 포트와 probe가 한 템플
   | Prometheus api 타깃 | 3개 모두 `management`(8081) endpoint로 up, 마지막 수집 5~11초 전 |
   | `tomcat_threads_busy_threads`의 `name` 라벨 | `http-nio-8080`만 — 관리 포트 톰캣이 요청 스레드 지표에 섞이지 않는다 |
 
-  롤아웃 중 새 파드를 옛 ServiceMonitor(`http` endpoint)로 긁은 `up=0` 시계열 3개가 남았다 — ServiceMonitor 적용 뒤 타깃이 사라져 lookback(5분) 뒤 없어진다.
-  수집 공백은 새 파드가 뜬 뒤 ServiceMonitor 적용까지(롤아웃 약 1.5분)였다(허용 — 측정 run 없음).
+  롤아웃 중 새 파드를 옛 ServiceMonitor(`http` endpoint)로 긁은 `up=0` 시계열 3개가 있었다 — 마지막 값이 13:02:55~13:03:00, 13:03:30 조회에는
+  `management` 3개만 남았다(Prometheus 5초 간격 조회).
+  수집 공백(Prometheus 5초 간격 조회): api 타깃이 하나도 `up=1`이 아니던 구간은 약 13:02:25~13:03:05(약 40초), 파드별로는 가장 먼저 뜬 새 파드가
+  약 13:01:20~13:03:10(약 1분 50초) 수집되지 않았다. 측정 run이 없을 때라 허용했다.
 
 ## 6. 남는 것
 

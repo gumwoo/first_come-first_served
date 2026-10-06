@@ -1,0 +1,47 @@
+# 측정 세션 전용 진단 경로(ADR-023 실행 순서 ①: web 경유 vs api 직접 비교). 운영 매니페스트(k8s/)가 아니다 —
+# ArgoCD 대상 경로·하네스 k8s 검사와 섞이지 않게 여기에 둔다. infra/loadgen/diag/diag.sh nlb-up|nlb-down으로만 쓴다.
+#
+# 두 경로를 같은 조건(내부 NLB, 평문 HTTP, 파드 IP 직접 타깃)으로 맞춰 web 홉의 비용만 남긴다.
+#   flowticket-web-diag : 발생기 → NLB → web(:3000) → (Next rewrite) → api   요청 경로 /api/events/{id}/queue/token
+#   flowticket-api-diag : 발생기 → NLB → api(:8080)                          요청 경로 /events/{id}/queue/token
+# 공개 ALB 경로(TLS 종단)와는 다르다 — 판정 run이 아니라 진단 run이다(계획서 §3.1의 "ALB → web → api 경로" 조건과 다름).
+#
+# 노출: 내부 NLB(scheme internal)이고 원본을 발생기 서브넷(퍼블릭 /24 셋)으로만 연다. api 직접 경로는 /actuator/prometheus
+# 같은 공개 permitAll 경로도 VPC 안 발생기에 열린다 — 세션이 끝나면 diag.sh nlb-down으로 지운다.
+apiVersion: v1
+kind: Service
+metadata:
+  name: flowticket-api-diag
+  namespace: flowticket
+  labels: { flowticket.io/purpose: loadtest-diag }
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+spec:
+  type: LoadBalancer
+  selector: { app: flowticket-api }
+  loadBalancerSourceRanges: ["10.0.0.0/24", "10.0.1.0/24", "10.0.2.0/24"]
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flowticket-web-diag
+  namespace: flowticket
+  labels: { flowticket.io/purpose: loadtest-diag }
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+spec:
+  type: LoadBalancer
+  selector: { app: flowticket-web }
+  loadBalancerSourceRanges: ["10.0.0.0/24", "10.0.1.0/24", "10.0.2.0/24"]
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000

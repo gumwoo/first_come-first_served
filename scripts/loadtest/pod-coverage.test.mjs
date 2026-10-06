@@ -26,7 +26,7 @@ const promBody = (result) => JSON.stringify({ status: "success", data: { resultT
 function run(pods, meta = { startSec: T0 - 120, endSec: T0 + RUN_SEC + 60, step: 10 }) {
   const dir = mkdtempSync(join(tmpdir(), "pod-coverage-"));
   const f = (n, body) => { const p = join(dir, n); writeFileSync(p, body); return p; };
-  const podsFile = f("api_pods.json", promBody(pods.map((p) => ({ metric: { pod: p.name }, values: samples(p.from, p.to) }))));
+  const podsFile = f("api_pods.json", promBody(pods.map((p) => ({ metric: { pod: p.name }, values: p.values ?? samples(p.from, p.to) }))));
   // (격자 어긋남 시험은 from에 5초를 더해 평가 시각이 run 시작과 맞지 않게 한다)
   const restartsFile = f("api_restarts.json", promBody(pods.map((p) => ({
     metric: { pod: p.name }, values: p.restarts ?? samples(p.from, p.to, "0"),
@@ -162,4 +162,14 @@ test("내보낸 구간이 run 종료 + 여유를 덮지 않으면 확인 실패�
   const { code, stderr } = run([whole], { startSec: T0 - 120, endSec: T0 + RUN_SEC + 30, step: 10 });
   assert.equal(code, 2);
   assert.match(stderr, /run 종료 \+ 여유/);
+});
+
+test("kube-state-metrics 수집 공백이 run 시작에 걸치면 판정 불가다(공백 때문에 run 직후 삭제가 run 전 삭제로 보이는 거짓 통과 방지)", () => {
+  // T0−35 수집 성공 → T0−5·T0+5·T0+15 수집 실패(시계열 공백) → T0+25부터 다시 성공. api-gap-b는 T0+10에 지워졌다.
+  const gapValues = (to) => [...samples(T0 - 120, T0 - 40), ...samples(T0 + 30, to)];
+  const wholeWithGap = { ...whole, values: gapValues(T0 + 150) };
+  const killedInGap = { name: "api-gap-b", from: T0 - 120, to: T0 - 40, values: samples(T0 - 120, T0 - 40) };
+  const { code, stderr } = run([wholeWithGap, killedInGap]);
+  assert.equal(code, 2);
+  assert.match(stderr, /표본이 빈 평가 시각/);
 });

@@ -15,7 +15,7 @@
 // 생겼다 지워진 파드를 놓친다.
 //
 // 대상 파드는 내보낸 구간 전체가 아니라 **run 구간과 겹친 파드**다. 내보낸 구간은 run 시작 2분 전부터라, 그 사이 리셋·HPA
-// 축소로 지워진 파드까지 세면 run과 무관한 파드가 "빠짐"으로 잡혀 판정 불가가 난다(측정 세션 20261005-1440에서 6 run·16개 파드).
+// 축소로 지워진 파드까지 세면 run과 무관한 파드가 "빠짐"으로 잡혀 판정 불가가 난다(측정 세션 20261005-1440에서 6 run·20개 파드).
 //   대상: 마지막 표본 > run 시작 − 내보내기 간격(_meta.step)  그리고  첫 표본 ≤ run 종료 + 여유(--grace-sec)
 // 아래쪽에 내보내기 간격만큼 여유를 두는 것은 평가 격자가 run 시작과 어긋나도 run 시작 직후 지워진 파드를 놓치지 않기 위해서다.
 // 표본은 내보낸 query_range의 평가 시각이다. kube-state-metrics에서 파드가 사라지면 다음 수집 때 시계열이 끊기므로 마지막
@@ -101,6 +101,20 @@ try {
   }
   if (exportEndSec * 1000 < until + graceMs) {
     throw new Error(`내보낸 구간이 run 종료 + 여유(${new Date(until + graceMs).toISOString()})보다 일찍 끝난다 — --end를 늘려 다시 내보낸다`);
+  }
+  // 표본 연속성: [run 시작 − step, run 종료 + 여유]의 모든 평가 시각에 api 파드 표본이 하나 이상 있어야 한다.
+  // kube-state-metrics 수집이 실패하면 시계열이 그 사이 비어, run 시작 직후 지워진 파드의 마지막 표본이 앞으로 밀려
+  // "run 시작 전에 사라짐"으로 빠지거나(거짓 통과), run 끝 쪽에서 생긴 파드를 놓친다. 비면 판정 불가다.
+  const presentAt = new Set();
+  for (const s of series(a.pods)) {
+    for (const v of s.values ?? []) if (Number.isFinite(Number(v?.[1]))) presentAt.add(Number(v[0]));
+  }
+  const gapAt = [];
+  for (let t = exportStartSec; t <= exportEndSec; t += stepMs / 1000) {
+    if (t * 1000 >= since - stepMs && t * 1000 <= until + graceMs && !presentAt.has(t)) gapAt.push(iso(t * 1000));
+  }
+  if (gapAt.length) {
+    throw new Error(`run 구간에 api 파드 표본이 빈 평가 시각이 있다(kube-state-metrics 수집 공백?): ${gapAt.slice(0, 5).join(", ")}${gapAt.length > 5 ? " …" : ""}`);
   }
   const inRun = (o) => o.last > since - stepMs && o.first <= until + graceMs;
   const seen = observed.filter(inRun).map((o) => o.pod);

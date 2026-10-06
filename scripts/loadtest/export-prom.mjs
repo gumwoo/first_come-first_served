@@ -84,6 +84,9 @@ export const QUERIES = {
   // 사후 검사의 로그 범위 확인(pod-coverage.mjs). run 구간에 있었던 api 파드와 컨테이너 재시작 횟수.
   api_pods: "max by (pod) (kube_pod_info{namespace=\"flowticket\", pod=~\"flowticket-api-[a-z0-9]+-[a-z0-9]+\"})",
   api_restarts: "max by (pod) (kube_pod_container_status_restarts_total{namespace=\"flowticket\", container=\"api\", pod=~\"flowticket-api-[a-z0-9]+-[a-z0-9]+\"})",
+  // run 조건 기록: 앱 파드의 노드 배치와 컨테이너 이미지 — 같은 조건 비교와 IMP before/after의 근거.
+  app_pod_nodes: "max by (pod, node) (kube_pod_info{namespace=\"flowticket\", pod=~\"flowticket-(api|web)-[a-z0-9]+-[a-z0-9]+\"})",
+  app_images: "max by (pod, container, image) (kube_pod_container_info{namespace=\"flowticket\", container=~\"api|web\"})",
   // 아웃박스(ADR-022)
   outbox_oldest_pending_age: "max(flowticket_outbox_oldest_pending_age_seconds)",
 };

@@ -304,7 +304,7 @@ if kubectl -n "$NS" get pods -l app=flowticket-api \
     echo "$pod $first" >> "$D/api-first-lines.txt"
   done < "$D/api-pods-now.txt"
   node "$HERE/pod-coverage.mjs" --pods "$OUT/prom/api_pods.json" --restarts "$OUT/prom/api_restarts.json" \
-    --existing "$D/api-pods-now.txt" --first-lines "$D/api-first-lines.txt" --since "$SINCE" \
+    --existing "$D/api-pods-now.txt" --first-lines "$D/api-first-lines.txt" --since "$SINCE" --until "$UNTIL" \
     --meta "$OUT/prom/_meta.json" > "$D/pod-coverage.json" && POD_OK=1 || { echo "    로그를 다 읽지 못한 파드가 있다(pod-coverage.json)" >&2; BROKEN=1; }
 else
   echo "    api 파드 목록 조회 실패" >&2; BROKEN=1
@@ -332,18 +332,20 @@ if printf "\\\\copy (SELECT id FROM outbox_events WHERE status = 'PUBLISHED' AND
   if [ "$n_pub" -eq 0 ]; then
     echo "published=0 missing=0" > "$D/event-loss.txt"
   else
+    # redis:7 이미지에는 CA 묶음이 없어 ElastiCache 인증서 검증이 실패한다(측정 세션 20261005-1440에서 확인).
+    # CA 묶음이 있는 alpine 이미지로 검증을 켠 채 접속한다(--insecure로 검증을 끄지 않는다).
     REDIS_OVERRIDES="$(cat <<'EOF'
-{"spec":{"restartPolicy":"Never","containers":[{"name":"redis","image":"redis:7","stdin":true,"stdinOnce":true,
+{"spec":{"restartPolicy":"Never","containers":[{"name":"redis","image":"redis:7-alpine","stdin":true,"stdinOnce":true,
  "env":[
   {"name":"RHOST","valueFrom":{"configMapKeyRef":{"name":"flowticket-api-config","key":"REDIS_HOST"}}},
   {"name":"RPORT","valueFrom":{"configMapKeyRef":{"name":"flowticket-api-config","key":"REDIS_PORT"}}}],
- "command":["sh","-c","redis-cli --tls -h \"$RHOST\" -p \"$RPORT\" --no-raw"]}]}}
+ "command":["sh","-c","redis-cli --tls --cacert /etc/ssl/certs/ca-certificates.crt -h \"$RHOST\" -p \"$RPORT\" --no-raw"]}]}}
 EOF
 )"
     # 한 줄에 EXISTS 하나. 결과는 줄마다 (integer) 0|1.
     sed 's/^/EXISTS dedup:order-event:/' "$D/published-ids.txt" \
       | kubectl run loadtest-check-redis -n "$NS" --rm -i --quiet --restart=Never --pod-running-timeout=5m \
-          --image=redis:7 --overrides="$REDIS_OVERRIDES" > "$D/dedup-exists.txt"
+          --image=redis:7-alpine --overrides="$REDIS_OVERRIDES" > "$D/dedup-exists.txt"
     n_found="$(grep -c '(integer) 1' "$D/dedup-exists.txt" || true)"
     n_answers="$(grep -c '(integer)' "$D/dedup-exists.txt" || true)"
     echo "published=$n_pub answered=$n_answers consumed=$n_found missing=$((n_pub - n_found))" > "$D/event-loss.txt"

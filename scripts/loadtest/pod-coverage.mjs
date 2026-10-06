@@ -14,9 +14,21 @@
 // 하므로, 내보낸 구간(prom/_meta.json의 startSec)이 run 시작보다 늦게 시작하면 그것도 판정 불가다 — 그 사이에
 // 생겼다 지워진 파드를 놓친다.
 //
+// 대상 파드는 내보낸 구간 전체가 아니라 **run 구간과 겹친 파드**다. 내보낸 구간은 run 시작 2분 전부터라, 그 사이 리셋·HPA
+// 축소로 지워진 파드까지 세면 run과 무관한 파드가 "빠짐"으로 잡혀 판정 불가가 난다(측정 세션 20261005-1440 오탐 2건).
+//   대상: 마지막 표본 ≥ run 시작  그리고  첫 표본 ≤ run 종료 + 여유(--grace-sec)
+// 표본은 내보낸 query_range의 평가 시각이다. kube-state-metrics에서 파드가 사라지면 다음 수집 때 시계열이 끊기므로 마지막
+// 표본은 실제 삭제보다 최대 "수집 주기 + 내보내기 간격"만큼 늦다 — 그래서 run 직전에 지워진 파드는 대상에 남을 수 있다
+// (판정 불가 쪽으로만 틀린다). run 시작 뒤까지 있던 파드는 반드시 대상이다(거짓 통과를 만들지 않는다).
+// run 도중 지워진 파드는 대상이고 지금 없으므로 "빠짐"이다. run 도중 새로 뜬 파드(HPA 확장)도 대상이지만, 지금 있으면
+// 생긴 때부터의 로그가 남아 있다 — 앞부분 회전은 아래 첫 줄 검사가 본다. 그래서 run 중 생성만으로는 판정 불가가 아니다.
+//
 //   node scripts/loadtest/pod-coverage.mjs --pods <run>/prom/api_pods.json --restarts <run>/prom/api_restarts.json \
 //     --existing <"파드이름 재시작횟수 컨테이너시작시각" 줄 파일> --first-lines <"파드이름 첫줄시각" 줄 파일> \
-//     --since <run 시작 UTC ISO> --meta <run>/prom/_meta.json [--startup-slack-sec 120]
+//     --since <run 시작 UTC ISO> --until <run 종료 UTC ISO> --meta <run>/prom/_meta.json \
+//     [--startup-slack-sec 120] [--grace-sec 45]
+//
+// --grace-sec(기본 45초, 잠정값)는 run 종료 직전에 뜬 파드의 첫 표본이 수집 지연으로 종료 뒤에 찍히는 것을 덮는다.
 //
 // --startup-slack-sec(기본 120초, 잠정값)는 컨테이너가 뜬 뒤 첫 로그 줄을 찍기까지 허용하는 시간이다. 짧게 잡으면
 // 회전이 없는데도 판정 불가가 나고(보수 쪽 오류), 길게 잡으면 그만큼 이른 회전을 놓친다.
@@ -33,15 +45,21 @@ try {
       existing: { type: "string" },
       "first-lines": { type: "string" },
       since: { type: "string" },
+      until: { type: "string" },
       meta: { type: "string" },
+      "grace-sec": { type: "string", default: "45" },
       "startup-slack-sec": { type: "string", default: "120" },
     },
   });
-  if (!a.pods || !a.restarts || !a.existing || !a["first-lines"] || !a.since || !a.meta) {
-    throw new Error("--pods, --restarts, --existing, --first-lines, --since, --meta가 필요하다");
+  if (!a.pods || !a.restarts || !a.existing || !a["first-lines"] || !a.since || !a.until || !a.meta) {
+    throw new Error("--pods, --restarts, --existing, --first-lines, --since, --until, --meta가 필요하다");
   }
   const since = Date.parse(a.since);
   if (!Number.isFinite(since)) throw new Error(`--since를 읽지 못했다: ${a.since}`);
+  const until = Date.parse(a.until);
+  if (!Number.isFinite(until) || !(until > since)) throw new Error(`--until을 읽지 못했거나 --since보다 이르다: ${a.until}`);
+  if (!/^\d+$/.test(a["grace-sec"])) throw new Error("--grace-sec는 0 이상의 정수다");
+  const graceMs = Number(a["grace-sec"]) * 1000;
   if (!/^\d+$/.test(a["startup-slack-sec"])) throw new Error("--startup-slack-sec는 0 이상의 정수다");
   const slackMs = Number(a["startup-slack-sec"]) * 1000;
   // 내보낸 구간이 run 시작을 덮어야 run 구간의 파드를 모두 안다.
@@ -65,17 +83,37 @@ try {
       .filter((p) => p[0])
       .map(([name, ...rest]) => [name.replace(/^pod\//, ""), rest]);
 
-  const seen = series(a.pods).map((s) => s.metric?.pod).filter(Boolean);
+  // 파드별 관측 구간(값이 있는 표본의 첫·마지막 평가 시각, ms)으로 run 구간과 겹친 파드만 대상으로 한다.
+  const iso = (ms) => new Date(ms).toISOString();
+  const observed = [];
+  for (const s of series(a.pods)) {
+    const pod = s.metric?.pod;
+    const ts = (s.values ?? []).filter((v) => Number.isFinite(Number(v?.[1]))).map((v) => Number(v[0]) * 1000);
+    if (!pod || ts.length === 0) continue;
+    observed.push({ pod, first: Math.min(...ts), last: Math.max(...ts) });
+  }
+  const inRun = (o) => o.last >= since && o.first <= until + graceMs;
+  const seen = observed.filter(inRun).map((o) => o.pod);
+  const outsideRun = observed.filter((o) => !inRun(o)).map((o) => ({
+    pod: o.pod, firstSample: iso(o.first), lastSample: iso(o.last),
+    reason: o.last < since ? "run 시작 전에 사라짐" : "run 종료 뒤에 생김",
+  }));
   if (seen.length === 0) throw new Error(`${a.pods}: run 구간의 api 파드가 하나도 없다(kube-state-metrics 수집 실패?)`);
 
   // run 구간 안에서 재시작 횟수가 늘었으면 그 전 컨테이너의 로그는 읽을 수 없다. 마지막 값은 아래 대조에 쓴다.
   const restartedInRun = [];
   const lastRestarts = new Map();
   for (const s of series(a.restarts)) {
-    const vs = (s.values ?? []).map((v) => Number(v[1]));
-    if (vs.length === 0 || vs.some((v) => !Number.isFinite(v))) continue;
-    if (Math.max(...vs) > Math.min(...vs)) restartedInRun.push(s.metric?.pod);
-    lastRestarts.set(s.metric?.pod, vs[vs.length - 1]);
+    const pod = s.metric?.pod;
+    if (!seen.includes(pod)) continue; // run과 겹치지 않은 파드의 재시작은 run 로그와 무관하다
+    const pts = (s.values ?? []).map((v) => [Number(v[0]) * 1000, Number(v[1])]);
+    if (pts.length === 0 || pts.some(([t, v]) => !Number.isFinite(t) || !Number.isFinite(v))) continue;
+    // run 구간의 증가만 본다: run 시작 직전 마지막 값(없으면 구간 첫 값)부터 run 종료 + 여유까지.
+    const before = pts.filter(([t]) => t <= since);
+    const from = before.length ? before[before.length - 1][0] : -Infinity;
+    const inWin = pts.filter(([t]) => t >= from && t <= until + graceMs).map(([, v]) => v);
+    if (inWin.length && Math.max(...inWin) > Math.min(...inWin)) restartedInRun.push(pod);
+    lastRestarts.set(pod, pts[pts.length - 1][1]);
   }
 
   // 지금 파드: 이름 → { restarts, startedAt(ms) }
@@ -112,8 +150,8 @@ try {
   const ok = missing.length === 0 && restartedInRun.length === 0 && restartedAfterOrUnknown.length === 0 &&
     rotatedOrUnknown.length === 0;
   console.log(JSON.stringify({
-    seen, missing, restartedInRun, restartedAfterOrUnknown, rotatedOrUnknown,
-    startupSlackSec: slackMs / 1000, complete: ok,
+    seen, missing, restartedInRun, restartedAfterOrUnknown, rotatedOrUnknown, outsideRun,
+    startupSlackSec: slackMs / 1000, graceSec: graceMs / 1000, complete: ok,
   }, null, 2));
   process.exitCode = ok ? 0 : 2;
 } catch (e) {

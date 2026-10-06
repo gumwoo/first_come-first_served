@@ -86,6 +86,9 @@ jobs:
       # RDS·ElastiCache CloudWatch 내보내기(loadtest-100k-plan §5.3)의 질의 구성·결과 요약 테스트.
       - name: loadtest cloudwatch export test (질의 구성)
         run: node --test scripts/loadtest/export-cloudwatch.test.mjs
+      # 사후 검사의 로그 범위 확인(pod-coverage) — run 구간과 겹친 파드만 대상, run 구간의 재시작만.
+      - name: loadtest pod-coverage test (run 구간 대상 판정)
+        run: node --test scripts/loadtest/pod-coverage.test.mjs
 
   backend:
     name: 백엔드 (하네스 → 테스트)

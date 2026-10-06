@@ -1,4 +1,4 @@
-# ALB는 web만 바라본다. API는 인터넷에 직접 노출하지 않는다.
+# ALB는 기본적으로 web만 바라본다. 예외는 대기열 진입·상태 두 경로뿐이다(ADR-024 — 아래 paths 주석).
 #
 # 앱이 처음부터 이 구조를 전제로 짜여 있다. next.config.mjs가 브라우저 요청을 프록시한다.
 #
@@ -7,12 +7,13 @@
 #           └→ Next rewrite: /api/:path* → ${API_ORIGIN}/:path*   ← /api를 떼어낸다
 #                └→ flowticket-api:80 → Spring @PostMapping("/auth/login")
 #
-# ALB에서 /api를 API Service로 직접 보내면 안 된다. ALB의 Prefix 라우팅은 접두어를
+# ALB에서 /api 전체를 API Service로 직접 보내면 안 된다. ALB의 경로 라우팅은 접두어를
 # 제거하지 않으므로 Spring이 "/api/auth/login"을 받고, 그런 매핑이 없어 전부 404가 된다.
 # (Spring 쪽에는 /api 접두어가 없다. @PostMapping("/auth/login") 형태다.)
 #
 # 이 구조의 이점: API 미노출 / 접두어 문제 없음 / OAuth 프록시 기존 설계 그대로 /
-# 브라우저 same-origin이라 CORS 없음 / 타깃그룹 하나 / Ingress 하나.
+# 브라우저 same-origin이라 CORS 없음 / Ingress 하나. 대기열 두 경로만 URL rewrite로 /api를 떼어 api로 직접 보낸다 —
+# 측정상 Next 홉이 진입 CPU의 44~49%를 썼다(ADR-023 ①). 하네스 k8s 규칙 2가 허용 목록·rewrite·규칙 순서를 강제한다.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -26,12 +27,17 @@ metadata:
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     alb.ingress.kubernetes.io/certificate-arn: REPLACE_ACM_CERT_ARN
-    # 타깃그룹이 web 하나뿐이라 헬스체크 경로도 하나다.
+    # 이 값은 web 대상 그룹용이다. api 대상 그룹(대기열 두 경로, ADR-024)은 api Service 주석의 /readyz가 우선한다.
     # Next.js standalone에는 전용 헬스 엔드포인트가 없어 루트 응답으로 갈음한다.
     # "프로세스가 HTTP를 받는가"까지만 보는 것이고 그 이상은 확인하지 않는다.
     alb.ingress.kubernetes.io/healthcheck-path: /
     # 등록 해제 시 기존 연결을 드레이닝할 시간. preStop과 함께 "빠지는 중"의 요청을 덮는다.
     alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=10
+    # 대기열 진입·상태 두 경로만 api로 직접 보낸다(ADR-024). ALB는 경로 접두어를 떼지 못했으므로 URL rewrite로 /api를 뗀다
+    # (컨트롤러 v2.14.1+ transforms, 키 = 백엔드 Service 이름). 정규식은 두 경로에만 맞는다 — 쿼리 문자열이 정규식 입력에
+    # 포함되는지 문서에 명시가 없어 끝에 선택적 쿼리([?].*)를 둔다. 맞지 않으면 원래 경로가 그대로 가서 api가 /api/... 를 404로 낸다.
+    alb.ingress.kubernetes.io/transforms.flowticket-api: >-
+      [{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/api/(events/[0-9]+/queue/token|queue/status)([?].*)?$","replace":"/$1$2"}]}}]
 spec:
   ingressClassName: alb
   rules:
@@ -41,6 +47,16 @@ spec:
           # /actuator는 공개하지 않는다. ALB 헬스체크는 타깃그룹이 Pod IP로 직접 검사하므로
           # 규칙이 필요 없고, 두면 metrics·prometheus까지 인터넷에 열린다.
           # 아래 web 경로의 Next rewrite(/api/:path*)로도 닿지 않는다 — api가 actuator를 관리 포트(8081)에만 둔다(TS-041).
-          - path: /
-            pathType: Prefix
+          #
+          # 순서가 곧 우선순위다(ADR-024). 컨트롤러는 Exact → Prefix → ImplementationSpecific(적은 순서) 순으로 규칙을 만든다.
+          # 기본 경로를 `/` Prefix로 두면 와일드카드 진입 규칙(ImplementationSpecific)보다 앞서 진입이 계속 web으로 간다(오류 없이).
+          # 그래서 기본 경로도 ImplementationSpecific `/*`로 두고 맨 뒤에 적는다(`/` Prefix와 같은 ALB 조건 /*).
+          - path: /api/queue/status
+            pathType: Exact
+            backend: { service: { name: flowticket-api, port: { number: 80 } } }
+          - path: /api/events/*/queue/token
+            pathType: ImplementationSpecific
+            backend: { service: { name: flowticket-api, port: { number: 80 } } }
+          - path: /*
+            pathType: ImplementationSpecific
             backend: { service: { name: flowticket-web, port: { number: 80 } } }

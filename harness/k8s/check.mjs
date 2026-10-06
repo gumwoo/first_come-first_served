@@ -60,25 +60,7 @@ for (const file of manifests) {
     );
   }
 
-  // 2) 공개 Ingress가 API Service로 직결하는가
-  //
-  // 앱은 Next가 /api·/oauth2를 프록시하는 구조다(next.config.mjs rewrites). ALB의 Prefix
-  // 라우팅은 접두어를 제거하지 않으므로, ALB가 /api를 API로 직접 보내면 Spring이
-  // "/api/auth/login"을 받고 그런 매핑이 없어 전부 404가 된다.
-  //
-  // 파일 전체에서 "kind: Ingress"와 "name: flowticket-api"를 따로 찾으면 오탐이 난다.
-  // 오버레이 kustomization은 patch target(kind: Ingress)과 images(name: flowticket-api)를
-  // 한 파일에 갖는다. backend 블록 안에서 함께 나올 때만 위반이다.
-  const backendRe = /backend:\s*(?:\r?\n\s+|\{\s*)service:\s*(?:\r?\n\s+|\{\s*)name:\s*(\S+?)[\s,}]/g;
-  if (/\bkind:\s*Ingress\b/.test(raw)) {
-    for (const m of raw.matchAll(backendRe)) {
-      if (m[1].replace(/["']/g, "") !== "flowticket-api") continue;
-      r.fail(
-        `Ingress가 API Service로 직결: ${rel}. ALB는 web만 보고, /api·/oauth2는 Next rewrite가 ` +
-          `프록시해야 한다(ALB Prefix 라우팅은 접두어를 제거하지 않는다 → Spring에서 404)`
-      );
-    }
-  }
+  // 2) 공개 Ingress의 API Service 직결 — 아래 ⑩ 다음의 구조 검사(YAML 파싱, 2·2-b)로 옮겼다(ADR-024).
 
   // 3) 공개 Ingress에 /actuator 경로를 열지 않는다
   // exposure에 metrics·prometheus가 포함돼 있어 인터넷에 관측 데이터가 열린다.
@@ -292,6 +274,121 @@ if (!apiContainer) {
           `관리 포트는 별도 톰캣이라 메인 포트가 포화돼도 성공한다. 메인 포트의 /livez·/readyz를 써라(TS-041)`
       );
     }
+  }
+}
+
+// ---------- 2) 공개 Ingress가 API Service로 직결하는가 — ADR-024 허용 목록만 ----------
+//
+// 앱은 Next가 /api·/oauth2를 프록시하는 구조다(next.config.mjs rewrites). ALB 경로 라우팅은 접두어를 떼지 않으므로
+// ALB가 /api를 API로 그냥 보내면 Spring이 "/api/auth/login"을 받고 404가 된다. ADR-024는 대기열 진입·상태 두 경로만
+// ALB URL rewrite(transforms)로 /api를 떼어 api로 직접 보낸다. 그래서:
+//   - api 직결은 허용 목록(경로 + pathType)만 — 그 밖(예: /api Prefix 전체)은 actuator·관리자 경로까지 연다
+//   - api 직결이 있으면 그 Service의 url-rewrite transform이 있어야 한다 — 없으면 Spring이 /api/...를 받아 404
+//   - Prefix 규칙이 허용 경로를 가리면 안 된다 — 컨트롤러가 Prefix를 ImplementationSpecific보다 앞에 두어
+//     진입이 오류 없이 web으로 간다(기본 경로는 ImplementationSpecific `/*`로 맨 뒤에)
+const API_DIRECT_ALLOWED = new Map([
+  ["/api/queue/status", "Exact"],
+  ["/api/events/*/queue/token", "ImplementationSpecific"],
+]);
+for (const { doc, file } of docs) {
+  if (doc.kind !== "Ingress") continue;
+  const rel = path.relative(REPO_ROOT, file);
+  const paths = (doc.spec?.rules ?? []).flatMap((rule) => rule?.http?.paths ?? []);
+  const apiPaths = paths.filter((p) => p?.backend?.service?.name === "flowticket-api");
+  for (const p of apiPaths) {
+    if (API_DIRECT_ALLOWED.get(p.path) !== p.pathType) {
+      r.fail(
+        `Ingress가 API Service로 직결: ${rel} → ${p.path} (${p.pathType}). 허용 목록(ADR-024: 대기열 진입·상태 두 경로) 밖이다. ` +
+          `나머지 /api·/oauth2는 Next rewrite가 프록시해야 한다(ALB 경로 라우팅은 접두어를 떼지 않는다 → Spring 404, 넓게 열면 actuator·관리자 경로 노출)`
+      );
+    }
+  }
+  if (apiPaths.length === 0) continue;
+  const t = doc.metadata?.annotations?.["alb.ingress.kubernetes.io/transforms.flowticket-api"] ?? "";
+  if (!/"type"\s*:\s*"url-rewrite"/.test(t)) {
+    r.fail(
+      `api 직결 경로에 /api 제거 rewrite가 없다: ${rel}. alb.ingress.kubernetes.io/transforms.flowticket-api(url-rewrite)가 ` +
+        `없으면 Spring이 /api/... 를 받아 404가 된다(ADR-024)`
+    );
+  }
+  // ImplementationSpecific끼리는 매니페스트 순서가 우선순위다 — `/*` 같은 넓은 규칙이 api 직결 규칙보다 앞에 있으면 가린다.
+  paths.forEach((p, i) => {
+    if (p?.pathType !== "ImplementationSpecific" || p?.backend?.service?.name === "flowticket-api") return;
+    const re = new RegExp("^" + String(p.path ?? "").replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
+    const later = apiPaths.filter((a) => a.pathType === "ImplementationSpecific" && paths.indexOf(a) > i && re.test(a.path.replace(/\*/g, "1")));
+    if (later.length > 0) {
+      r.fail(
+        `ImplementationSpecific 규칙이 api 직결 규칙을 가린다: ${rel} → ${p.path}가 ${later.map((a) => a.path).join(", ")}보다 앞에 있다. ` +
+          `ImplementationSpecific끼리는 적은 순서대로 평가된다 — 넓은 기본 경로는 맨 뒤에(ADR-024)`
+      );
+    }
+  });
+  for (const p of paths) {
+    if (p?.pathType !== "Prefix") continue;
+    const prefix = String(p.path ?? "");
+    const shadowed = apiPaths.filter((a) => a !== p && a.pathType !== "Exact" && (prefix === "/" || a.path.startsWith(prefix)));
+    if (shadowed.length > 0) {
+      r.fail(
+        `Prefix 규칙이 api 직결 규칙을 가린다: ${rel} → ${prefix} (Prefix)가 ${shadowed.map((a) => a.path).join(", ")}보다 먼저 평가된다. ` +
+          `컨트롤러는 Prefix를 ImplementationSpecific보다 앞에 둬 요청이 오류 없이 다른 백엔드로 간다 — 기본 경로는 ImplementationSpecific /*로 맨 뒤에(ADR-024)`
+      );
+    }
+  }
+}
+
+// ---------- 2-b) Ingress를 바꾸는 overlay 패치는 허용 목록만 — ADR-024 ----------
+//
+// 위 구조 검사는 kind: Ingress 문서만 본다. overlay kustomization의 패치(JSON6902·인라인 SMP·파일 참조)로 경로를 더하거나
+// 백엔드를 바꾸거나 rewrite 주석을 지우면 거기서는 안 보인다. 패치 표기는 여러 가지라 문자열로 하나씩 막지 않고,
+// YAML로 읽어 허용 목록으로 판단한다: Ingress는 base 한 파일에서만 정의하고, overlay는 인증서 ARN 주석의 add/replace만 한다.
+const INGRESS_PATCH_ALLOWED_PATHS = new Set(["/metadata/annotations/alb.ingress.kubernetes.io~1certificate-arn"]);
+const ingressFiles = [...new Set(docs.filter((d) => d.doc.kind === "Ingress").map((d) => path.relative(REPO_ROOT, d.file)))];
+if (ingressFiles.length > 1) {
+  r.fail(
+    `Ingress를 정의하는 파일이 여럿이다: ${ingressFiles.join(", ")}. base 한 곳에서만 정의한다 — 다른 파일(전략적 병합 패치 등)이 ` +
+      `경로·백엔드·rewrite 주석을 덮으면 하네스 규칙 2가 보지 못한다(ADR-024)`
+  );
+}
+for (const { doc, file } of docs) {
+  if (doc.kind !== "Kustomization") continue;
+  const rel = path.relative(REPO_ROOT, file);
+  const bad = (why) =>
+    r.fail(
+      `Ingress 패치가 허용 목록 밖이다: ${rel} → ${why}. overlay는 인증서 ARN 주석(certificate-arn)의 add/replace만 한다 — ` +
+        `경로·백엔드·rewrite 주석은 base Ingress에서만 바꾼다(ADR-024)`
+    );
+  for (const e of [...(doc.patches ?? []), ...(doc.patchesJson6902 ?? [])]) {
+    let parsed;
+    if (typeof e?.patch === "string") {
+      try {
+        parsed = yaml.load(e.patch);
+      } catch {
+        parsed = undefined;
+      }
+    }
+    const isIngress = e?.target?.kind === "Ingress" || (parsed && !Array.isArray(parsed) && parsed.kind === "Ingress");
+    if (!isIngress) continue;
+    if (typeof e?.patch !== "string") {
+      bad(`파일 참조 패치(${e?.path ?? "?"})`);
+      continue;
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      bad("전략적 병합 패치(Ingress 문서 덮어쓰기)");
+      continue;
+    }
+    for (const op of parsed) {
+      if (!INGRESS_PATCH_ALLOWED_PATHS.has(op?.path) || !["add", "replace"].includes(op?.op)) bad(`${op?.op} ${op?.path}`);
+    }
+  }
+  for (const smp of doc.patchesStrategicMerge ?? []) {
+    if (typeof smp !== "string" || !smp.includes("\n")) continue; // 파일 참조는 그 파일이 Ingress면 위의 '파일이 여럿' 검사가 잡는다
+    let parsed;
+    try {
+      parsed = yaml.load(smp);
+    } catch {
+      continue;
+    }
+    if (parsed?.kind === "Ingress") bad("인라인 전략적 병합 패치(patchesStrategicMerge)");
   }
 }
 

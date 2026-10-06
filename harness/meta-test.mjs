@@ -42,6 +42,12 @@ const cases = [
   // k8s: 매니페스트가 애플리케이션 코드와 어긋나는 두 경로(둘 다 apply 전에는 무증상)
   { name: "k8s-unknown-env", script: "k8s/check.mjs", expect: "앱이 읽지 않는 환경변수:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-unknown-env" } },
   { name: "k8s-ingress-api-direct", script: "k8s/check.mjs", expect: "Ingress가 API Service로 직결:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-ingress-api-direct" } },
+  { name: "k8s-ingress-api-no-rewrite", script: "k8s/check.mjs", expect: "api 직결 경로에 /api 제거 rewrite가 없다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-ingress-api-no-rewrite" } },
+  { name: "k8s-ingress-prefix-shadow", script: "k8s/check.mjs", expect: "Prefix 규칙이 api 직결 규칙을 가린다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-ingress-prefix-shadow" } },
+  { name: "k8s-overlay-api-direct", script: "k8s/check.mjs", expect: "Ingress 패치가 허용 목록 밖이다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-overlay-api-direct" } },
+  { name: "k8s-overlay-drop-rewrite", script: "k8s/check.mjs", expect: "Ingress 패치가 허용 목록 밖이다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-overlay-drop-rewrite" } },
+  { name: "k8s-overlay-smp-ingress", script: "k8s/check.mjs", expect: "Ingress 패치가 허용 목록 밖이다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-overlay-smp-ingress" } },
+  { name: "k8s-second-ingress-file", script: "k8s/check.mjs", expect: "Ingress를 정의하는 파일이 여럿이다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-second-ingress-file" } },
   { name: "k8s-buildtime-env", script: "k8s/check.mjs", expect: "빌드 시점 값을 런타임 env로 주입:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-buildtime-env" } },
   { name: "k8s-orphan-externalsecret", script: "k8s/check.mjs", expect: "ExternalSecret이 적용되지 않는다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-orphan-externalsecret" } },
   { name: "k8s-hpa-replicas", script: "k8s/check.mjs", expect: "HPA가 소유하는 Deployment에 replicas가 있다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-hpa-replicas" } },

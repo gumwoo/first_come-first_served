@@ -1,0 +1,8 @@
+# 위반 fixture: overlay 패치로 api rewrite 주석을 지운다 — 진입·상태 조회가 api에서 /api/... 404가 된다(ADR-024).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+patches:
+  - target: { kind: Ingress, name: flowticket }
+    patch: |
+      - op: remove
+        path: /metadata/annotations/alb.ingress.kubernetes.io~1transforms.flowticket-api

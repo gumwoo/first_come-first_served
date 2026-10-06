@@ -1,0 +1,18 @@
+# 위반 fixture(1/2): base Ingress.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flowticket
+  annotations:
+    alb.ingress.kubernetes.io/transforms.flowticket-api: >-
+      [{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/api/(queue/status)([?].*)?$","replace":"/$1$2"}]}}]
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api/queue/status
+            pathType: Exact
+            backend: { service: { name: flowticket-api, port: { number: 80 } } }
+          - path: /*
+            pathType: ImplementationSpecific
+            backend: { service: { name: flowticket-web, port: { number: 80 } } }

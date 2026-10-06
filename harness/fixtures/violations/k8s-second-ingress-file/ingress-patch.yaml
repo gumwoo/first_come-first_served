@@ -1,0 +1,7 @@
+# 위반 fixture(2/2): 별도 파일의 전략적 병합 패치가 rewrite 주석을 null로 지운다 — Ingress를 정의하는 파일이 둘(ADR-024).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flowticket
+  annotations:
+    alb.ingress.kubernetes.io/transforms.flowticket-api: null

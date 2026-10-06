@@ -1,0 +1,19 @@
+# 위반 fixture: 블록 표기 target + 인라인 전략적 병합 패치로 Ingress 경로를 덮는다 — 허용 목록(인증서 ARN) 밖(ADR-024).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+patches:
+  - target:
+      kind: Ingress
+      name: flowticket
+    patch: |
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: flowticket
+      spec:
+        rules:
+          - http:
+              paths:
+                - path: /api
+                  pathType: Prefix
+                  backend: { service: { name: flowticket-api, port: { number: 80 } } }

@@ -1,0 +1,15 @@
+# 위반 fixture: overlay 패치(JSON6902)로 /api 전체를 API Service에 직결한다 — 허용 목록(인증서 ARN) 밖(ADR-024).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+patches:
+  - target: { kind: Ingress, name: flowticket }
+    patch: |
+      - op: add
+        path: /spec/rules/0/http/paths/0
+        value:
+          path: /api
+          pathType: Prefix
+          backend:
+            service:
+              name: flowticket-api
+              port: { number: 80 }

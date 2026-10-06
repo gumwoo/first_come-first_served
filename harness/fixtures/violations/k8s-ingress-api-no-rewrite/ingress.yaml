@@ -1,0 +1,15 @@
+# 위반 fixture: 허용 목록 경로를 api로 직결했지만 /api 제거 rewrite(transforms)가 없다 — Spring이 /api/queue/status를 받아 404(ADR-024).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flowticket
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api/queue/status
+            pathType: Exact
+            backend: { service: { name: flowticket-api, port: { number: 80 } } }
+          - path: /*
+            pathType: ImplementationSpecific
+            backend: { service: { name: flowticket-web, port: { number: 80 } } }

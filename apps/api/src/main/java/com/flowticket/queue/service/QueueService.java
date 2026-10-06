@@ -35,7 +35,12 @@ public class QueueService {
 
     // 토큰 발급 원자화: 유저키 예약(SET NX)과 대기열 등록(순번·ZSet·메타·TTL·활성이벤트)을 한 번에 실행한다.
     // 예전엔 예약과 등록이 여러 왕복으로 나뉘어, 중간에 Redis 장애가 나면 "유저키는 있는데 대기 ZSet엔
-    // 없는" 부분 상태가 남을 수 있었다(승격되지 않는 유령 토큰). 예약 실패(이미 토큰 보유)면 0을 반환한다.
+    // 없는" 부분 상태가 남을 수 있었다(승격되지 않는 유령 토큰). 예약 실패(이미 토큰 보유)면 {0}을 반환한다.
+    // 성공하면 {1, 순번(1부터), 전체 대기 수}를 함께 돌려준다 — 방금 넣은 토큰은 이 스크립트가 끝나기 전에는
+    // 승격될 수 없어(승격도 Lua라 원자적으로 끼어들지 못한다) 상태가 WAITING으로 정해져 있다. 예전에는 발급 뒤
+    // 응답을 만들려고 입장 여부(EXISTS·ZSCORE)·순번(ZRANK 2회)·전체 수(ZCARD)를 따로 읽어 진입 1건이 Redis를
+    // 7번 왕복했고, 측정 세션 20261005-1440의 4,000/s에서 Redis 메인 스레드가 요청당 0.172ms를 써 단일 스레드 상한이
+    // 약 5,800/s로 계산됐다. 같은 키(KEYS[3])만 읽으므로 Lua 안에서 키를 만들지 않는다.
     // KEYS: userKey, seqKey, waitKey, tokenKey, activeEvents / ARGV: token, ttl, userId, eventId
     private static final String ISSUE_LUA = """
             if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2]) then
@@ -44,12 +49,12 @@ public class QueueService {
               redis.call('HSET', KEYS[4], 'userId', ARGV[3], 'eventId', ARGV[4])
               redis.call('EXPIRE', KEYS[4], ARGV[2])
               redis.call('SADD', KEYS[5], ARGV[4])
-              return 1
+              return {1, redis.call('ZRANK', KEYS[3], ARGV[1]) + 1, redis.call('ZCARD', KEYS[3])}
             end
-            return 0
+            return {0}
             """;
-    private static final DefaultRedisScript<Long> ISSUE_SCRIPT =
-            new DefaultRedisScript<>(ISSUE_LUA, Long.class);
+    @SuppressWarnings("rawtypes")
+    private static final DefaultRedisScript<List> ISSUE_SCRIPT = new DefaultRedisScript<>(ISSUE_LUA, List.class);
 
     // 죽은 토큰 회수 후 재발급(소유권 이전). 예약을 강제로 덮어쓰는 것만 다르고 등록 절차는 동일하며,
     // 옛 토큰 메타 정리(KEYS[6])까지 같은 원자 단위에 넣어 중간 상태를 남기지 않는다.
@@ -99,10 +104,12 @@ public class QueueService {
         String token = UUID.randomUUID().toString();
 
         // 예약 + 대기열 등록을 한 원자 단위로. 성공하면 부분 상태가 남을 수 없다.
-        Long issued = redis.execute(ISSUE_SCRIPT, issueKeys(userKey, eventId, token),
+        List<?> issued = redis.execute(ISSUE_SCRIPT, issueKeys(userKey, eventId, token),
                 token, String.valueOf(tokenTtl), String.valueOf(userId), String.valueOf(eventId));
-        if (issued != null && issued == 1L) {
-            return tokenResponse(token, eventId);
+        if (issued != null && issued.size() == 3 && ((Number) issued.get(0)).longValue() == 1L) {
+            // 신규 발급: 상태·순번·전체 수가 스크립트 결과에 있다(추가 왕복 없음 — ISSUE_LUA 주석).
+            return new QueueTokenResponse(token, QueueStatus.WAITING.name(),
+                    ((Number) issued.get(1)).longValue(), ((Number) issued.get(2)).longValue());
         }
 
         // 예약 실패 = 이미 이 유저의 토큰이 있다. 재사용 판단은 읽기 위주라 애플리케이션에 둔다.

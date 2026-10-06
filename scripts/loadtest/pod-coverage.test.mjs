@@ -21,11 +21,13 @@ const samples = (from, to, value = "1") => {
 };
 const promBody = (result) => JSON.stringify({ status: "success", data: { resultType: "matrix", result } });
 
-// pods: [{ name, from, to, restarts?: [[t, v]...], existing?: { restarts, startedAt(sec) }, firstLine?(sec) }]
-function run(pods) {
+// pods: [{ name, from, to, step?, restarts?: [[t, v]...], existing?: { restarts, startedAt(sec) }, firstLine?(sec) }]
+// meta: 내보낸 구간(기본: run 시작 −120s ~ 종료 +60s, step 10s — 실제 run-one과 같은 설정)
+function run(pods, meta = { startSec: T0 - 120, endSec: T0 + RUN_SEC + 60, step: 10 }) {
   const dir = mkdtempSync(join(tmpdir(), "pod-coverage-"));
   const f = (n, body) => { const p = join(dir, n); writeFileSync(p, body); return p; };
   const podsFile = f("api_pods.json", promBody(pods.map((p) => ({ metric: { pod: p.name }, values: samples(p.from, p.to) }))));
+  // (격자 어긋남 시험은 from에 5초를 더해 평가 시각이 run 시작과 맞지 않게 한다)
   const restartsFile = f("api_restarts.json", promBody(pods.map((p) => ({
     metric: { pod: p.name }, values: p.restarts ?? samples(p.from, p.to, "0"),
   }))));
@@ -36,7 +38,7 @@ function run(pods) {
     "--pods", podsFile, "--restarts", restartsFile,
     "--existing", f("existing.txt", existing), "--first-lines", f("first.txt", firstLines),
     "--since", iso(T0), "--until", iso(T0 + RUN_SEC),
-    "--meta", f("_meta.json", JSON.stringify({ startSec: T0 - 120 })),
+    "--meta", f("_meta.json", JSON.stringify(meta)),
   ], { encoding: "utf8" });
   let out = null;
   try { out = JSON.parse(r.stdout); } catch { /* 확인 실패면 stdout이 비어 있다 */ }
@@ -119,4 +121,45 @@ test("--until이 없으면 확인 실패(종료 코드 2)다", () => {
     "--since", iso(T0), "--meta", "x"], { encoding: "utf8" });
   assert.equal(r.status, 2);
   assert.match(r.stderr, /--until/);
+});
+
+test("run 종료 + 여유 뒤에 재시작했으면 지금 컨테이너에 run 로그가 없다 — 판정 불가(거짓 통과 방지)", () => {
+  const restartedAfter = {
+    ...whole, name: "api-restarted-after-grace",
+    restarts: [...samples(T0 - 120, T0 + 140, "0"), ...samples(T0 + 150, T0 + 150, "1")],
+    existing: { restarts: 1, startedAt: T0 + 145 }, firstLine: T0 + 146,
+  };
+  const { code, out } = run([restartedAfter]);
+  assert.equal(code, 2);
+  assert.deepEqual(out.restartedAfterOrUnknown, ["api-restarted-after-grace"]);
+});
+
+test("평가 격자가 run 시작과 어긋나도 run 시작 직후 지워진 파드는 대상(빠짐)이다", () => {
+  // 표본이 T0−115, …, T0−5에 찍히고 다음 평가(T0+5) 전에 지워진 파드 — 마지막 표본이 run 시작보다 앞이다.
+  const killedJustAfter = { name: "api-killed-just-after", from: T0 - 115, to: T0 - 5 };
+  const { code, out } = run([whole, killedJustAfter]);
+  assert.equal(code, 2);
+  assert.deepEqual(out.missing, ["api-killed-just-after"]);
+});
+
+test("run과 겹치지 않은 파드의 재시작은 판정에 영향이 없다", () => {
+  const goneRestarted = { name: "api-gone-restarted", from: T0 - 120, to: T0 - 60,
+    restarts: [...samples(T0 - 120, T0 - 100, "0"), ...samples(T0 - 90, T0 - 60, "1")] };
+  const { code, out } = run([whole, goneRestarted]);
+  assert.equal(code, 0);
+  assert.deepEqual(out.restartedInRun, []);
+});
+
+test("run 종료 직전에 떠서 첫 표본이 종료 + 40초에 찍힌 파드도 대상이다(여유 45초 경계)", () => {
+  const lateBorn = { name: "api-late-born", from: T0 + RUN_SEC + 40, to: T0 + 150,
+    existing: { restarts: 0, startedAt: T0 + RUN_SEC - 2 }, firstLine: T0 + RUN_SEC };
+  const { code, out } = run([whole, lateBorn]);
+  assert.equal(code, 0);
+  assert.ok(out.seen.includes("api-late-born"));
+});
+
+test("내보낸 구간이 run 종료 + 여유를 덮지 않으면 확인 실패다", () => {
+  const { code, stderr } = run([whole], { startSec: T0 - 120, endSec: T0 + RUN_SEC + 30, step: 10 });
+  assert.equal(code, 2);
+  assert.match(stderr, /run 종료 \+ 여유/);
 });

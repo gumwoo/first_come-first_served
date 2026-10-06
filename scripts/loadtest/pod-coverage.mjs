@@ -15,11 +15,14 @@
 // 생겼다 지워진 파드를 놓친다.
 //
 // 대상 파드는 내보낸 구간 전체가 아니라 **run 구간과 겹친 파드**다. 내보낸 구간은 run 시작 2분 전부터라, 그 사이 리셋·HPA
-// 축소로 지워진 파드까지 세면 run과 무관한 파드가 "빠짐"으로 잡혀 판정 불가가 난다(측정 세션 20261005-1440 오탐 2건).
-//   대상: 마지막 표본 ≥ run 시작  그리고  첫 표본 ≤ run 종료 + 여유(--grace-sec)
+// 축소로 지워진 파드까지 세면 run과 무관한 파드가 "빠짐"으로 잡혀 판정 불가가 난다(측정 세션 20261005-1440에서 6 run·16개 파드).
+//   대상: 마지막 표본 > run 시작 − 내보내기 간격(_meta.step)  그리고  첫 표본 ≤ run 종료 + 여유(--grace-sec)
+// 아래쪽에 내보내기 간격만큼 여유를 두는 것은 평가 격자가 run 시작과 어긋나도 run 시작 직후 지워진 파드를 놓치지 않기 위해서다.
 // 표본은 내보낸 query_range의 평가 시각이다. kube-state-metrics에서 파드가 사라지면 다음 수집 때 시계열이 끊기므로 마지막
 // 표본은 실제 삭제보다 최대 "수집 주기 + 내보내기 간격"만큼 늦다 — 그래서 run 직전에 지워진 파드는 대상에 남을 수 있다
-// (판정 불가 쪽으로만 틀린다). run 시작 뒤까지 있던 파드는 반드시 대상이다(거짓 통과를 만들지 않는다).
+// (판정 불가 쪽으로만 틀린다). run 시작 뒤까지 있던 파드는 격자 정렬과 무관하게 대상이다(거짓 통과를 만들지 않는다).
+// 재시작 비교의 기준값은 run 종료 + 여유 시각까지의 마지막 값이다 — 그 뒤 재시작은 "지금 재시작 횟수 > 기준값"으로 잡힌다.
+// 내보낸 구간은 run 종료 + 여유까지 덮어야 한다(_meta.endSec). 덮지 않으면 판정 불가다.
 // run 도중 지워진 파드는 대상이고 지금 없으므로 "빠짐"이다. run 도중 새로 뜬 파드(HPA 확장)도 대상이지만, 지금 있으면
 // 생긴 때부터의 로그가 남아 있다 — 앞부분 회전은 아래 첫 줄 검사가 본다. 그래서 run 중 생성만으로는 판정 불가가 아니다.
 //
@@ -63,7 +66,11 @@ try {
   if (!/^\d+$/.test(a["startup-slack-sec"])) throw new Error("--startup-slack-sec는 0 이상의 정수다");
   const slackMs = Number(a["startup-slack-sec"]) * 1000;
   // 내보낸 구간이 run 시작을 덮어야 run 구간의 파드를 모두 안다.
-  const exportStartSec = Number(JSON.parse(readFileSync(a.meta, "utf8"))?.startSec);
+  const meta = JSON.parse(readFileSync(a.meta, "utf8"));
+  const exportStartSec = Number(meta?.startSec);
+  const exportEndSec = Number(meta?.endSec);
+  const stepMs = Number(meta?.step) * 1000;
+  if (!Number.isFinite(exportEndSec) || !(stepMs > 0)) throw new Error(`${a.meta}: endSec·step을 읽지 못했다(export-prom.mjs로 다시 내보낸다)`);
   if (!Number.isFinite(exportStartSec)) throw new Error(`${a.meta}: startSec를 읽지 못했다(export-prom.mjs로 다시 내보낸다)`);
   if (exportStartSec * 1000 > since) {
     throw new Error(`내보낸 구간이 run 시작보다 늦게 시작한다(${new Date(exportStartSec * 1000).toISOString()} > ${a.since}) — --start를 run 시작 이전으로 다시 내보낸다`);
@@ -92,11 +99,14 @@ try {
     if (!pod || ts.length === 0) continue;
     observed.push({ pod, first: Math.min(...ts), last: Math.max(...ts) });
   }
-  const inRun = (o) => o.last >= since && o.first <= until + graceMs;
+  if (exportEndSec * 1000 < until + graceMs) {
+    throw new Error(`내보낸 구간이 run 종료 + 여유(${new Date(until + graceMs).toISOString()})보다 일찍 끝난다 — --end를 늘려 다시 내보낸다`);
+  }
+  const inRun = (o) => o.last > since - stepMs && o.first <= until + graceMs;
   const seen = observed.filter(inRun).map((o) => o.pod);
   const outsideRun = observed.filter((o) => !inRun(o)).map((o) => ({
     pod: o.pod, firstSample: iso(o.first), lastSample: iso(o.last),
-    reason: o.last < since ? "run 시작 전에 사라짐" : "run 종료 뒤에 생김",
+    reason: o.last <= since - stepMs ? "run 시작 전에 사라짐" : "run 종료 뒤에 생김",
   }));
   if (seen.length === 0) throw new Error(`${a.pods}: run 구간의 api 파드가 하나도 없다(kube-state-metrics 수집 실패?)`);
 
@@ -113,7 +123,9 @@ try {
     const from = before.length ? before[before.length - 1][0] : -Infinity;
     const inWin = pts.filter(([t]) => t >= from && t <= until + graceMs).map(([, v]) => v);
     if (inWin.length && Math.max(...inWin) > Math.min(...inWin)) restartedInRun.push(pod);
-    lastRestarts.set(pod, pts[pts.length - 1][1]);
+    // 기준값: run 종료 + 여유까지의 마지막 값. 그 뒤 재시작은 아래 '지금 > 기준값' 비교가 잡는다.
+    const upToEnd = pts.filter(([t]) => t <= until + graceMs);
+    lastRestarts.set(pod, (upToEnd.length ? upToEnd : pts)[upToEnd.length ? upToEnd.length - 1 : 0][1]);
   }
 
   // 지금 파드: 이름 → { restarts, startedAt(ms) }

@@ -6,7 +6,7 @@
 #
 # --generators는 이 run에 띄운 발생기 수다. run 디렉터리의 발생기 기록(meta-<gen>.json) 수와 맞아야 한다 —
 # 인스턴스째 사라진 발생기는 결과 회수에 나타나지 않아, 이 대조 없이는 보이지 않는다.
-# --until은 run 종료 시각(UTC, 발생기가 멈춘 시각)이다. 내보낸 구간(prom/_meta.json)이 --since 이전부터 --until + 30초
+# --until은 run 종료 시각(UTC, 발생기가 멈춘 시각)이다. 내보낸 구간(prom/_meta.json)이 --since 이전부터 --until + 45초
 # 이후까지를 덮어야 한다 — 파드 대조와 4단계(실시간 조건 사후 재확인)가 이 구간에 기댄다. 덮지 못하면 판정 불가(2)다.
 # (감시기의 endedAt으로 대신하지 않는다 — 감시기가 일찍 멈췄으면 구간이 짧게 잡힌 채 통과한다.)
 #
@@ -131,7 +131,7 @@ FAIL=0 BROKEN=0
 AO="" AO_RAW="" POD_OK=0
 
 echo "==> 0/4 내보낸 구간 확인(prom/_meta.json)"
-# 파드 대조와 4단계(실시간 조건 사후 재확인)는 내보낸 구간이 run 전체 + 꼬리 30초를 덮어야 믿을 수 있다.
+# 파드 대조와 4단계(실시간 조건 사후 재확인)는 내보낸 구간이 run 전체 + 꼬리를 덮어야 믿을 수 있다(재확인 30초, 파드 대조 여유 45초 — 큰 쪽).
 if node -e '
 const fs = require("fs");
 const [out, since, until] = process.argv.slice(1);
@@ -141,10 +141,11 @@ try { meta = JSON.parse(fs.readFileSync(out + "/prom/_meta.json", "utf8")); }
 catch { fail("prom/_meta.json을 읽지 못했다 — export-prom.mjs를 먼저 돌린다(도중에 죽었으면 다시 돌린다)"); }
 const s = Number(meta.startSec) * 1000, e = Number(meta.endSec) * 1000;
 if (!Number.isFinite(s) || !Number.isFinite(e)) fail("prom/_meta.json에 startSec·endSec가 없다 — export-prom.mjs로 다시 내보낸다");
-const need = Date.parse(until) + 30000;
+// 꼬리 30초(실시간 조건 재확인)와 pod-coverage 여유 45초 중 큰 쪽을 덮어야 한다.
+const need = Date.parse(until) + 45000;
 console.log("export=" + new Date(s).toISOString() + "~" + new Date(e).toISOString() + " run=" + since + "~" + until);
 if (s > Date.parse(since)) fail("내보낸 구간이 run 시작보다 늦게 시작한다 — --start를 run 시작 이전으로 다시 내보낸다");
-if (e < need) fail("내보낸 구간이 run 종료 + 30초(" + new Date(need).toISOString() + ")를 덮지 않는다 — --end를 늘려 다시 내보낸다");
+if (e < need) fail("내보낸 구간이 run 종료 + 45초(" + new Date(need).toISOString() + ", pod-coverage 여유)를 덮지 않는다 — --end를 늘려 다시 내보낸다");
 ' "$OUT" "$SINCE" "$UNTIL" > "$D/export-window.txt" 2>&1; then :
 else
   BROKEN=1
@@ -304,7 +305,7 @@ if kubectl -n "$NS" get pods -l app=flowticket-api \
     echo "$pod $first" >> "$D/api-first-lines.txt"
   done < "$D/api-pods-now.txt"
   node "$HERE/pod-coverage.mjs" --pods "$OUT/prom/api_pods.json" --restarts "$OUT/prom/api_restarts.json" \
-    --existing "$D/api-pods-now.txt" --first-lines "$D/api-first-lines.txt" --since "$SINCE" \
+    --existing "$D/api-pods-now.txt" --first-lines "$D/api-first-lines.txt" --since "$SINCE" --until "$UNTIL" \
     --meta "$OUT/prom/_meta.json" > "$D/pod-coverage.json" && POD_OK=1 || { echo "    로그를 다 읽지 못한 파드가 있다(pod-coverage.json)" >&2; BROKEN=1; }
 else
   echo "    api 파드 목록 조회 실패" >&2; BROKEN=1
@@ -332,18 +333,20 @@ if printf "\\\\copy (SELECT id FROM outbox_events WHERE status = 'PUBLISHED' AND
   if [ "$n_pub" -eq 0 ]; then
     echo "published=0 missing=0" > "$D/event-loss.txt"
   else
+    # redis:7 이미지에는 CA 묶음이 없어 ElastiCache 인증서 검증이 실패한다(측정 세션 20261005-1440에서 확인).
+    # CA 묶음이 있는 alpine 이미지로 검증을 켠 채 접속한다(--insecure로 검증을 끄지 않는다).
     REDIS_OVERRIDES="$(cat <<'EOF'
-{"spec":{"restartPolicy":"Never","containers":[{"name":"redis","image":"redis:7","stdin":true,"stdinOnce":true,
+{"spec":{"restartPolicy":"Never","containers":[{"name":"redis","image":"redis:7-alpine","stdin":true,"stdinOnce":true,
  "env":[
   {"name":"RHOST","valueFrom":{"configMapKeyRef":{"name":"flowticket-api-config","key":"REDIS_HOST"}}},
   {"name":"RPORT","valueFrom":{"configMapKeyRef":{"name":"flowticket-api-config","key":"REDIS_PORT"}}}],
- "command":["sh","-c","redis-cli --tls -h \"$RHOST\" -p \"$RPORT\" --no-raw"]}]}}
+ "command":["sh","-c","redis-cli --tls --cacert /etc/ssl/certs/ca-certificates.crt -h \"$RHOST\" -p \"$RPORT\" --no-raw"]}]}}
 EOF
 )"
     # 한 줄에 EXISTS 하나. 결과는 줄마다 (integer) 0|1.
     sed 's/^/EXISTS dedup:order-event:/' "$D/published-ids.txt" \
       | kubectl run loadtest-check-redis -n "$NS" --rm -i --quiet --restart=Never --pod-running-timeout=5m \
-          --image=redis:7 --overrides="$REDIS_OVERRIDES" > "$D/dedup-exists.txt"
+          --image=redis:7-alpine --overrides="$REDIS_OVERRIDES" > "$D/dedup-exists.txt"
     n_found="$(grep -c '(integer) 1' "$D/dedup-exists.txt" || true)"
     n_answers="$(grep -c '(integer)' "$D/dedup-exists.txt" || true)"
     echo "published=$n_pub answered=$n_answers consumed=$n_found missing=$((n_pub - n_found))" > "$D/event-loss.txt"

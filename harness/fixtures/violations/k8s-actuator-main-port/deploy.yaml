@@ -1,0 +1,26 @@
+# 위반: 관리 포트가 메인 포트(8080)다 — 8080은 Next rewrite로 인터넷에서 닿아 /api/%61ctuator/prometheus 같은 인코딩 변형으로 actuator가 열린다(TS-041).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  selector:
+    matchLabels: { app: flowticket-api }
+  template:
+    metadata:
+      labels: { app: flowticket-api }
+    spec:
+      containers:
+        - name: api
+          image: flowticket-api:REPLACE_TAG
+          ports:
+            - { containerPort: 8080, name: http }
+            - { containerPort: 8081, name: management }
+          env:
+            - name: TZ
+              value: UTC
+            - name: MANAGEMENT_SERVER_PORT
+              value: "8080"
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }

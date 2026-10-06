@@ -210,7 +210,7 @@ say "3/7 Redis 클라이언트 지표 감시 시작"
   prev=""
   while :; do
     v="$(kubectl -n "$NS" exec deploy/flowticket-api -c api -- \
-      sh -c 'wget -qO- localhost:8080/actuator/prometheus 2>/dev/null \
+      sh -c 'wget -qO- localhost:8081/actuator/prometheus 2>/dev/null \
              | awk "/^lettuce_command_(completion|firstresponse)_seconds_count|^redis/ {print \$1\"=\"\$2}" \
              | sed "s/{[^}]*}//" | sort -u | tr "\n" " "' 2>/dev/null || true)"
     [ -n "$v" ] && [ "$v" != "$prev" ] && { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$v"; prev="$v"; }

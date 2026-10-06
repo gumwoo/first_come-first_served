@@ -1,0 +1,26 @@
+# 위반: probe가 관리 포트를 이름(port: management)으로 본다 — 경로는 /livez라 경로 검사로는 안 걸린다(TS-041).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  selector:
+    matchLabels: { app: flowticket-api }
+  template:
+    metadata:
+      labels: { app: flowticket-api }
+    spec:
+      containers:
+        - name: api
+          image: flowticket-api:REPLACE_TAG
+          ports:
+            - { containerPort: 8080, name: http }
+            - { containerPort: 8081, name: management }
+          env:
+            - name: TZ
+              value: UTC
+            - name: MANAGEMENT_SERVER_PORT
+              value: "8081"
+          livenessProbe:
+            httpGet: { path: /livez, port: management }

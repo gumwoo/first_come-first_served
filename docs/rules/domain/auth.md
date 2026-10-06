@@ -93,7 +93,9 @@
   refresh만 허용해 토큰 오용(refresh를 access로 사용 등)을 차단한다. (하네스 검사)
 
 ### 관측성 노출
-- actuator는 `health`/`info`만 공개하고 metrics/prometheus 등은 인증 필요 ★(정보 노출 방지).
+- actuator는 `health`(probe 그룹 포함)/`info`와 Prometheus 스크레이프용 `prometheus`만 permitAll, `metrics`·`env` 등은 인증 필요 ★(정보 노출 방지).
+  운영은 actuator를 관리 포트(8081)로 분리해 인터넷에서 닿는 메인 포트에 두지 않는다 — 경로 규칙으로는 인코딩 변형을 막지 못한다(TS-041).
+  K8s probe는 메인 포트의 `/livez`·`/readyz`를 쓴다.
 
 ### Refresh Token Rotation
 - `POST /auth/refresh` 성공 시 요청에 쓰인 Refresh Token은 즉시 사용 불가가 됨.

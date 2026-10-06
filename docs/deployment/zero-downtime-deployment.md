@@ -34,7 +34,7 @@
 | graceful shutdown | `application.yml` — `server.shutdown: graceful` |
 | 종료 유예 | `spring.lifecycle.timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}` |
 | probe 분리 | readiness=`readinessState,db,redis` / liveness=`livenessState` |
-| probe 인증 예외 | `SecurityConfig` — `/actuator/health/{liveness,readiness}` permitAll |
+| probe 인증 예외 | `SecurityConfig` — 메인 포트 `/livez`·`/readyz`(probe 추가 경로, TS-041) permitAll |
 | **SIGTERM 전달** | `apps/api/Dockerfile` — `ENTRYPOINT ["sh","-c","exec java ..."]` |
 | SSE 복원력 | `useOrder`·`useSeats`의 `onopen → refresh()` (TS-012) |
 
@@ -70,8 +70,8 @@ strategy:
     maxUnavailable: 0            # 새 Pod가 Ready가 된 뒤에 옛 Pod를 내린다
 terminationGracePeriodSeconds: 60
 containers:
-  - readinessProbe: { httpGet: { path: /actuator/health/readiness, port: 8080 } }
-    livenessProbe:  { httpGet: { path: /actuator/health/liveness,  port: 8080 } }
+  - readinessProbe: { httpGet: { path: /readyz, port: 8080 } }   # 메인 포트 — actuator는 관리 포트 8081(TS-041)
+    livenessProbe:  { httpGet: { path: /livez,  port: 8080 } }
     lifecycle:
       preStop: { exec: { command: ["sh", "-c", "sleep 10"] } }
 ```

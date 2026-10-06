@@ -41,7 +41,7 @@ ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+UseContainerSupport"
 
 # K8s는 probe로 상태를 보지만, compose·단독 실행에서도 준비 상태를 알 수 있게 헬스체크를 둔다.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=10 \
-  CMD curl -fsS http://localhost:8080/actuator/health/readiness || exit 1
+  CMD curl -fsS http://localhost:8080/readyz || exit 1
 
 # graceful shutdown이 동작하려면 JVM이 PID 1로 SIGTERM을 직접 받아야 한다(exec).
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

@@ -27,6 +27,8 @@ data:
   # 애플리케이션이 진행 중 요청을 마칠 시간. terminationGracePeriodSeconds보다 작아야
   # 한다. 크면 앱이 끝나기 전에 SIGKILL이 온다(무중단 배포가 깨지는 흔한 지점).
   SHUTDOWN_TIMEOUT: "30s"
+  # actuator를 일반 API 포트(8080)에서 떼어낸다 — 8080은 Next rewrite로 인터넷에서 닿는다(TS-041).
+  MANAGEMENT_SERVER_PORT: "8081"
 
   # ── 좌석맵 캐시 (실험 스위치) ───────────────────────────────
   # 성능 실험용 스위치다(IMP-020). 0 = 끔.

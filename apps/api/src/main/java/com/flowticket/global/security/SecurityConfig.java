@@ -70,11 +70,15 @@ public class SecurityConfig {
                         // 이 두 경로는 상태 문자열(UP/DOWN)만 돌려주므로 정보 노출 위험이 없다.
                         .requestMatchers("/actuator/health", "/actuator/health/liveness",
                                 "/actuator/health/readiness", "/actuator/info").permitAll()
+                        // 메인 포트의 probe 추가 경로(management.endpoint.health.probes.add-additional-paths).
+                        // K8s probe가 이 두 경로를 쓴다. 위 health 하위 그룹과 같은 상태 문자열만 돌려준다.
+                        .requestMatchers("/livez", "/readyz").permitAll()
                         // /actuator/prometheus만 추가로 연다. Prometheus는 Pod IP로 직접 긁는데
                         // 스크레이프에 인증 헤더를 붙이려면 자격증명을 관측 스택에 심어야 해서, 그쪽이
-                        // 오히려 노출 면이 넓다. 이 경로는 인터넷에서 도달할 수 없다: ALB Ingress는
-                        // web Service만 보고(하네스 k8s 규칙 2)·3)), Next rewrites도 /api·/oauth2만
-                        // 프록시한다(next.config.mjs). 즉 클러스터 내부에만 열린다.
+                        // 오히려 노출 면이 넓다. 공개 경로로 닿지 않게 하는 것은 이 규칙이 아니라 포트다:
+                        // 운영은 actuator를 관리 포트(8081)로 분리해 인터넷에서 닿는 8080에는 actuator가 없다.
+                        // (예전에는 "Next rewrites가 /api만 프록시하니 닿지 않는다"고 봤으나 /api/:path*가
+                        // /api/actuator/prometheus를 그대로 넘겨 외부에 열려 있었다 — TS-041.)
                         // /actuator/** 전체를 열면 안 된다. env·configprops에 시크릿이 실린다.
                         .requestMatchers("/actuator/prometheus").permitAll()
                         // 운영: 모든 /admin/** 은 ROLE_ADMIN 전용. 기존 admin 엔드포인트(KOPIS 동기화·좌석 시딩)도 포함.

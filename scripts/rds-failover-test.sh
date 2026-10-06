@@ -123,10 +123,10 @@ echo "    pod=$K6POD event=$EVENT_ID"
 # /actuator/metrics/{name} 은 이 앱에서 빈 응답을 준다. /actuator/prometheus 에는 hikaricp_* 지표가 나온다. 그쪽을 읽는다.
 say "2/6 HikariCP 감시 시작 (1초 간격)"
 HIKARI_OK="$(kubectl -n "$NS" exec deploy/flowticket-api -c api -- \
-  sh -c 'wget -qO- localhost:8080/actuator/prometheus 2>/dev/null | grep -c "^hikaricp_connections_active"' 2>/dev/null || echo 0)"
+  sh -c 'wget -qO- localhost:8081/actuator/prometheus 2>/dev/null | grep -c "^hikaricp_connections_active"' 2>/dev/null || echo 0)"
 [ "${HIKARI_OK:-0}" -gt 0 ] || {
   echo "HikariCP 지표를 읽지 못한다. 커넥션 풀 관찰 없이는 이 실험의 절반이 빈다. 중단한다." >&2
-  echo "  확인: kubectl -n $NS exec deploy/flowticket-api -c api -- wget -qO- localhost:8080/actuator/prometheus | grep hikaricp" >&2
+  echo "  확인: kubectl -n $NS exec deploy/flowticket-api -c api -- wget -qO- localhost:8081/actuator/prometheus | grep hikaricp" >&2
   exit 1; }
 # `exec deploy/...` 로 읽으면 안 된다. 매번 여러 파드 중 하나에 임의로 붙기 때문에,
 # 1초마다 다른 파드를 읽고도 같은 파드의 시계열처럼 보인다.
@@ -143,7 +143,7 @@ echo "    감시 대상 파드: $(echo "$API_PODS" | wc -w)개"
     TS="$(date -u +%H:%M:%SZ)"
     for p in $API_PODS; do
       v="$(kubectl -n "$NS" exec "$p" -c api -- \
-        sh -c 'wget -qO- localhost:8080/actuator/prometheus 2>/dev/null \
+        sh -c 'wget -qO- localhost:8081/actuator/prometheus 2>/dev/null \
                | awk "/^hikaricp_connections_(active|idle|pending|timeout_total)/ {print \$1\"=\"\$2}" \
                | sed "s/{[^}]*}//;s/hikaricp_connections_//" | tr "\n" " "' 2>/dev/null || true)"
       [ -n "$v" ] && [ "$v" != "${PREV[$p]:-}" ] && {

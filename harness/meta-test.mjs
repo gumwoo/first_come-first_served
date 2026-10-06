@@ -46,6 +46,8 @@ const cases = [
   { name: "k8s-orphan-externalsecret", script: "k8s/check.mjs", expect: "ExternalSecret이 적용되지 않는다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-orphan-externalsecret" } },
   { name: "k8s-hpa-replicas", script: "k8s/check.mjs", expect: "HPA가 소유하는 Deployment에 replicas가 있다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-hpa-replicas" } },
   { name: "k8s-no-tz-pin", script: "k8s/check.mjs", expect: "TZ가 고정돼 있지 않다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-no-tz-pin" } },
+  { name: "k8s-actuator-main-port", script: "k8s/check.mjs", expect: "actuator가 일반 API 포트에 있다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-actuator-main-port" } },
+  { name: "k8s-probe-on-management", script: "k8s/check.mjs", expect: "probe가 관리 포트를 본다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-probe-on-management" } },
   { name: "fe-missing-enum",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-enum" } },
   { name: "fe-bad-dep",          script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-bad-dep" } },
   { name: "fe-layer-breach",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },

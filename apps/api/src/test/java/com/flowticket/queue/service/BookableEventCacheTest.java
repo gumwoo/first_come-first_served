@@ -11,6 +11,7 @@ import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.error.BusinessException;
+import com.flowticket.global.error.ErrorCode;
 import com.flowticket.support.MutableClock;
 import java.time.Duration;
 import java.util.Optional;
@@ -30,7 +31,9 @@ class BookableEventCacheTest {
 
     @Test
     void TTL_0이면_매번_DB를_읽는다_지금까지와_같다() {
-        when(repo.findById(1L)).thenReturn(Optional.of(eventWith(EventStatus.ON_SALE)));
+        // stub 안에서 또 stub을 만들면(thenReturn 인자에서 eventWith 호출) Mockito가 미완성 stubbing으로 실패한다 — 먼저 만든다.
+        Event e = eventWith(EventStatus.ON_SALE);
+        when(repo.findById(1L)).thenReturn(Optional.of(e));
         BookableEventCache cache = new BookableEventCache(repo, clock, 0);
 
         cache.status(1L);
@@ -61,8 +64,10 @@ class BookableEventCacheTest {
         when(repo.findById(9L)).thenReturn(Optional.empty());
         BookableEventCache cache = new BookableEventCache(repo, clock, 1000);
 
-        assertThatThrownBy(() -> cache.status(9L)).isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> cache.status(9L)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> cache.status(9L)).isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.NOT_FOUND);
+        assertThatThrownBy(() -> cache.status(9L)).isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.NOT_FOUND);
 
         verify(repo, times(2)).findById(9L);
     }

@@ -130,7 +130,7 @@ public class QueueService {
      * 승격 워커가 그 집합을 1.5초마다 순회하므로, 임의의 id로 발급을 반복하면 Redis 키와
      * 순회 대상이 무한히 쌓인다.
      *
-     * 진입 경로에 DB 조회가 하나 늘어난다. 버스트에서는 진입 요청마다 그대로 DB 부하가 되어(측정: 2,000/s에서 Hikari 대기),
+     * 진입 경로에 DB 조회가 하나 늘어난다(측정: 진입 1건당 커넥션 획득 1.01회). 버스트에서는 진입 요청마다 그대로 DB 부하가 되어,
      * 짧은 TTL로 파드 메모리에 기억할 수 있게 했다(BookableEventCache — 기본은 꺼져 있어 매번 DB).
      */
     private void requireBookable(Long eventId) {

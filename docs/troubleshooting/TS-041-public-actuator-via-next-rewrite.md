@@ -4,7 +4,7 @@
 - 날짜: 2026-10-06
 - 유형: 보안 결함(정보 노출) — 신뢰 경계를 경로 규칙에 두었는데 그 전제가 틀렸다
 - 관련: `SecurityConfig`, `next.config.mjs`, `k8s/base/api-deployment.yaml`, `servicemonitor-api.yaml`, [[ADR-024]], [[IMP-024]]
-- 상태: **수정 중(두 릴리스)** — N: 앱(메인 포트 /livez·/readyz, 관리 포트 설정 자리) / N+1: 매니페스트(관리 포트 8081·probe·수집). 운영 반영 후 외부 404·내부 수집을 실측해 이 문서에 적는다
+- 상태: **해결** — N(#340)·N+1(#341)을 차례로 운영에 반영(2026-10-06), 외부 404·관리 포트 수집을 실측(§5)
 
 ## 1. 증상 (실측, 2026-10-06 운영)
 
@@ -63,8 +63,22 @@ Deployment 파드 템플릿의 env**에 둔다 — 포트와 probe가 한 템플
 
 ## 5. 검증
 
-- [ ] N: CI 통합 테스트(로컬 gradle 없음), 운영 반영 뒤 파드에서 `/livez`·`/readyz` 200(기존 probe는 그대로)
-- [ ] N+1 운영 반영 뒤: 외부 `/api/actuator/prometheus`·`/api/%61ctuator/prometheus` 404, Prometheus의 api 타깃 up·지표 수집 유지, 파드 probe 정상
+- [x] N(#340): CI 통합 테스트 통과(관리 포트 분리 5건 포함, 대기 단계에서 같은 포트 `/readyz` UP). 운영 반영(이미지 ef589a3) 뒤 파드 안에서
+  `/livez`·`/readyz` 200, 기존 `/actuator/health/liveness`·`/actuator/prometheus`(8080) 200 — 같은 포트라 동작 변화 없음, Prometheus api 타깃 3 up.
+- [x] N+1(#341): 이미지 22feb7b 동기화 → 롤아웃 완료 2초 뒤 `kubectl apply -k k8s/monitoring`. 실측(2026-10-06 13:03 UTC):
+
+  | 확인 | 결과 |
+  |---|---|
+  | 외부 `/api/actuator/prometheus`, `/api/%61ctuator/prometheus`, `/api/actuator/health` | **404**(반영 전 200) |
+  | 외부 `/api/livez`, `/api/readyz` | 200(상태 문자열) |
+  | 파드 8080 `/actuator/prometheus`·`/%61ctuator/prometheus` | 404 |
+  | 파드 8080 `/livez`·`/readyz` | 200 — probe가 이 경로로 통과(파드 3개 Ready) |
+  | 파드 8081 `/actuator/prometheus` / `/actuator/metrics` / `/actuator/health/readiness` | 200 / 401 / 200 |
+  | Prometheus api 타깃 | 3개 모두 `management`(8081) endpoint로 up, 마지막 수집 5~11초 전 |
+  | `tomcat_threads_busy_threads`의 `name` 라벨 | `http-nio-8080`만 — 관리 포트 톰캣이 요청 스레드 지표에 섞이지 않는다 |
+
+  롤아웃 중 새 파드를 옛 ServiceMonitor(`http` endpoint)로 긁은 `up=0` 시계열 3개가 남았다 — ServiceMonitor 적용 뒤 타깃이 사라져 lookback(5분) 뒤 없어진다.
+  수집 공백은 새 파드가 뜬 뒤 ServiceMonitor 적용까지(롤아웃 약 1.5분)였다(허용 — 측정 run 없음).
 
 ## 6. 남는 것
 

@@ -17,7 +17,7 @@ ALB가 경로 접두어를 떼지 못했기 때문이다 — Spring 매핑에는
 
 2025년 10월부터 ALB가 URL rewrite(정규식 치환)를 지원하고, AWS Load Balancer Controller는 v3.0부터 `alb.ingress.kubernetes.io/transforms.<서비스>` 주석으로 이를 건다
 ([공지](https://aws.amazon.com/about-aws/whats-new/2025/10/application-load-balancer-url-header-rewrite/), [컨트롤러 문서](https://kubernetes-sigs.github.io/aws-load-balancer-controller/latest/guide/tasks/url_rewrite/)).
-이 클러스터의 컨트롤러는 v3.5.0이다(측정 세션 기록 — 적용 PR에서 다시 확인).
+이 클러스터의 컨트롤러는 v3.5.0이다(2026-10-06 `public.ecr.aws/eks/aws-load-balancer-controller:v3.5.0` 이미지로 확인).
 
 ## 결정
 

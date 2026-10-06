@@ -31,6 +31,8 @@ _아직 측정 결과 없음 — 성능 슬라이스에서 k6 실행 후 자동 
 | 좌석맵 조회 API CPU(400 rps·90초) | 2.55 ms/req | **1.56 ms/req** | -39% | [IMP-020](IMP-020-seat-map-cache.md) · [요약](../../benchmarks/cache-experiment/RESULT.md) |
 | 좌석맵 조회 서버 p99(같은 구간) | 24.5 ms | **9.7 ms** | -60% | 〃 |
 | 캐시 hit 경로 트랜잭션 경계 개선 — DB 커넥션/요청<br>(둘 다 캐시 ON. tx 안 → tx 밖) | 1.005 회 | **0.025 회** | -97% | 〃 |
+| 대기열 진입 CPU(web+api, 공개 ALB 1,000/s·60초) | 3.04 ms/req | **1.08 ms/req** | -64.5% | [IMP-025](IMP-025-queue-path-next-hop-bypass.md) |
+| 대기열 진입 p95(같은 구간) | 157.5 ms | **15 ms** | -90% | 〃 |
 | 같은 구간 제한 허용량(약 640건) 대비 | **약 34배 초과** | 위반 없음 | — | [IMP-018](IMP-018-kopis-detail-hotpath-removal.md) |
 
 <!--

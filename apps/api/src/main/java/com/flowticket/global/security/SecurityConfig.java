@@ -76,7 +76,7 @@ public class SecurityConfig {
                         // /actuator/prometheus만 추가로 연다. Prometheus는 Pod IP로 직접 긁는데
                         // 스크레이프에 인증 헤더를 붙이려면 자격증명을 관측 스택에 심어야 해서, 그쪽이
                         // 오히려 노출 면이 넓다. 공개 경로로 닿지 않게 하는 것은 이 규칙이 아니라 포트다:
-                        // 운영은 actuator를 관리 포트(8081)로 분리해 인터넷에서 닿는 8080에는 actuator가 없다.
+                        // 운영은 actuator를 관리 포트(MANAGEMENT_SERVER_PORT)로 분리해 인터넷에서 닿는 메인 포트에는 actuator가 없게 한다.
                         // (예전에는 "Next rewrites가 /api만 프록시하니 닿지 않는다"고 봤으나 /api/:path*가
                         // /api/actuator/prometheus를 그대로 넘겨 외부에 열려 있었다 — TS-041.)
                         // /actuator/** 전체를 열면 안 된다. env·configprops에 시크릿이 실린다.

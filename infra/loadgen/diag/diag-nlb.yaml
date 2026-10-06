@@ -6,8 +6,8 @@
 #   flowticket-api-diag : 발생기 → NLB → api(:8080)                          요청 경로 /events/{id}/queue/token
 # 공개 ALB 경로(TLS 종단)와는 다르다 — 판정 run이 아니라 진단 run이다(계획서 §3.1의 "ALB → web → api 경로" 조건과 다름).
 #
-# 노출: 내부 NLB(scheme internal)이고 원본을 발생기 서브넷(퍼블릭 /24 셋)으로만 연다. api 직접 경로는 메인 포트(8080)의 permitAll
-# 경로(진입·상태·/livez 등)를 VPC 안 발생기에 연다 — actuator는 관리 포트(8081)라 닿지 않는다(TS-041). 세션이 끝나면 diag.sh nlb-down으로 지운다.
+# 노출: 내부 NLB(scheme internal)이고 원본을 발생기 서브넷(퍼블릭 /24 셋)으로만 연다. api 직접 경로는 /actuator/prometheus
+# 같은 공개 permitAll 경로도 VPC 안 발생기에 열린다 — 세션이 끝나면 diag.sh nlb-down으로 지운다.
 apiVersion: v1
 kind: Service
 metadata:

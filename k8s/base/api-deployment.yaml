@@ -37,10 +37,6 @@ spec:
           image: flowticket-api:REPLACE_TAG # kustomization.yaml의 images:가 덮어쓴다
           ports:
             - containerPort: 8080
-              name: http
-            # actuator 전용(ConfigMap MANAGEMENT_SERVER_PORT). Prometheus만 긁는다 — 인터넷에서 닿는 8080과 분리(TS-041).
-            - containerPort: 8081
-              name: management
           # 이 값을 바꾸면 이미 저장된 시각 데이터의 의미가 통째로 이동한다.
           # 엔티티는 LocalDateTime.now()(= 시스템 존의 벽시계)로 시각을 만들고, 응답 직렬화도
           # 같은 존으로 오프셋을 붙인다(JacksonConfig). 즉 "DB의 벽시계 = 컨테이너 존"이 전제다.
@@ -57,14 +53,12 @@ spec:
           # probe 경로는 application.yml의 health group과 한 쌍이다.
           #   readiness = readinessState, db, redis   (없으면 요청을 처리할 수 없는 의존성만)
           #   liveness  = livenessState               (외부 의존성 넣으면 DB 장애에 무한 재시작)
-          # /readyz·/livez는 그 그룹의 메인 포트(8080) 추가 경로다. 관리 포트(8081)로 옮기지 않는다 —
-          # 8081은 별도 톰캣이라 8080 요청 스레드가 포화돼도 성공해 버린다(아래 liveness 주석의 상황을 못 본다).
           readinessProbe:
-            httpGet: { path: /readyz, port: 8080 }
+            httpGet: { path: /actuator/health/readiness, port: 8080 }
             periodSeconds: 5
             failureThreshold: 3
           livenessProbe:
-            httpGet: { path: /livez, port: 8080 }
+            httpGet: { path: /actuator/health/liveness, port: 8080 }
             periodSeconds: 10
             # 12회(첫 실패 후 약 110초): health 요청도 진입 요청과 같은 톰캣 스레드 풀(200)에서 처리된다. 측정 세션
             # 20261005-1440의 S-10K 재시험에서 liveness가 시간 초과돼(기본 timeoutSeconds 1초) 첫 실패 후 약 20초 만에
@@ -76,7 +70,7 @@ spec:
           # 기동이 느린 JVM을 liveness가 죽이지 않게 startupProbe로 분리한다.
           # liveness의 initialDelay를 늘리는 방식은 기동 후에도 계속 느슨해진다.
           startupProbe:
-            httpGet: { path: /livez, port: 8080 }
+            httpGet: { path: /actuator/health/liveness, port: 8080 }
             periodSeconds: 5
             failureThreshold: 30 # 최대 150초
 
@@ -125,7 +119,3 @@ spec:
     - name: http
       port: 80
       targetPort: 8080
-    # Prometheus 스크레이프 전용(ServiceMonitor endpoints[].port: management). web의 rewrite는 80(→8080)만 쓴다.
-    - name: management
-      port: 8081
-      targetPort: 8081

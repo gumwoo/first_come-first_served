@@ -40,7 +40,7 @@ case "${1:-}" in
     [ -n "$a" ] && [ -n "$w" ] || { echo "5분 안에 NLB 주소가 나오지 않았다 — 'diag.sh nlb-status'·Service 이벤트를 본다" >&2; exit 1; }
     echo "api-direct=http://$a"
     echo "web-proxy=http://$w/api"
-    echo "주소가 나와도 연결까지 수 분 걸린다 — 발생기에서 api-direct/livez·web-proxy/events가 200인지 확인한 뒤 run을 건다."
+    echo "주소가 나와도 연결까지 수 분 걸린다 — 발생기에서 api-direct/actuator/health/liveness·web-proxy/events가 200인지 확인한 뒤 run을 건다."
     ;;
   nlb-status)
     kubectl -n "$NS" get svc -l flowticket.io/purpose=loadtest-diag -o wide

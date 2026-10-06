@@ -12,9 +12,9 @@ spec:
   namespaceSelector:
     matchNames: ["flowticket"]
   endpoints:
-    # Service 포트 이름으로 지정한다(번호가 아니다): k8s/base/api-deployment.yaml의 `name: management`(8081).
-    - port: management
+    # Service 포트 이름으로 지정한다(번호가 아니다): k8s/base/api-deployment.yaml의 `name: http`.
+    - port: http
       path: /actuator/prometheus
       interval: 15s
-      # 스크레이프는 인증 없이 나간다. SecurityConfig가 이 한 경로만 permitAll이다. 클러스터 내부 전용인 이유는
-      # 포트다 — actuator는 관리 포트(8081)에만 있고, 인터넷에서 닿는 경로(ALB → web → Next rewrite)는 8080만 쓴다(TS-041).
+      # 스크레이프는 인증 없이 나간다. SecurityConfig가 이 한 경로만 permitAll이고,
+      # ALB Ingress는 /actuator를 노출하지 않으므로(하네스 k8s 규칙 3)) 클러스터 내부 전용이다.

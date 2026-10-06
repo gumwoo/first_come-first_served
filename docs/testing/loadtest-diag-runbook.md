@@ -44,13 +44,13 @@
 | 동작 | 명령 |
 |---|---|
 | 만들기 | `infra/loadgen/diag/diag.sh nlb-up` → `api-direct=http://…`, `web-proxy=http://…/api` |
-| 확인 | 발생기에서 `curl http://<api-direct>/livez`, `curl http://<web-proxy>/events` 가 200 |
+| 확인 | 발생기에서 `curl http://<api-direct>/actuator/health/liveness`, `curl http://<web-proxy>/events` 가 200 |
 | 지우기 | `infra/loadgen/diag/diag.sh nlb-down` |
 
 - 두 경로 모두 내부 NLB·평문 HTTP·파드 IP 타깃이라 차이는 web(Next rewrite) 홉뿐이다. 원본은 발생기 서브넷(퍼블릭 /24 셋)으로만 연다.
 - 공개 ALB 경로(TLS 종단)와 다르므로 **진단 run**이다. 같은 세션에 "ALB → web" 연결 칸을 하나 넣어 NLB 결과가 ALB 결과와 같은 영역인지 확인한 뒤 해석한다.
-- api 직접 경로는 api 메인 포트(8080)의 permitAll 경로를 발생기에 연다 — 세션 끝에 반드시 지운다. actuator는 관리 포트(8081)로 분리돼
-  이 경로로 닿지 않는다(TS-041 — 그 전에는 공개 ALB의 `/api/actuator/prometheus`로도 200이 났다).
+- api 직접 경로는 api의 permitAll 경로 전부(actuator 포함)를 발생기에 연다 — 세션 끝에 반드시 지운다. (`/actuator/prometheus`는 이와 별개로
+  공개 ALB의 `/api/actuator/prometheus`로도 이미 200이 난다 — 이 runbook 범위 밖의 기존 노출.)
 - 주소가 나온 뒤에도 연결까지 수 분 걸린다(시연: 발생기에서 15초 간격 폴링 — 1차 17번째, 최종 스크립트 재시연 7번째 시도(`nlb-up` 후 약 2.5분)에 둘 다 200). 로드 밸런서 컨트롤러가 만든 프런트 SG는
   80번을 발생기 /24 셋에만 연다. 시연에서 로컬(VPC 밖) 접근은 000(내부 NLB라 사설 IP로만 풀린다).
 - 이 Service들은 Git(ArgoCD 추적 대상)에 없어서 자동 동기화·prune으로 지워지지 않는다(시연에서 확인) — 반드시 `nlb-down`으로 지운다.

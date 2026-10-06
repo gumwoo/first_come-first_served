@@ -4,7 +4,7 @@
 - 날짜: 2026-10-06
 - 유형: 보안 결함(정보 노출) — 신뢰 경계를 경로 규칙에 두었는데 그 전제가 틀렸다
 - 관련: `SecurityConfig`, `next.config.mjs`, `k8s/base/api-deployment.yaml`, `servicemonitor-api.yaml`, [[ADR-024]], [[IMP-024]]
-- 상태: **수정 PR** — 관리 포트 분리 + probe는 메인 포트 추가 경로. 운영 반영 후 외부 404·내부 수집을 실측해 이 문서에 적는다
+- 상태: **수정 중(두 릴리스)** — N: 앱(메인 포트 /livez·/readyz, 관리 포트 설정 자리) / N+1: 매니페스트(관리 포트 8081·probe·수집). 운영 반영 후 외부 404·내부 수집을 실측해 이 문서에 적는다
 
 ## 1. 증상 (실측, 2026-10-06 운영)
 
@@ -41,6 +41,10 @@ Next는 인코딩된 경로를 그대로 비교·전달하고, api(톰캣)는 `%
 
 ## 4. 조치
 
+**두 릴리스로 나눈다(Expand-Contract).** 새 probe(`/livez`)가 옛 이미지보다 먼저 적용되면 롤링이 멈추고, ConfigMap(관리 포트)을 먼저 읽은 옛 템플릿 파드는
+옛 probe 경로(`/actuator/health/*`:8080)가 404라 Ready가 안 된다. 그래서 N에서 앱이 두 방식을 모두 받게 만들고(경로 추가, 포트는 기본값 = 메인 포트 — 동작 변화 없음),
+N이 운영에 반영된 뒤 N+1에서 매니페스트를 바꾼다. ServiceMonitor는 ArgoCD 추적 밖(`kubectl apply -k k8s/monitoring`)이라 N+1 절차에 적용·수집 확인을 넣는다.
+
 **actuator를 관리 포트(8081)로 분리한다.** 인터넷에서 닿는 경로는 전부 메인 포트(8080, Service 80)로만 가므로 경로 표기와 무관하게 actuator에 닿지 않는다.
 
 - `application.yml`: `management.server.port: ${MANAGEMENT_SERVER_PORT:}` — 비우면 메인 포트와 같다(로컬·CI는 지금과 동일). 운영 ConfigMap에 `MANAGEMENT_SERVER_PORT: "8081"`.
@@ -48,14 +52,15 @@ Next는 인코딩된 경로를 그대로 비교·전달하고, api(톰캣)는 `%
 - **probe는 관리 포트로 옮기지 않는다.** 관리 포트는 별도 톰캣이라 8080 요청 스레드가 포화돼도 성공한다 — readiness는 요청을 못 받는 파드에
   트래픽을 계속 보내고, liveness는 멈춘 메인 포트를 놓친다([[IMP-024]]에서 겪은 상황). 대신 `management.endpoint.health.probes.add-additional-paths: true`로
   같은 health 그룹을 메인 포트의 `/livez`·`/readyz`에 내고 probe가 그 경로를 쓴다. 두 경로는 `SecurityConfig`에서 permitAll(상태 문자열만 응답).
-- 하네스 k8s 규칙 ⑩: ConfigMap에 `MANAGEMENT_SERVER_PORT`가 없거나 8080이면 실패, api probe가 관리 포트나 `/actuator` 경로를 보면 실패(위반 fixture 2개).
-- 통합 테스트(`ManagementPortIntegrationTest`): 메인 포트 `/actuator/prometheus`·`/%61ctuator/prometheus` 404, `/livez`·`/readyz` 200,
-  관리 포트 `/actuator/prometheus` 200, 관리 포트 `/actuator/metrics` 401.
+- (N+1) 하네스 k8s 규칙 ⑩: ConfigMap에 `MANAGEMENT_SERVER_PORT`가 없거나 8080이면 실패, api probe가 관리 포트나 `/actuator` 경로를 보면 실패(위반 fixture 2개).
+- 통합 테스트(`ManagementPortIntegrationTest`, N): 메인 포트 `/actuator/prometheus`·`/%61ctuator/prometheus` 404, `/livez`·`/readyz` 200,
+  관리 포트 `/actuator/prometheus` 200, 관리 포트 `/actuator/metrics` 401. `@SpringBootTest`는 메트릭 내보내기를 기본으로 꺼서
+  `@AutoConfigureObservability` 없이는 prometheus 엔드포인트가 없어 "메인 포트 404"가 분리와 무관하게 통과한다(첫 CI에서 관리 포트 200 단언이 404로 실패해 드러남).
 
 ## 5. 검증
 
-- [ ] CI 통합 테스트(로컬 gradle 없음)
-- [ ] 운영 반영 뒤: 외부 `/api/actuator/prometheus`·`/api/%61ctuator/prometheus` 404, Prometheus의 api 타깃 up·지표 수집 유지, 파드 probe 정상
+- [ ] N: CI 통합 테스트(로컬 gradle 없음), 운영 반영 뒤 파드에서 `/livez`·`/readyz` 200(기존 probe는 그대로)
+- [ ] N+1 운영 반영 뒤: 외부 `/api/actuator/prometheus`·`/api/%61ctuator/prometheus` 404, Prometheus의 api 타깃 up·지표 수집 유지, 파드 probe 정상
 
 ## 6. 남는 것
 

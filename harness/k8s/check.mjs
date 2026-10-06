@@ -60,7 +60,17 @@ for (const file of manifests) {
     );
   }
 
-  // 2) 공개 Ingress의 API Service 직결 — 아래 ⑩ 다음의 구조 검사(YAML 파싱)로 옮겼다(ADR-024).
+  // 2-a) api 직결 경로와 그 rewrite 주석은 base Ingress에서만 다룬다(ADR-024). 구조 검사(아래 ⑩ 다음)는 kind: Ingress
+  // 문서만 보므로, overlay kustomization의 patch 문자열로 경로를 더하거나 주석을 지우면 거기서는 안 보인다 —
+  // Ingress가 아닌 파일에서 flowticket-api backend나 transforms.flowticket-api가 나오면 실패로 둔다.
+  if (!/^\s*kind:\s*Ingress\s*$/m.test(raw)) {
+    if (/backend:[\s\S]{0,80}?name:\s*["']?flowticket-api\b/.test(raw) || /"name"\s*:\s*"flowticket-api"[\s\S]{0,40}?"port"/.test(raw)) {
+      r.fail(`Ingress 패치가 API Service 직결을 더한다: ${rel}. api 직결 경로는 base Ingress의 허용 목록에서만 둔다(ADR-024)`);
+    }
+    if (/transforms(?:\.|~1)flowticket-api/.test(raw)) {
+      r.fail(`Ingress 패치가 api rewrite 주석을 건드린다: ${rel}. 지우거나 바꾸면 진입·상태 조회가 api에서 404가 된다 — base Ingress에서만 다룬다(ADR-024)`);
+    }
+  }
 
   // 3) 공개 Ingress에 /actuator 경로를 열지 않는다
   // exposure에 metrics·prometheus가 포함돼 있어 인터넷에 관측 데이터가 열린다.
@@ -311,10 +321,22 @@ for (const { doc, file } of docs) {
         `없으면 Spring이 /api/... 를 받아 404가 된다(ADR-024)`
     );
   }
+  // ImplementationSpecific끼리는 매니페스트 순서가 우선순위다 — `/*` 같은 넓은 규칙이 api 직결 규칙보다 앞에 있으면 가린다.
+  paths.forEach((p, i) => {
+    if (p?.pathType !== "ImplementationSpecific" || p?.backend?.service?.name === "flowticket-api") return;
+    const re = new RegExp("^" + String(p.path ?? "").replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
+    const later = apiPaths.filter((a) => a.pathType === "ImplementationSpecific" && paths.indexOf(a) > i && re.test(a.path.replace(/\*/g, "1")));
+    if (later.length > 0) {
+      r.fail(
+        `Prefix 규칙이 api 직결 규칙을 가린다: ${rel} → ${p.path} (ImplementationSpecific)가 ${later.map((a) => a.path).join(", ")}보다 앞에 있다. ` +
+          `ImplementationSpecific끼리는 적은 순서대로 평가된다 — 넓은 기본 경로는 맨 뒤에(ADR-024)`
+      );
+    }
+  });
   for (const p of paths) {
     if (p?.pathType !== "Prefix") continue;
     const prefix = String(p.path ?? "");
-    const shadowed = apiPaths.filter((a) => a.pathType !== "Exact" && (prefix === "/" || a.path.startsWith(prefix)));
+    const shadowed = apiPaths.filter((a) => a !== p && a.pathType !== "Exact" && (prefix === "/" || a.path.startsWith(prefix)));
     if (shadowed.length > 0) {
       r.fail(
         `Prefix 규칙이 api 직결 규칙을 가린다: ${rel} → ${prefix} (Prefix)가 ${shadowed.map((a) => a.path).join(", ")}보다 먼저 평가된다. ` +

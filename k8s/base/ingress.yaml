@@ -27,7 +27,7 @@ metadata:
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     alb.ingress.kubernetes.io/certificate-arn: REPLACE_ACM_CERT_ARN
-    # 타깃그룹이 web 하나뿐이라 헬스체크 경로도 하나다.
+    # 이 값은 web 대상 그룹용이다. api 대상 그룹(대기열 두 경로, ADR-024)은 api Service 주석의 /readyz가 우선한다.
     # Next.js standalone에는 전용 헬스 엔드포인트가 없어 루트 응답으로 갈음한다.
     # "프로세스가 HTTP를 받는가"까지만 보는 것이고 그 이상은 확인하지 않는다.
     alb.ingress.kubernetes.io/healthcheck-path: /
@@ -35,9 +35,9 @@ metadata:
     alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=10
     # 대기열 진입·상태 두 경로만 api로 직접 보낸다(ADR-024). ALB는 경로 접두어를 떼지 못했으므로 URL rewrite로 /api를 뗀다
     # (컨트롤러 v2.14.1+ transforms, 키 = 백엔드 Service 이름). 정규식은 두 경로에만 맞는다 — 쿼리 문자열이 정규식 입력에
-    # 포함되는지 문서에 명시가 없어 끝을 .*로 둔다. 맞지 않으면 원래 경로가 그대로 가서 api가 /api/... 를 404로 낸다.
+    # 포함되는지 문서에 명시가 없어 끝에 선택적 쿼리([?].*)를 둔다. 맞지 않으면 원래 경로가 그대로 가서 api가 /api/... 를 404로 낸다.
     alb.ingress.kubernetes.io/transforms.flowticket-api: >-
-      [{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/api/(events/[0-9]+/queue/token.*|queue/status.*)$","replace":"/$1"}]}}]
+      [{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/api/(events/[0-9]+/queue/token|queue/status)([?].*)?$","replace":"/$1$2"}]}}]
 spec:
   ingressClassName: alb
   rules:

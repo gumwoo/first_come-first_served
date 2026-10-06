@@ -59,6 +59,25 @@ class QueueIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 신규_발급_응답의_상태_순번_전체수는_발급_직후_상태_조회와_같다() {
+        // 발급 Lua가 순번·전체 수를 함께 돌려준다(추가 Redis 왕복 없음). 예전처럼 따로 읽은 값과 같아야 한다.
+        var first = queueService.issue(41L, EVENT);
+        var second = queueService.issue(42L, EVENT);
+
+        assertThat(first.status()).isEqualTo("WAITING");
+        assertThat(first.rank()).isEqualTo(1);
+        assertThat(first.total()).isEqualTo(1); // 발급 시점의 전체 수
+        assertThat(second.status()).isEqualTo("WAITING");
+        assertThat(second.rank()).isEqualTo(2);
+        assertThat(second.total()).isEqualTo(2);
+
+        var status = queueService.status(second.token());
+        assertThat(status.status()).isEqualTo(second.status());
+        assertThat(status.rank()).isEqualTo(second.rank());
+        assertThat(status.total()).isEqualTo(second.total());
+    }
+
+    @Test
     void 발급은_유저키_대기ZSet_메타를_한꺼번에_남긴다() {
         // 예약(SET NX)과 대기열 등록이 한 Lua로 원자화돼 "유저키는 있는데 ZSet엔 없는" 부분 상태가
         // 남지 않는다. 발급 성공 시 아래 4가지가 모두 함께 존재해야 한다.

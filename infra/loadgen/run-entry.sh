@@ -12,13 +12,22 @@
 #   infra/loadgen/run-entry.sh --session 20261002-1400 --run step7-50k_constant-r1 --gen g1 \
 #     --base https://flow-ticket.com/api --event 1733 --users ~/tokens.json --users-n 25000 --offset 0 \
 #     --entry-seconds 10 --dist constant --sse-hold 300
+#
+# 분산 실행(발생기 G대가 한 run을 나눠 건다):
+#   --gens G를 주면 --users-n은 **전체** 사용자 수, --offset은 전체의 시작 인덱스다. 각 발생기는 --gen gK(K=1..G)로
+#   자기 몫을 계산한다 — 몫 = 전체/G(나머지는 마지막 발생기), 시작 = offset + (K−1)×(전체/G). --pre-vus·--max-vus는
+#   발생기 하나의 값이다.
+#   --start-at(UTC ISO)을 주면 k6 setup()이 그 시각까지 기다렸다가 도착을 시작한다(VU 할당이 끝난 뒤 장벽).
+#   모든 발생기에 같은 --start-at을 준다. 이미 지난 시각이면 그 발생기는 시작하지 않는다.
+#   scripts/loadtest/loadgen.sh exec -- 'infra/loadgen/run-entry.sh ... --gen $GEN --gens 3 --start-at 2026-10-07T01:00:00Z'
+#   --print-plan: 계산한 몫(gen·usersN·offset·startAt)만 JSON 한 줄로 내고 끝낸다(실행 전 확인·테스트용).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
 SESSION="" RUN="" GEN="g1" BASE="" EVENT="" USERS="" USERS_N="" OFFSET=0
-ENTRY_SECONDS=10 DIST=constant SSE_HOLD=300 PRE_VUS="" MAX_VUS="" NO_SSE=0
+ENTRY_SECONDS=10 DIST=constant SSE_HOLD=300 PRE_VUS="" MAX_VUS="" NO_SSE=0 GENS="" START_AT="" PRINT_PLAN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --session) SESSION="$2"; shift 2 ;;
@@ -35,6 +44,9 @@ while [ $# -gt 0 ]; do
     --pre-vus) PRE_VUS="$2"; shift 2 ;;
     --max-vus) MAX_VUS="$2"; shift 2 ;;
     --no-sse) NO_SSE=1; shift ;;
+    --gens) GENS="$2"; shift 2 ;;
+    --start-at) START_AT="$2"; shift 2 ;;
+    --print-plan) PRINT_PLAN=1; shift ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2 ;;
   esac
 done
@@ -51,6 +63,32 @@ done
 # 앞자리 0(예: 08)은 JSON 숫자가 아니다. 10진수로 정규화한다.
 USERS_N=$((10#$USERS_N)); ENTRY_SECONDS=$((10#$ENTRY_SECONDS)); OFFSET=$((10#$OFFSET)); SSE_HOLD=$((10#$SSE_HOLD))
 
+# 분산 실행이면 전체 사용자 수와 시작 인덱스에서 이 발생기의 몫을 계산한다.
+USERS_TOTAL=$USERS_N OFFSET_BASE=$OFFSET
+if [ -n "$GENS" ]; then
+  case "$GENS" in ""|*[!0-9]*) echo "--gens는 정수여야 한다: $GENS" >&2; exit 2 ;; esac
+  GENS=$((10#$GENS))
+  [[ "$GEN" =~ ^g([0-9]+)$ ]] || { echo "--gens를 쓸 때 --gen은 gK 형식이어야 한다: $GEN" >&2; exit 2; }
+  K=$((10#${BASH_REMATCH[1]}))
+  [ "$GENS" -ge 1 ] && [ "$K" -ge 1 ] && [ "$K" -le "$GENS" ] || { echo "--gen $GEN이 --gens $GENS 범위 밖이다" >&2; exit 2; }
+  SHARE=$((USERS_TOTAL / GENS))
+  OFFSET=$((OFFSET_BASE + (K - 1) * SHARE))
+  USERS_N=$SHARE
+  [ "$K" -eq "$GENS" ] && USERS_N=$((USERS_TOTAL - (GENS - 1) * SHARE))
+  [ "$USERS_N" -gt 0 ] || { echo "발생기 몫이 0이다(전체 $USERS_TOTAL, 발생기 $GENS)" >&2; exit 2; }
+fi
+if [ -n "$START_AT" ]; then
+  [[ "$START_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] || {
+    echo "--start-at은 UTC ISO(YYYY-MM-DDTHH:MM:SSZ)여야 한다: $START_AT" >&2; exit 2; }
+fi
+
+if [ "$PRINT_PLAN" = 1 ]; then
+  SA=null; [ -n "$START_AT" ] && SA="\"$START_AT\""
+  printf '{"gen":"%s","gens":%s,"usersN":%s,"offset":%s,"usersTotal":%s,"startAt":%s}\n' \
+    "$GEN" "${GENS:-null}" "$USERS_N" "$OFFSET" "$USERS_TOTAL" "$SA"
+  exit 0
+fi
+
 OUT="$ROOT/artifacts/loadtest/$SESSION/$RUN"
 mkdir -p "$OUT"
 [ -e "$OUT/meta-$GEN.json" ] && { echo "이미 있는 run이다: $OUT/meta-$GEN.json — 회차 번호를 올린다" >&2; exit 1; }
@@ -64,7 +102,9 @@ cat > "$OUT/meta-$GEN.json" <<EOF
   "startedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "base": "$BASE", "event": "$EVENT", "dist": "$DIST", "usersN": $USERS_N, "offset": $OFFSET,
   "entrySeconds": $ENTRY_SECONDS, "sseHoldSeconds": $SSE_HOLD, "sse": $([ "$NO_SSE" = 1 ] && echo false || echo true),
-  "preVus": "${PRE_VUS:-default}", "maxVus": "${MAX_VUS:-default}"
+  "preVus": "${PRE_VUS:-default}", "maxVus": "${MAX_VUS:-default}",
+  "gens": ${GENS:-null}, "usersTotal": $USERS_TOTAL, "offsetBase": $OFFSET_BASE, "startAt": $([ -n "$START_AT" ] && echo "\"$START_AT\"" || echo null),
+  "clockSync": "$( (chronyc tracking 2>/dev/null | grep -E 'System time|Leap status' | tr -s ' ' | tr '\n' ';') || echo unknown)"
 }
 EOF
 
@@ -82,6 +122,7 @@ K6_ARGS=(run --log-format=raw
   --out json="$OUT/entry-$GEN.json" --summary-export="$OUT/k6-summary-$GEN.json")
 [ -n "$PRE_VUS" ] && K6_ARGS+=(-e PRE_VUS="$PRE_VUS")
 [ -n "$MAX_VUS" ] && K6_ARGS+=(-e MAX_VUS="$MAX_VUS")
+[ -n "$START_AT" ] && K6_ARGS+=(-e START_AT="$START_AT")
 
 # k6가 중단·실패로 끝나도 그때까지의 원시 출력으로 지표는 계산해 둔다. 종료 코드는 마지막에 돌려준다.
 set +e

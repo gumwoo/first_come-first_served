@@ -19,6 +19,10 @@
 // 진입 iteration 안에서 SSE를 붙들지 않는다. 붙들면 VU가 대기 내내 묶여 발생기가 먼저 무너진다.
 //
 // 분산 실행: 발생기 G대가 나눠 걸 때 각자 USERS_N = 전체/G, USER_OFFSET = 자기 몫의 시작 인덱스.
+// 동시 시작(START_AT, UTC ISO): 발생기마다 VU 사전 할당·토큰 파일 파싱에 걸리는 시간이 달라 "명령을 같이 보낸다"로는
+// 첫 도착이 어긋난다. setup()은 init(VU 할당)이 모두 끝난 뒤, 시나리오 시작 직전에 한 번 돈다 — 여기서 START_AT까지
+// 기다리면 init 시간과 무관하게 같은 벽시계 시각에 도착이 시작된다(발생기 시계가 같은 시간 동기화를 쓴다는 전제).
+// START_AT이 이미 지났으면 시작하지 않는다(늦게 시작한 발생기가 섞이면 합친 도착 곡선이 목표와 다르다).
 //
 // 실행. 새 옵션 이름에는 K6_ 접두사를 쓰지 않는다(README "⚠️" 참고). K6_BASE_URL은 k6 옵션이 아니라
 // 이 저장소 스크립트들이 함께 쓰는 기존 이름이라 그대로 둔다.
@@ -26,7 +30,7 @@
 //   k6 run -e K6_BASE_URL=... -e EVENT_ID=1733 -e USERS=/abs/path/tokens.json -e USERS_N=10000 \
 //          -e DIST=constant --out json=entry.json infra/k6/queue-entry-rate.js
 import http from "k6/http";
-import { check } from "k6";
+import { check, sleep } from "k6";
 import exec from "k6/execution";
 import { SharedArray } from "k6/data";
 import { Counter } from "k6/metrics";
@@ -37,6 +41,10 @@ const DIST = __ENV.DIST || "constant";
 const ENTRY_SECONDS = Number(__ENV.ENTRY_SECONDS || 10);
 const USER_OFFSET = Number(__ENV.USER_OFFSET || 0);
 const EMIT_TOKENS = __ENV.EMIT_TOKENS === "1";
+const START_AT = __ENV.START_AT ? Date.parse(__ENV.START_AT) : null;
+if (__ENV.START_AT && !Number.isFinite(START_AT)) throw new Error(`START_AT을 읽지 못했다: ${__ENV.START_AT}`);
+// setup()이 START_AT까지 기다릴 수 있는 상한. 넘으면 k6가 setup 시간 초과로 끝난다(시작 안 함).
+const SETUP_TIMEOUT = __ENV.SETUP_TIMEOUT || "900s";
 
 // open()은 init 컨텍스트에서 VU마다 실행된다. SharedArray로 한 번만 파싱해 VU가 공유한다(spike-queue.js 참고).
 if (!__ENV.USERS) throw new Error("USERS(사용자 토큰 파일의 절대경로)가 필요하다");
@@ -73,6 +81,7 @@ function scenario() {
 
 export const options = {
   scenarios: { entry: scenario() },
+  setupTimeout: SETUP_TIMEOUT,
   thresholds: {}, // 판정은 계획서 §3이 한다. 여기서 실패 표시를 내면 판정과 섞인다.
   summaryTrendStats: ["avg", "p(50)", "p(95)", "p(99)", "max"],
 };
@@ -84,6 +93,14 @@ const arrivals = new Counter("entry_arrivals");
 const processed = new Counter("entry_processed");
 // 준비한 사용자보다 iteration이 많아진 경우(분포 반올림). 0이 아니면 그만큼 도착이 덜 나갔다.
 const noUser = new Counter("entry_no_user");
+
+// 동시 시작 장벽. START_AT이 없으면 바로 시작한다(단일 발생기 기존 동작).
+export function setup() {
+  if (START_AT === null) return;
+  const waitMs = START_AT - Date.now();
+  if (waitMs < 0) throw new Error(`START_AT이 이미 ${-waitMs}ms 지났다 — 이 발생기는 시작하지 않는다`);
+  sleep(waitMs / 1000);
+}
 
 export default function () {
   const i = exec.scenario.iterationInTest;

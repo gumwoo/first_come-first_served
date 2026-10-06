@@ -60,17 +60,7 @@ for (const file of manifests) {
     );
   }
 
-  // 2-a) api 직결 경로와 그 rewrite 주석은 base Ingress에서만 다룬다(ADR-024). 구조 검사(아래 ⑩ 다음)는 kind: Ingress
-  // 문서만 보므로, overlay kustomization의 patch 문자열로 경로를 더하거나 주석을 지우면 거기서는 안 보인다 —
-  // Ingress가 아닌 파일에서 flowticket-api backend나 transforms.flowticket-api가 나오면 실패로 둔다.
-  if (!/^\s*kind:\s*Ingress\s*$/m.test(raw)) {
-    if (/backend:[\s\S]{0,80}?name:\s*["']?flowticket-api\b/.test(raw) || /"name"\s*:\s*"flowticket-api"[\s\S]{0,40}?"port"/.test(raw)) {
-      r.fail(`Ingress 패치가 API Service 직결을 더한다: ${rel}. api 직결 경로는 base Ingress의 허용 목록에서만 둔다(ADR-024)`);
-    }
-    if (/transforms(?:\.|~1)flowticket-api/.test(raw)) {
-      r.fail(`Ingress 패치가 api rewrite 주석을 건드린다: ${rel}. 지우거나 바꾸면 진입·상태 조회가 api에서 404가 된다 — base Ingress에서만 다룬다(ADR-024)`);
-    }
-  }
+  // 2) 공개 Ingress의 API Service 직결 — 아래 ⑩ 다음의 구조 검사(YAML 파싱, 2·2-b)로 옮겼다(ADR-024).
 
   // 3) 공개 Ingress에 /actuator 경로를 열지 않는다
   // exposure에 metrics·prometheus가 포함돼 있어 인터넷에 관측 데이터가 열린다.
@@ -328,7 +318,7 @@ for (const { doc, file } of docs) {
     const later = apiPaths.filter((a) => a.pathType === "ImplementationSpecific" && paths.indexOf(a) > i && re.test(a.path.replace(/\*/g, "1")));
     if (later.length > 0) {
       r.fail(
-        `Prefix 규칙이 api 직결 규칙을 가린다: ${rel} → ${p.path} (ImplementationSpecific)가 ${later.map((a) => a.path).join(", ")}보다 앞에 있다. ` +
+        `ImplementationSpecific 규칙이 api 직결 규칙을 가린다: ${rel} → ${p.path}가 ${later.map((a) => a.path).join(", ")}보다 앞에 있다. ` +
           `ImplementationSpecific끼리는 적은 순서대로 평가된다 — 넓은 기본 경로는 맨 뒤에(ADR-024)`
       );
     }
@@ -343,6 +333,62 @@ for (const { doc, file } of docs) {
           `컨트롤러는 Prefix를 ImplementationSpecific보다 앞에 둬 요청이 오류 없이 다른 백엔드로 간다 — 기본 경로는 ImplementationSpecific /*로 맨 뒤에(ADR-024)`
       );
     }
+  }
+}
+
+// ---------- 2-b) Ingress를 바꾸는 overlay 패치는 허용 목록만 — ADR-024 ----------
+//
+// 위 구조 검사는 kind: Ingress 문서만 본다. overlay kustomization의 패치(JSON6902·인라인 SMP·파일 참조)로 경로를 더하거나
+// 백엔드를 바꾸거나 rewrite 주석을 지우면 거기서는 안 보인다. 패치 표기는 여러 가지라 문자열로 하나씩 막지 않고,
+// YAML로 읽어 허용 목록으로 판단한다: Ingress는 base 한 파일에서만 정의하고, overlay는 인증서 ARN 주석의 add/replace만 한다.
+const INGRESS_PATCH_ALLOWED_PATHS = new Set(["/metadata/annotations/alb.ingress.kubernetes.io~1certificate-arn"]);
+const ingressFiles = [...new Set(docs.filter((d) => d.doc.kind === "Ingress").map((d) => path.relative(REPO_ROOT, d.file)))];
+if (ingressFiles.length > 1) {
+  r.fail(
+    `Ingress를 정의하는 파일이 여럿이다: ${ingressFiles.join(", ")}. base 한 곳에서만 정의한다 — 다른 파일(전략적 병합 패치 등)이 ` +
+      `경로·백엔드·rewrite 주석을 덮으면 하네스 규칙 2가 보지 못한다(ADR-024)`
+  );
+}
+for (const { doc, file } of docs) {
+  if (doc.kind !== "Kustomization") continue;
+  const rel = path.relative(REPO_ROOT, file);
+  const bad = (why) =>
+    r.fail(
+      `Ingress 패치가 허용 목록 밖이다: ${rel} → ${why}. overlay는 인증서 ARN 주석(certificate-arn)의 add/replace만 한다 — ` +
+        `경로·백엔드·rewrite 주석은 base Ingress에서만 바꾼다(ADR-024)`
+    );
+  for (const e of [...(doc.patches ?? []), ...(doc.patchesJson6902 ?? [])]) {
+    let parsed;
+    if (typeof e?.patch === "string") {
+      try {
+        parsed = yaml.load(e.patch);
+      } catch {
+        parsed = undefined;
+      }
+    }
+    const isIngress = e?.target?.kind === "Ingress" || (parsed && !Array.isArray(parsed) && parsed.kind === "Ingress");
+    if (!isIngress) continue;
+    if (typeof e?.patch !== "string") {
+      bad(`파일 참조 패치(${e?.path ?? "?"})`);
+      continue;
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      bad("전략적 병합 패치(Ingress 문서 덮어쓰기)");
+      continue;
+    }
+    for (const op of parsed) {
+      if (!INGRESS_PATCH_ALLOWED_PATHS.has(op?.path) || !["add", "replace"].includes(op?.op)) bad(`${op?.op} ${op?.path}`);
+    }
+  }
+  for (const smp of doc.patchesStrategicMerge ?? []) {
+    if (typeof smp !== "string" || !smp.includes("\n")) continue; // 파일 참조는 그 파일이 Ingress면 위의 '파일이 여럿' 검사가 잡는다
+    let parsed;
+    try {
+      parsed = yaml.load(smp);
+    } catch {
+      continue;
+    }
+    if (parsed?.kind === "Ingress") bad("인라인 전략적 병합 패치(patchesStrategicMerge)");
   }
 }
 

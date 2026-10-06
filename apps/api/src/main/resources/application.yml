@@ -130,7 +130,7 @@ management:
       # /actuator/health/liveness · /actuator/health/readiness 노출.
       probes:
         enabled: true
-        # 같은 그룹을 메인 포트(8080)의 /livez · /readyz로도 낸다. K8s probe는 이 경로를 쓴다.
+        # 같은 그룹을 메인 포트(8080)의 /livez · /readyz로도 낸다. K8s probe는 관리 포트를 분리하는 매니페스트 릴리스부터 이 경로를 쓴다.
         # probe를 관리 포트(8081, 별도 톰캣)로 옮기면 8080 요청 스레드가 포화돼도 probe가 계속 성공해
         # 요청을 못 받는 파드에 트래픽이 가고(readiness) 멈춘 메인 포트를 놓친다(liveness, IMP-024 참고).
         add-additional-paths: true

@@ -41,9 +41,12 @@ Next는 인코딩된 경로를 그대로 비교·전달하고, api(톰캣)는 `%
 
 ## 4. 조치
 
-**두 릴리스로 나눈다(Expand-Contract).** 새 probe(`/livez`)가 옛 이미지보다 먼저 적용되면 롤링이 멈추고, ConfigMap(관리 포트)을 먼저 읽은 옛 템플릿 파드는
-옛 probe 경로(`/actuator/health/*`:8080)가 404라 Ready가 안 된다. 그래서 N에서 앱이 두 방식을 모두 받게 만들고(경로 추가, 포트는 기본값 = 메인 포트 — 동작 변화 없음),
-N이 운영에 반영된 뒤 N+1에서 매니페스트를 바꾼다. ServiceMonitor는 ArgoCD 추적 밖(`kubectl apply -k k8s/monitoring`)이라 N+1 절차에 적용·수집 확인을 넣는다.
+**두 릴리스로 나눈다(Expand-Contract).** 새 probe(`/livez`)가 옛 이미지보다 먼저 적용되면 새 파드가 Ready가 안 돼 롤링이 멈춘다.
+N에서 앱이 두 방식을 모두 받게 만들고(경로 추가, 포트는 기본값 = 메인 포트 — 동작 변화 없음) 운영에 반영한 뒤 N+1에서 매니페스트를 바꾼다.
+**N이 없애는 것은 "새 probe + 옛 이미지" 조합 하나뿐이다.** 관리 포트 값을 고정 이름 ConfigMap에 넣으면 "옛 템플릿 파드 + 새 ConfigMap"(관리 포트 8081을 읽었는데
+probe는 옛 `/actuator/health/*`:8080 → 404 → 재시작 반복)과 "새 템플릿 + 옛 ConfigMap"(probe는 통과하지만 8080에 actuator가 남아 조용히 열린 채)이
+이미지와 무관하게 생길 수 있다 — 롤아웃 중 옛 ReplicaSet 컨테이너 재시작·HPA 스케일·부분 동기화에서. 이 조합은 N+1 설계로 막는다(포트 값을 probe와 같은
+Deployment 템플릿에 두는 등, N+1 PR에서 결정). ServiceMonitor는 ArgoCD 추적 밖(`kubectl apply -k k8s/monitoring`)이라 N+1 절차에 적용·수집 확인을 넣는다.
 
 **actuator를 관리 포트(8081)로 분리한다.** 인터넷에서 닿는 경로는 전부 메인 포트(8080, Service 80)로만 가므로 경로 표기와 무관하게 actuator에 닿지 않는다.
 

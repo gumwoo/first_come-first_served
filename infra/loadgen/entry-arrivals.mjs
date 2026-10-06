@@ -18,13 +18,23 @@
 // 진입까지의 ms 간격을 쓴다. --users-n을 주면 목표 대비 부족분(도착률 반올림 등)도 낸다.
 //
 //   node infra/loadgen/entry-arrivals.mjs --entry-seconds 10 --users-n 25000 entry-g1.json [entry-g2.json ...]
+//
+// 고정 창(--t0, UTC ISO): 시험 전에 정한 창 [T0, T0 + 진입 시간)에 들어온 도착만 따로 센다. 결과를 본 뒤 가장 잘 나온
+// 창을 고르지 않기 위해서다. T0는 분산 발생기에 준 공통 START_AT이다. T0 기준 1초 bucket(0..진입시간−1)과, 목표 도착률
+// (users-n / entry-seconds) 대비 ±--rate-tolerance-pct 밖 bucket을 낸다. 발생기별 첫 도착 시각과 그 차이(시작 어긋남)도
+// 낸다. 이것은 발생기가 "보낸" 시각이다 — 서버가 받은 시각의 증거(ALB access log)는 따로 남긴다.
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
 
 const { values: opts, positionals: files } = parseArgs({
   allowPositionals: true,
-  options: { "entry-seconds": { type: "string" }, "users-n": { type: "string" } },
+  options: {
+    "entry-seconds": { type: "string" },
+    "users-n": { type: "string" },
+    t0: { type: "string" },
+    "rate-tolerance-pct": { type: "string" },
+  },
 });
 if (files.length === 0) {
   console.error("사용: entry-arrivals.mjs [--entry-seconds 초] [--users-n 목표 사용자 수] <k6 --out json 파일> [...]");
@@ -36,6 +46,17 @@ const perSecond = new Map(); // epoch 초 → 그 초에 시작된 진입 수
 let firstMs = Infinity;
 let malformedLines = 0; // 강제 종료로 잘린 줄
 let lastMs = -Infinity;
+const t0 = opts.t0 ? Date.parse(opts.t0) : null;
+if (opts.t0 && !Number.isFinite(t0)) {
+  console.error(`--t0을 읽지 못했다: ${opts.t0}`);
+  process.exit(2);
+}
+if (t0 !== null && !opts["entry-seconds"]) {
+  console.error("--t0을 쓰려면 --entry-seconds가 필요하다(창 길이)");
+  process.exit(2);
+}
+const firstByFile = new Map(); // 파일(발생기) → 첫 도착 ms
+const arrivalMs = []; // [ms, value] — 고정 창 계산용
 
 for (const f of files) {
   const rl = createInterface({ input: createReadStream(f), crlfDelay: Infinity });
@@ -59,6 +80,8 @@ for (const f of files) {
       perSecond.set(sec, (perSecond.get(sec) || 0) + p.data.value);
       firstMs = Math.min(firstMs, ms);
       lastMs = Math.max(lastMs, ms);
+      if (!firstByFile.has(f) || ms < firstByFile.get(f)) firstByFile.set(f, ms);
+      if (t0 !== null) arrivalMs.push([ms, p.data.value]);
     }
   }
 }
@@ -71,6 +94,48 @@ const entrySeconds = opts["entry-seconds"] ? Number(opts["entry-seconds"]) : nul
 const denominator = entrySeconds ?? spanSeconds;
 const usersN = opts["users-n"] ? Number(opts["users-n"]) : null;
 const offered = sums.entry_arrivals + sums.entry_no_user + sums.dropped_iterations;
+
+// 발생기별 첫 도착과 시작 어긋남(가장 이른 첫 도착 대비).
+const firsts = [...firstByFile.entries()].map(([file, ms]) => ({ file, firstArrival: new Date(ms).toISOString() }));
+const firstVals = [...firstByFile.values()];
+const startSkewMs = firstVals.length > 1 ? Math.max(...firstVals) - Math.min(...firstVals) : 0;
+
+// 고정 창 [T0, T0 + entrySeconds)
+let window = null;
+if (t0 !== null) {
+  const endMs = t0 + entrySeconds * 1000;
+  const buckets = Array.from({ length: entrySeconds }, () => 0);
+  let inWindow = 0;
+  let before = 0;
+  let after = 0;
+  for (const [ms, v] of arrivalMs) {
+    if (ms < t0) before += v;
+    else if (ms >= endMs) after += v;
+    else {
+      inWindow += v;
+      buckets[Math.floor((ms - t0) / 1000)] += v;
+    }
+  }
+  const targetRate = usersN != null ? usersN / entrySeconds : null;
+  const tolPct = opts["rate-tolerance-pct"] != null ? Number(opts["rate-tolerance-pct"]) : null;
+  const outOfTolerance =
+    targetRate != null && tolPct != null
+      ? buckets
+          .map((n, i) => ({ bucket: i, arrivals: n, deviationPct: ((n - targetRate) / targetRate) * 100 }))
+          .filter((b) => Math.abs(b.deviationPct) > tolPct)
+      : null;
+  window = {
+    t0: new Date(t0).toISOString(),
+    end: new Date(endMs).toISOString(),
+    arrivalsInWindow: inWindow,
+    arrivalsBeforeT0: before,
+    arrivalsAfterWindow: after,
+    targetRatePerSecond: targetRate,
+    rateTolerancePct: tolPct,
+    perSecondFromT0: buckets,
+    bucketsOutOfTolerance: outOfTolerance,
+  };
+}
 
 const result = {
   files,
@@ -89,6 +154,9 @@ const result = {
   averageArrivalsPerSecond: denominator ? sums.entry_arrivals / denominator : 0,
   averageDenominator: entrySeconds != null ? "entry-seconds" : "first-to-last-arrival",
   peak1sArrivals: peak,
+  generators: firsts,
+  generatorStartSkewMs: startSkewMs,
+  window,
   // 첫·마지막 1초 창은 부분 구간일 수 있다. peak 해석 때 함께 본다.
   perSecond: series,
 };

@@ -1,14 +1,9 @@
 # web 수평 확장. 600 rps 실측에서 첫 실패 지점이 web 티어였다(ALB → web target 구간,
 # ELB_5XX == TargetConnectionError, Target_5XX 0). api만 늘려도 앞단 web이 막히면 502가 난다.
 #
-# 노드 예산: allocatable 5,790m 안에서 api·web이 동시에 최대로 갈 수 없다.
-#   api 7×300 + web 4×300 + 기타 1,650 = 4,950m (85%)
-#
-# 롤링 배포 surge까지 보면 여유가 얇다. 둘 다 maxSurge=1 / maxUnavailable=0 이므로
-# 최악의 경우(양쪽이 최대 상태에서 동시에 롤링) +600m이 더 붙는다.
-#   4,950 + 600 = 5,550m / 5,790m  → 남는 여유 240m
-# 다른 Pod의 requests가 조금만 늘어도 바로 빡빡해진다. 새 워크로드를 얹기 전에 이 계산을
-# 다시 해야 한다.
+# 노드 예산(ADR-025 이후): api는 requests 1000m로 노드당 하나라 노드 수를 정하고(CA), web은 그 노드들의 남는 자리에 들어간다.
+# 평상시(api 3·노드 3): api 3×1000 + web 2×300 + 기타 약 1,760(측정 세션 20261007-e2e, 노드별 410~750m) = 5,360m / 5,790m(계산값).
+# web이 4로 늘거나 롤링 surge(api +1000m)가 겹치면 남는 자리가 없어 CA가 노드를 붙인다 — 노드 3대 안에 가두던 이전 예산식은 더 쓰지 않는다.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:

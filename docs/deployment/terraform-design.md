@@ -239,7 +239,7 @@ allocatable 5,790m
   롤링 surge(+600m) 포함 5,550m / 5,790m — 여유 240m
 ```
 
-`api maxReplicas` 9→7이 그 계산의 결과다(`k8s/base/web-hpa.yaml`). 즉 **초과 구간에
+`api maxReplicas` 9→7이 그 계산의 결과다(`k8s/base/web-hpa.yaml`). (2026-10-07 [[ADR-025]]: api 요청 1000m·HPA 3~9로 바뀌어 이 예산식은 더 쓰지 않는다 — api 확장은 CA 노드 확장으로 이어진다.) 즉 **초과 구간에
 들어가지 않도록 상한을 정한 것**이지 노드가 붙는 것이 아니다. 예산을 넘는 부하를 재려면
 노드그룹 `desired`를 손으로 올리거나 CA를 도입해야 한다.
 

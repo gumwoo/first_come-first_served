@@ -27,7 +27,7 @@
 | 동작 | 명령 |
 |---|---|
 | 고정 | `kubectl patch hpa flowticket-api -n flowticket --type merge -p '{"spec":{"minReplicas":N,"maxReplicas":N}}'` (web도 같은 방식) |
-| 원복 | 수동 동기화(위 0) — 매니페스트 값(api 3–7, web 2–4)으로 돌아간다 |
+| 원복 | 수동 동기화(위 0) — 매니페스트 값(api 3–9 — ADR-025, web 2–4)으로 돌아간다 |
 
 ## 2. 노드 수 고정(Cluster Autoscaler·노드 그룹)
 
@@ -36,6 +36,16 @@
 | 노드 늘리기 | `aws eks update-nodegroup-config --cluster-name flowticket --nodegroup-name flowticket-ap-northeast-2X --scaling-config minSize=1,maxSize=3,desiredSize=K` |
 | 축소 막기 | `kubectl annotate node <노드> cluster-autoscaler.kubernetes.io/scale-down-disabled=true --overwrite` |
 | 원복 | 표시 제거 `kubectl annotate node <노드> cluster-autoscaler.kubernetes.io/scale-down-disabled-`, desiredSize를 원래 값으로 |
+
+### 2b. 오픈 전 사전 확장 → 오픈 뒤 정책에 넘기기(ADR-025)
+
+| 동작 | 명령 |
+|---|---|
+| 사전 확장(오픈 전, 노드 Ready까지 CA 반응 시간 이상 앞서) | `kubectl patch hpa flowticket-api -n flowticket --type merge -p '{"spec":{"minReplicas":9}}'` + 노드 그룹 3개 `--scaling-config minSize=3,maxSize=3,desiredSize=3` |
+| 정책에 넘기기(오픈 뒤) | `kubectl patch hpa flowticket-api -n flowticket --type merge -p '{"spec":{"minReplicas":3}}'` + 노드 그룹 3개 `minSize=1,maxSize=3`(desiredSize는 그대로 — 이후는 CA가 줄인다) |
+
+- api 요청이 1000m라 api 하나가 노드 하나를 차지한다 — HPA 9는 노드 9다. 넘긴 뒤 HPA 축소는 안정화 300초, CA 노드 축소는 그 뒤 약 10분(IMP-029 시연 관찰 11.6분).
+- 자동 동기화를 끈 상태에서 한다(위 0). 넘긴 뒤 HPA 값이 Git 값(3~9)과 같은지 확인한다.
 
 - 리셋에서 파드를 다시 만들면 메모리·CPU 부족으로 Pending이 생겨 CA가 노드를 바꿀 수 있다(측정 세션 20261005-1440에서 반복).
   run마다 노드 수와 앱 파드 배치를 기록한다 — `export-prom.mjs`가 `app_pod_nodes`·`app_images`를 남긴다.

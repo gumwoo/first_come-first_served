@@ -10,7 +10,7 @@ spec:
   scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: flowticket-api }
   minReplicas: 3
   # 9(ADR-025): 10,000/s 진입 burst의 계산 용량(IMP-027 6b — api 9·노드 9)과 같다. 오픈 전에는 HPA 하한을 9로 올려
-  # 사전 확장하고(런북), 오픈 뒤에는 이 정책(3~9, CPU 60%)이 지속 부하를 따라 늘고 준다. requests 1000m라 api 하나가
+  # 사전 확장하고(overlay event-prescale.yaml — Git PR), 오픈 뒤에는 이 정책(3~9, CPU 60% = 파드 660m)이 지속 부하를 맡는다. requests 1100m라 api 하나가
   # 노드 하나를 차지하므로 3 → 9는 노드 3 → 9(노드 그룹 AZ당 최대 3, loadtest.tfvars)이고 CA가 붙인다.
   # 이전 7은 노드 3대 예산(api 7×300m)에서 나온 값이었다 — CA를 전제로 하지 않았다.
   # DB 커넥션(TS-021, 하네스 backend 규칙): (9 + maxSurge 1) × 풀 5 = 50 ≤ 가용 56.

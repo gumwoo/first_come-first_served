@@ -25,7 +25,7 @@ NS=flowticket
 ARGO_NS=argocd
 APP=flowticket
 
-API_MAX=12          # 임시 HPA 상한. 12×300m = 3,600m → 기존 예산을 확실히 넘긴다
+API_MAX=12          # 임시 HPA 상한(IMP-021 당시 300m 기준 — ADR-025 이후 api 하나가 노드 하나라 노드 그룹 상한 9를 넘는 값은 Pending으로 남는다)
 RATE=400            # 부하(rps). HPA가 상한까지 올라가야 Pending이 생긴다
 RUN_FOR=8m
 SKIP_DOWN=0
@@ -138,7 +138,7 @@ say "2/6 HPA 상한을 일시적으로 올린다 (Pending을 만들기 위해)"
 ORIG_API_MAX="$(kubectl -n "$NS" get hpa flowticket-api -o jsonpath='{.spec.maxReplicas}')"
 kubectl -n "$NS" patch hpa flowticket-api --type=merge \
   -p "{\"spec\":{\"maxReplicas\":$API_MAX}}" >/dev/null
-echo "    api maxReplicas $ORIG_API_MAX → $API_MAX (×300m = $((API_MAX*300))m)"
+echo "    api maxReplicas $ORIG_API_MAX → $API_MAX"
 echo "    주의: 이 값은 노드 예산을 일부러 넘긴다. 종료 시 $ORIG_API_MAX 으로 되돌린다"
 
 # ── 3. 부하 ─────────────────────────────────────────────────────────

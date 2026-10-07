@@ -41,11 +41,14 @@
 
 | 동작 | 방법 |
 |---|---|
-| 사전 확장(오픈 최소 15분 전) | `k8s/overlays/demo-local/event-prescale.yaml`의 `minReplicas`를 9로, `# event:`·`# off-by:`를 채운 PR을 머지 → ArgoCD 동기화(자동) → api Pending → CA가 노드 추가 |
+| 사전 확장(오픈 최소 15분 전) | `k8s/overlays/demo-local/event-prescale.yaml`의 `minReplicas`를 9로, `# event:`·`# off-by:`를 채운 PR을 머지 → ArgoCD 동기화(자동 — 위 0에서 자동 동기화를 꺼 뒀다면 수동 동기화) → api Pending → CA가 노드 추가 |
 | 정책에 넘기기(오픈 뒤) | 같은 파일을 3으로, `event`·`off-by`를 `-`로 되돌리는 PR을 머지 → 이후 HPA(3~9)·CA가 지속 부하를 따라 늘고 준다 |
 
 - kubectl로 HPA를 patch하지 않는다(selfHeal이 되돌리고 기록이 남지 않는다). 노드 그룹 설정도 바꾸지 않는다 — Pending을 CA가 해소한다.
-- 하네스 k8s 규칙 11: 하한은 base 3~9 안, 켤 때 event·off-by 필수, off-by가 지나면 CI 실패. 반영 확인은 `kubectl get hpa`·노드 수·Pending.
+- 하네스 k8s 규칙 11: 하한은 base 3~9 안, 켤 때 event·off-by 필수, off-by가 지나면 k8s 하네스 실패(CI backend job이 도는 PR에서만 — 상시 검사 아님).
+  반영 확인은 `kubectl get hpa`·노드 수·Pending. 측정 프로파일(AZ당 3)에서만 노드 9가 된다 — 기본 프로파일(AZ당 2)은 api 3개가 Pending으로 남는다.
+- 사전 확장 중에는 이미지가 바뀌는 PR을 머지하지 않는다(롤링 surge가 10번째 노드를 못 얻어 멈춘다).
+- CA는 api가 있는 노드(요청 57%)를 줄이지 않는다. 롤링 뒤 api마다 노드가 하나씩 남아 노드가 줄지 않으면 위 §2의 drain(`kubectl drain <노드> --ignore-daemonsets --delete-emptydir-data`)으로 정리한다.
 - 넘긴 뒤 HPA 축소는 안정화 300초, CA 노드 축소는 그 뒤 약 10분(IMP-029 시연 관찰 11.6분).
 
 - 리셋에서 파드를 다시 만들면 메모리·CPU 부족으로 Pending이 생겨 CA가 노드를 바꿀 수 있다(측정 세션 20261005-1440에서 반복).

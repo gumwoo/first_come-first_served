@@ -14,7 +14,7 @@ node_instance_type = "m6i.large"
 
 # AZ당 3 → 최대 9노드 = 18 vCPU(쿼터 32 이내).
 # Cluster Autoscaler가 노드를 실제로 붙이는 구간을 보려면 상한에 여유가 있어야 한다.
-# 기본값(AZ당 2 = 6노드)이면 HPA 상한까지 늘려도 예산 안에 들어가 CA가 발동하지 않는다.
+# 기본값(AZ당 2 = 6노드)이면 api HPA 상한 9(ADR-025 — api 하나가 노드 하나)에 노드가 모자라 api가 Pending으로 남는다(계산).
 node_max_size = 3
 
 # 클러스터 밖 부하 발생기(loadtest-100k-plan §4 "발생기 구성 상한"). 상한은 EC2 Standard vCPU 쿼터에서 나온 계산값이다:

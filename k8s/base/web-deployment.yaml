@@ -45,8 +45,8 @@ spec:
             preStop:
               exec: { command: ["sh", "-c", "sleep 25"] }
           resources:
-            # 부하 실측에서 파드당 0.16~0.59 core를 썼다. 300m은 최대보다 낮지만 api max 7과 함께
-            # 노드 allocatable(5,790m) 안에 들어가는 값이다. requests는 상한이 아니라 예약이다.
+            # 부하 실측에서 파드당 0.16~0.59 core를 썼다. 300m은 최대보다 낮다(requests는 상한이 아니라 예약이다).
+            # 노드 배치는 web-hpa.yaml 주석 — ADR-025 이후 api가 노드당 하나라 web 자리가 노드별로 좁다.
             requests: { cpu: "300m", memory: "256Mi" }
             limits: { memory: "512Mi" }
           securityContext:

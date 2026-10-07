@@ -9,9 +9,8 @@ import { fillQueueCapacity, releaseQueueCapacity } from "../helpers/redis";
  * (`seedAdmittedUser`에 의존하는 예매·결제·환불). 그래서 `queue:admitcount:<eventId>`를
  * 직접 채워 그 이벤트만 정원이 찬 상태로 만든다.
  *
- * 이 파일은 다음 테스트를 위한 기반 검증이다.
- * ADR-015 1)(onopen 재동기화)의 회귀 테스트가 이 위에 올라간다.
- * 그래서 여기서는 두 가지만 본다: 정원을 채우면 막히는가, 비우면 풀리는가.
+ * 첫 테스트는 그 기반을 검증한다(정원을 채우면 막히는가, 비우면 풀리는가).
+ * 그 위에 대기 화면의 폴링 회귀(ADR-023 §2 — 대기열 SSE 제거)가 올라간다.
  *
  * 뒷정리가 필수라 모든 조작을 `try/finally`로 감싼다. 남기면 그 이벤트가 영구히 정원이 찬 상태가 된다.
  *
@@ -50,45 +49,29 @@ test("정원이 차 있으면 승격되지 않고, 비우면 승격된다", asyn
 });
 
 /**
- * ADR-015 1) 회귀: SSE 재연결만으로 승격을 인지하는가.
+ * ADR-023 §2 회귀: 대기 화면은 상태 폴링만으로 승격을 알아채고 좌석 선택으로 넘어간다(대기열 SSE 없음).
  *
- * 이 테스트가 성립하려면 폴링이 살아 있으면 안 된다. 폴링과 onopen 재조회는 같은
- * `/queue/status`를 부르므로, 폴링이 돌면 그쪽이 먼저 복구해버려 onopen 경로를
- * 증명할 수 없다. 그래서 E2E 빌드는 `NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS=600000`으로
- * 폴링을 테스트 시간 밖으로 밀어낸다(ci.yml). 그 값은 운영 후보가 아니다.
- *
- * 시나리오: 연결이 끊긴 사이 승격되면 서버는 이벤트를
- * 그냥 버린다(`QueueSseRegistry.deliverLocal`). 재전송도 Last-Event-ID도 없다.
- *
- * onopen 재조회를 되돌리면 5단계에서 실패한다. 그게 이 테스트의 존재 이유다.
+ * 다음 조회 시각은 서버가 정한다(`retryAfterMs` — 순번이 앞이면 2초). 정원을 비우면 승격 워커가 다음 주기(1.5초)에
+ * 승격시키고, 화면은 다음 폴링(2초 + jitter 20% 이내)에 ADMITTED를 받아 좌석 선택으로 이동한다.
+ * 대기열 SSE 요청이 하나도 나가지 않아야 한다 — 제거한 경로를 프론트가 다시 부르면 여기서 잡힌다.
  */
-test("SSE가 끊긴 사이 승격돼도 재연결하면 복구된다", async ({ page }) => {
+test("정원이 비면 폴링만으로 승격을 알아채고 좌석 선택으로 이동한다", async ({ page }) => {
   const { eventId } = await seedLoggedInUser(page);
-
-  // 1) SSE를 아예 막는다. EventSource는 실패 → 재시도를 반복하고 onopen은 불리지 않는다.
-  const sseRoute = "**/sse/queue/**";
-  await page.route(sseRoute, (route) => route.abort());
+  const sseRequests: string[] = [];
+  page.on("request", (req) => {
+    if (req.url().includes("/sse/queue")) sseRequests.push(req.url());
+  });
 
   await fillQueueCapacity(eventId);
   try {
-    // 2) 대기 화면 진입(정원이 차 있으므로 WAITING)
     await page.goto(`/events/${eventId}/queue`);
     await expect(page.getByText("현재 대기 순번")).toBeVisible();
 
-    // 3) 정원을 비운다 → 워커가 승격시킨다. 그 알림은 SSE로만 나가고, 지금 연결이 없으므로
-    //    그대로 소실된다. 사용자는 아직 아무것도 모른다.
     await releaseQueueCapacity(eventId);
-    await page.waitForTimeout(ADMIT_INTERVAL_MS * 2);
 
-    // 4) 폴링이 밀려나 있으므로 스스로 복구되지 않는다. 이 단언이 곧
-    //    "지금 복구할 수 있는 경로가 SSE 재연결뿐"이라는 조건을 고정한다.
-    await expect(page).toHaveURL(new RegExp(`/events/${eventId}/queue`));
-
-    // 5) SSE를 풀어준다. EventSource가 스스로 재연결 → onopen → 상태 재조회 → ADMITTED.
-    //    승격 이벤트는 이미 소실됐으므로 재조회 말고는 알아낼 방법이 없다.
-    await page.unroute(sseRoute);
-
-    await expect(page).toHaveURL(new RegExp(`/events/${eventId}/seats`), { timeout: 30_000 });
+    // 승격 주기(1.5초) + 폴링 간격(2초 + jitter 0.4초 미만) 안쪽이면 충분하다. 여유를 둔다.
+    await expect(page).toHaveURL(new RegExp(`/events/${eventId}/seats`), { timeout: 15_000 });
+    expect(sseRequests).toEqual([]);
   } finally {
     await releaseQueueCapacity(eventId);
   }

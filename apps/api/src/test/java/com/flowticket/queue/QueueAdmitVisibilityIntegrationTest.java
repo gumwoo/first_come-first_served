@@ -25,7 +25,7 @@ import org.springframework.test.context.TestPropertySource;
  * TS-024 회귀: 승격 커밋이 Lua 밖으로 새지 않는지 본다.
  *
  * 승격은 pop + admitcount 증가 + admitExp 등록까지 한 Lua로 확정되고,
- * queue:admit:{token} 키와 SSE 알림은 그 뒤에 붙는 부수 작업이다. admitExp 등록이
+ * queue:admit:{token} 키는 그 뒤에 붙는 부수 작업이다. admitExp 등록이
  * Lua 밖에 있으면 두 가지가 샌다.
  *
  *   - 1) wait에서도 빠지고 입장 표시도 없는 창 → 상태 조회가 EXPIRED로 떨어진다.

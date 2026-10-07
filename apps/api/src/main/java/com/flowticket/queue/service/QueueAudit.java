@@ -31,7 +31,7 @@ final class QueueAudit {
     /**
      * 승격. 두 시각을 남긴다 — 승격 스크립트가 반환된 시각(admitExp로 통과하기 시작, 유효 구간의 시작)과
      * admit 키를 쓴 시각(키 TTL 시작, admit 키는 이 시각 + admitTtl까지 유효). 둘 사이에는 앞 토큰들의
-     * admit 키 기록과 SSE 발행이 끼어 있어 간격이 생긴다.
+     * admit 키 기록이 끼어 있어 간격이 생긴다.
      */
     static void admitted(Long eventId, String token, String seq, long admittedAtMillis, long keyWrittenAtMillis,
                          long admitExpiresAtEpochSec, long admitTtlSec) {

@@ -50,14 +50,13 @@ REST 기준. 인증은 `Authorization: Bearer <accessToken>`. 에러는 공통 �
 - `GET /queue/status?token=` — `{ rank, total, etaSeconds, status, retryAfterMs }`. **토큰으로 조회(Bearer 불필요)**
   - retryAfterMs: 다음 조회까지 **최소** 대기(ms). 순번 ≤ 정원×2는 2초, 그 뒤는 ceil(순번÷정원)×승격 주기를 2~30초로 자른 값, 입장·만료면 0(ADR-023 §2)
   - status: `WAITING | ADMITTED | EXPIRED`
-- `GET /sse/queue/:token` — 실시간 push(queue.admitted/queue.expired), 폴링과 이중화
+- 대기 상태 전달은 **폴링이 주 경로**다(ADR-023 §2 — 대기열 SSE 없음). 클라이언트는 `retryAfterMs` + jitter(0~20%) 뒤에 다시 묻는다.
 - 입장 허용 시 좌석 선택 페이지로. 토큰 TTL 만료 → `QUEUE_EXPIRED`
 
 ## 실시간 푸시 (SSE) — events.yaml 이벤트를 프론트로 전송
-- `GET /sse/queue/:token` — 대기열 실시간(`queue.admitted`/`queue.expired`)
 - `GET /sse/events/:id/seats` — 좌석맵 실시간(`seat.held`/`seat.hold.released`/`seat.hold.expired`)
 - `GET /sse/orders/:id` — 주문/결제 실시간(`order.paid`/`order.failed`/`payment.vbank.deposited`)
-- 폴링(`GET /queue/status`)은 SSE 미지원 환경의 폴백.
+- 대기열은 SSE를 쓰지 않는다 — 상태 폴링(`GET /queue/status`)이 주 경로다(ADR-023 §2).
 
 ## 좌석·재고 (S04) — Redis 재고 원자적 차감
 - 좌석 등급: `SeatGrade`(VIP/R/S/A), 등급별 가격은 이벤트별로 정의(KOPIS엔 없음)

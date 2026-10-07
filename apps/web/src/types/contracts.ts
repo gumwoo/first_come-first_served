@@ -68,8 +68,6 @@ export const SUBSCRIBED_EVENTS = [
   "order.paid",
   "order.failed",
   "seat.hold.expired",
-  "queue.admitted",
-  "queue.expired",
   "payment.vbank.deposited",
 ] as const;
 export type SubscribedEvent = (typeof SUBSCRIBED_EVENTS)[number];

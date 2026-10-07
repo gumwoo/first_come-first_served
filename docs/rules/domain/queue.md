@@ -15,8 +15,8 @@
   비원자면 동시 실행 시 정원 초과(over-admit) → 통합 테스트로 재현·방지([[IMP-004-queue-admission]]). [T]
 - 승격 워커 `@Scheduled`(queue.admit-interval-ms). 입장창(`queue.admit-ttl`) 만료 토큰은
   만료 ZSet sweep으로 회수해 슬롯 반환. [T]
-- 인증: 발급(POST)/이탈(DELETE)은 회원(Bearer). **status(GET)/SSE는 토큰(비밀 UUID)으로 접근**
-  (permitAll) — EventSource가 헤더를 못 붙이고, 폴링마다 Bearer 요구 시 refresh가 반복되기 때문. [ADR-002]
+- 인증: 발급(POST)/이탈(DELETE)은 회원(Bearer). **status(GET)는 토큰(비밀 UUID)으로 접근**
+  (permitAll) — 폴링마다 Bearer 요구 시 refresh가 반복되기 때문. [ADR-002]
 
 ## 알려진 한계 (known limitations)
 - ~~**발급 부분 실패 무롤백**: `SET NX` 성공 후 ZADD/HSET 등 후속이 실패하면 일시적 불일치.~~
@@ -26,8 +26,6 @@
 - **leave 실패 안내 없음**: 프론트 "나가기"는 best-effort — leave 실패해도 이동한다(TTL 백스톱).
 
 ## 실시간
-- 입장 허용/만료는 SSE(`/sse/queue/{token}`)로 push: 승격 시 `queue.admitted`(redirect 포함),
-  만료 시 `queue.expired` 후 스트림 종료. 폴링(`/queue/status`)은 폴백. (횡단: domain-rules.md)
-- 전송 실패(느린/끊긴 클라이언트)는 emitter 제거로 격리. emitter는 인스턴스-로컬이며,
-  다중 Pod 전달은 Redis Pub/Sub 팬아웃(S08 선반영)이 담당한다
-  (다중=Redis Pub/Sub, 후속). [ADR-002]
+- 입장 허용/만료는 상태 폴링(`/queue/status`)으로 전달한다 — 대기열 SSE는 없다(ADR-023 §2, 대기자 전원 SSE에서 OOM·등록 락·
+  미정리 연결이 측정돼 제거). 다음 조회 시각은 서버가 응답의 `retryAfterMs`로 정하고(순번 ≤ 정원×2는 2초, 그 뒤 최대 30초),
+  클라이언트는 jitter 0~20%를 더한다. 입장 인지 지연은 최대 그 간격만큼이며 최종 시험에서 잰다. (횡단: domain-rules.md)

@@ -1,13 +1,11 @@
 package com.flowticket.queue.service;
 
-import com.flowticket.queue.sse.QueueSseRegistry;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -77,21 +75,19 @@ public class QueueAdmissionService {
     private static final DefaultRedisScript<List> SNAPSHOT_SCRIPT = new DefaultRedisScript<>(SNAPSHOT_LUA, List.class);
 
     private final StringRedisTemplate redis;
-    private final QueueSseRegistry sse;
     private final int capacity;
     private final long admitTtl;
 
     private final Clock clock;
     private final QueueMetrics metrics;
 
-    public QueueAdmissionService(StringRedisTemplate redis, QueueSseRegistry sse,
+    public QueueAdmissionService(StringRedisTemplate redis,
                                  @Value("${queue.capacity:100}") int capacity,
                                  @Value("${queue.admit-ttl:300}") long admitTtl, Clock clock,
                                  QueueMetrics metrics) {
         this.clock = clock;
         this.metrics = metrics;
         this.redis = redis;
-        this.sse = sse;
         this.capacity = capacity;
         this.admitTtl = admitTtl;
     }
@@ -108,22 +104,21 @@ public class QueueAdmissionService {
             return 0;
         }
         // 여기 도착한 시점에 승격은 이미 확정이다(pop+카운트+만료등록이 위에서 원자로 끝났다).
-        // 아래 둘은 그 확정을 뒤따르는 부수 작업이라, 중간에 죽어도 슬롯이 새지 않는다.
+        // admit 키는 그 확정을 뒤따르는 부수 작업이라, 중간에 죽어도 슬롯이 새지 않는다.
         //   - admit 키: 상태 조회의 빠른 경로(권위는 admitExp). 없으면 admitExp로 판정된다.
-        //   - SSE: 알림. 놓치면 클라이언트 폴백 폴링이 받는다.
+        // 입장 알림은 보내지 않는다 — 클라이언트가 상태 폴링으로 안다(ADR-023 §2, 대기열 SSE 제거).
         int admitted = 0;
         for (int i = 0; i < popped.size(); i += 2) { // {member,score,...}
             String token = String.valueOf(popped.get(i));
             String seq = String.valueOf(popped.get(i + 1)); // wait ZSet 점수 = 진입 순번(ISSUE_LUA의 INCR)
             redis.opsForValue().set(QueueKeys.admit(token), "1", Duration.ofSeconds(admitTtl));
             QueueAudit.admitted(eventId, token, seq, admittedAt, clock.millis(), expiresAt, admitTtl);
-            sse.send(token, "queue.admitted", Map.of("redirect", "/events/" + eventId + "/seats"));
             admitted++;
         }
         return admitted;
     }
 
-    /** 입장창 만료 토큰 회수(슬롯 반환). 회수된 토큰 목록 반환(SSE queue.expired 발행용). */
+    /** 입장창 만료 토큰 회수(슬롯 반환). 회수된 토큰 목록 반환. */
     public List<String> reclaim(Long eventId) {
         List<?> raw = redis.execute(RECLAIM_SCRIPT,
                 List.of(QueueKeys.admitExp(eventId), QueueKeys.admitCount(eventId)),
@@ -135,8 +130,6 @@ public class QueueAdmissionService {
         long now = clock.millis();
         for (String token : expired) {
             QueueAudit.reclaimed(eventId, token, now);
-            sse.send(token, "queue.expired");   // 만료 알림
-            sse.complete(token);                // 스트림 종료
         }
         return expired;
     }

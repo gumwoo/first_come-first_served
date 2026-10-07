@@ -11,12 +11,12 @@
 #   event: <공연 id>          off-by: <되돌릴 UTC 시각, YYYY-MM-DDTHH:MM:SSZ>
 # 노드 Ready(CA 실측 110초, IMP-021)·파드 기동까지 고려해 오픈 최소 15분 전에 머지한다(계산 아님 — 운영 여유).
 #
-# event: -
-# off-by: -
+# event: 1823
+# off-by: 2026-10-07T18:45:00Z
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: flowticket-api
   namespace: flowticket
 spec:
-  minReplicas: 3
+  minReplicas: 9

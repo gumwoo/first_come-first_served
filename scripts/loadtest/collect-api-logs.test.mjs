@@ -204,19 +204,41 @@ test("끊긴 뒤 다시 받기 전에 로그가 회전돼 앞부분이 잘리면
   assert.ok(!c.log("a").includes("kind=leave"));
 });
 
-test("run 시작 뒤에 뜬 파드의 첫 받기가 늦게 붙어 회전으로 앞부분이 잘리면(첫 줄이 컨테이너 시작 + 120초보다 늦음) complete=false(G1 재현 — 첫 받기 회전)", async () => {
+test("첫 받기가 실패하는 사이 회전으로 앞부분이 잘리면 complete=false — run 시작 뒤 뜬 파드(G1 재현 rotateWithin120)", async () => {
   const M = (mmss) => `2026-10-07T00:${mmss}.000000000Z`;
-  const c = start({ pods: { a: running(), b: { containerID: "cb", state: "running", startedAt: "2026-10-07T00:00:01Z" } },
-    logs: { a: { lines: [[T(1), "a1"]], mode: "hold" },
-      b: { lines: [[M("00:02"), "b start"], [M("03:00"), "queue.audit kind=admit B"], [M("03:31"), "b after rotation"]], mode: "hold", rotatedFrom: M("03:30") } } }, ["--for", "2"]);
+  const c = start({ pods: { b: { containerID: "cb", state: "running", startedAt: "2026-10-07T00:00:01Z" } },
+    logs: { b: { lines: [[M("00:02"), "b start"], [M("00:40"), "queue.audit kind=admit B"], [M("01:01"), "b after rotation"]], mode: "fail" } } }, ["--for", "3", "--max-failures", "50"]);
+  await sleep(700);
+  c.set((s) => { s.logs.b.mode = "hold"; s.logs.b.rotatedFrom = M("01:00"); });
   assert.equal(await c.exited, 0);
-  const m = c.manifest();
-  assert.equal(m.pods.b.complete, false);
-  assert.equal(m.pods.a.complete, true); // 시작 시각을 모르는(run 전부터 있던) 파드는 이 검사 대상이 아니다
+  assert.equal(c.manifest().pods.b.complete, false);
 });
 
-test("run 시작 뒤에 뜬 파드라도 첫 줄이 기동 줄(시작 직후)이면 회전으로 보지 않는다", async () => {
-  const c = start({ pods: { b: { containerID: "cb", state: "running", startedAt: "2026-10-07T00:00:01Z" } },
+test("run 시작 전부터 있던 파드도 첫 받기가 실패하는 사이 회전되면 complete=false(G1 재현 existingLate)", async () => {
+  const c = start({ pods: { a: { containerID: "ca", state: "running", startedAt: "2026-10-06T00:00:00Z" } },
+    logs: { a: { lines: [[T(5), "queue.audit kind=admit A"], [T(45), "a after rotation"]], mode: "fail" } } }, ["--for", "3", "--max-failures", "50"]);
+  await sleep(700);
+  c.set((s) => { s.logs.a.mode = "hold"; s.logs.a.rotatedFrom = T(40); });
+  assert.equal(await c.exited, 0);
+  assert.equal(c.manifest().pods.a.complete, false);
+});
+
+test("첫 시도가 제때 붙은 파드는 첫 줄이 늦어도(한가한 파드) 회전으로 보지 않는다", async () => {
+  // 수집기를 since 직후에 띄운 것처럼: 실제 시각을 since로 준다
+  const now = new Date(Math.floor(Date.now() / 1000) * 1000);
+  const since = now.toISOString().replace(".000Z", "Z");
+  const later = new Date(now.getTime() + 60_000).toISOString().replace(".000Z", ".000000000Z");
+  const dir = mkdtempSync(join(tmpdir(), "collect-api-logs-idle-"));
+  const stateFile = join(dir, "state.json");
+  writeFileSync(stateFile, JSON.stringify({ pods: { a: { containerID: "ca", state: "running" } }, logs: { a: { lines: [[later, "idle first line"]], mode: "hold" } } }));
+  const out = join(dir, "logs");
+  const child = spawn(process.execPath, [SCRIPT, "--out", out, "--since", since, "--interval", "0.2", "--for", "2"],
+    { env: { ...process.env, KUBECTL: FAKE, FAKE_KUBE_STATE: stateFile }, stdio: "ignore" });
+  assert.equal(await new Promise((r) => child.on("exit", r)), 0);
+  assert.equal(JSON.parse(readFileSync(join(out, "manifest.json"), "utf8")).pods.a.complete, true);
+});
+
+test("run 시작 뒤에 뜬 파드라도 첫 줄이 기동 줄(시작 직후)이면 회전으로 보지 않는다", async () => {  const c = start({ pods: { b: { containerID: "cb", state: "running", startedAt: "2026-10-07T00:00:01Z" } },
     logs: { b: { lines: [[T(2), "b start"], [T(5), "queue.audit kind=admit B"]], mode: "hold" } } }, ["--for", "2"]);
   assert.equal(await c.exited, 0);
   assert.equal(c.manifest().pods.b.complete, true);

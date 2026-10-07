@@ -112,7 +112,7 @@ function collectMain(argv) {
   }
   const INTERVAL_MS = num("interval", a.interval, 0.1) * 1000;
   const SINCE_MS = Date.parse(a.since);
-  const STARTUP_SLACK_MS = 120_000;
+  const FIRST_SLACK_MS = 30_000; // 첫 받기 회전 판정의 여유(위 take 주석)
   const FOR_S = a.for === undefined ? null : num("for", a.for, 1);
   const MAX_FAILURES = num("max-failures", a["max-failures"], 1);
   const RETRY_MS = num("retry-ms", a["retry-ms"], 0);
@@ -160,11 +160,15 @@ function collectMain(argv) {
     const m = LINE.exec(line);
     const key = m ? tsKey(m[2]) : null;
     if (key === null) { p.file.write(line + "\n"); p.lines++; return; } // 형식 밖 줄도 남긴다(merge가 판정 불가로 알린다)
-    // 첫 받기의 회전: run 시작 뒤에 뜬 파드는 첫 줄이 JVM 기동 줄이라 컨테이너 시작 시각 근처여야 한다. 첫 받기가 늦게 붙는 사이 회전돼
-    // 앞부분이 잘렸으면 첫 줄이 그보다 한참 늦다 — 컨테이너 시작 + 120초(pod-coverage의 기동 여유와 같은 값)보다 늦으면 구멍으로 본다.
-    // run 시작 전부터 있던 파드는 수집기가 run 시작 직후 붙으므로(시작 전에 띄운다) 이 검사 대상이 아니다.
-    if (p.lines === 0 && p.lastTs === null && Number.isFinite(p.startedMs) && p.startedMs >= SINCE_MS
-        && secOf(key) > p.startedMs + STARTUP_SLACK_MS) p.gap = true;
+    // 첫 받기의 회전: 첫 받기가 제때 붙지 못한 사이(실패·늦게 띄움) 로그가 회전되면 앞부분이 잘린다. 기준 시각 ref = max(run 시작, 컨테이너 시작)
+    // (시작 시각을 모르면 run 시작). 첫 줄이 ref + 30초보다 늦고 **그리고** 첫 시도가 실패했거나(지금이 두 번째 이후 시도) 첫 시도를 ref + 30초보다
+    // 늦게 띄웠으면 그 사이를 확인할 수 없어 구멍으로 본다. 제때 붙은 한가한 파드(첫 줄이 늦을 뿐)는 통과한다 — 한가하면 회전도 없다(추론).
+    // 남는 구멍: 첫 시도를 제때 띄웠는데 연결 단계(dial·TLS)에서 오래 걸린 경우는 구분하지 못한다(시간 제한 범위 안 — 한계).
+    if (p.lines === 0 && p.lastTs === null) {
+      const ref = Math.max(SINCE_MS, Number.isFinite(p.startedMs) ? p.startedMs : SINCE_MS);
+      const troubled = p.follows > 1 || p.firstAttemptAt > ref + FIRST_SLACK_MS;
+      if (troubled && secOf(key) > ref + FIRST_SLACK_MS) p.gap = true;
+    }
     if (p.overlap) {
       if (key < p.overlap.fromKey) return; // 다시 받기의 since(초 단위)보다 앞 — 오지 않아야 하지만 방어
       if (key <= p.overlap.lastKey) {
@@ -193,6 +197,7 @@ function collectMain(argv) {
   /** 로그 받기 한 번. once면 follow 없이(시간 제한) 지금까지의 줄만. 끝나면 cb(code, connected). */
   function stream(p, { once = false } = {}, cb) {
     p.follows++;
+    if (p.follows === 1) p.firstAttemptAt = Date.now();
     if (p.lastTs !== null) p.overlap = { fromKey: `${String(secOf(p.lastTs)).padStart(13, "0")}.000000000`, lastKey: p.lastTs, seen: new Set(p.lastSecond), sawLast: false };
     const args = ["-n", a.namespace, "logs", ...(once ? ["--request-timeout=20s"] : ["-f"]), p.name, "-c", a.container, "--prefix", "--timestamps", `--since-time=${sinceArg(p)}`];
     const [cmd, full] = kube(args);

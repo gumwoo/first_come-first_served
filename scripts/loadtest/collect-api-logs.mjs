@@ -23,8 +23,9 @@
 //
 // manifest.json: { since, startedAt, endedAt, pods: { <파드>: { firstSeenAt, containerId, follows, failures, endReason, complete, lines } }, neverStarted: [<파드>], unknown: [<파드>] }
 //   unknown: Pending으로 본 뒤 조회가 오래 실패한 끝에 사라진 파드 — 시작했는지 몰라 대조 대상에 남는다(받지 못함 → 판정 불가).
-// 한계: 끊긴 뒤 다시 받기 전에 kubelet이 로그를 회전(기본 10MiB)했으면 `kubectl logs`는 현재 파일만 읽어 앞부분이 빠질 수 있다 — 끊김 없이 받는 동안의
-// 회전은 따라간다고 본다(추론). 자격증명은 쓰지 않는다(kubectl 컨텍스트). KUBECTL 환경변수로 다른 실행 파일을 줄 수 있다(테스트용 — .mjs면 node로 실행).
+// 회전: 끊긴 뒤 다시 받기 전에 kubelet이 로그를 회전(기본 10MiB)했으면 `kubectl logs`는 현재 파일만 읽어 앞부분이 빠진다 — 다시 받을 때 마지막으로
+// 받은 줄이 다시 오지 않으면 그것으로 감지해 complete=false(gap). 끊김 없이 받는 동안의 회전은 따라간다고 본다(추론). 자격증명은 쓰지 않는다(kubectl 컨텍스트).
+// KUBECTL 환경변수로 다른 실행 파일을 줄 수 있다(테스트용 — .mjs면 node로 실행).
 import { spawn, spawnSync } from "node:child_process";
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -158,8 +159,14 @@ function collectMain(argv) {
     if (key === null) { p.file.write(line + "\n"); p.lines++; return; } // 형식 밖 줄도 남긴다(merge가 판정 불가로 알린다)
     if (p.overlap) {
       if (key < p.overlap.fromKey) return; // 다시 받기의 since(초 단위)보다 앞 — 오지 않아야 하지만 방어
-      if (key <= p.overlap.lastKey) { if (p.overlap.seen.has(key + line)) return; }
-      else p.overlap = null; // 이전 마지막 시각을 넘었다 — 겹침 구간 끝
+      if (key <= p.overlap.lastKey) {
+        if (p.overlap.seen.has(key + line)) { if (key === p.overlap.lastKey) p.overlap.sawLast = true; return; }
+      } else {
+        // 이전 마지막 시각을 넘었다 — 겹침 구간 끝. 다시 받기의 since는 마지막 줄의 초로 내림이라 kubelet은 그 마지막 줄을 반드시 다시 보낸다.
+        // 오지 않았다면 그 사이 로그가 회전돼 앞부분이 잘린 것이다 — 빠진 줄이 있을 수 있어 다 받았다고 보지 않는다.
+        if (!p.overlap.sawLast) p.gap = true;
+        p.overlap = null;
+      }
     }
     if (p.lastTs === null || key > p.lastTs) {
       if (p.lastTs === null || secOf(key) !== secOf(p.lastTs)) p.lastSecond = new Set();
@@ -172,12 +179,13 @@ function collectMain(argv) {
 
   const sinceArg = (p) => (p.lastTs === null ? a.since : new Date(secOf(p.lastTs)).toISOString().replace(".000Z", "Z"));
 
-  function finish(p, reason, complete) { p.done = true; p.endReason = reason; p.complete = complete; }
+  // 회전으로 잘린 구간(gap)이 있었으면 어떤 끝이든 다 받았다고 보지 않는다.
+  function finish(p, reason, complete) { p.done = true; p.endReason = reason; p.complete = complete && !p.gap; }
 
   /** 로그 받기 한 번. once면 follow 없이(시간 제한) 지금까지의 줄만. 끝나면 cb(code, connected). */
   function stream(p, { once = false } = {}, cb) {
     p.follows++;
-    if (p.lastTs !== null) p.overlap = { fromKey: `${String(secOf(p.lastTs)).padStart(13, "0")}.000000000`, lastKey: p.lastTs, seen: new Set(p.lastSecond) };
+    if (p.lastTs !== null) p.overlap = { fromKey: `${String(secOf(p.lastTs)).padStart(13, "0")}.000000000`, lastKey: p.lastTs, seen: new Set(p.lastSecond), sawLast: false };
     const args = ["-n", a.namespace, "logs", ...(once ? ["--request-timeout=20s"] : ["-f"]), p.name, "-c", a.container, "--prefix", "--timestamps", `--since-time=${sinceArg(p)}`];
     const [cmd, full] = kube(args);
     const child = spawn(cmd, full, { stdio: ["ignore", "pipe", "ignore"] });
@@ -196,6 +204,9 @@ function collectMain(argv) {
       p.child = null;
       // buf에 남은 조각(줄바꿈 없음)은 끊긴 줄이다 — 버린다(다시 받을 때 온전한 줄로 온다).
       if (connected) p.failures = 0;
+      // 다시 받기가 0으로 끝났는데 마지막으로 받았던 줄을 한 번도 다시 받지 못했다(줄이 없거나 그보다 뒤만) — 회전으로 잘렸다.
+      if (code === 0 && p.overlap && !p.overlap.sawLast) p.gap = true;
+      p.overlap = null;
       cb(code, connected);
     });
   }
@@ -230,6 +241,7 @@ function collectMain(argv) {
 
   function tick() {
     if (stopping) return;
+    const qStart = Date.now();
     const out = kubeSync(["-n", a.namespace, "get", "pods", "-l", a.selector, "-o", "json"]);
     if (out === null) return;
     let items;
@@ -237,6 +249,7 @@ function collectMain(argv) {
     const now = Date.now();
     // 직전 성공 조회와의 간격이 짧을 때만 "Pending으로 봤다 → 지금 없다"를 시작하지 못하고 사라진 것으로 본다. 조회가 오래 실패했다면
     // 그 사이 시작해 줄을 찍고 지워졌을 수 있다 — 그런 파드는 unknown으로 남겨 대조 대상에서 빼지 않는다.
+    // 간격은 직전 조회 **시작**부터 이번 조회 끝까지로 잰다(조회 한 번이 길어도 두 목록 사이를 넉넉히 덮게).
     const recent = lastListOk !== null && now - lastListOk <= 2 * INTERVAL_MS + 1000;
     const present = new Set();
     for (const pod of items) {
@@ -250,7 +263,7 @@ function collectMain(argv) {
       follow(track(name, c.containerID));
     }
     for (const name of [...pending]) if (!present.has(name)) { pending.delete(name); (recent ? neverStarted : unknown).add(name); }
-    lastListOk = now;
+    lastListOk = qStart;
   }
 
   async function stop() {

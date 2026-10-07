@@ -2,7 +2,7 @@
 // collect-api-logs.test.mjs용 가짜 kubectl. 상태는 FAKE_KUBE_STATE(JSON 파일)에서 매 호출마다 읽는다(테스트는 임시 파일 + rename으로 바꾼다):
 //   { pods: { <파드>: { containerID: "c1" | null, state: "running" | "terminated" | "waiting" } },   — 없는 파드 = 지워짐
 //     logs: { <파드>: { lines: [[<RFC3339Nano>, <내용>], ...], mode: "hold" | "close" | "fail" | "hang" | "partial" } },
-//     getPodFailOnce: [<파드>, ...], getPodsFail: true | false }                                                                 — get pod가 한 번 실패
+//     getPodFailOnce: [<파드>, ...], getPodsFail: true | false }   — logs.<파드>.rotatedFrom: 그 시각 앞 줄은 회전으로 읽을 수 없음                                                                 — get pod가 한 번 실패
 //   get pods -o json: containerStatuses(api)를 상태대로 낸다(waiting이면 containerID 없음 — 실제 ContainerCreating과 같다).
 //   get pod <이름> -o json --ignore-not-found: 있으면 JSON, 없으면 빈 출력.
 //   logs [-f] <파드> --prefix --timestamps --since-time=<초>: since 이후 줄을 `[pod/<파드>/api] <시각> <내용>`으로 낸다.
@@ -34,6 +34,8 @@ if (li >= 0) {
     const out = (lines) => {
       for (; sent < lines.length; sent++) {
         const [ts, text] = lines[sent];
+        // rotatedFrom: 그보다 앞 시각의 줄은 회전으로 현재 파일에서 사라졌다(kubectl logs가 읽지 못한다). 이 호출이 시작될 때의 값을 쓴다.
+        if (l.rotatedFrom && ts < l.rotatedFrom) continue;
         if (Date.parse(ts.replace(/\.\d+Z$/, "Z")) >= since) process.stdout.write(`[pod/${pod}/api] ${ts} ${text}\n`);
       }
     };

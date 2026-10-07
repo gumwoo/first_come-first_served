@@ -25,7 +25,13 @@ function start(state, extra = []) {
     { env: { ...process.env, KUBECTL: FAKE, FAKE_KUBE_STATE: stateFile }, stdio: ["ignore", "ignore", "pipe"] });
   const exited = new Promise((r) => child.on("exit", r));
   // 임시 파일 + rename — 가짜 kubectl이 쓰는 도중의 빈 파일을 읽지 않게(CI에서 실제로 흔들렸다)
-  const set = (fn) => { const s = JSON.parse(readFileSync(stateFile, "utf8")); fn(s); writeFileSync(stateFile + ".t", JSON.stringify(s)); renameSync(stateFile + ".t", stateFile); };
+  // Windows는 읽는 중인 파일로 rename하면 EPERM — 잠깐 쉬었다 다시 한다(Linux에서는 한 번에 된다).
+  const set = (fn) => {
+    const s = JSON.parse(readFileSync(stateFile, "utf8")); fn(s); writeFileSync(stateFile + ".t", JSON.stringify(s));
+    for (let i = 0; ; i++) {
+      try { renameSync(stateFile + ".t", stateFile); return; } catch (e) { if (e.code !== "EPERM" || i >= 50) throw e; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10); }
+    }
+  };
   const manifest = () => JSON.parse(readFileSync(join(out, "manifest.json"), "utf8"));
   const log = (pod) => readFileSync(join(out, `${pod}.log`), "utf8");
   return { out, exited, set, manifest, log };
@@ -186,4 +192,14 @@ test("Pending으로 본 뒤 목록 조회가 오래 실패한 끝에 사라진 �
   const m = c.manifest();
   assert.deepEqual(m.neverStarted, []);
   assert.deepEqual(m.unknown, ["p"]);
+});
+
+test("끊긴 뒤 다시 받기 전에 로그가 회전돼 앞부분이 잘리면(마지막으로 받은 줄이 다시 오지 않음) complete=false(G1 재현 — 회전 구멍)", async () => {
+  const c = start({ pods: { a: running() }, logs: { a: { lines: [[T(1), "a1"]], mode: "close" } } }, ["--for", "3", "--max-failures", "50"]);
+  await sleep(400);
+  // 다시 받기 전에: T2 leave 줄이 찍히고, 회전으로 현재 파일은 T3부터만 남는다
+  c.set((s) => { s.logs.a.lines.push([T(2), "queue.audit kind=leave a"], [T(3), "a3"]); s.logs.a.rotatedFrom = T(3); s.logs.a.mode = "hold"; });
+  assert.equal(await c.exited, 0);
+  assert.equal(c.manifest().pods.a.complete, false);
+  assert.ok(!c.log("a").includes("kind=leave"));
 });

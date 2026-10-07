@@ -432,7 +432,7 @@ if (fs.existsSync(ES_DIR)) {
 // 오픈 순간은 HPA·CA가 흡수하지 못해 오픈 전에 HPA 하한을 Git으로 올린다(overlay 패치). 세션 kubectl은 ArgoCD selfHeal이
 // 되돌리고 기록도 남지 않는다. 그 대신 Git 값은 잊히면 그대로 남는다(노드 9대 비용). 그래서:
 //   - 하한은 base 하한 이상, base 상한 이하여야 한다(정책 밖으로 올리거나 정책보다 내리지 않는다).
-//   - base 하한보다 크면 "# event: <id>"와 "# off-by: <UTC>"가 있어야 하고, off-by가 지났으면 실패한다(다음 PR의 CI가 막는다).
+//   - base 하한보다 크면 "# event: <id>"와 "# off-by: <UTC>"가 있어야 하고, off-by가 지났으면 실패한다 — CI backend job이 도는 PR(apps/api·contracts·harness·k8s·ci.yml 변경)에서만 막는다. 상시 검사가 아니다.
 //   - 실제 저장소에서는 이 파일이 overlay에 있고 kustomization.yaml이 패치로 참조해야 한다(참조가 없으면 올려도 적용되지 않는다).
 {
   const prescaleFiles = manifests.filter((f) => path.basename(f) === "event-prescale.yaml");

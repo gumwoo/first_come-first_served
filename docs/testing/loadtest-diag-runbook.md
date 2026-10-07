@@ -48,7 +48,9 @@
 - 하네스 k8s 규칙 11: 하한은 base 3~9 안, 켤 때 event·off-by 필수, off-by가 지나면 k8s 하네스 실패(CI backend job이 도는 PR에서만 — 상시 검사 아님).
   반영 확인은 `kubectl get hpa`·노드 수·Pending. 측정 프로파일(AZ당 3)에서만 노드 9가 된다 — 기본 프로파일(AZ당 2)은 api 3개가 Pending으로 남는다.
 - 사전 확장 중에는 이미지가 바뀌는 PR을 머지하지 않는다(롤링 surge가 10번째 노드를 못 얻어 멈춘다).
-- CA는 api가 있는 노드(요청 57%)를 줄이지 않는다. 롤링 뒤 api마다 노드가 하나씩 남아 노드가 줄지 않으면 위 §2의 drain(`kubectl drain <노드> --ignore-daemonsets --delete-emptydir-data`)으로 정리한다.
+- CA는 api가 있는 노드(요청 57%)를 줄이지 않고, api 없는 노드도 요청이 50% 이상이거나(web 등) 파드를 옮길 자리가 없으면 줄이지 않는다(ADR-025).
+  남은 노드는 drain으로 정리한다: 먼저 `kubectl describe node`로 다른 노드에 그 노드 파드(web 300m 등)가 들어갈 자리가 있는지 확인하고
+  `kubectl drain <노드> --ignore-daemonsets --delete-emptydir-data` → CA가 빈 노드를 지운다. 자리가 없으면 쫓겨난 파드가 Pending → CA가 노드를 다시 붙인다.
 - 넘긴 뒤 HPA 축소는 안정화 300초, CA 노드 축소는 그 뒤 약 10분(IMP-029 시연 관찰 11.6분).
 
 - 리셋에서 파드를 다시 만들면 메모리·CPU 부족으로 Pending이 생겨 CA가 노드를 바꿀 수 있다(측정 세션 20261005-1440에서 반복).

@@ -14,8 +14,8 @@
 //                  실제 티켓 오픈 트래픽 데이터에서 나온 분포가 아니다**(계획서 §2).
 // 설정한 rate는 목표이지 측정값이 아니다. 실제 발생한 도착은 entry_arrivals 시계열로 따로 센다(§2.3).
 //
-// 대기자 발생기와 잇기: EMIT_TOKENS=1이면 발급된 대기 토큰을 "QTOKEN <token>" 한 줄로 로그에 낸다(대기열 SSE는 제거됐다 —
-// ADR-023 §2, 대기자는 상태 폴링으로 흉내 낸다). 진입 iteration 안에서 대기를 붙들지 않는다. 붙들면 VU가 대기 내내 묶여
+// 대기자 발생기와 잇기: EMIT_TOKENS=1이면 발급된 대기 토큰을 "QTOKEN <token> <retryAfterMs>" 한 줄로 로그에 낸다(대기열 SSE는
+// 제거됐다 — ADR-023 §2, 대기자는 상태 폴링으로 흉내 낸다: infra/loadgen/poll-hold.mjs, run-entry.sh --poll-hold). 진입 iteration 안에서 대기를 붙들지 않는다. 붙들면 VU가 대기 내내 묶여
 // 발생기가 먼저 무너진다.
 //
 // 분산 실행: 발생기 G대가 나눠 걸 때 각자 USERS_N = 전체/G, USER_OFFSET = 자기 몫의 시작 인덱스.
@@ -154,9 +154,11 @@ export default function () {
 
   let status = null;
   let token = null;
+  let retryAfterMs = null;
   try {
     status = res.json("data.status");
     token = res.json("data.token");
+    retryAfterMs = res.json("data.retryAfterMs");
   } catch (e) {
     /* 파싱 실패는 아래 check에서 잡힌다 */
   }
@@ -166,5 +168,6 @@ export default function () {
     "WAITING 또는 ADMITTED": () => status === "WAITING" || status === "ADMITTED",
   });
   if (ok) processed.add(1, { dist: DIST });
-  if (EMIT_TOKENS && token) console.log(`QTOKEN ${token}`);
+  // 입장한 토큰은 더 묻지 않으므로 대기 토큰만 넘긴다. retryAfterMs가 없으면(구버전 서버) 토큰만 낸다.
+  if (EMIT_TOKENS && token && status === "WAITING") console.log(Number.isFinite(retryAfterMs) ? `QTOKEN ${token} ${retryAfterMs}` : `QTOKEN ${token}`);
 }

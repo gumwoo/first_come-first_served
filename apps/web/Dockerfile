@@ -32,17 +32,10 @@ ENV API_ORIGIN=$API_ORIGIN
 ARG NEXT_PUBLIC_TOSS_CLIENT_KEY=
 ENV NEXT_PUBLIC_TOSS_CLIENT_KEY=$NEXT_PUBLIC_TOSS_CLIENT_KEY
 
-# 대기열 상태 폴링 최소 주기(ms). SSE가 열리지 않는 환경의 안전망이라 운영 파라미터로 둔다(ADR-015 3)).
+# 대기열 상태 폴링의 클라이언트 최소 간격(ms). 다음 조회는 서버 retryAfterMs와 이 값 중 큰 값 + jitter다(ADR-023 §2).
 # 비어도 useQueue가 기본값(2000)을 쓴다. 번들에 구워지는 값이라 바꾸려면 이미지를 다시 빌드해야 한다.
-# E2E는 600000(10분)을 줘 폴링을 테스트 시간 밖으로 밀어낸다(운영 후보값 아님).
 ARG NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS=
 ENV NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS=$NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS
-
-# 폴링 백오프 상한. 위와 같은 이유로 여기서 받는다. 비어도 안전하다(useQueue가 `|| 15000`).
-# useQueue는 max(MIN, MAX)를 쓴다. E2E처럼 MIN을 10분으로 밀어 놓은 빌드에서 상한이
-# 그보다 작으면 백오프가 오히려 주기를 줄여 폴링을 테스트 창 안으로 되돌리기 때문이다.
-ARG NEXT_PUBLIC_QUEUE_POLL_MAX_MS=
-ENV NEXT_PUBLIC_QUEUE_POLL_MAX_MS=$NEXT_PUBLIC_QUEUE_POLL_MAX_MS
 
 # standalone은 로컬(Windows) 빌드를 심볼릭 링크 권한 문제로 깨뜨리므로 이미지 빌드에서만 켠다.
 ENV NEXT_OUTPUT_STANDALONE=true

@@ -112,6 +112,63 @@ describe("useQueue 폴링(서버 retryAfterMs + jitter)", () => {
   });
 });
 
+describe("useQueue 폴링 — 경계", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    marks = [];
+    issueQueueToken.mockReset();
+    getQueueStatus.mockReset();
+    issueQueueToken.mockResolvedValue({ token: "tok-1", status: "WAITING", rank: 500, total: 1000, retryAfterMs: 5_000 });
+    getQueueStatus.mockImplementation(async () => (marks.push(Date.now() - t0), waiting(2_000)));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  async function mount() {
+    t0 = Date.now();
+    const view = renderHook(() => useQueue(1));
+    await vi.advanceTimersByTimeAsync(0);
+    return view;
+  }
+
+  it("진입 응답이 바로 ADMITTED면 한 번도 묻지 않는다", async () => {
+    issueQueueToken.mockResolvedValue({ token: "tok-1", status: "ADMITTED", rank: 0, total: 0, retryAfterMs: 0 });
+    let view!: Awaited<ReturnType<typeof mount>>;
+    await act(async () => {
+      view = await mount();
+    });
+    expect(view.result.current.phase).toBe("admitted");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(marks).toEqual([]);
+  });
+
+  it("오류 백오프는 성공하면 0으로 돌아가 다음 실패는 다시 2초부터다", async () => {
+    const fail = async () => {
+      marks.push(Date.now() - t0);
+      throw new Error("network");
+    };
+    getQueueStatus
+      .mockImplementationOnce(fail) // 5초 실패 → +2초
+      .mockImplementationOnce(fail) // 7초 실패 → +4초
+      .mockImplementationOnce(async () => (marks.push(Date.now() - t0), waiting(3_000))) // 11초 성공 → +3초
+      .mockImplementationOnce(fail); // 14초 실패 → +2초(초기화됐으면)
+    await mount();
+    await vi.advanceTimersByTimeAsync(5_000 + 2_000 + 4_000 + 3_000 + 2_000);
+    expect(marks).toEqual([5_000, 7_000, 11_000, 14_000, 16_000]);
+  });
+
+  it("언마운트하면 예약된 조회를 버린다", async () => {
+    const { unmount } = await mount();
+    unmount();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(marks).toEqual([]);
+  });
+});
+
 describe("nextPollDelay", () => {
   it("jitter는 0 이상 20% 미만이고 서버 최소 대기보다 줄지 않는다", () => {
     expect(nextPollDelay(30_000, () => 0)).toBe(30_000);

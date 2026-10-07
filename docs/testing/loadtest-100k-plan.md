@@ -192,13 +192,13 @@ CPU와 replica 수를 기록하고(`baseline-<구성>.json`), 같은 구성의 r
 | 파일 | 역할 |
 |---|---|
 | `infra/k6/queue-entry-rate.js` | ①의 진입 발생기. arrival-rate executor, iteration 번호로 사용자 매핑, `EMIT_TOKENS=1`이면 발급된 대기 토큰을 한 줄씩 낸다 |
-| `infra/loadgen/sse-hold.mjs` | ②의 SSE 연결 발생기(Node). 진입 발생기 출력에서 토큰을 받아 연결을 열고 붙든다 |
+| ~~`infra/loadgen/sse-hold.mjs`~~ | (삭제 — #351) ②의 SSE 연결 발생기였다. 대기열 SSE를 없애(ADR-023 §2) 대기자는 상태 폴링으로 흉내 낸다(대기자 폴링 발생기는 최종 시험 준비에서) |
 | `infra/loadgen/entry-arrivals.mjs` | 진입 원시 출력에서 §2.3 지표(offered·achieved·dropped·1초 peak)를 계산 |
 | `infra/loadgen/run-entry.sh` | run 하나를 실행하고 출력을 run 디렉터리(§7)에 모은다. 발생기 자원도 함께 기록 |
 | `infra/loadgen/mock-queue-server.mjs` | 로컬 스모크 전용 목 서버. 측정에 쓰지 않는다 |
 
-②의 "k6 코어에는 SSE 클라이언트가 없다"는 여전히 외부 지식이다. 그 판단과 무관하게, 연결 하나를 VU 하나로 붙드는
-구조를 피하려고 SSE 발생기를 Node로 만들었다.
+(당시 기록) ②의 "k6 코어에는 SSE 클라이언트가 없다"는 외부 지식이었고, 연결 하나를 VU 하나로 붙드는 구조를 피하려고
+SSE 발생기를 Node로 만들었다. 대기열 SSE 제거(ADR-023 §2, #351)로 이 발생기는 없어졌다.
 
 ### 2.5 폴링 폭증 시나리오(별도)
 
@@ -436,8 +436,6 @@ SSE가 실패해 대기자가 폴링으로 넘어가면 부하 형태가 바뀐�
 | 승격 지연 | `flowticket_queue_admit_tick_seconds`(히스토그램) | `histogram_quantile` |
 | 승격 처리 실패 | `flowticket_queue_admit_tick_failures_total` | 파드 합. 0보다 크면 대기열 게이지가 직전 값에 멈췄을 수 있다 |
 | 입장 게이트 폴백 거부 수 | `flowticket_queue_gate_fallback_total` | 파드 합. 이름은 그대로 두고 뜻만 "통과"에서 "거부"로 바뀌었다(게이트 수정) |
-| SSE 활성 연결 수 | `flowticket_queue_sse_connections` | 파드 합 |
-| SSE 전송 실패 수 | `flowticket_queue_sse_send_failures_total{phase=open\|deliver}` | 파드 합 |
 | 톰캣 커넥션·스레드 | `tomcat_connections_*`, `tomcat_threads_*` | 파드별 |
 | 초과판매 좌석 수 | `flowticket_seat_oversold` | 파드마다 같은 DB 질의 — `max` |
 | 승격·회수·이탈 기록 | api 로그 `queue.audit kind=admit\|reclaim\|leave` | 토큰은 SHA-256 앞 16자만 남긴다. 승격 줄에는 진입 순번(`seq`)도 있다 |
@@ -577,7 +575,7 @@ Pod 수에서 노드 수를 바로 계산하지 않는다. 레포에 이미 걸�
 - **측정 세션**: `terraform apply`부터 철거 확인(`tear-down.sh --audit-only` 잔여 0)까지의 한 번의 AWS 기동.
   §2.1의 "세션 길이"(입장한 사용자가 머무는 시간)와 다른 말이다.
 - **run**: §6의 회차 하나. 한 번 부하를 걸고 그 결과를 판정하는 단위다. 그 회차에 함께 돈 출력
-  (진입 발생기, SSE 발생기, 분산 실행한 발생기 각각의 출력, 정합성 SQL 결과, Prometheus 데이터)은
+  (진입 발생기, 분산 실행한 발생기 각각의 출력, 정합성 SQL 결과, Prometheus 데이터)은
   모두 **같은 run 디렉터리**에 둔다.
 
 결과 문서에는 원시 데이터를 넣지 않는다. 원시 데이터는 아래 경로에 두고, 문서에는 **요약값·경로·실행 조건**만
@@ -631,7 +629,6 @@ artifacts/loadtest/<session-id>/<run-id>/
 | `entry-<gen>.json` | k6 원시 출력(`--out json`). `entry_arrivals` 시계열이 1초 peak의 유일한 출처다(§2.3) |
 | `k6-summary-<gen>.json`, `k6-<gen>.log` | k6 요약과 로그. `dropped_iterations`는 0이면 요약에 나타나지 않으므로 값은 `arrivals-<gen>.json`에서 읽는다 |
 | `arrivals-<gen>.json` | offered·achieved·dropped·처리된 진입·HTTP 요청 수·1초 peak(`entry-arrivals.mjs`). `malformedLines` > 0이면 원시 출력이 잘렸다(발생기 강제 종료) — 그 run은 §3.1 무효로 본다 |
-| `sse-<gen>/` | SSE 연결별 결과·1초 타임라인·요약(`sse-hold.mjs`) |
 | `gen-vmstat-<gen>.log`, `gen-netdev-<gen>.log` | 발생기 CPU·메모리·네트워크(§3.1 무효 판정, §8 Generator 축) |
 
 정합성·Prometheus 출력도 같은 run 디렉터리에 둔다:

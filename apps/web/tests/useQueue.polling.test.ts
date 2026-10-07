@@ -163,6 +163,7 @@ describe("useQueue 폴링 — 경계", () => {
 
   it("언마운트하면 예약된 조회를 버린다", async () => {
     const { unmount } = await mount();
+    expect(issueQueueToken).toHaveBeenCalledTimes(1); // 진입이 끝나 첫 조회가 예약된 상태에서 언마운트한다
     unmount();
     await vi.advanceTimersByTimeAsync(120_000);
     expect(marks).toEqual([]);

@@ -71,11 +71,39 @@ public class QueueService {
     private static final DefaultRedisScript<Long> TAKEOVER_SCRIPT =
             new DefaultRedisScript<>(TAKEOVER_LUA, Long.class);
 
+    // 상태 한 번 읽기: 입장 여부·순번·전체 수를 한 Lua로. 판정 규칙은 statusOf·admittedNow와 같다(admit 키가 빠른 경로,
+    // 권위는 admitExp 점수 > 지금 — TS-024). 예전에는 상태 조회 1건이 메타(HGETALL)·EXISTS·ZSCORE·ZRANK·ZCARD·ZRANK로
+    // Redis를 6번 왕복했다. 대기 상태를 폴링 주 경로로 옮기면(ADR-023 §2) 대기자 전원이 이 경로를 주기적으로 부르므로
+    // 메타 조회(eventId를 알아야 키를 만든다) 1회 + 이 스크립트 1회로 줄인다. 키는 모두 KEYS로 받는다(Lua 안에서 만들지 않는다).
+    // admit 키는 토큰 단위라 이벤트 키와 슬롯이 다를 수 있다 — ISSUE_LUA도 여러 슬롯의 키를 함께 쓴다(클러스터 모드 아님).
+    // KEYS: admitKey, admitExpKey, waitKey / ARGV: token, nowEpochSeconds
+    // 반환: {상태(0 EXPIRED·1 WAITING·2 ADMITTED), 순번(WAITING일 때 1부터, 아니면 0), 전체 대기 수}
+    private static final String STATUS_LUA = """
+            local total = redis.call('ZCARD', KEYS[3])
+            if redis.call('EXISTS', KEYS[1]) == 1 then
+              return {2, 0, total}
+            end
+            local exp = redis.call('ZSCORE', KEYS[2], ARGV[1])
+            if exp and tonumber(exp) > tonumber(ARGV[2]) then
+              return {2, 0, total}
+            end
+            local r = redis.call('ZRANK', KEYS[3], ARGV[1])
+            if r then
+              return {1, r + 1, total}
+            end
+            return {0, 0, total}
+            """;
+    @SuppressWarnings("rawtypes")
+    private static final DefaultRedisScript<List> STATUS_SCRIPT = new DefaultRedisScript<>(STATUS_LUA, List.class);
+
     private final StringRedisTemplate redis;
     private final BookableEventCache bookableEvents;
     private final int capacity;
     private final long tokenTtl;
     private final long admitIntervalMs;
+    /** 다음 상태 조회까지 최소 대기(ms): 앞쪽 순번 값과 상한 — retryAfterMs. */
+    private final long pollMinMs;
+    private final long pollMaxMs;
 
     private final Clock clock;
     private final QueueMetrics metrics;
@@ -84,6 +112,8 @@ public class QueueService {
                         @Value("${queue.capacity:100}") int capacity,
                         @Value("${queue.token-ttl:1800}") long tokenTtl,
                         @Value("${queue.admit-interval-ms:1500}") long admitIntervalMs,
+                        @Value("${queue.poll-min-ms:2000}") long pollMinMs,
+                        @Value("${queue.poll-max-ms:30000}") long pollMaxMs,
                         Clock clock, QueueMetrics metrics) {
         this.clock = clock;
         this.metrics = metrics;
@@ -92,6 +122,8 @@ public class QueueService {
         this.capacity = capacity;
         this.tokenTtl = tokenTtl;
         this.admitIntervalMs = admitIntervalMs;
+        this.pollMinMs = pollMinMs;
+        this.pollMaxMs = pollMaxMs;
     }
 
     /**
@@ -108,8 +140,9 @@ public class QueueService {
                 token, String.valueOf(tokenTtl), String.valueOf(userId), String.valueOf(eventId));
         if (issued != null && issued.size() == 3 && ((Number) issued.get(0)).longValue() == 1L) {
             // 신규 발급: 상태·순번·전체 수가 스크립트 결과에 있다(추가 왕복 없음 — ISSUE_LUA 주석).
-            return new QueueTokenResponse(token, QueueStatus.WAITING.name(),
-                    ((Number) issued.get(1)).longValue(), ((Number) issued.get(2)).longValue());
+            long rank = ((Number) issued.get(1)).longValue();
+            return new QueueTokenResponse(token, QueueStatus.WAITING.name(), rank,
+                    ((Number) issued.get(2)).longValue(), retryAfterMs(QueueStatus.WAITING, rank));
         }
 
         // 예약 실패 = 이미 이 유저의 토큰이 있다. 재사용 판단은 읽기 위주라 애플리케이션에 둔다.
@@ -216,30 +249,66 @@ public class QueueService {
     private QueueTokenResponse currentOrWaiting(String token, Long eventId) {
         QueueStatus st = statusOf(token, eventId);
         if (st == QueueStatus.EXPIRED) {
-            return new QueueTokenResponse(token, QueueStatus.WAITING.name(), rankOf(token, eventId), card(eventId));
+            long rank = rankOf(token, eventId);
+            return new QueueTokenResponse(token, QueueStatus.WAITING.name(), rank, card(eventId),
+                    retryAfterMs(QueueStatus.WAITING, rank));
         }
         return tokenResponse(token, eventId);
     }
 
-    /** 상태 폴링. 토큰 메타가 사라졌으면(수명 만료) QUEUE_EXPIRED. */
+    /** 상태 폴링. 토큰 메타가 사라졌으면(수명 만료) QUEUE_EXPIRED. Redis 2왕복(메타의 eventId + STATUS_LUA). */
     public QueueStatusResponse status(String token) {
-        Map<Object, Object> meta = redis.opsForHash().entries(QueueKeys.token(token));
-        if (meta.isEmpty()) {
+        Object eventId = redis.opsForHash().get(QueueKeys.token(token), "eventId");
+        if (eventId == null) {
             throw new BusinessException(ErrorCode.QUEUE_EXPIRED);
         }
-        Long eventId = Long.valueOf((String) meta.get("eventId"));
-        QueueStatus st = statusOf(token, eventId);
-        long total = card(eventId);
-        long rank = st == QueueStatus.WAITING ? rankOf(token, eventId) : 0;
-        long eta = st == QueueStatus.WAITING ? etaSeconds(rank) : 0;
-        return new QueueStatusResponse(rank, total, eta, st.name());
+        Snapshot s = snapshot(token, Long.valueOf((String) eventId));
+        long eta = s.status() == QueueStatus.WAITING ? etaSeconds(s.rank()) : 0;
+        return new QueueStatusResponse(s.rank(), s.total(), eta, s.status().name(),
+                retryAfterMs(s.status(), s.rank()));
     }
 
     private QueueTokenResponse tokenResponse(String token, Long eventId) {
-        QueueStatus st = statusOf(token, eventId);
-        long total = card(eventId);
-        long rank = st == QueueStatus.WAITING ? rankOf(token, eventId) : 0;
-        return new QueueTokenResponse(token, st.name(), rank, total);
+        Snapshot s = snapshot(token, eventId);
+        return new QueueTokenResponse(token, s.status().name(), s.rank(), s.total(),
+                retryAfterMs(s.status(), s.rank()));
+    }
+
+    private record Snapshot(QueueStatus status, long rank, long total) {
+    }
+
+    private Snapshot snapshot(String token, Long eventId) {
+        List<?> r = redis.execute(STATUS_SCRIPT,
+                List.of(QueueKeys.admit(token), QueueKeys.admitExp(eventId), QueueKeys.wait(eventId)),
+                token, String.valueOf(Instant.now(clock).getEpochSecond()));
+        if (r == null || r.size() != 3) {
+            throw new IllegalStateException("STATUS_LUA 결과가 없다(파이프라인·트랜잭션 안에서 호출됨)");
+        }
+        long code = ((Number) r.get(0)).longValue();
+        QueueStatus st = code == 2 ? QueueStatus.ADMITTED : code == 1 ? QueueStatus.WAITING : QueueStatus.EXPIRED;
+        return new Snapshot(st, ((Number) r.get(1)).longValue(), ((Number) r.get(2)).longValue());
+    }
+
+    /**
+     * 다음 상태 조회까지 기다릴 시간(ms) — 클라이언트는 이보다 일찍 다시 묻지 않는다(최소 대기, ADR-023 §2 — 사용자 결정 2~30초).
+     *
+     * 앞쪽(순번 ≤ 정원 × 2)은 pollMinMs. 그 뒤는 "승격 주기마다 정원만큼 빠진다고 볼 때 내가 입장하기까지 걸리는 시간"
+     * = ceil(순번 ÷ 정원) × 승격 주기를 [pollMinMs, pollMaxMs]로 자른다. 엄밀한 하한은 아니다 — 승격 워커가 파드마다 돌아
+     * 슬롯이 빨리 비면 한 주기에 정원보다 많이 빠질 수 있고, 응답 직후 첫 틱이 바로 올 수도 있다. 그만큼 입장 인지가 늦어질 수
+     * 있어 최종 시험에서 입장 인지 지연을 잰다. 입장·만료(종료 상태)면 0(더 묻지 않는다).
+     * 대기 10만 명(정적 대기열 가정)이면 앞쪽 200명 2초 + 201~2,000명 4.5~30초 + 나머지 30초로
+     * 조회 부하는 약 3,500 req/s다(계산값, jitter 없이 — jitter 평균 +10%면 약 3,200).
+     */
+    long retryAfterMs(QueueStatus status, long rank) {
+        if (status != QueueStatus.WAITING) {
+            return 0;
+        }
+        int cap = Math.max(capacity, 1);
+        if (rank <= 2L * cap) {
+            return pollMinMs;
+        }
+        long untilFront = ((rank + cap - 1) / cap) * admitIntervalMs;
+        return Math.min(pollMaxMs, Math.max(pollMinMs, untilFront));
     }
 
     /**

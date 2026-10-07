@@ -45,9 +45,10 @@ REST 기준. 인증은 `Authorization: Bearer <accessToken>`. 에러는 공통 �
   score < 0.1 항목은 `ZREM`으로 정리. (인기검색어도 동일 정책 적용 가능 — 단계적)
 
 ## 대기열 (S03) — Redis Sorted Set
-- `POST /events/:id/queue/token` — 대기열 진입, 토큰 발급(회원). user 키 SET NX로 1인1토큰 원자 보장
+- `POST /events/:id/queue/token` — 대기열 진입, 토큰 발급(회원). user 키 SET NX로 1인1토큰 원자 보장 → `{ token, status, rank, total, retryAfterMs }`
 - `DELETE /queue/token?token=` — 이탈(나가기, 회원): 대기 제거 / 입장 슬롯 반환(원자)
-- `GET /queue/status?token=` — `{ rank, total, etaSeconds, status }`. **토큰으로 조회(Bearer 불필요)**
+- `GET /queue/status?token=` — `{ rank, total, etaSeconds, status, retryAfterMs }`. **토큰으로 조회(Bearer 불필요)**
+  - retryAfterMs: 다음 조회까지 **최소** 대기(ms). 순번 ≤ 정원×2는 2초, 그 뒤는 ceil(순번÷정원)×승격 주기를 2~30초로 자른 값, 입장·만료면 0(ADR-023 §2)
   - status: `WAITING | ADMITTED | EXPIRED`
 - `GET /sse/queue/:token` — 실시간 push(queue.admitted/queue.expired), 폴링과 이중화
 - 입장 허용 시 좌석 선택 페이지로. 토큰 TTL 만료 → `QUEUE_EXPIRED`

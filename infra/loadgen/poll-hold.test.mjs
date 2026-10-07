@@ -134,3 +134,62 @@ test("hold가 먼저 끝나도 입력이 닫힐 때까지 줄을 계속 넘긴�
   assert.match(stdout, /hold 뒤 k6 줄/);
   assert.equal(JSON.parse(readFileSync(join(out, "summary.json"), "utf8")).reason, "hold 시간 끝");
 });
+
+test("재사용한 keep-alive 소켓이 ECONNRESET이면 다른 소켓으로 한 번 다시 보내고 오류로 세지 않는다", async () => {
+  // 같은 소켓의 두 번째 요청이 오면 소켓을 끊는다(서버가 유휴 연결을 막 닫은 경합을 흉내).
+  let polls = 0;
+  const srv = http.createServer((req, res) => {
+    req.socket.served = (req.socket.served ?? 0) + 1;
+    if (req.socket.served >= 2) {
+      req.socket.destroy();
+      return;
+    }
+    polls++;
+    const admitted = polls >= 3;
+    res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ data: { status: admitted ? "ADMITTED" : "WAITING", rank: 1, total: 1, retryAfterMs: 50 } }));
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  try {
+    const out = join(mkdtempSync(join(tmpdir(), "poll-hold-")), "poll");
+    const hold = spawn(process.execPath, [HOLD, "--base", `http://127.0.0.1:${srv.address().port}`, "--out", out, "--hold", "20", "--min-ms", "50", "--jitter", "0", "--max-sockets", "1"]);
+    const exited = new Promise((r) => hold.on("exit", r));
+    hold.stdin.end("QTOKEN t1 50\n");
+    assert.equal(await exited, 0);
+    const summary = JSON.parse(readFileSync(join(out, "summary.json"), "utf8"));
+    assert.deepEqual(summary.finalStatus, { ADMITTED: 1 });
+    assert.equal(summary.networkErrors, 0);
+    assert.ok(summary.reusedSocketRetries >= 1, `재시도 ${summary.reusedSocketRetries}`);
+    assert.deepEqual(summary.errorCodes, {});
+  } finally {
+    srv.close();
+  }
+});
+
+test("재시도도 실패하면 네트워크 오류로 세고 코드를 남긴다", async () => {
+  // 연결마다 첫 요청만 받고, 같은 소켓의 다음 요청은 끊는다 + 두 번째 연결부터는 첫 요청도 끊는다 → 재시도도 실패
+  let conns = 0;
+  const srv = http.createServer((req, res) => {
+    if (req.socket.id === undefined) req.socket.id = ++conns;
+    req.socket.served = (req.socket.served ?? 0) + 1;
+    if (req.socket.served >= 2 || req.socket.id >= 2) {
+      req.socket.destroy();
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ data: { status: "WAITING", rank: 1, total: 1, retryAfterMs: 50 } }));
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  try {
+    const out = join(mkdtempSync(join(tmpdir(), "poll-hold-")), "poll");
+    const hold = spawn(process.execPath, [HOLD, "--base", `http://127.0.0.1:${srv.address().port}`, "--out", out, "--hold", "1", "--min-ms", "50", "--jitter", "0", "--max-sockets", "1"]);
+    const exited = new Promise((r) => hold.on("exit", r));
+    hold.stdin.write("QTOKEN t1 50\n");
+    await new Promise((r) => setTimeout(r, 1_500));
+    hold.stdin.end();
+    assert.equal(await exited, 0);
+    const summary = JSON.parse(readFileSync(join(out, "summary.json"), "utf8"));
+    assert.ok(summary.networkErrors >= 1, `오류 ${summary.networkErrors}`);
+    assert.ok((summary.errorCodes.ECONNRESET ?? 0) >= 1, JSON.stringify(summary.errorCodes));
+  } finally {
+    srv.close();
+  }
+});

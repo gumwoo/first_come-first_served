@@ -99,7 +99,7 @@ if [ -n "$GENS" ]; then
   [ "$USERS_N" -gt 0 ] || { echo "발생기 몫이 0이다(전체 $USERS_TOTAL, 발생기 $GENS)" >&2; exit 2; }
 fi
 # --rate의 목적은 "몫이 진입 시간 안에 모두 도착"이다. rate × 진입 시간이 몫보다 작으면 일부가 끝내 도착하지 못한다
-# (발생기별 값 대신 합계를 넣는 실수도 여기서 막는다 — 사용자 결정: 거부).
+# (너무 낮은 rate — 반올림·잘못 나눈 값 — 를 막는다. 합계를 넣어 너무 높은 값은 막지 않는다: 실제 값은 meta의 arrivalRate로 확인. 사용자 결정).
 if [ -n "$ARRIVAL_RATE" ] && [ $((ARRIVAL_RATE * ENTRY_SECONDS)) -lt "$USERS_N" ]; then
   echo "--rate $ARRIVAL_RATE × 진입 $ENTRY_SECONDS초 = $((ARRIVAL_RATE * ENTRY_SECONDS)) < 이 발생기 몫 $USERS_N — 일부가 도착하지 못한다(--rate는 발생기 한 대의 값)" >&2
   exit 2

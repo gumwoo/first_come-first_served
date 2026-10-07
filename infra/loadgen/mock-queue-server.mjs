@@ -8,7 +8,7 @@
 //                                    모르는 토큰은 410(QUEUE_EXPIRED). 대기열 SSE는 제거됐다(ADR-023 §2).
 // 앞 CAPACITY명은 발급 즉시 ADMITTED, 나머지는 WAITING으로 응답한다.
 //
-//   node infra/loadgen/mock-queue-server.mjs --port 18080 --capacity 3 --admit-after-ms 500
+//   node infra/loadgen/mock-queue-server.mjs --port 18080 --capacity 3 --admit-after-ms 500 [--retry-after-ms 2000]
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
@@ -18,10 +18,12 @@ const { values: args } = parseArgs({
     port: { type: "string", default: "18080" },
     capacity: { type: "string", default: "100" },
     "admit-after-ms": { type: "string", default: "1000" },
+    "retry-after-ms": { type: "string", default: "2000" },
   },
 });
 const CAPACITY = Number(args.capacity);
 const ADMIT_AFTER_MS = Number(args["admit-after-ms"]);
+const RETRY_AFTER_MS = Number(args["retry-after-ms"]);
 
 let rank = 0;
 const stats = { entries: 0, unauthorized: 0, statusPolls: 0 };
@@ -42,7 +44,7 @@ const server = http.createServer((req, res) => {
     const r = rank++;
     const token = randomUUID();
     issuedAt.set(token, r < CAPACITY ? -Infinity : Date.now());
-    json(res, 200, { data: { status: r < CAPACITY ? "ADMITTED" : "WAITING", token, rank: r, retryAfterMs: r < CAPACITY ? 0 : 2000 } });
+    json(res, 200, { data: { status: r < CAPACITY ? "ADMITTED" : "WAITING", token, rank: r, retryAfterMs: r < CAPACITY ? 0 : RETRY_AFTER_MS } });
     return;
   }
   if (req.method === "GET" && url.pathname === "/queue/status") {
@@ -53,7 +55,7 @@ const server = http.createServer((req, res) => {
       return;
     }
     const admitted = Date.now() - at >= ADMIT_AFTER_MS;
-    json(res, 200, { data: { status: admitted ? "ADMITTED" : "WAITING", rank: admitted ? 0 : 1, total: 1, etaSeconds: 0, retryAfterMs: admitted ? 0 : 2000 } });
+    json(res, 200, { data: { status: admitted ? "ADMITTED" : "WAITING", rank: admitted ? 0 : 1, total: 1, etaSeconds: 0, retryAfterMs: admitted ? 0 : RETRY_AFTER_MS } });
     return;
   }
   if (url.pathname === "/__stats") {

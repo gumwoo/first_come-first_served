@@ -196,7 +196,9 @@ CPU와 replica 수를 기록하고(`baseline-<구성>.json`), 같은 구성의 r
 | 파일 | 역할 |
 |---|---|
 | `infra/k6/queue-entry-rate.js` | ①의 진입 발생기. arrival-rate executor, iteration 번호로 사용자 매핑, `EMIT_TOKENS=1`이면 발급된 대기 토큰을 한 줄씩 낸다 |
-| ~~`infra/loadgen/sse-hold.mjs`~~ | (삭제 — #351) ②의 SSE 연결 발생기였다. 대기열 SSE를 없애(ADR-023 §2) 대기자는 상태 폴링으로 흉내 낸다(대기자 폴링 발생기는 최종 시험 준비에서) |
+| ~~`infra/loadgen/sse-hold.mjs`~~ | (삭제 — #351) ②의 SSE 연결 발생기였다. 대기열 SSE를 없애(ADR-023 §2) 대기자는 상태 폴링으로 흉내 낸다 |
+| `infra/loadgen/poll-hold.mjs` | ②의 대기자 폴링 발생기(Node). 진입 발생기의 대기 토큰(`QTOKEN <token> <retryAfterMs>`)을 받아 프론트와 같은 규칙(`retryAfterMs` + jitter, 오류 백오프)으로 상태를 묻고, 토큰별 ADMITTED를 처음 본 시각을 남긴다(`run-entry.sh --poll-hold N`) |
+| `scripts/loadtest/admit-latency.mjs` | 입장 인지 지연: 감사 로그의 승격 시각과 폴링 발생기가 ADMITTED를 본 시각을 토큰 해시(ref)로 맞춘다 |
 | `infra/loadgen/entry-arrivals.mjs` | 진입 원시 출력에서 §2.3 지표(offered·achieved·dropped·1초 peak)를 계산 |
 | `infra/loadgen/run-entry.sh` | run 하나를 실행하고 출력을 run 디렉터리(§7)에 모은다. 발생기 자원도 함께 기록 |
 | `infra/loadgen/mock-queue-server.mjs` | 로컬 스모크 전용 목 서버. 측정에 쓰지 않는다 |

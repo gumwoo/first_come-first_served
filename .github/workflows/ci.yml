@@ -83,6 +83,9 @@ jobs:
       # 분산 발생기: run-entry.sh 몫 계산(--gens)·entry-arrivals 고정 창(--t0)·시작 어긋남.
       - name: loadgen distributed start test (몫 계산·고정 창)
         run: node --test infra/loadgen/distributed-start.test.mjs
+      # 대기자 폴링 발생기(프론트와 같은 간격 규칙·토큰 참조·mock 상대 동작)와 입장 인지 지연 집계.
+      - name: loadgen poll-hold test (대기자 폴링 발생기·입장 인지 지연)
+        run: node --test infra/loadgen/poll-hold.test.mjs scripts/loadtest/admit-latency.test.mjs
       # 실효 입장 초과 판정식(loadtest-100k-plan §3.3)의 단위 테스트. 의존성 없는 node 내장 테스트.
       - name: loadtest correctness test (실효 입장 초과 재구성)
         run: node --test scripts/loadtest/admission-overlap.test.mjs

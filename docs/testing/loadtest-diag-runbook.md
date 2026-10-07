@@ -100,6 +100,8 @@
   burst(수천/s 이상)는 `--warm-seconds 30`으로 T0 전에 VU 연결을 미리 맺는다 — 끄면 T0에 VU 수만큼 새 연결이 한꺼번에 열려
   실제 송신이 늦어진다(10,000/s에서 첫 1초 약 2천 건). `entry-arrivals.mjs`의 `entryConnectionWait.over100ms`가 0에 가까운지 확인한다
   (`window`는 iteration 시작 시각이라 연결 대기를 보지 못한다).
+- **도착 창**: N명이 진입 시간 안에 모두 도착해야 하면 `--rate <발생기 한 대의 초당 도착>`을 몫 ÷ 진입 시간보다 조금 높게 준다
+  (예: 3대 × 33,334명·10초 → `--rate 3350`). 사용자 기준 결과는 `entry-arrivals.mjs`의 `usersNotArrived`(0이어야 함).
 - **대기자**: 대기 상태까지 재려면 `run-entry.sh --poll-hold <초>` — 대기 토큰마다 프론트와 같은 규칙으로 상태를 묻는다(`poll-<gen>/`).
   입장 인지 지연은 `scripts/loadtest/admit-latency.mjs --audit <api 로그> <run>/poll-*/tokens.jsonl`.
 - **사후 검사**: `export-prom.mjs --end`는 run 종료 + 45초 이상, `check-correctness.sh`로 판정.

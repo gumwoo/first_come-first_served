@@ -79,10 +79,14 @@ if (ARRIVAL_RATE !== null && !(Number.isInteger(ARRIVAL_RATE) && ARRIVAL_RATE > 
   throw new Error(`ARRIVAL_RATE는 양의 정수여야 한다: ${__ENV.ARRIVAL_RATE}`);
 }
 if (ARRIVAL_RATE !== null && DIST !== "constant") throw new Error("ARRIVAL_RATE는 DIST=constant에서만 쓴다");
+if (ARRIVAL_RATE !== null && ARRIVAL_RATE * ENTRY_SECONDS < USERS_N) {
+  throw new Error(`ARRIVAL_RATE ${ARRIVAL_RATE} × ${ENTRY_SECONDS}초 < USERS_N ${USERS_N} — 일부가 도착하지 못한다(발생기 한 대의 값)`);
+}
 // 응답이 느려질수록 같은 도착률에 더 많은 VU가 필요하다. 부족하면 dropped_iterations로 드러나고
 // 그 run은 무효다(§3.1). 상한은 발생기 메모리로 묶이므로 실행 쪽에서 조정한다.
-const PRE_VUS = Number(__ENV.PRE_VUS || Math.max(50, Math.ceil(AVG_RATE)));
-const MAX_VUS = Number(__ENV.MAX_VUS || Math.max(200, Math.ceil(AVG_RATE * 4)));
+const PEAK_RATE = Math.max(AVG_RATE, ARRIVAL_RATE ?? 0);
+const PRE_VUS = Number(__ENV.PRE_VUS || Math.max(50, Math.ceil(PEAK_RATE)));
+const MAX_VUS = Number(__ENV.MAX_VUS || Math.max(200, Math.ceil(PEAK_RATE * 4)));
 
 function scenario() {
   const common = { timeUnit: "1s", preAllocatedVUs: PRE_VUS, maxVUs: MAX_VUS, gracefulStop: "30s" };

@@ -183,4 +183,8 @@ test("--rate는 양의 정수·constant에서만 받고 계획에 남는다", ()
   assert.equal(plan("--users-n", "1000", "--rate", "0").code, 2);
   assert.equal(plan("--users-n", "1000", "--rate", "33.5").code, 2);
   assert.equal(plan("--users-n", "1000", "--rate", "100", "--dist", "frontloaded").code, 2);
+  assert.equal(plan("--users-n", "1000", "--rate", "00").code, 2); // 정규화 뒤 0
+  // rate × 진입 시간 < 몫이면 거부(합계를 발생기별 값으로 착각한 경우 포함)
+  assert.equal(plan("--users-n", "1000", "--entry-seconds", "10", "--rate", "99").code, 2);
+  assert.equal(plan("--users-n", "1000", "--entry-seconds", "10", "--rate", "100").plan.arrivalRate, 100);
 });

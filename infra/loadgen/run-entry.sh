@@ -68,9 +68,10 @@ done
 [ -f "$USERS" ] || { echo "사용자 토큰 파일이 없다: $USERS" >&2; exit 2; }
 USERS="$(cd "$(dirname "$USERS")" && pwd)/$(basename "$USERS")"
 if [ -n "$ARRIVAL_RATE" ]; then
-  case "$ARRIVAL_RATE" in *[!0-9]*|0) echo "--rate는 양의 정수여야 한다: $ARRIVAL_RATE" >&2; exit 2 ;; esac
+  case "$ARRIVAL_RATE" in *[!0-9]*) echo "--rate는 양의 정수여야 한다: $ARRIVAL_RATE" >&2; exit 2 ;; esac
+  ARRIVAL_RATE=$((10#$ARRIVAL_RATE)) # 앞자리 0(00 등)을 정규화한 뒤 범위를 본다
+  [ "$ARRIVAL_RATE" -ge 1 ] || { echo "--rate는 양의 정수여야 한다: $ARRIVAL_RATE" >&2; exit 2; }
   [ "$DIST" = constant ] || { echo "--rate는 --dist constant에서만 쓴다" >&2; exit 2; }
-  ARRIVAL_RATE=$((10#$ARRIVAL_RATE))
 fi
 for v in "$USERS_N" "$ENTRY_SECONDS" "$OFFSET" "$WARM_SECONDS" "$POLL_HOLD"; do
   case "$v" in ""|*[!0-9]*) echo "--users-n/--entry-seconds/--offset/--warm-seconds/--poll-hold는 정수여야 한다: $v" >&2; exit 2 ;; esac
@@ -96,6 +97,12 @@ if [ -n "$GENS" ]; then
   USERS_N=$SHARE
   [ "$K" -eq "$GENS" ] && USERS_N=$((USERS_TOTAL - (GENS - 1) * SHARE))
   [ "$USERS_N" -gt 0 ] || { echo "발생기 몫이 0이다(전체 $USERS_TOTAL, 발생기 $GENS)" >&2; exit 2; }
+fi
+# --rate의 목적은 "몫이 진입 시간 안에 모두 도착"이다. rate × 진입 시간이 몫보다 작으면 일부가 끝내 도착하지 못한다
+# (발생기별 값 대신 합계를 넣는 실수도 여기서 막는다 — 사용자 결정: 거부).
+if [ -n "$ARRIVAL_RATE" ] && [ $((ARRIVAL_RATE * ENTRY_SECONDS)) -lt "$USERS_N" ]; then
+  echo "--rate $ARRIVAL_RATE × 진입 $ENTRY_SECONDS초 = $((ARRIVAL_RATE * ENTRY_SECONDS)) < 이 발생기 몫 $USERS_N — 일부가 도착하지 못한다(--rate는 발생기 한 대의 값)" >&2
+  exit 2
 fi
 if [ -n "$START_AT" ]; then
   [[ "$START_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] || {

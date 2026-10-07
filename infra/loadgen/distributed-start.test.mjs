@@ -176,3 +176,15 @@ test("연결 대기 점이 없으면 null(옛 출력과 구별)", () => {
   const { out } = arrivals([[point(at(0))]], "--entry-seconds", "1");
   assert.equal(out.entryConnectionWait, null);
 });
+
+test("--rate는 양의 정수·constant에서만 받고 계획에 남는다", () => {
+  assert.equal(plan("--users-n", "100000", "--gen", "g1", "--gens", "3", "--rate", "3350").plan.arrivalRate, 3350);
+  assert.equal(plan("--users-n", "1000").plan.arrivalRate, null);
+  assert.equal(plan("--users-n", "1000", "--rate", "0").code, 2);
+  assert.equal(plan("--users-n", "1000", "--rate", "33.5").code, 2);
+  assert.equal(plan("--users-n", "1000", "--rate", "100", "--dist", "frontloaded").code, 2);
+  assert.equal(plan("--users-n", "1000", "--rate", "00").code, 2); // 정규화 뒤 0
+  // rate × 진입 시간 < 몫이면 거부(너무 낮은 rate)
+  assert.equal(plan("--users-n", "1000", "--entry-seconds", "10", "--rate", "99").code, 2);
+  assert.equal(plan("--users-n", "1000", "--entry-seconds", "10", "--rate", "100").plan.arrivalRate, 100);
+});

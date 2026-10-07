@@ -162,8 +162,11 @@ const result = {
   malformedLines,
   targetUsers: usersN,
   offeredArrivals: offered,
-  // 목표 사용자 수보다 덜 시작된 수(도착률 정수 반올림 등). 음수면 목표보다 더 시작됐다.
+  // 목표 사용자 수보다 덜 시작된 iteration 수(도착률 정수 반올림 등). 음수면 iteration이 더 시작됐다 — 도착률을 일부러 높인
+  // run(--rate)에서는 사용자가 소진된 뒤의 iteration(noUser)이 섞여 음수가 정상이다. 사용자 기준은 usersNotArrived를 본다.
   shortfallVsTarget: usersN == null ? null : usersN - offered,
+  // 목표 사용자 중 진입 요청을 보내지 못한 수(= 목표 − 실제 도착). 0이어야 "목표 인원 모두 도착"이다.
+  usersNotArrived: usersN == null ? null : usersN - sums.entry_arrivals,
   achievedArrivals: sums.entry_arrivals,
   droppedIterations: sums.dropped_iterations,
   noUser: sums.entry_no_user,

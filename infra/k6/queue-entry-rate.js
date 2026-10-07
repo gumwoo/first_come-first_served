@@ -70,15 +70,28 @@ if (USER_OFFSET + USERS_N > USERS.length) {
 }
 
 const AVG_RATE = USERS_N / ENTRY_SECONDS;
+// 도착률 지정(constant만, 발생기 한 대의 초당 도착 수). 기본은 round(USERS_N / ENTRY_SECONDS)인데, 반올림으로 rate × 시간이
+// USERS_N보다 작아지면(예: 33,333명 ÷ 10초 → 3,333/s × 10초 = 33,330) 몇 명이 끝내 도착하지 못한다. 또 마지막 도착이
+// 창 끝(T0 + ENTRY_SECONDS)에 붙어 서버 도착이 창 밖으로 넘친다. 조금 높게 주면 사용자가 창 안에서 모두 소진되고
+// (USERS_N / ARRIVAL_RATE초), 그 뒤 iteration은 요청 없이 entry_no_user로 끝난다 — "N명이 ENTRY_SECONDS초 안에 도착"을 지킨다.
+const ARRIVAL_RATE = __ENV.ARRIVAL_RATE ? Number(__ENV.ARRIVAL_RATE) : null;
+if (ARRIVAL_RATE !== null && !(Number.isInteger(ARRIVAL_RATE) && ARRIVAL_RATE > 0)) {
+  throw new Error(`ARRIVAL_RATE는 양의 정수여야 한다: ${__ENV.ARRIVAL_RATE}`);
+}
+if (ARRIVAL_RATE !== null && DIST !== "constant") throw new Error("ARRIVAL_RATE는 DIST=constant에서만 쓴다");
+if (ARRIVAL_RATE !== null && ARRIVAL_RATE * ENTRY_SECONDS < USERS_N) {
+  throw new Error(`ARRIVAL_RATE ${ARRIVAL_RATE} × ${ENTRY_SECONDS}초 < USERS_N ${USERS_N} — 일부가 도착하지 못한다(발생기 한 대의 값)`);
+}
 // 응답이 느려질수록 같은 도착률에 더 많은 VU가 필요하다. 부족하면 dropped_iterations로 드러나고
 // 그 run은 무효다(§3.1). 상한은 발생기 메모리로 묶이므로 실행 쪽에서 조정한다.
-const PRE_VUS = Number(__ENV.PRE_VUS || Math.max(50, Math.ceil(AVG_RATE)));
-const MAX_VUS = Number(__ENV.MAX_VUS || Math.max(200, Math.ceil(AVG_RATE * 4)));
+const PEAK_RATE = Math.max(AVG_RATE, ARRIVAL_RATE ?? 0);
+const PRE_VUS = Number(__ENV.PRE_VUS || Math.max(50, Math.ceil(PEAK_RATE)));
+const MAX_VUS = Number(__ENV.MAX_VUS || Math.max(200, Math.ceil(PEAK_RATE * 4)));
 
 function scenario() {
   const common = { timeUnit: "1s", preAllocatedVUs: PRE_VUS, maxVUs: MAX_VUS, gracefulStop: "30s" };
   if (DIST === "constant") {
-    return { executor: "constant-arrival-rate", rate: Math.round(AVG_RATE), duration: `${ENTRY_SECONDS}s`, ...common };
+    return { executor: "constant-arrival-rate", rate: ARRIVAL_RATE ?? Math.round(AVG_RATE), duration: `${ENTRY_SECONDS}s`, ...common };
   }
   if (DIST === "frontloaded") {
     return {
@@ -116,7 +129,8 @@ export const options = {
 const arrivals = new Counter("entry_arrivals");
 // 처리된 진입 = 토큰 발급 200(§2.3). HTTP 요청 수(http_reqs)와 섞지 않는다.
 const processed = new Counter("entry_processed");
-// 준비한 사용자보다 iteration이 많아진 경우(분포 반올림). 0이 아니면 그만큼 도착이 덜 나갔다.
+// 준비한 사용자보다 iteration이 많아진 경우(분포 반올림, 또는 ARRIVAL_RATE로 일부러 높여 사용자를 창 안에서 소진한 뒤).
+// ARRIVAL_RATE 없이 0이 아니면 그만큼 도착이 덜 나갔다.
 const noUser = new Counter("entry_no_user");
 
 // 동시 시작 장벽. START_AT이 없으면 바로 시작한다(단일 발생기 기존 동작).

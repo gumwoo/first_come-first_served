@@ -25,6 +25,8 @@
 #   scripts/loadtest/loadgen.sh exec -- 'infra/loadgen/run-entry.sh ... --gen $GEN --gens 3 --start-at 2026-10-07T01:00:00Z'
 #   --warm-seconds W: 진입 시작(--start-at) 전 W초 동안 VU마다 keep-alive 연결을 미리 맺는다(queue-entry-rate.js WARM_SECONDS).
 #     T0에 새 연결이 한꺼번에 열리며 실제 송신이 늦어지는 것을 막는다. 기본 0(끔).
+#   --rate N: 발생기 한 대의 초당 도착 수(constant). 주지 않으면 round(몫 ÷ 진입 시간). 조금 높게 주면 몫이 진입 시간 안에서
+#     모두 소진되고 남은 iteration은 요청 없이 끝난다(queue-entry-rate.js ARRIVAL_RATE).
 #   --print-plan: 계산한 몫(gen·usersN·offset·startAt)만 JSON 한 줄로 내고 끝낸다(실행 전 확인·테스트용).
 set -euo pipefail
 
@@ -32,7 +34,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
 SESSION="" RUN="" GEN="g1" GEN_SET=0 BASE="" EVENT="" USERS="" USERS_N="" OFFSET=0
-ENTRY_SECONDS=10 DIST=constant PRE_VUS="" MAX_VUS="" GENS="" START_AT="" WARM_SECONDS=0 POLL_HOLD=0 PRINT_PLAN=0
+ENTRY_SECONDS=10 DIST=constant PRE_VUS="" MAX_VUS="" GENS="" START_AT="" ARRIVAL_RATE="" WARM_SECONDS=0 POLL_HOLD=0 PRINT_PLAN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --session) SESSION="$2"; shift 2 ;;
@@ -52,6 +54,7 @@ while [ $# -gt 0 ]; do
     --gens) GENS="$2"; shift 2 ;;
     --start-at) START_AT="$2"; shift 2 ;;
     --warm-seconds) WARM_SECONDS="$2"; shift 2 ;;
+    --rate) ARRIVAL_RATE="$2"; shift 2 ;;
     --poll-hold) POLL_HOLD="$2"; shift 2 ;;
     --print-plan) PRINT_PLAN=1; shift ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2 ;;
@@ -64,6 +67,12 @@ done
 # k6의 open()은 상대경로를 스크립트 디렉터리(infra/k6) 기준으로 읽는다. 절대경로로 바꿔 넘긴다.
 [ -f "$USERS" ] || { echo "사용자 토큰 파일이 없다: $USERS" >&2; exit 2; }
 USERS="$(cd "$(dirname "$USERS")" && pwd)/$(basename "$USERS")"
+if [ -n "$ARRIVAL_RATE" ]; then
+  case "$ARRIVAL_RATE" in *[!0-9]*) echo "--rate는 양의 정수여야 한다: $ARRIVAL_RATE" >&2; exit 2 ;; esac
+  ARRIVAL_RATE=$((10#$ARRIVAL_RATE)) # 앞자리 0(00 등)을 정규화한 뒤 범위를 본다
+  [ "$ARRIVAL_RATE" -ge 1 ] || { echo "--rate는 양의 정수여야 한다: $ARRIVAL_RATE" >&2; exit 2; }
+  [ "$DIST" = constant ] || { echo "--rate는 --dist constant에서만 쓴다" >&2; exit 2; }
+fi
 for v in "$USERS_N" "$ENTRY_SECONDS" "$OFFSET" "$WARM_SECONDS" "$POLL_HOLD"; do
   case "$v" in ""|*[!0-9]*) echo "--users-n/--entry-seconds/--offset/--warm-seconds/--poll-hold는 정수여야 한다: $v" >&2; exit 2 ;; esac
 done
@@ -89,6 +98,12 @@ if [ -n "$GENS" ]; then
   [ "$K" -eq "$GENS" ] && USERS_N=$((USERS_TOTAL - (GENS - 1) * SHARE))
   [ "$USERS_N" -gt 0 ] || { echo "발생기 몫이 0이다(전체 $USERS_TOTAL, 발생기 $GENS)" >&2; exit 2; }
 fi
+# --rate의 목적은 "몫이 진입 시간 안에 모두 도착"이다. rate × 진입 시간이 몫보다 작으면 일부가 끝내 도착하지 못한다
+# (너무 낮은 rate — 반올림·잘못 나눈 값 — 를 막는다. 합계를 넣어 너무 높은 값은 막지 않는다: 실제 값은 meta의 arrivalRate로 확인. 사용자 결정).
+if [ -n "$ARRIVAL_RATE" ] && [ $((ARRIVAL_RATE * ENTRY_SECONDS)) -lt "$USERS_N" ]; then
+  echo "--rate $ARRIVAL_RATE × 진입 $ENTRY_SECONDS초 = $((ARRIVAL_RATE * ENTRY_SECONDS)) < 이 발생기 몫 $USERS_N — 일부가 도착하지 못한다(--rate는 발생기 한 대의 값)" >&2
+  exit 2
+fi
 if [ -n "$START_AT" ]; then
   [[ "$START_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] || {
     echo "--start-at은 UTC ISO(YYYY-MM-DDTHH:MM:SSZ)여야 한다: $START_AT" >&2; exit 2; }
@@ -101,8 +116,8 @@ fi
 
 if [ "$PRINT_PLAN" = 1 ]; then
   SA=null; [ -n "$START_AT" ] && SA="\"$START_AT\""
-  printf '{"gen":"%s","gens":%s,"usersN":%s,"offset":%s,"usersTotal":%s,"startAt":%s,"warmSeconds":%s}\n' \
-    "$GEN" "${GENS:-null}" "$USERS_N" "$OFFSET" "$USERS_TOTAL" "$SA" "$WARM_SECONDS"
+  printf '{"gen":"%s","gens":%s,"usersN":%s,"offset":%s,"usersTotal":%s,"startAt":%s,"warmSeconds":%s,"arrivalRate":%s}\n' \
+    "$GEN" "${GENS:-null}" "$USERS_N" "$OFFSET" "$USERS_TOTAL" "$SA" "$WARM_SECONDS" "${ARRIVAL_RATE:-null}"
   exit 0
 fi
 
@@ -124,7 +139,7 @@ cat > "$OUT/meta-$GEN.json" <<EOF
   "dirty": $(if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then echo null; elif [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then echo true; else echo false; fi),
   "startedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "base": "$BASE", "event": "$EVENT", "dist": "$DIST", "usersN": $USERS_N, "offset": $OFFSET,
-  "entrySeconds": $ENTRY_SECONDS, "sse": false, "pollHoldSeconds": $POLL_HOLD,
+  "entrySeconds": $ENTRY_SECONDS, "sse": false, "pollHoldSeconds": $POLL_HOLD, "arrivalRate": ${ARRIVAL_RATE:-null},
   "preVus": "${PRE_VUS:-default}", "maxVus": "${MAX_VUS:-default}",
   "gens": ${GENS:-null}, "usersTotal": $USERS_TOTAL, "offsetBase": $OFFSET_BASE, "startAt": $([ -n "$START_AT" ] && echo "\"$START_AT\"" || echo null), "warmSeconds": $WARM_SECONDS,
   "clockSync": "$( (chronyc tracking 2>/dev/null | grep -E 'System time|Leap status' | tr -s ' ' | tr '\n' ';') || echo unknown)"
@@ -147,6 +162,7 @@ K6_ARGS=(run --log-format=raw
 [ -n "$MAX_VUS" ] && K6_ARGS+=(-e MAX_VUS="$MAX_VUS")
 [ -n "$START_AT" ] && K6_ARGS+=(-e START_AT="$START_AT")
 [ "$WARM_SECONDS" != 0 ] && K6_ARGS+=(-e WARM_SECONDS="$WARM_SECONDS")
+[ -n "$ARRIVAL_RATE" ] && K6_ARGS+=(-e ARRIVAL_RATE="$ARRIVAL_RATE")
 
 # k6가 중단·실패로 끝나도 그때까지의 원시 출력으로 지표는 계산해 둔다. 종료 코드는 마지막에 돌려준다.
 set +e

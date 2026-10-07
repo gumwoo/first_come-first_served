@@ -4,11 +4,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mergeLines, tsKey } from "./collect-api-logs.mjs";
+import { mergeLine, tsKey } from "./collect-api-logs.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./collect-api-logs.mjs", import.meta.url));
 const FAKE = fileURLToPath(new URL("./fixtures/fake-kubectl.mjs", import.meta.url));
@@ -24,7 +24,8 @@ function start(state, extra = []) {
   const child = spawn(process.execPath, [SCRIPT, "--out", out, "--since", SINCE, "--interval", "0.2", "--retry-ms", "100", ...extra],
     { env: { ...process.env, KUBECTL: FAKE, FAKE_KUBE_STATE: stateFile }, stdio: ["ignore", "ignore", "pipe"] });
   const exited = new Promise((r) => child.on("exit", r));
-  const set = (fn) => { const s = JSON.parse(readFileSync(stateFile, "utf8")); fn(s); writeFileSync(stateFile, JSON.stringify(s)); };
+  // 임시 파일 + rename — 가짜 kubectl이 쓰는 도중의 빈 파일을 읽지 않게(CI에서 실제로 흔들렸다)
+  const set = (fn) => { const s = JSON.parse(readFileSync(stateFile, "utf8")); fn(s); writeFileSync(stateFile + ".t", JSON.stringify(s)); renameSync(stateFile + ".t", stateFile); };
   const manifest = () => JSON.parse(readFileSync(join(out, "manifest.json"), "utf8"));
   const log = (pod) => readFileSync(join(out, `${pod}.log`), "utf8");
   return { out, exited, set, manifest, log };
@@ -39,7 +40,7 @@ test("시작 전(Pending) 파드는 컨테이너가 뜰 때까지 기다렸다 �
   const m = c.manifest();
   assert.equal(m.pods.a.endReason, "collector-stopped");
   assert.equal(m.pods.a.complete, true);
-  assert.equal(m.pods.a.follows, 1);
+  assert.equal(m.pods.a.failures, 0); // 시작 전 파드에 붙었다가 실패한 시도가 없다(따라잡기까지 follows 2)
   assert.match(c.log("a"), /a1/);
 });
 
@@ -122,11 +123,55 @@ test("out 디렉터리가 비어 있지 않거나 인자가 잘못되면 시작�
   assert.equal(spawnSync(process.execPath, [SCRIPT, "--out", empty, "--since", SINCE, "--for", "x"]).status, 2);
 });
 
-test("merge: --since 이전 줄은 빼고 kubectl logs --prefix 형식으로 낸다, 형식 밖 줄은 센다", () => {
-  const txt = `[pod/a/api] 2026-10-06T23:59:59.999999999Z before\n[pod/a/api] ${T(0, "000000001")} at since\n[pod/a/api] ${T(5)} after x y\n깨진 줄\n`;
-  const { lines, bad } = mergeLines([txt], Date.parse(SINCE));
-  assert.deepEqual(lines, ["[pod/a/api] at since", "[pod/a/api] after x y"]);
-  assert.equal(bad, 1);
+test("merge: --since 이전 줄은 빼고 kubectl logs --prefix 형식으로 낸다, 형식 밖 줄은 undefined", () => {
+  const s = Date.parse(SINCE);
+  assert.equal(mergeLine("[pod/a/api] 2026-10-06T23:59:59.999999999Z before", s), null);
+  assert.equal(mergeLine(`[pod/a/api] ${T(0, "000000001")} at since`, s), "[pod/a/api] at since");
+  assert.equal(mergeLine(`[pod/a/api] ${T(5)} after x y`, s), "[pod/a/api] after x y");
+  assert.equal(mergeLine("깨진 줄", s), undefined);
   assert.ok(tsKey(T(1, "000000002")) < tsKey(T(1, "000000010"))); // kubelet 나노 부분(9자리)은 문자열로 비교해도 순서가 맞다
   assert.ok(tsKey(T(1, "999999999")) < tsKey(T(2, "000000000")));
+});
+
+test("끊긴 뒤(정상 종료) 다시 붙지 못한 채 지워지면 그 사이 줄을 모르므로 complete=false(G1 재현 — 오래 남는 정상 종료 표시)", async () => {
+  const c = start({ pods: { a: running() }, logs: { a: { lines: [[T(1), "queue.audit kind=admit a"]], mode: "close" } } }, ["--for", "3", "--max-failures", "50"]);
+  await sleep(500);
+  c.set((s) => { s.logs.a.mode = "fail"; s.logs.a.lines.push([T(2), "queue.audit kind=leave a"]); }); // 다시 받기가 실패하는 동안 줄이 찍힘
+  await sleep(500);
+  c.set((s) => { delete s.pods.a; });
+  assert.equal(await c.exited, 0);
+  const m = c.manifest();
+  assert.equal(m.pods.a.endReason, "pod-gone");
+  assert.equal(m.pods.a.complete, false);
+});
+
+test("멈출 때 다시 받기가 무응답이었으면 마지막 따라잡기 실패 → complete=false(G1 재현 — 받는 중으로 보이기만 한 경우)", async () => {
+  const c = start({ pods: { a: running() }, logs: { a: { lines: [[T(1), "a1"]], mode: "close" } } }, ["--for", "2", "--max-failures", "50"]);
+  await sleep(400);
+  c.set((s) => { s.logs.a.mode = "hang"; s.logs.a.lines.push([T(2), "a2 run 중 줄"]); });
+  assert.equal(await c.exited, 0);
+  const m = c.manifest();
+  assert.equal(m.pods.a.endReason, "collector-stopped");
+  assert.equal(m.pods.a.complete, false);
+});
+
+test("줄 중간에서 끊긴 조각은 쓰지 않고, 다시 받을 때 온전한 줄 하나만 남는다(G1 재현 — 잘린 줄 중복)", async () => {
+  const c = start({ pods: { a: running() }, logs: { a: { lines: [[T(1), "a1"], [T(2), "queue.audit kind=admit seq=7 admitKeyTtl=300"]], mode: "partial" } } }, ["--for", "2.5", "--max-failures", "50"]);
+  await sleep(500);
+  c.set((s) => { s.logs.a.mode = "hold"; });
+  assert.equal(await c.exited, 0);
+  const lines = c.log("a").trim().split("\n");
+  assert.equal(lines.filter((l) => l.includes("seq=7")).length, 1);
+  assert.match(lines.find((l) => l.includes("seq=7")), /admitKeyTtl=300$/);
+  assert.equal(c.manifest().pods.a.complete, true);
+});
+
+test("시작하지 못하고(컨테이너 없이) 사라진 파드는 neverStarted로 남긴다", async () => {
+  const c = start({ pods: { a: running(), p: { containerID: null, state: "waiting" } }, logs: { a: { lines: [[T(1), "a1"]], mode: "hold" } } }, ["--for", "2"]);
+  await sleep(600);
+  c.set((s) => { delete s.pods.p; });
+  assert.equal(await c.exited, 0);
+  const m = c.manifest();
+  assert.deepEqual(m.neverStarted, ["p"]);
+  assert.equal(m.pods.p, undefined);
 });

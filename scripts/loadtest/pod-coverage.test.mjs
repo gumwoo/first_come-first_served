@@ -239,3 +239,11 @@ test("받아 둔 로그: 수집기가 run 종료 + 여유 전에 멈췄거나 ru
   assert.equal(none.code, 2);
   assert.match(none.stderr, /startedAt·endedAt/);
 });
+
+test("받아 둔 로그: 시작하지 못하고 사라진 파드(neverStarted — Pending 중 축소)는 받지 못함이 아니다", () => {
+  const pendingGone = { name: "api-pending-gone", from: T0 + 10, to: T0 + 40 };
+  const { code, out } = runCollected([whole, pendingGone],
+    { since: iso(T0), ...win, pods: { "api-whole": got("collector-stopped") }, neverStarted: ["api-pending-gone"] });
+  assert.equal(code, 0);
+  assert.deepEqual(out.notCollected, []);
+});

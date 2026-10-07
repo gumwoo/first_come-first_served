@@ -160,7 +160,9 @@ try {
     if (!Number.isFinite(mStart) || !Number.isFinite(mEnd)) throw new Error(`${a.collected}: startedAt·endedAt을 읽지 못했다(수집기가 정상 종료하지 않았다)`);
     if (mStart > since) throw new Error(`로그 수집기가 run 시작 뒤에 떴다(${m.startedAt} > ${a.since}) — run 시작 전에 띄운다`);
     if (mEnd < until + graceMs) throw new Error(`로그 수집기가 run 종료 + 여유(${new Date(until + graceMs).toISOString()}) 전에 멈췄다(${m.endedAt}) — 그 뒤 줄이 없다`);
-    const notCollected = seen.filter((p) => !m.pods?.[p]);
+    // 시작하지 못하고(컨테이너 없이) 사라진 파드(neverStarted)는 줄이 없는 것이 맞다 — 대상에서 뺀다(CA를 기다리던 Pending 파드가 HPA 축소로 지워진 경우).
+    const never = new Set(m.neverStarted ?? []);
+    const notCollected = seen.filter((p) => !m.pods?.[p] && !never.has(p));
     const incomplete = seen.filter((p) => m.pods?.[p] && m.pods[p].complete !== true)
       .map((p) => ({ pod: p, endReason: m.pods[p].endReason, follows: m.pods[p].follows }));
     const ok = notCollected.length === 0 && incomplete.length === 0 && restartedInRun.length === 0;

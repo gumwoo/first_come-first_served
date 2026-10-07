@@ -139,6 +139,7 @@ function collectMain(argv) {
   };
 
   const startedAt = new Date().toISOString();
+  const COLLECTOR_START_MS = Date.parse(startedAt);
   const pods = new Map();
   const pending = new Set(); // 아직 컨테이너가 없는 파드(Pending·ContainerCreating) — 시작하지 못하고 사라지면 neverStarted
   const neverStarted = new Set();
@@ -160,14 +161,18 @@ function collectMain(argv) {
     const m = LINE.exec(line);
     const key = m ? tsKey(m[2]) : null;
     if (key === null) { p.file.write(line + "\n"); p.lines++; return; } // 형식 밖 줄도 남긴다(merge가 판정 불가로 알린다)
-    // 첫 받기의 회전: 첫 받기가 제때 붙지 못한 사이(실패·늦게 띄움) 로그가 회전되면 앞부분이 잘린다. 기준 시각 ref = max(run 시작, 컨테이너 시작)
-    // (시작 시각을 모르면 run 시작). 첫 줄이 ref + 30초보다 늦고 **그리고** 첫 시도가 실패했거나(지금이 두 번째 이후 시도) 첫 시도를 ref + 30초보다
-    // 늦게 띄웠으면 그 사이를 확인할 수 없어 구멍으로 본다. 제때 붙은 한가한 파드(첫 줄이 늦을 뿐)는 통과한다 — 한가하면 회전도 없다(추론).
+    // 첫 받기의 회전: 첫 받기가 제때 붙지 못한 사이(실패·늦게 띄움) 로그가 회전되면 앞부분이 잘린다. 첫 시도가 실패했거나 늦게 띄워졌고(troubled)
+    // 첫 줄이 기준(run 시작 뒤 뜬 파드는 컨테이너 시작 + 30초, 그 밖은 run 시작)보다 늦으면 그 사이를 확인할 수 없어 구멍으로 본다.
+    // 제때 붙은 한가한 파드(첫 줄이 늦을 뿐)는 통과한다 — 한가하면 회전도 없다(추론).
     // 남는 구멍: 첫 시도를 제때 띄웠는데 연결 단계(dial·TLS)에서 오래 걸린 경우는 구분하지 못한다(시간 제한 범위 안 — 한계).
     if (p.lines === 0 && p.lastTs === null) {
-      const ref = Math.max(SINCE_MS, Number.isFinite(p.startedMs) ? p.startedMs : SINCE_MS);
-      const troubled = p.follows > 1 || p.firstAttemptAt > ref + FIRST_SLACK_MS;
-      if (troubled && secOf(key) > ref + FIRST_SLACK_MS) p.gap = true;
+      const startedAfterSince = Number.isFinite(p.startedMs) && p.startedMs >= SINCE_MS;
+      const ref = startedAfterSince ? p.startedMs : SINCE_MS;
+      // 첫 시도가 늦었나: 수집기 시작·컨테이너 시작 중 늦은 쪽보다 30초 넘게 뒤에 띄웠으면(목록 조회 장애 등으로 발견이 늦음).
+      const troubled = p.follows > 1 || p.firstAttemptAt > Math.max(COLLECTOR_START_MS, Number.isFinite(p.startedMs) ? p.startedMs : 0) + FIRST_SLACK_MS;
+      // 줄 시각 여유는 run 시작 뒤에 뜬 파드에만 준다 — 새 컨테이너의 로그 파일은 비어서 시작하므로 30초 안에 회전할 만큼 차지 않는다(추론).
+      // run 시작 전부터 있던 파드(또는 시작 시각을 모름)는 파일이 이미 차 있어 run 시작 직후에도 회전할 수 있으므로 여유 0.
+      if (troubled && secOf(key) > ref + (startedAfterSince ? FIRST_SLACK_MS : 0)) p.gap = true;
     }
     if (p.overlap) {
       if (key < p.overlap.fromKey) return; // 다시 받기의 since(초 단위)보다 앞 — 오지 않아야 하지만 방어

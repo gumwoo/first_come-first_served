@@ -216,9 +216,26 @@ test("첫 받기가 실패하는 사이 회전으로 앞부분이 잘리면 comp
 
 test("run 시작 전부터 있던 파드도 첫 받기가 실패하는 사이 회전되면 complete=false(G1 재현 existingLate)", async () => {
   const c = start({ pods: { a: { containerID: "ca", state: "running", startedAt: "2026-10-06T00:00:00Z" } },
-    logs: { a: { lines: [[T(5), "queue.audit kind=admit A"], [T(45), "a after rotation"]], mode: "fail" } } }, ["--for", "3", "--max-failures", "50"]);
+    logs: { a: { lines: [[T(5), "queue.audit kind=admit A"], [T(31), "a after rotation"]], mode: "fail" } } }, ["--for", "3", "--max-failures", "50"]);
   await sleep(700);
-  c.set((s) => { s.logs.a.mode = "hold"; s.logs.a.rotatedFrom = T(40); });
+  c.set((s) => { s.logs.a.mode = "hold"; s.logs.a.rotatedFrom = T(30); });
+  assert.equal(await c.exited, 0);
+  assert.equal(c.manifest().pods.a.complete, false);
+});
+
+test("run 시작 전부터 있던 파드의 첫 받기가 실패하는 사이 run 시작 직후 회전되면 complete=false(G1 재현 existingEarlyRotate — 여유 0)", async () => {
+  const c = start({ pods: { a: { containerID: "ca", state: "running", startedAt: "2026-10-06T00:00:00Z" } },
+    logs: { a: { lines: [[T(2), "queue.audit kind=admit A"], [T(6), "a after rotation"]], mode: "fail" } } }, ["--for", "3", "--max-failures", "50"]);
+  await sleep(700);
+  c.set((s) => { s.logs.a.mode = "hold"; s.logs.a.rotatedFrom = T(5); });
+  assert.equal(await c.exited, 0);
+  assert.equal(c.manifest().pods.a.complete, false);
+});
+
+test("시작 시각을 모르는 파드도 첫 받기 실패 중 회전되면 complete=false(G1 재현 firstStreamRotate)", async () => {
+  const c = start({ pods: { a: running() }, logs: { a: { lines: [[T(1), "admit"], [T(5), "after rotation"]], mode: "fail" } } }, ["--for", "3", "--max-failures", "50"]);
+  await sleep(700);
+  c.set((s) => { s.logs.a.mode = "hold"; s.logs.a.rotatedFrom = T(4); });
   assert.equal(await c.exited, 0);
   assert.equal(c.manifest().pods.a.complete, false);
 });

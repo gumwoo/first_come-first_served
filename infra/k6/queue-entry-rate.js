@@ -51,7 +51,7 @@ const SETUP_TIMEOUT = __ENV.SETUP_TIMEOUT || "900s";
 // 연결 미리 맺기(초, 기본 0 = 끔). 0보다 크면 START_AT − WARM_SECONDS부터 WARM_SECONDS 동안 사전 할당 VU마다 가벼운 요청 1건으로
 // keep-alive 연결을 열어 두고, 진입은 START_AT(= warm 시나리오 시작 + WARM_SECONDS)에 시작한다. k6는 겹치지 않는 시나리오끼리
 // VU(와 그 VU의 연결)를 재사용한다(로컬 확인: warm VU 50개 → 진입 1,000건 동안 새 연결 0).
-// 왜: 10,000/s burst에서 VU 약 1만 개가 T0에 새 연결을 한꺼번에 열자 SYN 재전송이 나고(발생기 송신 허용량 초과 카운터와 함께 증가)
+// 왜: 10,000/s burst에서 VU 약 1만 개가 T0에 새 연결을 한꺼번에 열자 SYN 재전송이 나고(어디서 버려졌는지는 미확인)
 // 첫 1초에 약 2,000건만 실제로 나갔다(측정 세션 20261005-1440, s9-burst-10k-*). 모델: 오픈 직전 이미 페이지에 들어와 연결을 가진 사용자.
 // 한계: 연결 수는 VU 수만큼이다 — 사용자마다 새 TLS 연결(10만 핸드셰이크)은 이 모드로 재지 않는다.
 const WARM_SECONDS = Number(__ENV.WARM_SECONDS || 0);

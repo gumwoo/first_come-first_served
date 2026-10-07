@@ -91,6 +91,8 @@ if [ -n "$START_AT" ]; then
   # 달력상 없는 날짜(2026-13-45, 02-30)는 형식 검사를 통과하므로 따로 거부한다.
   node -e 'const x=process.argv[1];const d=new Date(x);if(isNaN(d)||d.toISOString().slice(0,19)!==x.slice(0,19))process.exit(1)' "$START_AT" || {
     echo "--start-at이 달력상 없는 시각이다: $START_AT" >&2; exit 2; }
+elif [ "$WARM_SECONDS" != 0 ]; then
+  echo "--warm-seconds는 --start-at과 함께 쓴다(진입 시작 시각을 기준으로 앞당긴다)" >&2; exit 2
 fi
 
 if [ "$PRINT_PLAN" = 1 ]; then
@@ -104,8 +106,6 @@ fi
 # (k6에서 실패하면 토큰 파싱·VU 할당을 다 하고 나서야, 멀면 setupTimeout 뒤에야 끝난다).
 if [ -n "$START_AT" ]; then
   WARM_SECONDS="$WARM_SECONDS" node -e 'const t=Date.parse(process.argv[1]);const lim=parseInt(process.env.SETUP_TIMEOUT||"900",10);const w=(t-Date.now())/1000;if(w<0){console.error("--start-at이 이미 "+(-w).toFixed(1)+"초 지났다");process.exit(1)}const warm=Number(process.env.WARM_SECONDS||0);if(w<warm){console.error("--start-at까지 "+w.toFixed(1)+"초 — 연결 미리 맺기("+warm+"초)를 시작할 시각이 지났다");process.exit(1)}if(w>lim-30){console.error("--start-at까지 "+w.toFixed(0)+"초 — SETUP_TIMEOUT("+lim+"s)에서 init 여유 30초를 뺀 값보다 멀다");process.exit(1)}' "$START_AT" || exit 2
-elif [ "$WARM_SECONDS" != 0 ]; then
-  echo "--warm-seconds는 --start-at과 함께 쓴다(진입 시작 시각을 기준으로 앞당긴다)" >&2; exit 2
 fi
 
 OUT="$ROOT/artifacts/loadtest/$SESSION/$RUN"

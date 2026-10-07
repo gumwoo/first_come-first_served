@@ -52,7 +52,8 @@ const SETUP_TIMEOUT = __ENV.SETUP_TIMEOUT || "900s";
 // keep-alive 연결을 열어 두고, 진입은 START_AT(= warm 시나리오 시작 + WARM_SECONDS)에 시작한다. k6는 겹치지 않는 시나리오끼리
 // VU(와 그 VU의 연결)를 재사용한다(로컬 확인: warm VU 50개 → 진입 1,000건 동안 새 연결 0).
 // 왜: 10,000/s burst에서 VU 약 1만 개가 T0에 새 연결을 한꺼번에 열자 SYN 재전송이 나고(어디서 버려졌는지는 미확인)
-// 첫 1초에 약 2,000건만 실제로 나갔다(측정 세션 20261005-1440, s9-burst-10k-*). 모델: 오픈 직전 이미 페이지에 들어와 연결을 가진 사용자.
+// 첫 1초에 약 2,000건만 실제로 나갔다(측정 세션 20261005-1440, s9-burst-10k-r1~r3). 모델: 오픈 직전 이미 페이지에 들어와 연결을 가진 사용자.
+// 사전 할당(PRE_VUS)을 넘어 늘어난 VU는 T0 뒤에 새 연결을 연다(frontloaded처럼 순간 VU가 많은 분포) — entryConnectionWait에 드러난다.
 // 한계: 연결 수는 VU 수만큼이다 — 사용자마다 새 TLS 연결(10만 핸드셰이크)은 이 모드로 재지 않는다.
 const WARM_SECONDS = Number(__ENV.WARM_SECONDS || 0);
 if (!(WARM_SECONDS >= 0)) throw new Error(`WARM_SECONDS가 0 이상의 수가 아니다: ${__ENV.WARM_SECONDS}`);
@@ -131,7 +132,11 @@ export function setup() {
 // 진입과 같은 호스트라 같은 연결을 쓰고, 서버 쪽 일은 Redis 조회 1건이다. 진입 지표(entry_*)에는 넣지 않고 name 태그로 가른다.
 export function warm() {
   sleep(Math.random() * WARM_SECONDS * 0.8);
-  http.get(`${BASE}/queue/status?token=warm-${exec.vu.idInTest}`, { tags: { name: "warm_connect" } });
+  // 410이 기대 응답이다 — 실패로 세지 않게 해 http_req_failed가 진입 실패만 보이게 한다(iterations·http_reqs에는 warm 1건씩이 들어간다).
+  http.get(`${BASE}/queue/status?token=warm-${exec.vu.idInTest}`, {
+    tags: { name: "warm_connect" },
+    responseCallback: http.expectedStatuses(410),
+  });
 }
 
 export default function () {

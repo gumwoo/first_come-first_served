@@ -158,6 +158,7 @@ test("--warm-seconds는 --start-at과 함께만 받고 계획에 남는다", () 
   assert.equal(p.warmSeconds, 30);
   assert.equal(plan("--users-n", "1000").plan.warmSeconds, 0);
   assert.equal(plan("--users-n", "1000", "--start-at", "2026-10-07T01:00:00Z", "--warm-seconds", "1.5").code, 2);
+  assert.equal(plan("--users-n", "1000", "--warm-seconds", "30").code, 2); // --start-at 없이 거부
 });
 
 // k6 http_req_blocked 점(name 태그로 진입·연결 미리 맺기 요청을 가른다)

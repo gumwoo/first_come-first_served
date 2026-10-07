@@ -1,0 +1,10 @@
+# web 파드가 한꺼번에 비지 않게(ADR-025 보충 — web을 낮은 우선순위로 둬 api 선점 대상이 됐다). 선점·드레인 모두 최소 1개는 남긴다.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: flowticket-web
+  namespace: flowticket
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: flowticket-web }

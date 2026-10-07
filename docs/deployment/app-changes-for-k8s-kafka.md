@@ -158,6 +158,7 @@ spring:
 - **대응**: Kafka 소비 Pod가 **Redis Pub/Sub으로 publish → 전 Pod가 subscribe → 각 Pod가 자기 Registry 확인 → 연결을 가진 Pod만 전송.**
 - **Sticky Session**: 팬아웃이 있으면 사용자가 **어느 Pod에 연결됐는지 알 필요가 없어** SSE 전달을 위해 sticky에 의존할 필요가 없다. (단 "모든 의미에서 완전 불필요"는 과일반화 — 전달 관점에서 불필요라는 뜻.)
 - **best-effort 성격**: Redis Pub/Sub은 메시지를 저장하지 않아 순간(구독 끊김·Pod 다운) 유실 가능. **우리 정책(SSE 보조 알림·DB 진실원, ADR-008)과 일치** — 놓친 사용자는 마이페이지/상태 조회로 최종 상태 확인. 만약 "반드시 한 번 이상 전달" 요구가 생기면 pub/sub만으론 부족 → Kafka 알림 전용/Redis Streams/Outbox 고려(현재는 불필요).
+- (이후 변경) 대기열 SSE(`QueueSseRegistry`)는 ADR-023 §2로 제거됐다 — 대기 상태는 폴링으로 전달한다. 아래는 당시 기록이다.
 - **상태: 코드 선반영 완료.** 세 레지스트리의 `broadcast/send`가 이제 `SsePubSub`로 Redis 채널에 발행하고, 각 레지스트리가 `MessageListener`로 자기 채널을 구독해 `deliverLocal`로 전달(단일 전달 경로, 자기 자신 포함). pub/sub 미배선(유닛)이면 로컬 폴백. 파일: `global/sse/SsePubSub`, `global/config/SseRedisConfig`, `{seat,order,queue}/sse/*`. 교차-인스턴스 팬아웃 검증: `SseFanoutIntegrationTest`. **cross-Pod 실측**만 다중 Pod 배포 시.
 
 ### D-2. 스케줄러 — 인스턴스별 중복 실행 → ShedLock (정합성은 조건부 연산이 계속 보장)

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 대기열 진입 시험 run 하나를 실행하고 출력을 run 디렉터리에 모은다(loadtest-100k-plan §7 "원시 데이터").
 #
-# 한 발생기에서 진입(k6)과 SSE 연결(sse-hold.mjs)을 함께 돌린다. 둘은 다른 프로세스라 진입 iteration이 SSE를
-# 붙들지 않는다(§2.4 ②). 분산 실행이면 발생기마다 같은 --session/--run과 다른 --gen으로 실행한다 —
+# 진입(k6)만 돌린다. 대기열 SSE는 제거됐다(ADR-023 §2 — 대기 상태는 폴링) — 예전 --sse-hold(SSE 연결 유지)는 받지 않고,
+# --no-sse는 이전 호출과의 호환을 위해 받기만 한다. 분산 실행이면 발생기마다 같은 --session/--run과 다른 --gen으로 실행한다 —
 # 출력은 같은 run 디렉터리에 발생기 이름을 붙여 모인다.
 #
 # 발생기 자원(CPU·메모리·네트워크)도 함께 남긴다. 발생기 포화는 시험 무효 조건이고(§3.1), 그것을 판정할
@@ -11,7 +11,7 @@
 # 사용(발생기 인스턴스, Linux):
 #   infra/loadgen/run-entry.sh --session 20261002-1400 --run step7-50k_constant-r1 --gen g1 \
 #     --base https://flow-ticket.com/api --event 1733 --users ~/tokens.json --users-n 25000 --offset 0 \
-#     --entry-seconds 10 --dist constant --sse-hold 300
+#     --entry-seconds 10 --dist constant
 #
 # 분산 실행(발생기 G대가 한 run을 나눠 건다):
 #   --gens G를 주면 --users-n은 **전체** 사용자 수, --offset은 전체의 시작 인덱스다. 각 발생기는 --gen gK(K=1..G)로
@@ -29,7 +29,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
 SESSION="" RUN="" GEN="g1" GEN_SET=0 BASE="" EVENT="" USERS="" USERS_N="" OFFSET=0
-ENTRY_SECONDS=10 DIST=constant SSE_HOLD=300 PRE_VUS="" MAX_VUS="" NO_SSE=0 GENS="" START_AT="" WARM_SECONDS=0 PRINT_PLAN=0
+ENTRY_SECONDS=10 DIST=constant PRE_VUS="" MAX_VUS="" GENS="" START_AT="" WARM_SECONDS=0 PRINT_PLAN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --session) SESSION="$2"; shift 2 ;;
@@ -42,10 +42,10 @@ while [ $# -gt 0 ]; do
     --offset) OFFSET="$2"; shift 2 ;;
     --entry-seconds) ENTRY_SECONDS="$2"; shift 2 ;;
     --dist) DIST="$2"; shift 2 ;;
-    --sse-hold) SSE_HOLD="$2"; shift 2 ;;
+    --sse-hold) echo "--sse-hold: 대기열 SSE는 제거됐다(ADR-023 §2). 대기 상태는 폴링으로 잰다" >&2; exit 2 ;;
     --pre-vus) PRE_VUS="$2"; shift 2 ;;
     --max-vus) MAX_VUS="$2"; shift 2 ;;
-    --no-sse) NO_SSE=1; shift ;;
+    --no-sse) shift ;; # 호환: SSE는 더 없다
     --gens) GENS="$2"; shift 2 ;;
     --start-at) START_AT="$2"; shift 2 ;;
     --warm-seconds) WARM_SECONDS="$2"; shift 2 ;;
@@ -60,11 +60,11 @@ done
 # k6의 open()은 상대경로를 스크립트 디렉터리(infra/k6) 기준으로 읽는다. 절대경로로 바꿔 넘긴다.
 [ -f "$USERS" ] || { echo "사용자 토큰 파일이 없다: $USERS" >&2; exit 2; }
 USERS="$(cd "$(dirname "$USERS")" && pwd)/$(basename "$USERS")"
-for v in "$USERS_N" "$ENTRY_SECONDS" "$OFFSET" "$SSE_HOLD" "$WARM_SECONDS"; do
-  case "$v" in ""|*[!0-9]*) echo "--users-n/--entry-seconds/--offset/--sse-hold/--warm-seconds는 정수여야 한다: $v" >&2; exit 2 ;; esac
+for v in "$USERS_N" "$ENTRY_SECONDS" "$OFFSET" "$WARM_SECONDS"; do
+  case "$v" in ""|*[!0-9]*) echo "--users-n/--entry-seconds/--offset/--warm-seconds는 정수여야 한다: $v" >&2; exit 2 ;; esac
 done
 # 앞자리 0(예: 08)은 JSON 숫자가 아니다. 10진수로 정규화한다.
-USERS_N=$((10#$USERS_N)); ENTRY_SECONDS=$((10#$ENTRY_SECONDS)); OFFSET=$((10#$OFFSET)); SSE_HOLD=$((10#$SSE_HOLD))
+USERS_N=$((10#$USERS_N)); ENTRY_SECONDS=$((10#$ENTRY_SECONDS)); OFFSET=$((10#$OFFSET))
 WARM_SECONDS=$((10#$WARM_SECONDS))
 
 # 분산 실행이면 전체 사용자 수와 시작 인덱스에서 이 발생기의 몫을 계산한다.
@@ -120,7 +120,7 @@ cat > "$OUT/meta-$GEN.json" <<EOF
   "dirty": $(if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then echo null; elif [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then echo true; else echo false; fi),
   "startedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "base": "$BASE", "event": "$EVENT", "dist": "$DIST", "usersN": $USERS_N, "offset": $OFFSET,
-  "entrySeconds": $ENTRY_SECONDS, "sseHoldSeconds": $SSE_HOLD, "sse": $([ "$NO_SSE" = 1 ] && echo false || echo true),
+  "entrySeconds": $ENTRY_SECONDS, "sse": false,
   "preVus": "${PRE_VUS:-default}", "maxVus": "${MAX_VUS:-default}",
   "gens": ${GENS:-null}, "usersTotal": $USERS_TOTAL, "offsetBase": $OFFSET_BASE, "startAt": $([ -n "$START_AT" ] && echo "\"$START_AT\"" || echo null), "warmSeconds": $WARM_SECONDS,
   "clockSync": "$( (chronyc tracking 2>/dev/null | grep -E 'System time|Leap status' | tr -s ' ' | tr '\n' ';') || echo unknown)"
@@ -146,12 +146,7 @@ K6_ARGS=(run --log-format=raw
 
 # k6가 중단·실패로 끝나도 그때까지의 원시 출력으로 지표는 계산해 둔다. 종료 코드는 마지막에 돌려준다.
 set +e
-if [ "$NO_SSE" = 1 ]; then
-  k6 "${K6_ARGS[@]}" "$ROOT/infra/k6/queue-entry-rate.js" > "$OUT/k6-$GEN.log" 2>&1
-else
-  k6 "${K6_ARGS[@]}" -e EMIT_TOKENS=1 "$ROOT/infra/k6/queue-entry-rate.js" 2>&1 \
-    | node "$HERE/sse-hold.mjs" --base "$BASE" --out "$OUT/sse-$GEN" --hold "$SSE_HOLD" > "$OUT/k6-$GEN.log"
-fi
+k6 "${K6_ARGS[@]}" "$ROOT/infra/k6/queue-entry-rate.js" > "$OUT/k6-$GEN.log" 2>&1
 RUN_STATUS=$?
 set -e
 # 발생기가 멈춘 시각(§3.3 사후 검사의 --until 대조). 이 파일이 없으면 사후 검사는 run 종료 시각을 확인할 수 없어

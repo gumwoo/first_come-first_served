@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
  * 승격 기록에는 진입 순번(seq)도 남긴다. 대기열 순서 위반(§3.3 사후)을 대조하는 근거다.
  *
  * 승격·회수·이탈만 남기고 발급은 남기지 않는다. 발급은 진입 수만큼(시험에서는 초당 수천 건) 생겨 측정 대상에
- * 로그 부하를 얹는다. 메타 만료 계산에 필요한 발급 시각은 발생기 쪽 기록(SSE 발생기의 연결 시작 시각)으로 갈음한다.
+ * 로그 부하를 얹는다. 메타 만료 계산에 필요한 발급 시각은 발생기 쪽 기록(진입 발생기의 요청 시각)으로 갈음한다.
  * 승격 기록의 양은 입장한 사용자 수만큼이다.
  * 토큰 원문은 남기지 않는다 — 입장 권한과 묶인 값이라 로그에 두면 그 자체로 입장 수단이 된다.
  * 재구성에는 같은 토큰끼리 묶을 수 있으면 충분해서 해시 앞부분만 쓴다.
@@ -31,7 +31,7 @@ final class QueueAudit {
     /**
      * 승격. 두 시각을 남긴다 — 승격 스크립트가 반환된 시각(admitExp로 통과하기 시작, 유효 구간의 시작)과
      * admit 키를 쓴 시각(키 TTL 시작, admit 키는 이 시각 + admitTtl까지 유효). 둘 사이에는 앞 토큰들의
-     * admit 키 기록과 SSE 발행이 끼어 있어 간격이 생긴다.
+     * admit 키 기록이 끼어 있어 간격이 생긴다.
      */
     static void admitted(Long eventId, String token, String seq, long admittedAtMillis, long keyWrittenAtMillis,
                          long admitExpiresAtEpochSec, long admitTtlSec) {

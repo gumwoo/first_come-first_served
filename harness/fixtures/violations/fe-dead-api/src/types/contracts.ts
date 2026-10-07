@@ -10,4 +10,4 @@ export const RefundReason = ["CHANGE_OF_MIND","SCHEDULE_CONFLICT","DUPLICATE","O
 export const DlqStatus = ["PENDING","RETRYING","RETRIED","DISCARDED"] as const;
 export const UserRole = ["ROLE_USER","ROLE_ADMIN","ROLE_DEV"] as const;
 export const LoadTestStatus = ["QUEUED","RUNNING","PASSED","FAILED","STOPPED"] as const;
-export const SUBSCRIBED_EVENTS = ["order.paid","order.failed","seat.hold.expired","queue.admitted","queue.expired","payment.vbank.deposited"] as const;
+export const SUBSCRIBED_EVENTS = ["order.paid","order.failed","seat.hold.expired","payment.vbank.deposited"] as const;

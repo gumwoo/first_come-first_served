@@ -29,7 +29,7 @@ public class QueueController {
         return ApiResponse.ok(queueService.issue(userId, id));
     }
 
-    /** 대기 상태 폴링(토큰). SSE 미지원/끊김 대비 폴백. */
+    /** 대기 상태 폴링(토큰). 대기 상태 전달의 주 경로(ADR-023 §2) — 응답의 retryAfterMs가 다음 조회 최소 대기. */
     @GetMapping("/queue/status")
     public ApiResponse<QueueStatusResponse> status(@RequestParam String token) {
         return ApiResponse.ok(queueService.status(token));

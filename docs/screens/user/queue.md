@@ -14,8 +14,8 @@
 
 ## 사용 API
 - `POST /events/:id/queue/token` — 진입 토큰 발급(회원)
-- `GET /queue/status?token=` — `{ rank, total, etaSeconds, status, retryAfterMs }` 폴링(폴백). retryAfterMs는 다음 조회까지 최소 대기(ms)
-- `GET /sse/queue/:token` — 실시간 push(queue.admitted/queue.expired), 폴링과 이중화
+- `GET /queue/status?token=` — `{ rank, total, etaSeconds, status, retryAfterMs }` 폴링(주 경로 — ADR-023 §2). 다음 조회는 retryAfterMs(최소 대기, ms) + jitter 0~20% 뒤.
+  일시 오류면 2초부터 두 배씩(상한 30초) 늘리며 계속 묻고, ADMITTED·EXPIRED(`QUEUE_EXPIRED`)면 멈춘다. 대기열 SSE는 없다.
 
 ## 화면 요소 (DoD 체크리스트)
 - [x] 대형 대기순번 숫자(예: 3,421번)

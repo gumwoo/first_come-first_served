@@ -57,9 +57,6 @@ export const QUERIES = {
   queue_admit_tick_failures_rate: "sum(rate(flowticket_queue_admit_tick_failures_total[1m]))",
   queue_admit_tick_p95: "histogram_quantile(0.95, sum by (le) (rate(flowticket_queue_admit_tick_seconds_bucket[1m])))",
   queue_gate_fallback_rate: "sum(rate(flowticket_queue_gate_fallback_total[1m]))",
-  // SSE(§5.1). 파드마다 다른 값이라 합으로 묶는다.
-  sse_connections: "sum(flowticket_queue_sse_connections)",
-  sse_send_failures_rate: "sum by (phase) (rate(flowticket_queue_sse_send_failures_total[1m]))",
   // 정합성(§3.3)
   seat_oversold: "max(flowticket_seat_oversold)",
   // 관측 신선도(prom-recheck.mjs). 항상 있어야 할 두 지표의 가장 오래된 샘플 나이 — 감시기의 신선도 질의와 같은 식.

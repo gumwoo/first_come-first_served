@@ -1,138 +1,180 @@
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeEventSource, installFakeEventSource } from "./fakeEventSource";
+import { ApiError } from "@/lib/apiClient";
 
-// api 모듈을 대역으로 바꾼다. 이 테스트는 호출 시점만 본다.
+// api 모듈을 대역으로 바꾼다. 이 테스트는 호출 시점과 phase만 본다.
+const issueQueueToken = vi.fn();
 const getQueueStatus = vi.fn();
 vi.mock("@/features/queue/api/queue", () => ({
-  issueQueueToken: vi.fn(async () => ({ token: "tok-1", status: "WAITING", rank: 5, total: 10 })),
+  issueQueueToken: (...args: unknown[]) => issueQueueToken(...args),
   getQueueStatus: (...args: unknown[]) => getQueueStatus(...args),
-  queueSseUrl: (t: string) => `/api/sse/queue/${t}`,
+  leaveQueue: vi.fn(),
 }));
 vi.mock("@/features/auth/store/authStore", () => ({
   useAuthStore: (sel: (s: { accessToken: string | null }) => unknown) => sel({ accessToken: "at" }),
 }));
 
-import { useQueue } from "@/features/queue/hooks/useQueue";
+import { nextPollDelay, useQueue } from "@/features/queue/hooks/useQueue";
 
-/** 폴링 호출 시각(가짜 타이머 기준 ms). */
-function callTimes() {
-  return getQueueStatus.mock.calls.map((_, i) => marks[i]);
-}
+const waiting = (retryAfterMs?: number) => ({ status: "WAITING", rank: 500, total: 1000, etaSeconds: 10, retryAfterMs });
+
+/** 상태 조회가 불린 시각(가짜 타이머 기준 ms). */
 let marks: number[] = [];
+let t0 = 0;
 
-describe("useQueue 폴링", () => {
+describe("useQueue 폴링(서버 retryAfterMs + jitter)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    installFakeEventSource();
+    vi.spyOn(Math, "random").mockReturnValue(0); // jitter 0 — 간격을 결정적으로 본다
     marks = [];
+    issueQueueToken.mockReset();
     getQueueStatus.mockReset();
+    issueQueueToken.mockResolvedValue({ token: "tok-1", status: "WAITING", rank: 500, total: 1000, retryAfterMs: 5_000 });
     getQueueStatus.mockImplementation(async () => {
-      marks.push(Date.now());
-      return { status: "WAITING", rank: 5, total: 10, etaSeconds: 50 };
+      marks.push(Date.now() - t0);
+      return waiting(2_000);
     });
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
-  /**
-   * 토큰 발급 → EventSource 생성까지 진행시킨다.
-   *
-   * `vi.waitFor`가 아니라 `advanceTimersByTimeAsync(0)`을 쓰는 이유: waitFor는 폴링을
-   * 기다리느라 가짜 시간을 50ms 단위로 밀어 첫 폴링 간격이 1950ms로 관측된다.
-   * 여기서 재려는 것은 주기이지 마운트 지연이 아니므로 시간을 소비하지 않고 마이크로태스크만 비운다.
-   */
-  async function mountAndOpen() {
+  /** 토큰 발급까지 진행시킨다(시간은 소비하지 않고 마이크로태스크만 비운다). */
+  async function mount() {
+    t0 = Date.now();
     const view = renderHook(() => useQueue(1));
     await vi.advanceTimersByTimeAsync(0);
-    expect(FakeEventSource.instances.length).toBe(1);
-    const es = FakeEventSource.instances[0];
-    es.open(); // onopen → sseHealthy = true
-    return { view, es };
+    return view;
   }
 
-  async function advance(ms: number) {
-    await vi.advanceTimersByTimeAsync(ms);
-  }
-
-  it("SSE가 정상이면 폴링 간격이 2→4→8→15초로 늘어난다", async () => {
-    const { es } = await mountAndOpen();
-    expect(es.readyState).toBe(FakeEventSource.OPEN);
-
-    // onopen 재조회는 폴링이 아니다. 기준점을 여기서 다시 잡아 폴링만 본다.
-    marks = [];
-    const base = Date.now();
-    for (const ms of [2_000, 4_000, 8_000, 15_000, 15_000]) await advance(ms);
-
-    const gaps = marks.map((m, i) => (i === 0 ? m - base : m - marks[i - 1]));
-    expect(gaps).toEqual([2_000, 4_000, 8_000, 15_000, 15_000]);
-  });
-
-  it("상한(15초)을 넘겨 늘어나지 않는다", async () => {
-    await mountAndOpen();
-    for (const ms of [2_000, 4_000, 8_000, 15_000, 15_000, 15_000, 15_000]) await advance(ms);
-
-    const gaps = marks.slice(1).map((m, i) => m - marks[i]);
-    expect(Math.max(...gaps)).toBe(15_000);
-  });
-
-  /**
-   * onerror에서 pollDelay 값만 되돌리고 이미 예약된 15초 타이머를 그대로 두면,
-   * SSE가 죽은 직후인데도 최대 15초 동안 폴링이 오지 않는다.
-   * 안전망이 촘촘해져야 할 바로 그 순간에 가장 성기게 된다.
-   */
-  it("SSE가 끊기면 이미 예약된 긴 타이머를 버리고 2초 뒤에 폴링한다", async () => {
-    const { es } = await mountAndOpen();
-    for (const ms of [2_000, 4_000, 8_000, 15_000]) await advance(ms); // 상한까지 백오프
-
-    await advance(1_000); // 15초짜리 예약이 걸린 직후(잔여 14초)
-    const before = marks.length;
-
-    es.dropTransient(); // onerror
-
-    await advance(2_000);
-    expect(marks.length).toBe(before + 1);
-  });
-
-  it("끊긴 뒤에는 2초 간격을 유지한다. 다시 붙기 전까지 폴링이 유일한 복구 경로다", async () => {
-    const { es } = await mountAndOpen();
-    for (const ms of [2_000, 4_000, 8_000, 15_000]) await advance(ms);
-    es.dropTransient();
-
-    marks = [];
-    await advance(2_000);
-    await advance(2_000);
-    await advance(2_000);
-
-    const gaps = marks.slice(1).map((m, i) => m - marks[i]);
-    expect(gaps).toEqual([2_000, 2_000]);
-  });
-
-  it("SSE가 다시 붙으면 백오프가 처음부터 다시 오른다", async () => {
-    const { es } = await mountAndOpen();
-    for (const ms of [2_000, 4_000, 8_000, 15_000]) await advance(ms);
-    es.dropTransient();
-    await advance(2_000);
-
-    es.open(); // 재연결 성립 → onopen 재조회 1건
-    marks = [];
-    const base = Date.now();
-    await advance(2_000);
-    await advance(4_000);
-
-    const gaps = marks.map((m, i) => (i === 0 ? m - base : m - marks[i - 1]));
-    expect(gaps).toEqual([2_000, 4_000]);
-  });
-
-  it("승격되면 폴링을 멈춘다", async () => {
-    const { es } = await mountAndOpen();
-    await advance(2_000);
-    es.emit("queue.admitted", { redirect: "/events/1/seats" });
-
-    marks = [];
-    await advance(60_000);
+  it("첫 조회는 진입 응답의 retryAfterMs가 지난 뒤에만 한다(조기 요청 0)", async () => {
+    await mount();
+    await vi.advanceTimersByTimeAsync(4_999);
     expect(marks).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(marks).toEqual([5_000]);
+  });
+
+  it("다음 조회 간격은 직전 상태 응답의 retryAfterMs를 따른다", async () => {
+    getQueueStatus
+      .mockImplementationOnce(async () => (marks.push(Date.now() - t0), waiting(30_000)))
+      .mockImplementationOnce(async () => (marks.push(Date.now() - t0), waiting(2_000)));
+    await mount();
+    await vi.advanceTimersByTimeAsync(5_000 + 30_000 + 2_000);
+    expect(marks).toEqual([5_000, 35_000, 37_000]);
+  });
+
+  it("retryAfterMs가 없거나 최소(2초)보다 짧으면 2초를 지킨다", async () => {
+    issueQueueToken.mockResolvedValue({ token: "tok-1", status: "WAITING", rank: 1, total: 1 }); // 구버전 응답
+    getQueueStatus.mockImplementation(async () => (marks.push(Date.now() - t0), waiting(500)));
+    await mount();
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(marks).toEqual([2_000, 4_000, 6_000]);
+  });
+
+  it("입장하면 폴링을 멈추고 admitted가 된다", async () => {
+    getQueueStatus.mockImplementationOnce(async () => (marks.push(Date.now() - t0), { status: "ADMITTED", rank: 0, total: 999, etaSeconds: 0, retryAfterMs: 0 }));
+    const { result } = await mount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(result.current.phase).toBe("admitted");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(marks).toEqual([5_000]);
+  });
+
+  it("QUEUE_EXPIRED면 expired가 되고 멈춘다", async () => {
+    getQueueStatus.mockImplementationOnce(async () => {
+      marks.push(Date.now() - t0);
+      throw new ApiError("QUEUE_EXPIRED", "만료");
+    });
+    const { result } = await mount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(result.current.phase).toBe("expired");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(marks).toEqual([5_000]);
+  });
+
+  it("일시 오류면 2→4→8초로 늘리며 계속 묻고, 성공하면 서버 간격으로 돌아온다", async () => {
+    const fail = async () => {
+      marks.push(Date.now() - t0);
+      throw new Error("network");
+    };
+    getQueueStatus.mockImplementationOnce(fail).mockImplementationOnce(fail).mockImplementationOnce(fail);
+    await mount();
+    await vi.advanceTimersByTimeAsync(5_000 + 2_000 + 4_000 + 8_000 + 2_000);
+    // 5초(첫 조회 실패) → +2초 실패 → +4초 실패 → +8초 성공(retryAfterMs 2초) → +2초
+    expect(marks).toEqual([5_000, 7_000, 11_000, 19_000, 21_000]);
+  });
+});
+
+describe("useQueue 폴링 — 경계", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    marks = [];
+    issueQueueToken.mockReset();
+    getQueueStatus.mockReset();
+    issueQueueToken.mockResolvedValue({ token: "tok-1", status: "WAITING", rank: 500, total: 1000, retryAfterMs: 5_000 });
+    getQueueStatus.mockImplementation(async () => (marks.push(Date.now() - t0), waiting(2_000)));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  async function mount() {
+    t0 = Date.now();
+    const view = renderHook(() => useQueue(1));
+    await vi.advanceTimersByTimeAsync(0);
+    return view;
+  }
+
+  it("진입 응답이 바로 ADMITTED면 한 번도 묻지 않는다", async () => {
+    issueQueueToken.mockResolvedValue({ token: "tok-1", status: "ADMITTED", rank: 0, total: 0, retryAfterMs: 0 });
+    let view!: Awaited<ReturnType<typeof mount>>;
+    await act(async () => {
+      view = await mount();
+    });
+    expect(view.result.current.phase).toBe("admitted");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(marks).toEqual([]);
+  });
+
+  it("오류 백오프는 성공하면 0으로 돌아가 다음 실패는 다시 2초부터다", async () => {
+    const fail = async () => {
+      marks.push(Date.now() - t0);
+      throw new Error("network");
+    };
+    getQueueStatus
+      .mockImplementationOnce(fail) // 5초 실패 → +2초
+      .mockImplementationOnce(fail) // 7초 실패 → +4초
+      .mockImplementationOnce(async () => (marks.push(Date.now() - t0), waiting(3_000))) // 11초 성공 → +3초
+      .mockImplementationOnce(fail); // 14초 실패 → +2초(초기화됐으면)
+    await mount();
+    await vi.advanceTimersByTimeAsync(5_000 + 2_000 + 4_000 + 3_000 + 2_000);
+    expect(marks).toEqual([5_000, 7_000, 11_000, 14_000, 16_000]);
+  });
+
+  it("언마운트하면 예약된 조회를 버린다", async () => {
+    const { unmount } = await mount();
+    expect(issueQueueToken).toHaveBeenCalledTimes(1); // 진입이 끝나 첫 조회가 예약된 상태에서 언마운트한다
+    unmount();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(marks).toEqual([]);
+  });
+});
+
+describe("nextPollDelay", () => {
+  it("jitter는 0 이상 20% 미만이고 서버 최소 대기보다 줄지 않는다", () => {
+    expect(nextPollDelay(30_000, () => 0)).toBe(30_000);
+    expect(nextPollDelay(30_000, () => 0.999999)).toBe(35_999);
+    expect(nextPollDelay(undefined, () => 0)).toBe(2_000);
+    expect(nextPollDelay(100, () => 0.5)).toBe(2_200);
   });
 });

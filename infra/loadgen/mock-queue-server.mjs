@@ -3,9 +3,10 @@
 // (용량은 측정 세션의 단계 2에서 실제 경로로 잰다, loadtest-100k-plan §6).
 //
 // 흉내 내는 것(실제 API와 같은 모양):
-//   POST /events/{id}/queue/token  → { data: { status, token, rank } }  (Authorization: Bearer 필요)
-//   GET  /sse/queue/{token}        → text/event-stream. 연결 직후 코멘트 프레임, ADMIT_AFTER_MS 뒤 queue.admitted
-// 앞 CAPACITY명은 ADMITTED, 나머지는 WAITING으로 응답한다.
+//   POST /events/{id}/queue/token  → { data: { status, token, rank, retryAfterMs } }  (Authorization: Bearer 필요)
+//   GET  /queue/status?token=      → { data: { status, rank, retryAfterMs } }. 발급 뒤 ADMIT_AFTER_MS가 지나면 ADMITTED,
+//                                    모르는 토큰은 410(QUEUE_EXPIRED). 대기열 SSE는 제거됐다(ADR-023 §2).
+// 앞 CAPACITY명은 발급 즉시 ADMITTED, 나머지는 WAITING으로 응답한다.
 //
 //   node infra/loadgen/mock-queue-server.mjs --port 18080 --capacity 3 --admit-after-ms 500
 import http from "node:http";
@@ -23,10 +24,14 @@ const CAPACITY = Number(args.capacity);
 const ADMIT_AFTER_MS = Number(args["admit-after-ms"]);
 
 let rank = 0;
-const stats = { entries: 0, unauthorized: 0, sseOpened: 0, sseClosed: 0 };
+const stats = { entries: 0, unauthorized: 0, statusPolls: 0 };
+const issuedAt = new Map(); // token → 발급 시각(ms)
+
+const json = (res, code, body) => res.writeHead(code, { "Content-Type": "application/json" }).end(JSON.stringify(body));
 
 const server = http.createServer((req, res) => {
-  const entry = req.method === "POST" && req.url.match(/^\/events\/(\d+)\/queue\/token$/);
+  const url = new URL(req.url, "http://mock");
+  const entry = req.method === "POST" && url.pathname.match(/^\/events\/(\d+)\/queue\/token$/);
   if (entry) {
     if (!/^Bearer \S+/.test(req.headers.authorization || "")) {
       stats.unauthorized++;
@@ -35,24 +40,24 @@ const server = http.createServer((req, res) => {
     }
     stats.entries++;
     const r = rank++;
-    const body = { data: { status: r < CAPACITY ? "ADMITTED" : "WAITING", token: randomUUID(), rank: r } };
-    res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(body));
+    const token = randomUUID();
+    issuedAt.set(token, r < CAPACITY ? -Infinity : Date.now());
+    json(res, 200, { data: { status: r < CAPACITY ? "ADMITTED" : "WAITING", token, rank: r, retryAfterMs: r < CAPACITY ? 0 : 2000 } });
     return;
   }
-  const sse = req.method === "GET" && req.url.match(/^\/sse\/queue\/([^/?]+)$/);
-  if (sse) {
-    stats.sseOpened++;
-    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
-    res.write(": open\n\n");
-    const t = setTimeout(() => res.write(`event: queue.admitted\ndata: {"redirect":"/events/1/seats"}\n\n`), ADMIT_AFTER_MS);
-    req.on("close", () => {
-      clearTimeout(t);
-      stats.sseClosed++;
-    });
+  if (req.method === "GET" && url.pathname === "/queue/status") {
+    stats.statusPolls++;
+    const at = issuedAt.get(url.searchParams.get("token") ?? "");
+    if (at === undefined) {
+      json(res, 410, { error: { code: "QUEUE_EXPIRED", message: "대기시간이 만료되었습니다." } });
+      return;
+    }
+    const admitted = Date.now() - at >= ADMIT_AFTER_MS;
+    json(res, 200, { data: { status: admitted ? "ADMITTED" : "WAITING", rank: admitted ? 0 : 1, total: 1, etaSeconds: 0, retryAfterMs: admitted ? 0 : 2000 } });
     return;
   }
-  if (req.url === "/__stats") {
-    res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(stats));
+  if (url.pathname === "/__stats") {
+    json(res, 200, stats);
     return;
   }
   res.writeHead(404).end();

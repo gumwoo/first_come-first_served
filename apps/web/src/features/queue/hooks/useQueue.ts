@@ -8,34 +8,29 @@ import * as queueApi from "@/features/queue/api/queue";
 export type QueuePhase = "loading" | "waiting" | "admitted" | "expired" | "error";
 
 /**
- * 대기열 상태 폴링의 최소 주기(ms). SSE가 아예 열리지 않는 환경(일부 프록시)에서는 이것이
- * 유일한 채널이므로 완전히 없앨 수는 없다(ADR-015 3)).
- *
- * E2E는 이 값을 600000(10분)으로 준다. 그 값은 운영 후보가 아니다.
- * `admit-ttl`(300초)보다도 길어 운영에서는 성립하지 않는다. 폴링을 테스트 시간 밖으로
- * 밀어내 재연결 시 onopen 재조회만으로 복구되는지를 격리 검증하기 위한 값이다.
- * 폴링이 살아 있으면 그게 먼저 복구해버려 onopen 경로를 증명할 수 없다.
+ * 다음 상태 조회까지 클라이언트가 지키는 최소 간격(ms). 서버가 준 `retryAfterMs`가 이보다 짧거나 없으면 이 값을 쓴다
+ * (구버전 서버 응답에는 retryAfterMs가 없다).
  */
 const POLL_MIN_MS = Number(process.env.NEXT_PUBLIC_QUEUE_POLL_INTERVAL_MS) || 2000;
 
-/**
- * SSE가 건강할 때 폴링이 늘어날 수 있는 상한(ms).
- *
- * 대기 인원이 늘면 폴링 부하가 그대로 따라 늘어난다. 2초 고정이면 대기 1만 명이
- * 초당 5,000건이다. 선착순에서는 부하가 몰릴수록 대기자도 많아지므로, 부하가 스스로를
- * 키우는 되먹임이 된다.
- *
- * POLL_MIN_MS와의 최댓값을 취하는 이유: E2E가 최소 주기를 10분으로 밀어 놓았을 때
- * 상한이 그보다 작으면 백오프가 오히려 주기를 줄여 폴링을 테스트 창 안으로 되돌린다.
- */
-const POLL_MAX_MS = Math.max(
-  POLL_MIN_MS,
-  Number(process.env.NEXT_PUBLIC_QUEUE_POLL_MAX_MS) || 15000
-);
+/** 같은 시각에 몰리지 않게 대기 시간에 더하는 무작위 폭(대기 시간의 비율). 음수는 없다 — 서버가 정한 최소 대기를 지킨다. */
+const JITTER_RATIO = 0.2;
+
+/** 조회가 실패(네트워크·5xx)할 때 늘려 가는 간격의 상한(ms). 실패해도 폴링은 멈추지 않는다 — 폴링이 유일한 경로다. */
+const ERROR_BACKOFF_MAX_MS = 30_000;
+
+/** 다음 조회까지 기다릴 시간: max(최소 간격, 서버 최소 대기) + [0, 20%) 무작위. */
+export function nextPollDelay(retryAfterMs: number | undefined, random: () => number = Math.random): number {
+  const base = Math.max(POLL_MIN_MS, retryAfterMs ?? 0);
+  return base + Math.floor(random() * base * JITTER_RATIO);
+}
 
 /**
- * 대기열 진입 + 실시간(SSE) + 폴링 폴백. 상태를 phase로 노출.
- * admitted 시 redirect(좌석) 경로, waiting 시 rank/total/eta/progress.
+ * 대기열 진입 + 상태 폴링(ADR-023 §2 — 대기 상태 전달은 폴링이 주 경로, 대기열 SSE는 제거).
+ *
+ * 다음 조회 시각은 서버가 정한다: 진입·상태 응답의 `retryAfterMs`(순번이 앞이면 2초, 뒤면 최대 30초)는
+ * "이보다 일찍 다시 묻지 마라"는 최소 대기다. 여기에 jitter를 더해 대기자 전원이 같은 시각에 묻지 않게 한다.
+ * 입장(ADMITTED)·만료(EXPIRED)는 되돌아가지 않는 종료 상태라 확정되면 폴링을 멈춘다.
  */
 export function useQueue(eventId: number) {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -43,24 +38,15 @@ export function useQueue(eventId: number) {
   const [rank, setRank] = useState(0);
   const [total, setTotal] = useState(0);
   const [eta, setEta] = useState(0);
-  const [redirect, setRedirect] = useState<string | null>(null);
   const [queueToken, setQueueToken] = useState<string | null>(null);
   const initialRank = useRef<number | null>(null);
 
   useEffect(() => {
     if (!Number.isFinite(eventId)) return;
-    let es: EventSource | null = null;
     let poll: ReturnType<typeof setTimeout> | null = null;
-    // SSE 구독이 성립해 있는가. 폴링을 늘려도 되는지를 이 값 하나로 판단한다.
-    let sseHealthy = false;
-    let pollDelay = POLL_MIN_MS;
     let cancelled = false;
-
-    // admitted·expired는 되돌아가지 않는 종료 상태다. 확정되면 진행 중인 폴링 응답을
-    // 전부 무시하고 폴링 자체도 멈춘다. 그러지 않으면 SSE로 admitted를 받은 직후
-    // 이미 떠 있던 폴링이 WAITING을 들고 도착해 phase를 waiting으로 되돌린다.
-    // (폴링 순번(latest)만으로는 못 막는다. SSE 이벤트는 순번을 올리지 않기 때문이다.)
     let terminal = false;
+    let errorDelay = 0; // 연속 실패 시 늘려 가는 간격(성공하면 0으로)
 
     const settle = (next: "admitted" | "expired") => {
       terminal = true;
@@ -82,85 +68,38 @@ export function useQueue(eventId: number) {
       if (initialRank.current == null && s.rank > 0) initialRank.current = s.rank;
     };
 
+    // 예약은 항상 하나만 유지한다(겹치면 같은 사용자가 두 배로 묻는다).
+    const schedule = (delayMs: number, token: string) => {
+      if (terminal || cancelled) return;
+      if (poll) clearTimeout(poll);
+      poll = setTimeout(() => {
+        poll = null;
+        void refresh(token);
+      }, delayMs);
+    };
+
+    const refresh = async (token: string) => {
+      if (terminal || cancelled) return;
+      try {
+        const s = await queueApi.getQueueStatus(token);
+        errorDelay = 0;
+        apply(s);
+        schedule(nextPollDelay(s.retryAfterMs), token);
+      } catch (err) {
+        if (err instanceof ApiError && err.code === "QUEUE_EXPIRED") return settle("expired");
+        // 일시 오류: 간격을 두 배씩(상한 30초) 늘리며 계속 묻는다.
+        errorDelay = Math.min(Math.max(errorDelay * 2, POLL_MIN_MS), ERROR_BACKOFF_MAX_MS);
+        schedule(nextPollDelay(errorDelay), token);
+      }
+    };
+
     (async () => {
       try {
         const t = await queueApi.issueQueueToken(eventId, accessToken);
         if (cancelled) return;
         setQueueToken(t.token);
         apply(t);
-
-        // 상태 재조회: 폴링과 onopen 재동기화가 같은 순번 가드를 공유한다.
-        // 따로 두면 재연결 직후의 조회가 느릴 때 그 사이 도착한 최신 폴링 응답을 덮어쓴다.
-        // 성공·실패 양쪽에 같은 검사를 둔다. 한쪽만 막으면 낡은 오류 응답이 최신 성공을 덮는다.
-        let latest = 0;
-        const refresh = async () => {
-          if (terminal) return;
-          const seq = ++latest;
-          try {
-            const s = await queueApi.getQueueStatus(t.token);
-            if (terminal || seq !== latest) return;
-            apply(s);
-          } catch (err) {
-            if (terminal || seq !== latest) return;
-            if (err instanceof ApiError && err.code === "QUEUE_EXPIRED") settle("expired");
-          }
-        };
-
-        // 최종 안전망. 주기가 바뀌므로 setInterval이 아니라 매번 다시 예약한다.
-        //
-        // SSE가 성립한 동안에는 주기를 배로 늘린다(상한 POLL_MAX_MS). 재연결 공백은 onopen 재조회가 메운다.
-        // SSE가 열리지 않았거나 끊긴 동안에는 최소 주기를 유지한다(폴링이 유일한 복구 경로).
-        // 대가: SSE가 열린 채 이벤트가 유실되면 복구가 최대 POLL_MAX_MS까지 늦어진다.
-        //
-        // 예약은 항상 하나만 유지한다. onerror의 재예약이 기존 예약을 지우지 않으면 폴링이 겹친다.
-        const schedulePoll = () => {
-          if (terminal || cancelled) return;
-          if (poll) clearTimeout(poll);
-          poll = setTimeout(async () => {
-            poll = null;
-            await refresh();
-            if (sseHealthy) pollDelay = Math.min(pollDelay * 2, POLL_MAX_MS);
-            schedulePoll();
-          }, pollDelay);
-        };
-
-        es = new EventSource(queueApi.queueSseUrl(t.token));
-        es.addEventListener("queue.admitted", (e) => {
-          try {
-            const d = JSON.parse((e as MessageEvent).data);
-            setRedirect(d.redirect ?? null);
-          } catch {
-            /* 데이터 없으면 무시 */
-          }
-          settle("admitted");
-        });
-        es.addEventListener("queue.expired", () => settle("expired"));
-        // 구독이 성립한 시점마다 다시 읽는다. useOrder·useSeats와 같은 규칙이다(ADR-008).
-        //
-        // SSE 이벤트는 재전송되지 않는다: 서버는 그 순간 연결이 없으면 그냥 버린다
-        // (QueueSseRegistry.deliverLocal). 따라서 연결이 끊긴 사이 승격되면
-        // queue.admitted 이벤트 자체는 놓칠 수 있다.
-        //
-        // 폴링(2s→15s 백오프)도 /queue/status를 다시 읽지만, onopen 재조회가 SSE 재연결
-        // 경로에서 이 공백을 바로 메운다. 폴링 주기를 늘릴 수 있는 전제다(ADR-015).
-        es.onopen = () => {
-          sseHealthy = true;
-          refresh();
-        };
-        // 재연결은 브라우저가, 복구는 onopen이 한다. 여기서는 끊긴 동안 폴링을 최소 주기로 되돌린다
-        // (끊긴 구간이 곧 이벤트를 놓치는 구간이다).
-        es.onerror = () => {
-          sseHealthy = false;
-          pollDelay = POLL_MIN_MS;
-          // 다시 예약까지 해야 한다. 값만 되돌리면 이미 걸려 있는 긴 타이머는 그대로라,
-          // 15초짜리 예약 직후에 끊기면 그 14초 동안 SSE도 폴링도 없는 구간이 생긴다.
-          // 안전망을 촘촘하게 만드는 것이 목적인데, 정작 촘촘해져야 할 그 순간에 늦어진다.
-          schedulePoll();
-        };
-
-        if (!terminal) {
-          schedulePoll();
-        }
+        schedule(nextPollDelay(t.retryAfterMs), t.token);
       } catch {
         if (!cancelled) setPhase("error");
       }
@@ -168,7 +107,6 @@ export function useQueue(eventId: number) {
 
     return () => {
       cancelled = true;
-      es?.close();
       if (poll) clearTimeout(poll);
     };
   }, [eventId, accessToken]);
@@ -188,5 +126,5 @@ export function useQueue(eventId: number) {
     }
   }, [queueToken, accessToken]);
 
-  return { phase, rank, total, eta, progress, redirect, queueToken, leave };
+  return { phase, rank, total, eta, progress, queueToken, leave };
 }

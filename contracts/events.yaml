@@ -12,9 +12,6 @@ topics:
     - seat.held              # 좌석 선점
     - seat.hold.released     # 선점 해제
     - seat.hold.expired      # 선점 만료(재고 복구)
-  queue:
-    - queue.admitted         # 대기열 입장 허용
-    - queue.expired          # 대기 토큰 만료
   payment:
     - payment.vbank.deposited  # 무통장 입금 확인
 
@@ -28,8 +25,6 @@ publishes:
   - seat.held
   - seat.hold.released
   - seat.hold.expired
-  - queue.admitted
-  - queue.expired
   - payment.vbank.deposited
 
 # FE(실시간 갱신용 SSE/WebSocket)가 구독해야 하는 목록.
@@ -38,15 +33,13 @@ fe_subscribes:
   - order.paid
   - order.failed
   - seat.hold.expired
-  - queue.admitted
-  - queue.expired
   - payment.vbank.deposited
+
+# 대기열 입장·만료는 이벤트가 아니라 상태 폴링(GET /queue/status, retryAfterMs)으로 전달한다(ADR-023 §2 — 대기열 SSE 제거).
 
 # 실시간 UI에 반드시 필요한 이벤트: FE가 구독을 빠뜨리면 하네스 실패.
 # (fe_subscribes ⊇ required_fe_subscribes 검증)
 required_fe_subscribes:
-  - queue.admitted        # 입장 허용 → 좌석선택 이동에 필수
-  - queue.expired         # 대기 만료 → 만료 화면 전환에 필수
   - seat.hold.expired     # 선점 만료 → 좌석 해제 반영에 필수
   - order.paid            # 결제 완료 → 완료 화면 전환에 필수
   - payment.vbank.deposited  # 무통장 입금 확인 → 완료 전환에 필수
@@ -58,8 +51,6 @@ implemented:
   - seat.held
   - seat.hold.released
   - seat.hold.expired
-  - queue.admitted
-  - queue.expired
   - order.paid
   - payment.vbank.deposited
 

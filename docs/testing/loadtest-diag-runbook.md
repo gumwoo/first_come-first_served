@@ -97,6 +97,9 @@
 - **워밍업**: 각 칸에서 같은 rate 사전 run 1회(결과 제외) → 판정 run 3회. 경로가 여럿이면 첫 run 순서를 교차한다.
 - **판정식 사전 등록**: run 전에 판정식과 임계치를 session.log에 적는다(결과를 본 뒤 정하지 않는다).
 - **발생기**: 여러 대면 `run-entry.sh --gens G --gen $GEN --start-at <UTC>`(START_AT은 2분 이상 뒤), 집계는 `entry-arrivals.mjs --t0`.
+  burst(수천/s 이상)는 `--warm-seconds 30`으로 T0 전에 VU 연결을 미리 맺는다 — 끄면 T0에 VU 수만큼 새 연결이 한꺼번에 열려
+  실제 송신이 늦어진다(10,000/s에서 첫 1초 약 2천 건). `entry-arrivals.mjs`의 `entryConnectionWait.over100ms`가 0에 가까운지 확인한다
+  (`window`는 iteration 시작 시각이라 연결 대기를 보지 못한다).
 - **사후 검사**: `export-prom.mjs --end`는 run 종료 + 45초 이상, `check-correctness.sh`로 판정.
 
 ## 7. 세션 끝 체크리스트

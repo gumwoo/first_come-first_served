@@ -48,6 +48,15 @@ const START_AT = __ENV.START_AT ? Date.parse(__ENV.START_AT) : null;
 if (__ENV.START_AT && !Number.isFinite(START_AT)) throw new Error(`START_AT을 읽지 못했다: ${__ENV.START_AT}`);
 // setup()이 START_AT까지 기다릴 수 있는 상한. 넘으면 k6가 setup 시간 초과로 끝난다(시작 안 함).
 const SETUP_TIMEOUT = __ENV.SETUP_TIMEOUT || "900s";
+// 연결 미리 맺기(초, 기본 0 = 끔). 0보다 크면 START_AT − WARM_SECONDS부터 WARM_SECONDS 동안 사전 할당 VU마다 가벼운 요청 1건으로
+// keep-alive 연결을 열어 두고, 진입은 START_AT(= warm 시나리오 시작 + WARM_SECONDS)에 시작한다. k6는 겹치지 않는 시나리오끼리
+// VU(와 그 VU의 연결)를 재사용한다(로컬 확인: warm VU 50개 → 진입 1,000건 동안 새 연결 0).
+// 왜: 10,000/s burst에서 VU 약 1만 개가 T0에 새 연결을 한꺼번에 열자 SYN 재전송이 나고(어디서 버려졌는지는 미확인)
+// 첫 1초에 약 2,000건만 실제로 나갔다(측정 세션 20261005-1440, s9-burst-10k-r1~r3). 모델: 오픈 직전 이미 페이지에 들어와 연결을 가진 사용자.
+// 사전 할당(PRE_VUS)을 넘어 늘어난 VU는 T0 뒤에 새 연결을 연다(frontloaded처럼 순간 VU가 많은 분포) — entryConnectionWait에 드러난다.
+// 한계: 연결 수는 VU 수만큼이다 — 사용자마다 새 TLS 연결(10만 핸드셰이크)은 이 모드로 재지 않는다.
+const WARM_SECONDS = Number(__ENV.WARM_SECONDS || 0);
+if (!(WARM_SECONDS >= 0)) throw new Error(`WARM_SECONDS가 0 이상의 수가 아니다: ${__ENV.WARM_SECONDS}`);
 
 // open()은 init 컨텍스트에서 VU마다 실행된다. SharedArray로 한 번만 파싱해 VU가 공유한다(spike-queue.js 참고).
 if (!__ENV.USERS) throw new Error("USERS(사용자 토큰 파일의 절대경로)가 필요하다");
@@ -82,8 +91,21 @@ function scenario() {
   throw new Error(`알 수 없는 DIST: ${DIST} (constant | frontloaded)`);
 }
 
+function scenarios() {
+  if (WARM_SECONDS === 0) return { entry: scenario() };
+  return {
+    // 모든 VU가 한꺼번에 시작해 각자 [0, 0.8 × WARM_SECONDS) 무작위로 기다린 뒤 1건 — 연결 수립을 창 전체에 펼친다.
+    // 남은 0.2 × WARM_SECONDS가 마지막 요청의 여유다. gracefulStop 0: 진입 시작과 겹치지 않게 끊는다.
+    warm: {
+      executor: "per-vu-iterations", vus: PRE_VUS, iterations: 1,
+      maxDuration: `${WARM_SECONDS}s`, gracefulStop: "0s", exec: "warm",
+    },
+    entry: { ...scenario(), startTime: `${WARM_SECONDS}s` },
+  };
+}
+
 export const options = {
-  scenarios: { entry: scenario() },
+  scenarios: scenarios(),
   setupTimeout: SETUP_TIMEOUT,
   thresholds: {}, // 판정은 계획서 §3이 한다. 여기서 실패 표시를 내면 판정과 섞인다.
   summaryTrendStats: ["avg", "p(50)", "p(95)", "p(99)", "max"],
@@ -100,9 +122,21 @@ const noUser = new Counter("entry_no_user");
 // 동시 시작 장벽. START_AT이 없으면 바로 시작한다(단일 발생기 기존 동작).
 export function setup() {
   if (START_AT === null) return;
-  const waitMs = START_AT - Date.now();
+  // 연결 미리 맺기를 켜면 warm 시나리오가 그만큼 먼저 시작해야 진입이 START_AT에 시작한다.
+  const waitMs = START_AT - WARM_SECONDS * 1000 - Date.now();
   if (waitMs < 0) throw new Error(`START_AT이 이미 ${-waitMs}ms 지났다 — 이 발생기는 시작하지 않는다`);
   sleep(waitMs / 1000);
+}
+
+// 연결만 여는 요청. 대기열 상태 조회(ALB가 api로 바로 보내는 경로, ADR-024)에 없는 토큰을 줘 410 QUEUE_EXPIRED를 받는다 —
+// 진입과 같은 호스트라 같은 연결을 쓰고, 서버 쪽 일은 Redis 조회 1건이다. 진입 지표(entry_*)에는 넣지 않고 name 태그로 가른다.
+export function warm() {
+  sleep(Math.random() * WARM_SECONDS * 0.8);
+  // 410이 기대 응답이다 — 실패로 세지 않게 해 http_req_failed가 진입 실패만 보이게 한다(iterations·http_reqs에는 warm 1건씩이 들어간다).
+  http.get(`${BASE}/queue/status?token=warm-${exec.vu.idInTest}`, {
+    tags: { name: "warm_connect" },
+    responseCallback: http.expectedStatuses(410),
+  });
 }
 
 export default function () {

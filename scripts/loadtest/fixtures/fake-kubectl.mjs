@@ -2,14 +2,14 @@
 // collect-api-logs.test.mjs용 가짜 kubectl. 상태는 FAKE_KUBE_STATE(JSON 파일)에서 매 호출마다 읽는다(테스트는 임시 파일 + rename으로 바꾼다):
 //   { pods: { <파드>: { containerID: "c1" | null, state: "running" | "terminated" | "waiting" } },   — 없는 파드 = 지워짐
 //     logs: { <파드>: { lines: [[<RFC3339Nano>, <내용>], ...], mode: "hold" | "close" | "fail" | "hang" | "partial" } },
-//     getPodFailOnce: [<파드>, ...] }                                                                 — get pod가 한 번 실패
+//     getPodFailOnce: [<파드>, ...], getPodsFail: true | false }                                                                 — get pod가 한 번 실패
 //   get pods -o json: containerStatuses(api)를 상태대로 낸다(waiting이면 containerID 없음 — 실제 ContainerCreating과 같다).
 //   get pod <이름> -o json --ignore-not-found: 있으면 JSON, 없으면 빈 출력.
 //   logs [-f] <파드> --prefix --timestamps --since-time=<초>: since 이후 줄을 `[pod/<파드>/api] <시각> <내용>`으로 낸다.
 //     hold: -f면 붙어 있으면서 새로 추가된 줄을 내고, 파드가 지워지거나·컨테이너가 끝나거나·바뀌면 0으로 끝난다(실제 kubectl과 같다 — 임시 파드로 확인).
 //     close: 낼 줄을 내고 바로 0으로 끝난다(살아 있는데 스트림이 끊긴 경우). fail: 아무것도 내지 않고 1.
 //     hang: -f면 아무것도 내지 않고 붙어 있다(무응답), follow 없이면 1. partial: 마지막 줄을 반쯤만 내고(줄바꿈 없이) 0으로 끝난다.
-import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const FILE = process.env.FAKE_KUBE_STATE;
 const load = () => { try { return JSON.parse(readFileSync(FILE, "utf8")); } catch { return null; } };
@@ -55,13 +55,13 @@ if (li >= 0) {
     }, 50);
   }
 } else if (args.includes("pods")) {
+  if (state.getPodsFail) process.exit(1); // 목록 조회 장애
   process.stdout.write(JSON.stringify({ items: Object.entries(state.pods).map(([n, p]) => podJson(n, p)) }));
 } else if (args.includes("pod")) {
   const name = args[args.indexOf("pod") + 1];
-  if ((state.getPodFailOnce ?? []).includes(name)) {
-    state.getPodFailOnce = state.getPodFailOnce.filter((x) => x !== name);
-    writeFileSync(FILE + ".fk", JSON.stringify(state));
-    renameSync(FILE + ".fk", FILE);
+  // 한 번 실패: 상태 파일을 다시 쓰지 않고 표시 파일로 센다(테스트의 상태 교체와 겹쳐 되돌려 쓰지 않게)
+  if ((state.getPodFailOnce ?? []).includes(name) && !existsSync(`${FILE}.failed-${name}`)) {
+    writeFileSync(`${FILE}.failed-${name}`, "1");
     process.exit(1);
   }
   const p = state.pods[name];

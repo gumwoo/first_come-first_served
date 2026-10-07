@@ -21,19 +21,30 @@
 //   node scripts/loadtest/collect-api-logs.mjs merge --dir <run>/api-logs --since <UTC ISO>
 //     받아 둔 줄 중 kubelet 시각이 --since 이후인 줄을 `[pod/<파드>/api] <원래 줄>`(kubectl logs --prefix와 같은 형식)로 낸다. 형식 밖 줄이 있으면 실패.
 //
-// manifest.json: { since, startedAt, endedAt, pods: { <파드>: { firstSeenAt, containerId, follows, failures, endReason, complete, lines } }, neverStarted: [<파드>] }
+// manifest.json: { since, startedAt, endedAt, pods: { <파드>: { firstSeenAt, containerId, follows, failures, endReason, complete, lines } }, neverStarted: [<파드>], unknown: [<파드>] }
+//   unknown: Pending으로 본 뒤 조회가 오래 실패한 끝에 사라진 파드 — 시작했는지 몰라 대조 대상에 남는다(받지 못함 → 판정 불가).
 // 한계: 끊긴 뒤 다시 받기 전에 kubelet이 로그를 회전(기본 10MiB)했으면 `kubectl logs`는 현재 파일만 읽어 앞부분이 빠질 수 있다 — 끊김 없이 받는 동안의
 // 회전은 따라간다고 본다(추론). 자격증명은 쓰지 않는다(kubectl 컨텍스트). KUBECTL 환경변수로 다른 실행 파일을 줄 수 있다(테스트용 — .mjs면 node로 실행).
 import { spawn, spawnSync } from "node:child_process";
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const ISO_SEC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 // `[pod/<파드>/<컨테이너>] <kubelet RFC3339Nano> <원래 줄>`
-const LINE = /^(\[pod\/[^/\]]+\/[^\]]+\]) (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z) (.*)$/;
+// s 플래그: 로그 내용에 줄 구분 문자(CR, 유니코드 줄·문단 구분자)가 있어도 한 줄로 맞춘다.
+const LINE = /^(\[pod\/[^/\]]+\/[^\]]+\]) (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z) (.*)$/s;
+// 줄은 \n으로만 나눈다 — readline은 \r에서도 나눠 merge가 내용에 \r이 든 줄을 형식 밖 줄로 셌다(run 전체가 판정 불가).
+async function* lines(file) {
+  let buf = "";
+  for await (const chunk of createReadStream(file, "utf8")) {
+    buf += chunk;
+    let i;
+    while ((i = buf.indexOf("\n")) >= 0) { yield buf.slice(0, i); buf = buf.slice(i + 1); }
+  }
+  if (buf) yield buf;
+}
 
 /** kubelet 시각 → "<초 ms 13자리>.<나노 9자리>" — 문자열 비교로 순서가 맞는 키. 읽지 못하면 null. */
 export function tsKey(ts) {
@@ -64,8 +75,7 @@ async function mergeMain(argv) {
   const sinceMs = Date.parse(a.since);
   let bad = 0;
   for (const f of readdirSync(a.dir).filter((x) => x.endsWith(".log"))) {
-    const rl = createInterface({ input: createReadStream(join(a.dir, f), "utf8"), crlfDelay: Infinity });
-    for await (const line of rl) {
+    for await (const line of lines(join(a.dir, f))) {
       if (!line) continue;
       const out = mergeLine(line, sinceMs);
       if (out === undefined) { bad++; continue; }
@@ -129,6 +139,8 @@ function collectMain(argv) {
   const pods = new Map();
   const pending = new Set(); // 아직 컨테이너가 없는 파드(Pending·ContainerCreating) — 시작하지 못하고 사라지면 neverStarted
   const neverStarted = new Set();
+  const unknown = new Set(); // Pending으로 본 뒤 오랜 조회 공백 끝에 사라진 파드 — 시작했는지 모른다(대조 대상에 남긴다)
+  let lastListOk = null;
   let stopping = false;
 
   function track(name, containerId) {
@@ -198,7 +210,9 @@ function collectMain(argv) {
   /** 스트림이 끝난 뒤 파드 상태로 다음을 정한다. cleanJustNow: 방금 끝난 스트림이 연결돼 있었고 0으로 끝났는가. */
   function check(p, cleanJustNow) {
     const pod = getPod(p.name);
-    if (pod === undefined) { fail(p, () => check(p, cleanJustNow)); return; } // 조회만 다시 — 다시 받지 않는다(받기 실패가 판정을 덮지 않게)
+    // 조회만 다시 — 다시 받지 않는다. 다만 "방금 정상 종료"는 스트림이 닫힌 직후의 조회에만 의미가 있다: 조회가 실패한 사이 컨테이너가
+    // 종료 처리 중 줄을 찍고 지워졌을 수 있으므로, 재시도 뒤 파드가 없으면 다 받았다고 보지 않는다(보수적 — 드문 경우라 판정 불가 비용이 작다).
+    if (pod === undefined) { fail(p, () => check(p, false)); return; }
     if (pod === null) { finish(p, "pod-gone", cleanJustNow); return; }
     const c = apiStatus(pod);
     if (!c || c.containerID !== p.containerId) { finish(p, "container-restarted", false); return; }
@@ -220,6 +234,10 @@ function collectMain(argv) {
     if (out === null) return;
     let items;
     try { items = JSON.parse(out).items ?? []; } catch { return; }
+    const now = Date.now();
+    // 직전 성공 조회와의 간격이 짧을 때만 "Pending으로 봤다 → 지금 없다"를 시작하지 못하고 사라진 것으로 본다. 조회가 오래 실패했다면
+    // 그 사이 시작해 줄을 찍고 지워졌을 수 있다 — 그런 파드는 unknown으로 남겨 대조 대상에서 빼지 않는다.
+    const recent = lastListOk !== null && now - lastListOk <= 2 * INTERVAL_MS + 1000;
     const present = new Set();
     for (const pod of items) {
       const name = pod.metadata?.name;
@@ -231,7 +249,8 @@ function collectMain(argv) {
       pending.delete(name);
       follow(track(name, c.containerID));
     }
-    for (const name of [...pending]) if (!present.has(name)) { pending.delete(name); neverStarted.add(name); }
+    for (const name of [...pending]) if (!present.has(name)) { pending.delete(name); (recent ? neverStarted : unknown).add(name); }
+    lastListOk = now;
   }
 
   async function stop() {
@@ -245,17 +264,19 @@ function collectMain(argv) {
       if (p.child) { const ch = p.child; await new Promise((r) => { ch.once("close", r); ch.kill("SIGTERM"); }); }
       live.push(p);
     }
-    // 살아 있던 파드: follow 없이 시간 제한을 둔 마지막 따라잡기 — 성공하고 컨테이너가 처음 본 그대로일 때만 다 받았다고 본다.
+    // 살아 있던 파드: follow 없이 시간 제한을 둔 마지막 따라잡기(파드마다 동시에) — 성공하고 컨테이너가 처음 본 그대로일 때만 다 받았다고 본다.
     // 멈추는 사이 지워졌으면 그 스트림의 끝을 확인하지 못했으므로 다 받지 못한 것으로 둔다.
-    for (const p of live) {
-      const code = await new Promise((r) => stream(p, { once: true }, (c) => r(c)));
+    const codes = await Promise.all(live.map((p) => new Promise((r) => stream(p, { once: true }, (c) => r(c)))));
+    live.forEach((p, i) => {
       const pod = getPod(p.name);
       const same = Boolean(pod) && apiStatus(pod)?.containerID === p.containerId;
-      finish(p, pod === null ? "pod-gone" : "collector-stopped", code === 0 && same);
-    }
-    for (const name of pending) neverStarted.add(name);
+      finish(p, pod === null ? "pod-gone" : "collector-stopped", codes[i] === 0 && same);
+    });
+    // 아직 Pending인 파드: 마지막 성공 조회가 최근일 때만 시작하지 못한 것으로 본다(그 뒤 줄은 수집 구간 밖).
+    const recent = lastListOk !== null && Date.now() - lastListOk <= 2 * INTERVAL_MS + 1000;
+    for (const name of pending) (recent ? neverStarted : unknown).add(name);
     await Promise.all([...pods.values()].map((p) => new Promise((r) => p.file.end(r))));
-    const out = { since: a.since, startedAt, endedAt: new Date().toISOString(), pods: {}, neverStarted: [...neverStarted] };
+    const out = { since: a.since, startedAt, endedAt: new Date().toISOString(), pods: {}, neverStarted: [...neverStarted], unknown: [...unknown] };
     for (const [n, p] of pods) {
       out.pods[n] = { firstSeenAt: p.firstSeenAt, containerId: p.containerId, follows: p.follows, failures: p.failures,
         endReason: p.endReason, complete: p.complete, lines: p.lines };

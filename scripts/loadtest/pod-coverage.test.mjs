@@ -247,3 +247,10 @@ test("받아 둔 로그: 시작하지 못하고 사라진 파드(neverStarted �
   assert.equal(code, 0);
   assert.deepEqual(out.notCollected, []);
 });
+
+test("받아 둔 로그: unknown(조회 공백 끝에 사라진 Pending 파드)은 대상에서 빼지 않는다 — 받지 못함으로 판정 불가", () => {
+  const p = { name: "api-unknown", from: T0 + 10, to: T0 + 40 };
+  const { code, out } = runCollected([whole, p], { since: iso(T0), ...win, pods: { "api-whole": got("collector-stopped") }, neverStarted: [], unknown: ["api-unknown"] });
+  assert.equal(code, 2);
+  assert.deepEqual(out.notCollected, ["api-unknown"]);
+});

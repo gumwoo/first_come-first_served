@@ -73,14 +73,14 @@ test("살아 있는데 스트림이 끊기면 지우지 않고 이어 받는다 
   assert.equal(c.manifest().pods.a.complete, true);
 });
 
-test("지워진 직후 get pod가 한 번 실패해도 받아 둔 줄을 지우지 않는다(G1 재현 경우)", async () => {
+test("지워진 직후 get pod가 한 번 실패하면 받아 둔 줄은 지우지 않되, 그 사이를 확인하지 못했으므로 complete=false(보수적)", async () => {
   const c = start({ pods: { a: running() }, logs: { a: { lines: [[T(1), "queue.audit kind=admit a"], [T(2), "queue.audit kind=leave a"]], mode: "hold" } } }, ["--for", "3"]);
   await sleep(600);
   c.set((s) => { delete s.pods.a; s.getPodFailOnce = ["a"]; });
   assert.equal(await c.exited, 0);
   const m = c.manifest();
   assert.equal(m.pods.a.endReason, "pod-gone");
-  assert.equal(m.pods.a.complete, true);
+  assert.equal(m.pods.a.complete, false);
   assert.equal(c.log("a").trim().split("\n").length, 2);
 });
 
@@ -174,4 +174,16 @@ test("시작하지 못하고(컨테이너 없이) 사라진 파드는 neverStart
   const m = c.manifest();
   assert.deepEqual(m.neverStarted, ["p"]);
   assert.equal(m.pods.p, undefined);
+});
+
+test("Pending으로 본 뒤 목록 조회가 오래 실패한 끝에 사라진 파드는 neverStarted가 아니라 unknown(G1 재현 — 그 사이 시작했을 수 있다)", async () => {
+  const c = start({ pods: { a: running(), p: { containerID: null, state: "waiting" } }, logs: { a: { lines: [[T(1), "a1"]], mode: "hold" } } }, ["--for", "4"]);
+  await sleep(500);
+  c.set((s) => { s.getPodsFail = true; });
+  await sleep(1800); // 2 × interval(0.2초) + 1초보다 길게
+  c.set((s) => { delete s.pods.p; s.getPodsFail = false; });
+  assert.equal(await c.exited, 0);
+  const m = c.manifest();
+  assert.deepEqual(m.neverStarted, []);
+  assert.deepEqual(m.unknown, ["p"]);
 });

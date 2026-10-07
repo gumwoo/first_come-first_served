@@ -122,13 +122,14 @@ test("hold가 먼저 끝나도 입력이 닫힐 때까지 줄을 계속 넘긴�
   const out = join(mkdtempSync(join(tmpdir(), "poll-hold-")), "poll");
   // 응답이 없는 주소 — 폴링은 의미 없고 hold(1초)로 끝난다
   const hold = spawn(process.execPath, [HOLD, "--base", "http://127.0.0.1:9", "--out", out, "--hold", "1", "--min-ms", "60000"]);
+  const exited = new Promise((r) => hold.on("exit", r)); // 먼저 끝나 버려도 놓치지 않게 바로 건다(회귀 때 무한 대기 방지)
   let stdout = "";
   hold.stdout.on("data", (b) => (stdout += b));
   hold.stdin.write("QTOKEN t1 60000\n");
   await new Promise((r) => setTimeout(r, 1_800)); // hold 끝 뒤
   hold.stdin.write("hold 뒤 k6 줄\n");
   hold.stdin.end();
-  const code = await new Promise((r) => hold.on("exit", r));
+  const code = await exited;
   assert.equal(code, 0);
   assert.match(stdout, /hold 뒤 k6 줄/);
   assert.equal(JSON.parse(readFileSync(join(out, "summary.json"), "utf8")).reason, "hold 시간 끝");

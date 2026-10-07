@@ -14,7 +14,9 @@
 // 토큰이 아닌 줄은 그대로 stdout으로 넘긴다(k6 로그가 run 디렉터리에 그대로 남게). hold가 먼저 끝나도 입력이 닫힐 때까지는
 // 줄을 계속 넘기고 나서 끝낸다 — 먼저 끝내면 앞단 k6가 닫힌 파이프에 쓰다 죽어 진입 출력이 잘린다.
 // 지연(latencyMs)은 요청을 낸 때부터 잰다 — 소켓(--max-sockets)이 모자라 기다린 시간도 들어간다.
-// networkErrors는 응답을 못 받은 경우(연결 실패·시간 초과·본문 도중 끊김)만 센다 — 5xx 등은 byCode에 있다.
+// networkErrors는 응답을 못 받은 경우(연결 실패·시간 초과·본문 도중 끊김)만 센다 — 5xx 등은 byCode에 있다. 오류 종류는 errorCodes에 남는다.
+// 재사용한 keep-alive 소켓이 서버 쪽에서 막 닫혀 ECONNRESET이 나면 새 연결로 한 번 바로 다시 보낸다(reusedSocketRetries) —
+// 브라우저가 하는 일이고(Node 문서 http "req.reusedSocket" 예시와 같은 처리), 그 경합을 시스템 오류로 세지 않기 위해서다.
 // 출력: <out>/tokens.jsonl(토큰별 ref·토큰 줄을 받은 시각·첫 retryAfterMs·조회 수·마지막 상태·ADMITTED 처음 본 시각·만료 시각),
 //       <out>/summary.json(조회 수·응답 코드·대기열 상태별 수·지연 분위수·초별 조회 수·오류 수). 토큰 원문은 남기지 않는다.
 import { createHash } from "node:crypto";
@@ -73,7 +75,7 @@ function main() {
   const agent = new lib.Agent({ keepAlive: true, maxSockets: num["max-sockets"] });
 
   const tokens = new Map(); // token → 상태
-  const stats = { polls: 0, byCode: {}, byQueueStatus: {}, networkErrors: 0, timeouts: 0, aborted: 0, perSecond: {}, latencies: [] };
+  const stats = { polls: 0, byCode: {}, byQueueStatus: {}, networkErrors: 0, timeouts: 0, aborted: 0, errorCodes: {}, reusedSocketRetries: 0, perSecond: {}, latencies: [] };
   let firstTokenAt = null;
   let stopping = false; // 폴링을 멈췄다(결과는 썼다)
   let inputEnded = false;
@@ -96,7 +98,7 @@ function main() {
         });
       });
       req.on("timeout", () => req.destroy(new Error("timeout")));
-      req.on("error", (e) => resolve({ code: 0, error: e.message, ms: Date.now() - started }));
+      req.on("error", (e) => resolve({ code: 0, error: e.message === "timeout" ? "timeout" : e.code || e.message, reused: req.reusedSocket, ms: Date.now() - started }));
     });
 
   const schedule = (t, delay) => {
@@ -116,7 +118,11 @@ function main() {
   async function poll(t) {
     t.timer = null;
     if (stopping || t.done) return;
-    const r = await get(t.token);
+    let r = await get(t.token);
+    if (r.code === 0 && r.reused && r.error === "ECONNRESET" && !stopping) {
+      stats.reusedSocketRetries++;
+      r = await get(t.token); // 재사용 소켓 경합 — 새 연결로 한 번만 다시
+    }
     if (stopping) return;
     const now = Date.now();
     t.polls++;
@@ -127,6 +133,7 @@ function main() {
     stats.latencies.push(r.ms);
     if (r.code === 0) {
       stats.networkErrors++;
+      stats.errorCodes[r.error] = (stats.errorCodes[r.error] ?? 0) + 1;
       if (r.error === "timeout") stats.timeouts++;
       if (r.error === "aborted") stats.aborted++;
     }
@@ -171,7 +178,8 @@ function main() {
       firstTokenAt: firstTokenAt === null ? null : new Date(firstTokenAt).toISOString(), endedAt: new Date().toISOString(),
       tokens: tokens.size, stillWaitingAtEnd: open, finalStatus: finals,
       polls: stats.polls, byCode: stats.byCode, byQueueStatus: stats.byQueueStatus,
-      networkErrors: stats.networkErrors, timeouts: stats.timeouts, aborted: stats.aborted,
+      networkErrors: stats.networkErrors, timeouts: stats.timeouts, aborted: stats.aborted, errorCodes: stats.errorCodes,
+      reusedSocketRetries: stats.reusedSocketRetries,
       latencyMs: { p50: pct(lat, 0.5), p95: pct(lat, 0.95), p99: pct(lat, 0.99), max: lat.at(-1) ?? null },
       perSecond: Object.entries(stats.perSecond).sort((a, b) => a[0] - b[0]).map(([s, n]) => ({ second: new Date(s * 1000).toISOString(), polls: n })),
     };

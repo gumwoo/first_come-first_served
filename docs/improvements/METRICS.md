@@ -34,6 +34,8 @@ _아직 측정 결과 없음 — 성능 슬라이스에서 k6 실행 후 자동 
 | 같은 구간 제한 허용량(약 640건) 대비 | **약 34배 초과** | 위반 없음 | — | [IMP-018](IMP-018-kopis-detail-hotpath-removal.md) |
 | 대기열 진입 CPU(web+api, 공개 ALB 1,000/s·60초 판정 3회 중앙값) | 3.04 ms/req | **1.08 ms/req** | -64.5% | [IMP-025](IMP-025-queue-path-next-hop-bypass.md) |
 | 대기열 진입 p95(IMP-025와 같은 구간 — before 편차 97~694ms라 참고값) | 157.5 ms | **15 ms** | -90% | [IMP-025](IMP-025-queue-path-next-hop-bypass.md) |
+| 대기열 진입 DB 커넥션 획득/req(공개 ALB 2,000·3,000/s, 칸별 1회) | 1.01 회 | **0.011~0.013 회** | -99% | [IMP-026](IMP-026-queue-entry-db-redis-cost.md) |
+| 대기열 신규 진입 Redis 명령/req(4,000/s, 1회) | 7.03 | **2.03** | -71% | 〃 |
 
 <!--
 표 서식 예시(측정값 아님). 실제 수치가 아니므로 표 안에 두지 않는다 —

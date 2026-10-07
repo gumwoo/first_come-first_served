@@ -123,6 +123,8 @@
   (SIGINT 또는 `--for`). out 디렉터리는 비어 있어야 한다(이전 run과 섞임 방지). 사후 검사에 `check-correctness.sh ... --api-logs <run>/api-logs`를 주면
   `--since` 이후 줄만 합쳐(`collect-api-logs.mjs merge`) 판정하고, 파드 대조는 "run과 겹친 파드를 끝까지 받았는가 + 수집기가 run 전체를 덮었는가"
   (pod-coverage `--collected` — 수집기 시작 ≤ run 시작, 종료 ≥ run 종료 + 45초)로 한다. 끊긴 뒤 다시 받기 전에 kubelet이 로그를 회전했으면 앞부분이 빠지는데, 다시 받을 때 마지막으로 받은 줄이 오지 않는 것으로 감지해 그 파드를 다 받지 못한 것으로 둔다(판정 불가).
+  첫 받기도 실패·늦은 발견(run 전부터 있던 파드는 run 시작 + `--attempt-slack` 기본 5초 — manifest의 attemptSlackSec로 확인, 측정에서는 기본값을 쓴다) 뒤 첫 줄이 늦으면 판정 불가다.
+  남는 한계: 첫 시도를 제때 띄웠는데 연결 단계(dial·TLS)가 오래 걸리는 사이의 회전, 끊김 없이 받는 동안 회전을 따라간다는 전제(추론).
 - **Downstream E2E(입장자)**: 새 공연(좌석 전부 AVAILABLE·주문 없음)마다 대기열 키를 리셋하고 발생기 한 대에서
   `run-booking.sh --session <s> --run <r> --gen g1 --base https://flow-ticket.com/api --event <id> --users <토큰> --start-at <UTC>`
   (사용자 100명이 T0 20초 전에 진입 → ADMITTED → T0에 함께 예매. 역할은 `infra/k6/booking-e2e.js` 머리말). 판정은 hold·주문 만료 회수가 끝난 뒤

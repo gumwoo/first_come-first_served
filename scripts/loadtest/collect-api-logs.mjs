@@ -309,7 +309,7 @@ function collectMain(argv) {
     const recent = lastListOk !== null && Date.now() - lastListOk <= 2 * INTERVAL_MS + 1000;
     for (const name of pending) (recent ? neverStarted : unknown).add(name);
     await Promise.all([...pods.values()].map((p) => new Promise((r) => p.file.end(r))));
-    const out = { since: a.since, startedAt, endedAt: new Date().toISOString(), pods: {}, neverStarted: [...neverStarted], unknown: [...unknown] };
+    const out = { since: a.since, startedAt, endedAt: new Date().toISOString(), attemptSlackSec: ATTEMPT_SLACK_MS / 1000, pods: {}, neverStarted: [...neverStarted], unknown: [...unknown] };
     for (const [n, p] of pods) {
       out.pods[n] = { firstSeenAt: p.firstSeenAt, containerId: p.containerId, follows: p.follows, failures: p.failures,
         endReason: p.endReason, complete: p.complete, lines: p.lines };

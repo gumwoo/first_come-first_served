@@ -9,6 +9,9 @@
 #                                            JVM 기동 + 지연초부터 <초> 동안 녹화한다(지연 기본 0 — 부팅·워밍업을 빼려면 준다)
 #   infra/loadgen/diag/diag.sh jfr-collect <디렉터리>   파드마다 녹화 파일을 회수한다(녹화가 끝난 파드만)
 #   infra/loadgen/diag/diag.sh jfr-off       JFR을 끈다(롤아웃)
+#   infra/loadgen/diag/diag.sh pay-mock-on   결제 게이트웨이를 mock으로(Downstream E2E 시험 — 롤아웃). ArgoCD 자동 동기화가 꺼져 있어야 한다
+#   infra/loadgen/diag/diag.sh pay-mock-off  Git 값(toss)으로 되돌린다(롤아웃). 뒤에 ArgoCD 자동 동기화를 다시 켠다
+#   infra/loadgen/diag/diag.sh pay-status    ConfigMap 값과 파드마다 실제 환경변수
 #
 # JFR은 JAVA_OPTS가 아니라 JDK_JAVA_OPTIONS로 넣는다. 이미지의 ENV JAVA_OPTS(-XX:MaxRAMPercentage=75)를 컨테이너
 # env로 덮으면 힙 설정이 사라져 측정이 오염된다. JDK_JAVA_OPTIONS는 java 런처가 명령줄 앞에 붙인다(회수한 JFR의
@@ -96,6 +99,32 @@ case "${1:-}" in
     kubectl -n "$NS" set env deploy/flowticket-api JDK_JAVA_OPTIONS-
     kubectl -n "$NS" rollout status deploy/flowticket-api --timeout=600s
     ;;
+  pay-mock-on|pay-mock-off)
+    # Toss 게이트웨이는 서버 단독 승인(approve)을 막고 confirm은 결제창 paymentKey가 필요해, k6 서버 부하로는 결제를 결정론적으로
+    # 만들 수 없다. mock은 멱등 키가 FAIL로 시작하면 거절, 아니면 승인한다(MockPaymentGateway). 세션 한정이다.
+    want=mock; [ "$1" = pay-mock-off ] && want=toss
+    auto="$(kubectl -n argocd get application flowticket -o jsonpath='{.spec.syncPolicy.automated}' 2>/dev/null || true)"
+    if [ "$want" = mock ] && [ -n "$auto" ]; then
+      echo "ArgoCD 자동 동기화가 켜져 있다 — selfHeal이 ConfigMap을 Git 값으로 되돌린다. 먼저 끈다:" >&2
+      echo "  kubectl -n argocd patch application flowticket --type=merge -p '{\"spec\":{\"syncPolicy\":{\"automated\":null}}}'" >&2
+      exit 1
+    fi
+    kubectl -n "$NS" patch configmap flowticket-api-config --type=merge -p "{\"data\":{\"PAYMENT_GATEWAY\":\"$want\"}}"
+    # envFrom은 파드 시작 때만 읽는다 — 재시작해야 반영된다.
+    kubectl -n "$NS" rollout restart deploy/flowticket-api
+    kubectl -n "$NS" rollout status deploy/flowticket-api --timeout=600s
+    bad=0
+    for p in $(api_pods); do
+      got="$(kubectl -n "$NS" exec "$p" -c api -- printenv PAYMENT_GATEWAY 2>/dev/null || echo '?')"
+      echo "  $p PAYMENT_GATEWAY=$got"; [ "$got" = "$want" ] || bad=1
+    done
+    [ "$bad" = 0 ] || { echo "파드 환경변수가 $want가 아니다" >&2; exit 1; }
+    [ "$want" = toss ] && echo "되돌림 끝 — ArgoCD 자동 동기화를 다시 켠다: kubectl apply -f k8s/argocd/application.yaml"
+    ;;
+  pay-status)
+    echo "ConfigMap PAYMENT_GATEWAY=$(kubectl -n "$NS" get configmap flowticket-api-config -o jsonpath='{.data.PAYMENT_GATEWAY}')"
+    for p in $(api_pods); do echo "  $p $(kubectl -n "$NS" exec "$p" -c api -- printenv PAYMENT_GATEWAY 2>/dev/null || echo '?')"; done
+    ;;
   *)
-    sed -n '2,15p' "$0"; exit 2 ;;
+    sed -n '2,18p' "$0"; exit 2 ;;
 esac

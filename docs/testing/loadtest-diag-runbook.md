@@ -18,7 +18,8 @@
   배포의 이미지 태그(`kube_pod_container_info` 또는 `kubectl get deploy -o jsonpath`)가 기대값인지 확인하는 데까지다.
 - 수동 동기화는 Git에 있는 필드를 Git 값으로 되돌린다 — HPA min/max는 동기화로 복원되는 것을 확인했다(측정 세션 20261005-1440, 여러 번).
   동기화 뒤 필요한 변경을 다시 건다. 단, 이 Application은 `ServerSideApply=true`라 **Git에 없는 필드**(kubectl이 더한 env 항목·어노테이션)는
-  동기화로 지워지지 않을 수 있다(추론, 미확인). 그래서 JFR env·Ingress 어노테이션은 동기화에 기대지 않고 아래 각 절의 명시 명령으로 원복한다.
+  동기화로 지워지지 않을 수 있다 — kubectl로 더한 Ingress 어노테이션(ALB access log)은 자동 동기화를 다시 켠 뒤에도 남는 것을 확인했다
+  (측정 세션 20261005-1440 끝). 그래서 JFR env·Ingress 어노테이션·결제 mock은 동기화에 기대지 않고 아래 각 절의 명시 명령으로 원복한다.
 - 시연(측정 세션 20261005-1440): 켜기 → 약 1.5분 뒤 `Synced`·`Healthy`(api·web을 Git의 이미지 태그로 롤아웃, 롤아웃 중 `Degraded` 표시 1회) → 다시 끄기.
 
 ## 1. 파드 수 고정(HPA)
@@ -90,6 +91,18 @@
 - 1b(발생기 상한 측정)에서 쓴 경로. 위 명령은 `--dry-run=server`로 검증했다(경로 `/__loadgen-probe`가 `/` 앞에 들어감).
 - ALB가 백엔드 없이 응답하므로 앱 부하가 0이다. ALB 쪽 수는 `RequestCount`가 아니라 `HTTP_Fixed_Response_Count`에 잡힌다.
 
+## 5b. 결제 게이트웨이 mock — Downstream E2E(입장자) 시험용
+
+| 동작 | 명령 |
+|---|---|
+| 켜기 | `infra/loadgen/diag/diag.sh pay-mock-on` — ConfigMap `PAYMENT_GATEWAY=mock` + api 롤아웃, 파드마다 환경변수 확인. 자동 동기화가 켜져 있으면 거부한다 |
+| 확인 | `infra/loadgen/diag/diag.sh pay-status` |
+| 끄기 | `infra/loadgen/diag/diag.sh pay-mock-off` — Git 값 `toss`로 되돌리고 롤아웃. 그 뒤 자동 동기화를 켠다(위 0) |
+
+- 이유: `TossPaymentGateway.approve()`는 서버 단독 승인을 막고(`VALIDATION_ERROR`) `confirm()`은 결제창에서 받은 `paymentKey`가 필요해,
+  k6 서버 부하로는 결제를 결정론적으로 만들 수 없다. `MockPaymentGateway`는 멱등 키가 `FAIL`로 시작하면 거절, 아니면 `MOCK-<키>`로 승인한다.
+- 켜 둔 동안 공개 사이트의 결제도 mock으로 처리된다. 세션 동안만 켜고, 판정 SQL(`approved_not_mock`)로 mock이 실제로 걸렸는지 확인한다.
+
 ## 6. run 절차 규칙(결정 칸)
 
 - **리셋**: 쓴 공연마다 대기열 키(`wait`·`admitcount`·`admitexp`·`seq`)를 한 번의 `DEL`로 지우고 활성 목록에서 뺀다. SSE 없는 run 사이에는 파드를
@@ -105,10 +118,14 @@
 - **대기자**: 대기 상태까지 재려면 `run-entry.sh --poll-hold <초>` — 대기 토큰마다 프론트와 같은 규칙으로 상태를 묻는다(`poll-<gen>/`).
   입장 인지 지연은 `scripts/loadtest/admit-latency.mjs --audit <api 로그> <run>/poll-*/tokens.jsonl`.
 - **사후 검사**: `export-prom.mjs --end`는 run 종료 + 45초 이상, `check-correctness.sh`로 판정.
+- **Downstream E2E(입장자)**: 새 공연(좌석 전부 AVAILABLE·주문 없음)마다 대기열 키를 리셋하고 발생기 한 대에서
+  `run-booking.sh --session <s> --run <r> --gen g1 --base https://flow-ticket.com/api --event <id> --users <토큰> --start-at <UTC>`
+  (사용자 100명이 T0 20초 전에 진입 → ADMITTED → T0에 함께 예매. 역할은 `infra/k6/booking-e2e.js` 머리말). 판정은 hold·주문 만료 회수가 끝난 뒤
+  (T0 + 300초 + 60초 + 여유) `check-booking.sh --out <run> --event <id>`(역할별 기대값)와 `check-correctness.sh --generators 1`(기존 위반 검사).
 
 ## 7. 세션 끝 체크리스트
 
-- [ ] `diag.sh nlb-down`, `diag.sh jfr-off`
+- [ ] `diag.sh nlb-down`, `diag.sh jfr-off`, `diag.sh pay-mock-off`(결제 mock을 켰다면)
 - [ ] Ingress 진단 경로 제거
 - [ ] 노드 표시 제거·desiredSize 원복, 수동 동기화로 HPA 원복
 - [ ] ArgoCD 자동 동기화 켜기

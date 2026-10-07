@@ -26,6 +26,8 @@ images:
 # DB_HOST에는 포트를 붙이지 않는다. 모듈이 aws_db_instance.address(호스트만)를 반환하고
 # DB_PORT는 따로 있다. host:5432를 넣으면 주소가 host:5432:5432가 된다.
 patches:
+  # 공연 오픈 사전 확장(ADR-025) — HPA 하한. 평소 3(효과 없음). 켜고 끄는 법은 파일 머리말.
+  - path: event-prescale.yaml
   - target: { kind: ConfigMap, name: flowticket-api-config }
     patch: |
       - op: replace

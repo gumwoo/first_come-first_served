@@ -37,15 +37,16 @@
 | 축소 막기 | `kubectl annotate node <노드> cluster-autoscaler.kubernetes.io/scale-down-disabled=true --overwrite` |
 | 원복 | 표시 제거 `kubectl annotate node <노드> cluster-autoscaler.kubernetes.io/scale-down-disabled-`, desiredSize를 원래 값으로 |
 
-### 2b. 오픈 전 사전 확장 → 오픈 뒤 정책에 넘기기(ADR-025)
+### 2b. 오픈 전 사전 확장 → 오픈 뒤 정책에 넘기기(ADR-025) — Git으로 한다
 
-| 동작 | 명령 |
+| 동작 | 방법 |
 |---|---|
-| 사전 확장(오픈 전, 노드 Ready까지 CA 반응 시간 이상 앞서) | `kubectl patch hpa flowticket-api -n flowticket --type merge -p '{"spec":{"minReplicas":9}}'` + 노드 그룹 3개 `--scaling-config minSize=3,maxSize=3,desiredSize=3` |
-| 정책에 넘기기(오픈 뒤) | `kubectl patch hpa flowticket-api -n flowticket --type merge -p '{"spec":{"minReplicas":3}}'` + 노드 그룹 3개 `minSize=1,maxSize=3`(desiredSize는 그대로 — 이후는 CA가 줄인다) |
+| 사전 확장(오픈 최소 15분 전) | `k8s/overlays/demo-local/event-prescale.yaml`의 `minReplicas`를 9로, `# event:`·`# off-by:`를 채운 PR을 머지 → ArgoCD 동기화(자동) → api Pending → CA가 노드 추가 |
+| 정책에 넘기기(오픈 뒤) | 같은 파일을 3으로, `event`·`off-by`를 `-`로 되돌리는 PR을 머지 → 이후 HPA(3~9)·CA가 지속 부하를 따라 늘고 준다 |
 
-- api 요청이 1000m라 api 하나가 노드 하나를 차지한다 — HPA 9는 노드 9다. 넘긴 뒤 HPA 축소는 안정화 300초, CA 노드 축소는 그 뒤 약 10분(IMP-029 시연 관찰 11.6분).
-- 자동 동기화를 끈 상태에서 한다(위 0). 넘긴 뒤 HPA 값이 Git 값(3~9)과 같은지 확인한다.
+- kubectl로 HPA를 patch하지 않는다(selfHeal이 되돌리고 기록이 남지 않는다). 노드 그룹 설정도 바꾸지 않는다 — Pending을 CA가 해소한다.
+- 하네스 k8s 규칙 11: 하한은 base 3~9 안, 켤 때 event·off-by 필수, off-by가 지나면 CI 실패. 반영 확인은 `kubectl get hpa`·노드 수·Pending.
+- 넘긴 뒤 HPA 축소는 안정화 300초, CA 노드 축소는 그 뒤 약 10분(IMP-029 시연 관찰 11.6분).
 
 - 리셋에서 파드를 다시 만들면 메모리·CPU 부족으로 Pending이 생겨 CA가 노드를 바꿀 수 있다(측정 세션 20261005-1440에서 반복).
   run마다 노드 수와 앱 파드 배치를 기록한다 — `export-prom.mjs`가 `app_pod_nodes`·`app_images`를 남긴다.

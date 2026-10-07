@@ -55,6 +55,8 @@ const cases = [
   { name: "k8s-actuator-main-port", script: "k8s/check.mjs", expect: "actuator가 일반 API 포트에 있다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-actuator-main-port" } },
   { name: "k8s-probe-on-management", script: "k8s/check.mjs", expect: "probe가 관리 포트를 본다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-probe-on-management" } },
   { name: "k8s-probe-named-management", script: "k8s/check.mjs", expect: "probe가 관리 포트를 본다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-probe-named-management" } },
+  { name: "k8s-prescale-stale", script: "k8s/check.mjs", expect: "사전 확장이 기한을 넘겼다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-prescale-stale" } },
+  { name: "k8s-prescale-unlabeled", script: "k8s/check.mjs", expect: "사전 확장을 켰는데 공연·기한이 없다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-prescale-unlabeled" } },
   { name: "k8s-mgmt-in-configmap", script: "k8s/check.mjs", expect: "관리 포트를 ConfigMap에 두었다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-mgmt-in-configmap" } },
   { name: "fe-missing-enum",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-enum" } },
   { name: "fe-bad-dep",          script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-bad-dep" } },

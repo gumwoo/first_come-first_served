@@ -1,0 +1,9 @@
+# 위반: 기한(off-by)이 지났는데 사전 확장이 켜져 있다.
+# event: 1825
+# off-by: 2020-01-01T00:00:00Z
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flowticket-api
+spec:
+  minReplicas: 9

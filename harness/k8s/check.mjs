@@ -426,4 +426,55 @@ if (fs.existsSync(ES_DIR)) {
   }
 }
 
+
+// ---------- 11) 공연 오픈 사전 확장(event-prescale.yaml)이 정책 안에 있고, 켜 둔 채 잊히지 않는가 — ADR-025 ----------
+//
+// 오픈 순간은 HPA·CA가 흡수하지 못해 오픈 전에 HPA 하한을 Git으로 올린다(overlay 패치). 세션 kubectl은 ArgoCD selfHeal이
+// 되돌리고 기록도 남지 않는다. 그 대신 Git 값은 잊히면 그대로 남는다(노드 9대 비용). 그래서:
+//   - 하한은 base 하한 이상, base 상한 이하여야 한다(정책 밖으로 올리거나 정책보다 내리지 않는다).
+//   - base 하한보다 크면 "# event: <id>"와 "# off-by: <UTC>"가 있어야 하고, off-by가 지났으면 실패한다(다음 PR의 CI가 막는다).
+//   - 실제 저장소에서는 이 파일이 overlay에 있고 kustomization.yaml이 패치로 참조해야 한다(참조가 없으면 올려도 적용되지 않는다).
+{
+  const prescaleFiles = manifests.filter((f) => path.basename(f) === "event-prescale.yaml");
+  if (K8S === "k8s") {
+    const kz = path.join(REPO_ROOT, "k8s/overlays/demo-local/kustomization.yaml");
+    if (prescaleFiles.length === 0) r.fail("사전 확장 패치(k8s/overlays/demo-local/event-prescale.yaml)가 없다: 규칙 11이 무력화된 상태");
+    else if (!fs.existsSync(kz) || !/^\s*-\s*path:\s*event-prescale\.yaml\s*$/m.test(read(kz))) {
+      r.fail("사전 확장 패치를 kustomization.yaml이 참조하지 않는다: k8s/overlays/demo-local — 하한을 올려도 클러스터에 적용되지 않는다");
+    }
+  }
+  let base = null;
+  for (const { doc, file } of docs) {
+    if (doc.kind !== "HorizontalPodAutoscaler" || doc.metadata?.name !== "flowticket-api") continue;
+    if (path.basename(file) === "event-prescale.yaml") continue;
+    if (Number.isInteger(doc.spec?.minReplicas) && Number.isInteger(doc.spec?.maxReplicas)) base = doc.spec;
+  }
+  for (const f of prescaleFiles) {
+    const rel = path.relative(REPO_ROOT, f);
+    const src = read(f);
+    let min, ns;
+    try { const d = yaml.load(src); min = d?.spec?.minReplicas; ns = d?.metadata?.namespace; } catch { min = undefined; }
+    // 전략적 병합 패치는 이름·네임스페이스가 맞아야 붙는다 — 없으면 kustomize 빌드가 실패한다(ArgoCD 동기화 중단).
+    if (K8S === "k8s" && ns !== "flowticket") {
+      r.fail(`사전 확장 패치의 metadata.namespace가 flowticket이 아니다: ${rel} → kustomize가 대상 HPA를 못 찾아 빌드가 실패한다`);
+    }
+    if (!Number.isInteger(min) || !base) {
+      r.fail(`사전 확장 패치를 읽지 못했다: ${rel} — minReplicas(정수)와 base HPA(flowticket-api의 min·max)가 필요하다`);
+      continue;
+    }
+    if (min < base.minReplicas || min > base.maxReplicas) {
+      r.fail(`사전 확장 하한이 정책 밖이다: ${rel} → minReplicas ${min}, base HPA ${base.minReplicas}~${base.maxReplicas}. 상한을 넘기려면 정책(ADR-025)부터 바꾼다`);
+      continue;
+    }
+    if (min === base.minReplicas) continue; // 꺼진 상태
+    const event = src.match(/^#\s*event:\s*(\d+)\s*$/m)?.[1];
+    const offBy = src.match(/^#\s*off-by:\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s*$/m)?.[1];
+    if (!event || !offBy || Number.isNaN(Date.parse(offBy))) {
+      r.fail(`사전 확장을 켰는데 공연·기한이 없다: ${rel} → minReplicas ${min}. "# event: <공연 id>"와 "# off-by: <UTC>"를 적는다(언제 끌지 모르면 켜 둔 채 잊힌다)`);
+    } else if (Date.parse(offBy) < Date.now()) {
+      r.fail(`사전 확장이 기한을 넘겼다: ${rel} → event ${event}, off-by ${offBy}인데 minReplicas ${min}. 3으로 되돌리는 PR을 먼저 머지한다(노드 ${min}대 비용이 계속 나간다)`);
+    }
+  }
+}
+
 r.done();

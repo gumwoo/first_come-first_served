@@ -10,6 +10,10 @@
 # 이후까지를 덮어야 한다 — 파드 대조와 4단계(실시간 조건 사후 재확인)가 이 구간에 기댄다. 덮지 못하면 판정 불가(2)다.
 # (감시기의 endedAt으로 대신하지 않는다 — 감시기가 일찍 멈췄으면 구간이 짧게 잡힌 채 통과한다.)
 #
+# --api-logs <디렉터리>(선택): run 동안 collect-api-logs.mjs로 받아 둔 api 로그(파드별 .log + manifest.json). 주면 사후 `kubectl logs`
+#   대신 이것으로 대기열 순서·실효 입장 초과를 판정하고, 파드 대조도 "지금 살아 있는 파드"가 아니라 "run과 겹친 파드를 다 받았는가"로
+#   한다(pod-coverage.mjs --collected). HPA 축소로 지워진 파드의 감사 줄을 잃지 않으려고 쓴다(Platform 축 run).
+#
 # --since는 run 시작 시각(UTC, run 메타의 startedAt과 같은 형식)이다. 이 시각 이후의 주문·이벤트·로그만 본다.
 # DB에는 같은 UTC 벽시계로 바꿔 넘긴다 — 앱 컨테이너가 TZ=UTC이고 DB에도 UTC 벽시계가 쌓인다(api-deployment.yaml).
 #
@@ -54,10 +58,10 @@ set -uo pipefail
 # 이 파일을 링크로 실행해도 옆의 도구를 찾도록 실제 경로로 푼다(readlink -f가 없으면 그대로 쓴다).
 SELF="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
 HERE="$(cd "$(dirname "$SELF")" && pwd)"
-OUT="" SINCE="" UNTIL="" GENS="" NS=flowticket TOL=1000
+OUT="" SINCE="" UNTIL="" GENS="" NS=flowticket TOL=1000 API_LOGS=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --out|--since|--until|--generators|--tolerance-ms)
+    --out|--since|--until|--generators|--tolerance-ms|--api-logs)
       # 값 없이 끝에 오면 set -u 때문에 "$2: unbound variable"로 죽어 종료 1(= 위반)이 된다. 인자 오류는 2다.
       [ $# -ge 2 ] || { echo "$1에 값이 없다" >&2; exit 2; }
       case "$1" in
@@ -66,6 +70,7 @@ while [ $# -gt 0 ]; do
         --until) UNTIL="$2" ;;
         --generators) GENS="$2" ;;
         --tolerance-ms) TOL="$2" ;;
+        --api-logs) API_LOGS="$2" ;;
       esac
       shift 2 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2 ;;
@@ -208,8 +213,16 @@ fi
 echo "==> 2/4 대기열 순서(api 로그)"
 # 이전 결과가 summary에 섞이지 않게, 로그 수집 성공 여부와 상관없이 먼저 지운다.
 rm -f "$D/queue-order.json" "$D/queue-order.err" "$D/admission-overlap.json" "$D/admission-overlap.err"
-if kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 --prefix \
-     --max-log-requests=20 > "$D/api.log"; then
+# 받아 둔 로그가 있으면 그것을 쓴다(파드별 파일을 합친다 — 줄 형식은 kubectl logs --prefix와 같다).
+collect_logs() {
+  if [ -n "$API_LOGS" ]; then
+    [ -s "$API_LOGS/manifest.json" ] || { echo "    받아 둔 로그에 manifest.json이 없다: $API_LOGS(수집기가 정상 종료하지 않았다)" >&2; return 1; }
+    cat "$API_LOGS"/*.log > "$D/api.log"
+  else
+    kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 --prefix --max-log-requests=20 > "$D/api.log"
+  fi
+}
+if collect_logs; then
   node "$HERE/queue-order.mjs" --tolerance-ms "$TOL" "$D/api.log" > "$D/queue-order.json"
   QO=$?
   # 판정 불가 사유는 queue-order.err에 남겨 summary에도 보인다.
@@ -294,7 +307,12 @@ fi
 rm -f "$D/pod-coverage.json"
 # 로그를 받은 **뒤에** 파드 목록을 읽는다. 순서가 반대면 목록을 읽은 뒤 로그를 받기 전에 지워진 파드가 "읽음"으로
 # 남는다. 이 순서에서는 로그를 받은 뒤 지워진 파드가 "빠짐"으로 잡혀 판정 불가 쪽으로만 틀린다.
-if kubectl -n "$NS" get pods -l app=flowticket-api \
+if [ -n "$API_LOGS" ]; then
+  # 받아 둔 로그: run과 겹친 파드를 모두 끝까지 받았는가(지금 살아 있는지는 상관없다).
+  node "$HERE/pod-coverage.mjs" --pods "$OUT/prom/api_pods.json" --restarts "$OUT/prom/api_restarts.json" \
+    --collected "$API_LOGS/manifest.json" --since "$SINCE" --until "$UNTIL" --meta "$OUT/prom/_meta.json" \
+    > "$D/pod-coverage.json" && POD_OK=1 || { echo "    받아 두지 못한 파드 로그가 있다(pod-coverage.json)" >&2; BROKEN=1; }
+elif kubectl -n "$NS" get pods -l app=flowticket-api \
      -o jsonpath='{range .items[*]}{.metadata.name} {.status.containerStatuses[?(@.name=="api")].restartCount} {.status.containerStatuses[?(@.name=="api")].state.running.startedAt}{"\n"}{end}' \
      > "$D/api-pods-now.txt"; then
   # 파드별 현재 로그 파일의 첫 줄 시각(--since-time 없이 앞에서부터 1KiB만). 읽지 못하면 빈 값 = 확인 불가.

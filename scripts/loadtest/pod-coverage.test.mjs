@@ -173,3 +173,54 @@ test("kube-state-metrics 수집 공백이 run 시작에 걸치면 판정 불가�
   assert.equal(code, 2);
   assert.match(stderr, /표본이 빈 평가 시각/);
 });
+
+// ---- 받아 둔 로그(--collected — collect-api-logs.mjs의 manifest.json) ----
+function runCollected(pods, manifest) {
+  const dir = mkdtempSync(join(tmpdir(), "pod-coverage-c-"));
+  const f = (n, body) => { const p = join(dir, n); writeFileSync(p, body); return p; };
+  const podsFile = f("api_pods.json", promBody(pods.map((p) => ({ metric: { pod: p.name }, values: samples(p.from, p.to) }))));
+  const restartsFile = f("api_restarts.json", promBody(pods.map((p) => ({ metric: { pod: p.name }, values: p.restarts ?? samples(p.from, p.to, "0") }))));
+  const r = spawnSync(process.execPath, [SCRIPT, "--pods", podsFile, "--restarts", restartsFile,
+    "--collected", f("manifest.json", JSON.stringify(manifest)),
+    "--since", iso(T0), "--until", iso(T0 + RUN_SEC),
+    "--meta", f("_meta.json", JSON.stringify({ startSec: T0 - 120, endSec: T0 + RUN_SEC + 60, step: 10 })),
+  ], { encoding: "utf8" });
+  let out = null;
+  try { out = JSON.parse(r.stdout); } catch { /* 확인 실패 */ }
+  return { code: r.status, out, stderr: r.stderr };
+}
+const got = (endReason, complete = true) => ({ firstSeenAt: iso(T0 - 5), follows: 1, endReason, complete });
+
+test("받아 둔 로그: run 중 HPA 축소로 지워진 파드도 받았으면(pod-gone) 판정 가능하다 — 지금 없어도 된다", () => {
+  const scaledIn = { name: "api-scaled-in", from: T0 - 120, to: T0 + 40 };
+  const { code, out } = runCollected([whole, scaledIn],
+    { since: iso(T0), pods: { "api-whole": got("collector-stopped"), "api-scaled-in": got("pod-gone") } });
+  assert.equal(code, 0);
+  assert.equal(out.mode, "collected");
+  assert.deepEqual(out.seen, ["api-whole", "api-scaled-in"]);
+  assert.equal(out.complete, true);
+});
+
+test("받아 둔 로그: run과 겹친 파드를 받지 못했거나(누락) 스트림이 끊긴 채면(stream-error) 판정 불가", () => {
+  const added = { name: "api-added", from: T0 + 20, to: T0 + 150 };
+  const r1 = runCollected([whole, added], { since: iso(T0), pods: { "api-whole": got("collector-stopped") } });
+  assert.equal(r1.code, 2);
+  assert.deepEqual(r1.out.notCollected, ["api-added"]);
+  const r2 = runCollected([whole, added],
+    { since: iso(T0), pods: { "api-whole": got("collector-stopped"), "api-added": got("stream-error", false) } });
+  assert.equal(r2.code, 2);
+  assert.equal(r2.out.incomplete[0].pod, "api-added");
+});
+
+test("받아 둔 로그: 수집을 run 시작보다 늦게 시작했으면 판정 불가", () => {
+  const { code, stderr } = runCollected([whole], { since: iso(T0 + 10), pods: { "api-whole": got("collector-stopped") } });
+  assert.equal(code, 2);
+  assert.match(stderr, /run 시작보다 늦은 시각부터/);
+});
+
+test("받아 둔 로그: run 중 재시작한 파드는 이전 컨테이너 줄이 빠지므로 판정 불가", () => {
+  const restarted = { name: "api-restarted", from: T0 - 120, to: T0 + 150, restarts: [...samples(T0 - 120, T0 + 30, "0"), ...samples(T0 + 40, T0 + 150, "1")] };
+  const { code, out } = runCollected([restarted], { since: iso(T0), pods: { "api-restarted": got("collector-stopped") } });
+  assert.equal(code, 2);
+  assert.deepEqual(out.restartedInRun, ["api-restarted"]);
+});

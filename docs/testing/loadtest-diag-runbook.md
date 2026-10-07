@@ -118,6 +118,9 @@
 - **대기자**: 대기 상태까지 재려면 `run-entry.sh --poll-hold <초>` — 대기 토큰마다 프론트와 같은 규칙으로 상태를 묻는다(`poll-<gen>/`).
   입장 인지 지연은 `scripts/loadtest/admit-latency.mjs --audit <api 로그> <run>/poll-*/tokens.jsonl`.
 - **사후 검사**: `export-prom.mjs --end`는 run 종료 + 45초 이상, `check-correctness.sh`로 판정.
+- **반응형 확장·축소가 있는 run(Platform 축)**: HPA가 축소로 지운 파드의 감사 줄은 사후 `kubectl logs`로 읽을 수 없다. run 시작 직전부터
+  `node scripts/loadtest/collect-api-logs.mjs --out <run>/api-logs --since <run 시작 UTC>`를 돌려 두고(끝나면 SIGINT·`--for`), 사후 검사에
+  `check-correctness.sh ... --api-logs <run>/api-logs`를 준다 — 파드 대조가 "run과 겹친 파드를 끝까지 받았는가"(pod-coverage `--collected`)로 바뀐다.
 - **Downstream E2E(입장자)**: 새 공연(좌석 전부 AVAILABLE·주문 없음)마다 대기열 키를 리셋하고 발생기 한 대에서
   `run-booking.sh --session <s> --run <r> --gen g1 --base https://flow-ticket.com/api --event <id> --users <토큰> --start-at <UTC>`
   (사용자 100명이 T0 20초 전에 진입 → ADMITTED → T0에 함께 예매. 역할은 `infra/k6/booking-e2e.js` 머리말). 판정은 hold·주문 만료 회수가 끝난 뒤

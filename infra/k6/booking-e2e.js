@@ -39,11 +39,14 @@ if (!EVENT_ID) throw new Error("EVENT_ID가 필요하다");
 if (!Number.isFinite(START_AT)) throw new Error(`START_AT(UTC ISO)이 필요하다: ${__ENV.START_AT}`);
 if (!(ENTRY_LEAD_SECONDS >= 5)) throw new Error(`ENTRY_LEAD_SECONDS는 5 이상이다: ${__ENV.ENTRY_LEAD_SECONDS}`);
 if (USERS.length < USER_OFFSET + N) throw new Error(`토큰이 ${USERS.length}개다 — USER_OFFSET ${USER_OFFSET} + ${N}명이 필요하다`);
+if (START_AT - Date.now() > 3600 * 1000) throw new Error("START_AT이 1시간보다 멀다");
+// maxDuration은 시나리오 시작부터 센다 — T0까지 기다리는 시간 + 예매(여유 300초)로 잡아 VU가 T0 전에 끊기지 않게 한다.
+const MAX_SECONDS = Math.ceil(Math.max(0, START_AT - Date.now()) / 1000) + 300;
 
 export const options = {
   scenarios: {
     // VU 하나 = 사용자 하나, 한 번씩. shared-iterations면 한 VU가 두 번 돌아 역할·사용자 대응이 깨진다.
-    e2e: { executor: "per-vu-iterations", vus: N, iterations: 1, maxDuration: `${ENTRY_LEAD_SECONDS + 300}s` },
+    e2e: { executor: "per-vu-iterations", vus: N, iterations: 1, maxDuration: `${MAX_SECONDS}s` },
   },
   setupTimeout: "60s",
   // 판정은 결과 파일로 한다. 기대 응답(409·410 포함)을 실패로 세지 않게 상태 코드 판단은 하지 않는다.
@@ -83,7 +86,7 @@ export function setup() {
   return { plan: plan(seats.map((s) => s.id)), seatCount: seats.length };
 }
 
-function randHex(n) {
+function randToken(n) {
   return encoding.b64encode(crypto.randomBytes(n), "rawurl").replace(/[^A-Za-z0-9]/g, "").slice(0, n);
 }
 
@@ -93,6 +96,13 @@ function userIdOf(jwt) {
 
 function codeOf(res) {
   try { return res.json("error.code") || null; } catch { return null; }
+}
+
+// 응답 기록 한 줄. 응답이 없으면(status 0) k6 error_code를 남긴다(연결 오류·시간 초과 구분).
+function stepOf(step, res) {
+  const o = { step, status: res.status, code: codeOf(res), ms: Math.round(res.timings.duration) };
+  if (res.status === 0) o.err = res.error_code;
+  return o;
 }
 
 function dataOf(res) {
@@ -109,13 +119,13 @@ export default function (data) {
     admitted: false, admittedAt: null, holdId: null, orderId: null, payments: [], steps };
   const call = (step, method, url, body) => {
     const res = http.request(method, url, body === undefined ? null : JSON.stringify(body), { headers: auth, tags: { step } });
-    steps.push({ step, status: res.status, code: codeOf(res), ms: Math.round(res.timings.duration) });
+    steps.push(stepOf(step, res));
     return res;
   };
   const batch = (step, reqs) => {
     const rs = http.batch(reqs.map(([method, url, body]) => ({ method, url, body: JSON.stringify(body),
       params: { headers: auth, tags: { step } } })));
-    for (const res of rs) steps.push({ step, status: res.status, code: codeOf(res), ms: Math.round(res.timings.duration) });
+    for (const res of rs) steps.push(stepOf(step, res));
     return rs;
   };
   const pay = (step, key) => {
@@ -124,7 +134,7 @@ export default function (data) {
     rec.payments.push({ step, key, status: res.status, paymentId: d.paymentId ?? null, paymentStatus: d.paymentStatus ?? null, orderStatus: d.orderStatus ?? null });
     return res;
   };
-  const key = (prefix) => `${prefix}e2e-${EVENT_ID}-${vu}-${randHex(12)}`;
+  const key = (prefix) => `${prefix}e2e-${EVENT_ID}-${vu}-${randToken(12)}`;
   const holdUrl = `${BASE}/events/${EVENT_ID}/seats/hold`;
 
   // 1) 진입 → ADMITTED. 공연을 리셋한 뒤 100명이면 정원 100이라 승격 주기(1.5초) 한두 번 안에 모두 입장한다.
@@ -135,7 +145,7 @@ export default function (data) {
   let status = qd.status;
   while (queueToken && status !== "ADMITTED" && Date.now() < START_AT - 1000) {
     sleep(1);
-    const s = http.get(`${BASE}/queue/status?token=${encodeURIComponent(queueToken)}`, { tags: { step: "queue_status" } });
+    const s = call("queue_status", "GET", `${BASE}/queue/status?token=${encodeURIComponent(queueToken)}`);
     status = (dataOf(s) || {}).status;
   }
   rec.admitted = status === "ADMITTED";

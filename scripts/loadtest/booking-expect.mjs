@@ -119,6 +119,12 @@ export function judgeClient(records, malformed = 0) {
   if (s5xx.length) violations.push(`5xx·응답 없음 ${s5xx.length}건: ${s5xx.slice(0, 5).map((s) => `vu${s.vu} ${s.step} ${s.status}`).join(", ")}`);
   const s401 = allSteps.filter((s) => s.status === 401).length;
   if (s401) invalid.push(`401 ${s401}건(토큰 만료·무효)`);
+  // 진입·상태 조회는 200만 기대한다(410·403 등은 대기열이 이 사용자를 놓쳤다는 뜻).
+  const queueBad = allSteps.filter((s) => (s.step === "queue_entry" || s.step === "queue_status") && s.status !== 200 && s.status !== 401 && s.status < 500);
+  if (queueBad.length) violations.push(`대기열 진입·상태 조회 200 아님 ${queueBad.length}건: ${queueBad.slice(0, 5).map((s) => `vu${s.vu} ${s.step} ${s.status} ${s.code}`).join(", ")}`);
+  // 결제가 400 VALIDATION_ERROR면 게이트웨이가 mock이 아니다(Toss approve는 서버 단독 승인을 막는다) — 사전 등록상 무효.
+  const notMock = allSteps.filter((s) => (s.step === "pay" || s.step === "pay_fail") && s.status === 400 && s.code === "VALIDATION_ERROR").length;
+  if (notMock) invalid.push(`결제 400 VALIDATION_ERROR ${notMock}건 — 결제 게이트웨이가 mock이 아니었다(diag.sh pay-status)`);
 
   for (const r of records) {
     if (!r.admitted) continue;

@@ -18,8 +18,8 @@
   배포의 이미지 태그(`kube_pod_container_info` 또는 `kubectl get deploy -o jsonpath`)가 기대값인지 확인하는 데까지다.
 - 수동 동기화는 Git에 있는 필드를 Git 값으로 되돌린다 — HPA min/max는 동기화로 복원되는 것을 확인했다(측정 세션 20261005-1440, 여러 번).
   동기화 뒤 필요한 변경을 다시 건다. 단, 이 Application은 `ServerSideApply=true`라 **Git에 없는 필드**(kubectl이 더한 env 항목·어노테이션)는
-  동기화로 지워지지 않을 수 있다 — kubectl로 더한 Ingress 어노테이션(ALB access log)은 자동 동기화를 다시 켠 뒤에도 남는 것을 확인했다
-  (측정 세션 20261005-1440 끝). 그래서 JFR env·Ingress 어노테이션·결제 mock은 동기화에 기대지 않고 아래 각 절의 명시 명령으로 원복한다.
+  동기화로 지워지지 않을 수 있다 — kubectl로 더한 Ingress 어노테이션(ALB access log)은 자동 동기화를 다시 켜 Synced가 된 뒤에도 남아 있는 것을
+  조회로 확인했다(측정 세션 20261005-1440 끝, `session.log`의 "보충 기록" 줄). 그래서 JFR env·Ingress 어노테이션·결제 mock은 동기화에 기대지 않고 아래 각 절의 명시 명령으로 원복한다.
 - 시연(측정 세션 20261005-1440): 켜기 → 약 1.5분 뒤 `Synced`·`Healthy`(api·web을 Git의 이미지 태그로 롤아웃, 롤아웃 중 `Degraded` 표시 1회) → 다시 끄기.
 
 ## 1. 파드 수 고정(HPA)
@@ -121,7 +121,9 @@
 - **Downstream E2E(입장자)**: 새 공연(좌석 전부 AVAILABLE·주문 없음)마다 대기열 키를 리셋하고 발생기 한 대에서
   `run-booking.sh --session <s> --run <r> --gen g1 --base https://flow-ticket.com/api --event <id> --users <토큰> --start-at <UTC>`
   (사용자 100명이 T0 20초 전에 진입 → ADMITTED → T0에 함께 예매. 역할은 `infra/k6/booking-e2e.js` 머리말). 판정은 hold·주문 만료 회수가 끝난 뒤
-  (T0 + 300초 + 60초 + 여유) `check-booking.sh --out <run> --event <id>`(역할별 기대값)와 `check-correctness.sh --generators 1`(기존 위반 검사).
+  (T0 + 300초 + 60초 + 여유) `check-booking.sh --out <run> --event <id>`(역할별 기대값 — T0 + 360초 전이면 판정 불가로 멈춘다, 발생기 CPU 1초 최대 ≥ 80%면 무효)와
+  `check-correctness.sh --generators 1`(기존 위반 검사). 진입 시험과 같이 run 동안 `watch-correctness.mjs`를 돌리고, 끝난 뒤 `loadgen.sh pull` →
+  `export-prom.mjs`(run 시작 2분 전 ~ 종료 + 60초)를 먼저 한다. 시작 전에 `diag.sh pay-status`로 모든 api 파드가 mock인지 확인한다.
 
 ## 7. 세션 끝 체크리스트
 

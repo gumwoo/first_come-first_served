@@ -10,7 +10,8 @@
 # 결과(<run>/booking/): client.json(클라이언트 기대값, booking-expect.mjs client), expect.sql(실행한 SQL),
 #   db.csv("<검사>,<위반 수>"), summary.txt.
 # 종료 코드: 통과 0, 위반 1, 무효·판정 불가 2. 무효는 사전 조건이 깨진 경우다 — 공연에 다른 사용자 주문이 있음,
-# mock이 아닌 승인 결제(세션 오버레이 미적용), 클라이언트 쪽 무효(미입장·401·인원 부족).
+# mock이 아닌 승인 결제(세션 오버레이 미적용), 클라이언트 쪽 무효(미입장·401·인원 부족·결제 400 VALIDATION_ERROR),
+# 발생기 CPU 1초 최대 ≥ 80%(gen-vmstat). T0(meta의 startAt) + 360초 전에 돌리면 판정 불가로 멈춘다.
 #
 # DB는 프라이빗이라 클러스터 안 일회용 파드로 붙는다. 자격증명은 api와 같은 ConfigMap·Secret에서 필요한 키만 받고,
 # 이 스크립트는 보지도 출력하지도 않는다(check-correctness.sh와 같은 방식). SQL은 SELECT만 한다.
@@ -33,6 +34,15 @@ RES=("$OUT"/results-*.jsonl)
 [ "${#RES[@]}" = 1 ] || { echo "결과 파일(results-<gen>.jsonl)이 정확히 하나여야 한다: ${#RES[@]}개" >&2; exit 2; }
 D="$OUT/booking"
 mkdir -p "$D"
+# JSON은 경로로 읽는다(node -e의 require(상대 경로)는 모듈 이름으로 해석돼 실패한다).
+jget() { node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));'"$2" "$1"; }
+
+# 판정 시각: 포기(E) 사용자의 hold·주문은 hold TTL 300초 + 회수 주기 60초 뒤에야 EXPIRED가 된다.
+METAS=("$OUT"/meta-*.json)
+[ "${#METAS[@]}" = 1 ] || { echo "발생기 기록(meta-<gen>.json)이 정확히 하나여야 한다" >&2; exit 2; }
+T0="$(jget "${METAS[0]}" 'console.log(j.startAt||"")')"
+READY_AT=$(( $(node -e 'console.log(Math.floor(Date.parse(process.argv[1])/1000))' "$T0") + 360 ))
+[[ "$READY_AT" =~ ^[0-9]+$ ]] && [ "$(date +%s)" -ge "$READY_AT" ]   || { echo "아직 판정할 수 없다: T0($T0) + 360초 뒤에 돌린다(만료 회수 전이면 E 사용자가 위반으로 나온다)" >&2; exit 2; }
 
 psql_pod() {
   local name="$1"; shift
@@ -56,7 +66,12 @@ EOF
 echo "==> 1/2 클라이언트 기대값"
 node "$HERE/booking-expect.mjs" client "${RES[0]}" > "$D/client.json"
 CLIENT=$?
-echo "    $(node -e 'const j=require(process.argv[1]);console.log(j.verdict, "무효", j.invalid.length, "위반", j.violations.length)' "$D/client.json" 2>/dev/null || echo "client.json을 읽지 못했다")"
+echo "    $(jget "$D/client.json" 'console.log(j.verdict, "무효", j.invalid.length, "위반", j.violations.length)' 2>/dev/null || echo "client.json을 읽지 못했다")"
+
+# 발생기 자원: CPU(100 − vmstat id) 1초 최대 ≥ 80%면 무효(사전 등록). 머리글 줄과 첫 표본(부팅 이후 평균)은 뺀다.
+GEN_CPU="$(awk '$15 ~ /^[0-9]+$/ { n++; if (n > 1 && 100 - $15 > m) m = 100 - $15 } END { print (n > 1 ? m : "") }' "$OUT"/gen-vmstat-*.log 2>/dev/null)"
+echo "    발생기 CPU 1초 최대: ${GEN_CPU:-기록 없음}%"
+GEN=2; [[ "$GEN_CPU" =~ ^[0-9]+$ ]] && { [ "$GEN_CPU" -lt 80 ] && GEN=0; }
 
 echo "==> 2/2 DB 기대값"
 DB=2
@@ -78,13 +93,13 @@ else
 fi
 
 V=0
-{ [ "$CLIENT" = 2 ] || [ "$DB" = 2 ]; } && V=2
+{ [ "$CLIENT" = 2 ] || [ "$DB" = 2 ] || [ "$GEN" = 2 ]; } && V=2
 [ "$V" = 0 ] && { [ "$CLIENT" = 1 ] || [ "$DB" = 1 ]; } && V=1
 case "$V" in 0) VERDICT="통과" ;; 1) VERDICT="위반" ;; *) VERDICT="무효·판정 불가" ;; esac
 {
-  echo "client=$CLIENT db=$DB verdict=$VERDICT"
+  echo "client=$CLIENT db=$DB gen=$GEN(cpu ${GEN_CPU:-?}%) verdict=$VERDICT"
   [ -s "$D/db.csv" ] && grep -v ',0$' "$D/db.csv" | sed 's/^/db 위반: /'
-  node -e 'const j=require(process.argv[1]);for(const x of j.invalid)console.log("client 무효: "+x);for(const x of j.violations)console.log("client 위반: "+x)' "$D/client.json" 2>/dev/null
+  jget "$D/client.json" 'for(const x of j.invalid)console.log("client 무효: "+x);for(const x of j.violations)console.log("client 위반: "+x)' 2>/dev/null
 } > "$D/summary.txt"
 cat "$D/summary.txt"
 exit "$V"

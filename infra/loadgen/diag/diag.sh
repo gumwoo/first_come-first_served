@@ -103,7 +103,8 @@ case "${1:-}" in
     # Toss 게이트웨이는 서버 단독 승인(approve)을 막고 confirm은 결제창 paymentKey가 필요해, k6 서버 부하로는 결제를 결정론적으로
     # 만들 수 없다. mock은 멱등 키가 FAIL로 시작하면 거절, 아니면 승인한다(MockPaymentGateway). 세션 한정이다.
     want=mock; [ "$1" = pay-mock-off ] && want=toss
-    auto="$(kubectl -n argocd get application flowticket -o jsonpath='{.spec.syncPolicy.automated}' 2>/dev/null || true)"
+    # 조회가 실패하면(권한·연결) "꺼짐"으로 오인하지 않고 멈춘다.
+    auto="$(kubectl -n argocd get application flowticket -o jsonpath='{.spec.syncPolicy.automated}')"       || { echo "ArgoCD Application을 조회하지 못했다 — 자동 동기화 상태를 확인할 수 없어 멈춘다" >&2; exit 1; }
     if [ "$want" = mock ] && [ -n "$auto" ]; then
       echo "ArgoCD 자동 동기화가 켜져 있다 — selfHeal이 ConfigMap을 Git 값으로 되돌린다. 먼저 끈다:" >&2
       echo "  kubectl -n argocd patch application flowticket --type=merge -p '{\"spec\":{\"syncPolicy\":{\"automated\":null}}}'" >&2

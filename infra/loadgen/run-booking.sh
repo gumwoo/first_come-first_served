@@ -34,6 +34,8 @@ done
 [[ "$OFFSET" =~ ^[0-9]+$ ]] || { echo "--offset은 0 이상의 정수다: $OFFSET" >&2; exit 2; }
 [[ "$START_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || { echo "--start-at은 UTC ISO(초)다: $START_AT" >&2; exit 2; }
 [ -r "$USERS" ] || { echo "토큰 파일을 읽을 수 없다: $USERS" >&2; exit 2; }
+# k6 open()은 상대 경로를 스크립트 위치(infra/k6/) 기준으로 찾는다 — 절대 경로로 바꿔 넘긴다(run-entry.sh와 같은 이유).
+USERS="$(cd "$(dirname "$USERS")" && pwd)/$(basename "$USERS")"
 [[ "$SESSION$RUN$GEN" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "session·run·gen은 영숫자·._-만 쓴다" >&2; exit 2; }
 
 OUT="$ROOT/artifacts/loadtest/$SESSION/$RUN"

@@ -70,6 +70,22 @@ test("5xx는 위반, 401·미입장·인원 부족은 무효", () => {
   assert.equal(judgeClient(fresh().slice(1)).verdict, "무효");
 });
 
+test("대기열 상태 조회가 200이 아니면 위반(5xx 포함), 결제 400 VALIDATION_ERROR는 무효(mock 아님)", () => {
+  const rs = fresh();
+  const st = first(rs, "A").steps.find((s) => s.step === "queue_status");
+  assert.ok(st, "fixture에 queue_status 기록이 있어야 한다");
+  st.status = 502;
+  assert.equal(judgeClient(rs).verdict, "위반");
+  const rs2 = fresh();
+  Object.assign(first(rs2, "A").steps.find((s) => s.step === "queue_status"), { status: 410, code: "QUEUE_EXPIRED" });
+  assert.ok(judgeClient(rs2).violations.some((v) => /대기열 진입·상태 조회/.test(v)));
+  const rs3 = fresh();
+  Object.assign(first(rs3, "D").steps.find((s) => s.step === "pay_fail"), { status: 400, code: "VALIDATION_ERROR" });
+  const j = judgeClient(rs3);
+  assert.equal(j.verdict, "무효");
+  assert.ok(j.invalid.some((v) => /mock이 아니었다/.test(v)));
+});
+
 test("사용자 하나가 두 역할을 맡으면 무효", () => {
   const rs = fresh();
   rs[1].userId = rs[0].userId;

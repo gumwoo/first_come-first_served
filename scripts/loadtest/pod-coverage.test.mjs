@@ -173,3 +173,84 @@ test("kube-state-metrics 수집 공백이 run 시작에 걸치면 판정 불가�
   assert.equal(code, 2);
   assert.match(stderr, /표본이 빈 평가 시각/);
 });
+
+// ---- 받아 둔 로그(--collected — collect-api-logs.mjs의 manifest.json) ----
+function runCollected(pods, manifest) {
+  const dir = mkdtempSync(join(tmpdir(), "pod-coverage-c-"));
+  const f = (n, body) => { const p = join(dir, n); writeFileSync(p, body); return p; };
+  const podsFile = f("api_pods.json", promBody(pods.map((p) => ({ metric: { pod: p.name }, values: samples(p.from, p.to) }))));
+  const restartsFile = f("api_restarts.json", promBody(pods.map((p) => ({ metric: { pod: p.name }, values: p.restarts ?? samples(p.from, p.to, "0") }))));
+  const r = spawnSync(process.execPath, [SCRIPT, "--pods", podsFile, "--restarts", restartsFile,
+    "--collected", f("manifest.json", JSON.stringify(manifest)),
+    "--since", iso(T0), "--until", iso(T0 + RUN_SEC),
+    "--meta", f("_meta.json", JSON.stringify({ startSec: T0 - 120, endSec: T0 + RUN_SEC + 60, step: 10 })),
+  ], { encoding: "utf8" });
+  let out = null;
+  try { out = JSON.parse(r.stdout); } catch { /* 확인 실패 */ }
+  return { code: r.status, out, stderr: r.stderr };
+}
+const got = (endReason, complete = true) => ({ firstSeenAt: iso(T0 - 5), follows: 1, endReason, complete });
+// 정상 수집기 구간: run 시작 전에 떠서 run 종료 + 여유(45초) 뒤에 멈춤
+const win = { startedAt: iso(T0 - 10), endedAt: iso(T0 + RUN_SEC + 60) };
+
+test("받아 둔 로그: run 중 HPA 축소로 지워진 파드도 받았으면(pod-gone) 판정 가능하다 — 지금 없어도 된다", () => {
+  const scaledIn = { name: "api-scaled-in", from: T0 - 120, to: T0 + 40 };
+  const { code, out } = runCollected([whole, scaledIn],
+    { since: iso(T0), ...win, pods: { "api-whole": got("collector-stopped"), "api-scaled-in": got("pod-gone") } });
+  assert.equal(code, 0);
+  assert.equal(out.mode, "collected");
+  assert.deepEqual(out.seen, ["api-whole", "api-scaled-in"]);
+  assert.equal(out.complete, true);
+});
+
+test("받아 둔 로그: run과 겹친 파드를 받지 못했거나(누락) 스트림이 끊긴 채면(stream-error) 판정 불가", () => {
+  const added = { name: "api-added", from: T0 + 20, to: T0 + 150 };
+  const r1 = runCollected([whole, added], { since: iso(T0), ...win, pods: { "api-whole": got("collector-stopped") } });
+  assert.equal(r1.code, 2);
+  assert.deepEqual(r1.out.notCollected, ["api-added"]);
+  const r2 = runCollected([whole, added],
+    { since: iso(T0), ...win, pods: { "api-whole": got("collector-stopped"), "api-added": got("stream-error", false) } });
+  assert.equal(r2.code, 2);
+  assert.equal(r2.out.incomplete[0].pod, "api-added");
+});
+
+test("받아 둔 로그: 수집을 run 시작보다 늦게 시작했으면 판정 불가", () => {
+  const { code, stderr } = runCollected([whole], { since: iso(T0 + 10), ...win, pods: { "api-whole": got("collector-stopped") } });
+  assert.equal(code, 2);
+  assert.match(stderr, /run 시작보다 늦은 시각부터/);
+});
+
+test("받아 둔 로그: run 중 재시작한 파드는 이전 컨테이너 줄이 빠지므로 판정 불가", () => {
+  const restarted = { name: "api-restarted", from: T0 - 120, to: T0 + 150, restarts: [...samples(T0 - 120, T0 + 30, "0"), ...samples(T0 + 40, T0 + 150, "1")] };
+  const { code, out } = runCollected([restarted], { since: iso(T0), ...win, pods: { "api-restarted": got("collector-stopped") } });
+  assert.equal(code, 2);
+  assert.deepEqual(out.restartedInRun, ["api-restarted"]);
+});
+
+test("받아 둔 로그: 수집기가 run 종료 + 여유 전에 멈췄거나 run 시작 뒤에 떴으면 판정 불가(complete 표시를 믿지 않는다)", () => {
+  const pods = { "api-whole": got("collector-stopped") };
+  const early = runCollected([whole], { since: iso(T0), startedAt: iso(T0 - 10), endedAt: iso(T0 + 60), pods });
+  assert.equal(early.code, 2);
+  assert.match(early.stderr, /전에 멈췄다/);
+  const late = runCollected([whole], { since: iso(T0), startedAt: iso(T0 + 5), endedAt: iso(T0 + RUN_SEC + 60), pods });
+  assert.equal(late.code, 2);
+  assert.match(late.stderr, /run 시작 뒤에 떴다/);
+  const none = runCollected([whole], { since: iso(T0), pods });
+  assert.equal(none.code, 2);
+  assert.match(none.stderr, /startedAt·endedAt/);
+});
+
+test("받아 둔 로그: 시작하지 못하고 사라진 파드(neverStarted — Pending 중 축소)는 받지 못함이 아니다", () => {
+  const pendingGone = { name: "api-pending-gone", from: T0 + 10, to: T0 + 40 };
+  const { code, out } = runCollected([whole, pendingGone],
+    { since: iso(T0), ...win, pods: { "api-whole": got("collector-stopped") }, neverStarted: ["api-pending-gone"] });
+  assert.equal(code, 0);
+  assert.deepEqual(out.notCollected, []);
+});
+
+test("받아 둔 로그: unknown(조회 공백 끝에 사라진 Pending 파드)은 대상에서 빼지 않는다 — 받지 못함으로 판정 불가", () => {
+  const p = { name: "api-unknown", from: T0 + 10, to: T0 + 40 };
+  const { code, out } = runCollected([whole, p], { since: iso(T0), ...win, pods: { "api-whole": got("collector-stopped") }, neverStarted: [], unknown: ["api-unknown"] });
+  assert.equal(code, 2);
+  assert.deepEqual(out.notCollected, ["api-unknown"]);
+});

@@ -47,6 +47,7 @@ try {
       restarts: { type: "string" },
       existing: { type: "string" },
       "first-lines": { type: "string" },
+      collected: { type: "string" },
       since: { type: "string" },
       until: { type: "string" },
       meta: { type: "string" },
@@ -54,8 +55,10 @@ try {
       "startup-slack-sec": { type: "string", default: "120" },
     },
   });
-  if (!a.pods || !a.restarts || !a.existing || !a["first-lines"] || !a.since || !a.until || !a.meta) {
-    throw new Error("--pods, --restarts, --existing, --first-lines, --since, --until, --meta가 필요하다");
+  // 두 방식: 지금 살아 있는 파드의 로그(--existing·--first-lines) 또는 run 동안 받아 둔 로그(--collected — collect-api-logs.mjs의 manifest.json).
+  const collectedMode = Boolean(a.collected);
+  if (!a.pods || !a.restarts || !a.since || !a.until || !a.meta || (!collectedMode && (!a.existing || !a["first-lines"]))) {
+    throw new Error("--pods, --restarts, --since, --until, --meta와 함께 --existing·--first-lines 또는 --collected가 필요하다");
   }
   const since = Date.parse(a.since);
   if (!Number.isFinite(since)) throw new Error(`--since를 읽지 못했다: ${a.since}`);
@@ -142,44 +145,71 @@ try {
     lastRestarts.set(pod, (upToEnd.length ? upToEnd : pts)[upToEnd.length ? upToEnd.length - 1 : 0][1]);
   }
 
-  // 지금 파드: 이름 → { restarts, startedAt(ms) }
-  const existing = new Map(rows(a.existing).map(([name, [r, st]]) => [name, { restarts: Number(r), startedAt: Date.parse(st ?? "") }]));
-  // 파드별 현재 로그 파일의 첫 줄 시각(ms)
-  const firstLine = new Map(rows(a["first-lines"]).map(([name, [ts]]) => [name, Date.parse(ts ?? "")]));
+  if (collectedMode) {
+    // run 동안 받아 둔 로그: run과 겹친 파드마다 받은 기록이 있고(complete — 파드가 지워지며 닫혔거나 수집을 멈출 때 아직 받는 중),
+    // 수집 시작 시각(--since-time)이 run 시작 이전이어야 run 구간을 다 덮는다. 재시작은 위 restartedInRun이 본다
+    // (kubectl logs -f는 현재 컨테이너만 따라가므로 run 중 재시작이면 이전 컨테이너 줄이 빠진다).
+    const m = JSON.parse(readFileSync(a.collected, "utf8"));
+    const mSince = Date.parse(m?.since ?? "");
+    if (!Number.isFinite(mSince)) throw new Error(`${a.collected}: since를 읽지 못했다`);
+    if (mSince > since) throw new Error(`로그 수집이 run 시작보다 늦은 시각부터다(${m.since} > ${a.since}) — run 시작 이전부터 받아야 한다`);
+    // 수집기 자체가 run 전체를 덮어야 한다: run 시작 전에 떠 있었고(뜨기 전 회전된 앞부분을 잃지 않게) run 종료 + 여유 뒤에 멈췄어야 한다
+    // (일찍 멈췄으면 살아 있던 파드가 collector-stopped·complete로 남아도 그 뒤 줄이 없다). 이전 run 디렉터리를 잘못 준 경우도 여기서 걸린다.
+    const mStart = Date.parse(m?.startedAt ?? ""), mEnd = Date.parse(m?.endedAt ?? "");
+    const collectorWindow = `${m?.startedAt}~${m?.endedAt}`;
+    if (!Number.isFinite(mStart) || !Number.isFinite(mEnd)) throw new Error(`${a.collected}: startedAt·endedAt을 읽지 못했다(수집기가 정상 종료하지 않았다)`);
+    if (mStart > since) throw new Error(`로그 수집기가 run 시작 뒤에 떴다(${m.startedAt} > ${a.since}) — run 시작 전에 띄운다`);
+    if (mEnd < until + graceMs) throw new Error(`로그 수집기가 run 종료 + 여유(${new Date(until + graceMs).toISOString()}) 전에 멈췄다(${m.endedAt}) — 그 뒤 줄이 없다`);
+    // 시작하지 못하고(컨테이너 없이) 사라진 파드(neverStarted)는 줄이 없는 것이 맞다 — 대상에서 뺀다(CA를 기다리던 Pending 파드가 HPA 축소로 지워진 경우).
+    const never = new Set(m.neverStarted ?? []);
+    const notCollected = seen.filter((p) => !m.pods?.[p] && !never.has(p));
+    const incomplete = seen.filter((p) => m.pods?.[p] && m.pods[p].complete !== true)
+      .map((p) => ({ pod: p, endReason: m.pods[p].endReason, follows: m.pods[p].follows }));
+    const ok = notCollected.length === 0 && incomplete.length === 0 && restartedInRun.length === 0;
+    console.log(JSON.stringify({
+      mode: "collected", seen, notCollected, incomplete, restartedInRun, outsideRun, collectorWindow, graceSec: graceMs / 1000, complete: ok,
+    }, null, 2));
+    process.exitCode = ok ? 0 : 2;
+  } else {
+    // 지금 파드: 이름 → { restarts, startedAt(ms) }
+    const existing = new Map(rows(a.existing).map(([name, [r, st]]) => [name, { restarts: Number(r), startedAt: Date.parse(st ?? "") }]));
+    // 파드별 현재 로그 파일의 첫 줄 시각(ms)
+    const firstLine = new Map(rows(a["first-lines"]).map(([name, [ts]]) => [name, Date.parse(ts ?? "")]));
 
-  const missing = seen.filter((p) => !existing.has(p));
-  // run이 끝난 뒤 지금까지 재시작했으면 지금 컨테이너에는 run 구간 로그가 없다. 재시작 횟수를 모르면 같은 취급이다.
-  const restartedAfterOrUnknown = seen.filter((p) => {
-    const now = existing.get(p);
-    const last = lastRestarts.get(p);
-    if (now === undefined) return false;
-    return !Number.isFinite(now.restarts) || last === undefined || now.restarts > last;
-  });
-  // run 구간 앞부분이 회전으로 지워졌거나, 첫 줄·컨테이너 시작 시각을 읽지 못한 파드
-  const rotatedOrUnknown = [];
-  for (const p of seen) {
-    const now = existing.get(p);
-    if (now === undefined) continue; // 이미 missing으로 셌다
-    const first = firstLine.get(p);
-    if (!Number.isFinite(first) || !Number.isFinite(now.startedAt)) {
-      rotatedOrUnknown.push({ pod: p, reason: "첫 줄 또는 컨테이너 시작 시각을 읽지 못했다" });
-    } else if (first > Math.max(since, now.startedAt + slackMs)) {
-      rotatedOrUnknown.push({
-        pod: p,
-        reason: "현재 로그 파일의 첫 줄이 run 시작·컨테이너 시작보다 늦다(회전)",
-        firstLine: new Date(first).toISOString(),
-        containerStartedAt: new Date(now.startedAt).toISOString(),
-      });
+    const missing = seen.filter((p) => !existing.has(p));
+    // run이 끝난 뒤 지금까지 재시작했으면 지금 컨테이너에는 run 구간 로그가 없다. 재시작 횟수를 모르면 같은 취급이다.
+    const restartedAfterOrUnknown = seen.filter((p) => {
+      const now = existing.get(p);
+      const last = lastRestarts.get(p);
+      if (now === undefined) return false;
+      return !Number.isFinite(now.restarts) || last === undefined || now.restarts > last;
+    });
+    // run 구간 앞부분이 회전으로 지워졌거나, 첫 줄·컨테이너 시작 시각을 읽지 못한 파드
+    const rotatedOrUnknown = [];
+    for (const p of seen) {
+      const now = existing.get(p);
+      if (now === undefined) continue; // 이미 missing으로 셌다
+      const first = firstLine.get(p);
+      if (!Number.isFinite(first) || !Number.isFinite(now.startedAt)) {
+        rotatedOrUnknown.push({ pod: p, reason: "첫 줄 또는 컨테이너 시작 시각을 읽지 못했다" });
+      } else if (first > Math.max(since, now.startedAt + slackMs)) {
+        rotatedOrUnknown.push({
+          pod: p,
+          reason: "현재 로그 파일의 첫 줄이 run 시작·컨테이너 시작보다 늦다(회전)",
+          firstLine: new Date(first).toISOString(),
+          containerStartedAt: new Date(now.startedAt).toISOString(),
+        });
+      }
     }
-  }
 
-  const ok = missing.length === 0 && restartedInRun.length === 0 && restartedAfterOrUnknown.length === 0 &&
-    rotatedOrUnknown.length === 0;
-  console.log(JSON.stringify({
-    seen, missing, restartedInRun, restartedAfterOrUnknown, rotatedOrUnknown, outsideRun,
-    startupSlackSec: slackMs / 1000, graceSec: graceMs / 1000, complete: ok,
-  }, null, 2));
-  process.exitCode = ok ? 0 : 2;
+    const ok = missing.length === 0 && restartedInRun.length === 0 && restartedAfterOrUnknown.length === 0 &&
+      rotatedOrUnknown.length === 0;
+    console.log(JSON.stringify({
+      seen, missing, restartedInRun, restartedAfterOrUnknown, rotatedOrUnknown, outsideRun,
+      startupSlackSec: slackMs / 1000, graceSec: graceMs / 1000, complete: ok,
+    }, null, 2));
+    process.exitCode = ok ? 0 : 2;
+  }
 } catch (e) {
   console.error(`[pod-coverage] 확인 실패: ${e.message || e}`);
   process.exitCode = 2;

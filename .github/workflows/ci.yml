@@ -98,6 +98,9 @@ jobs:
       # 사후 검사의 로그 범위 확인(pod-coverage) — run 구간과 겹친 파드만 대상, run 구간의 재시작만.
       - name: loadtest pod-coverage test (run 구간 대상 판정)
         run: node --test scripts/loadtest/pod-coverage.test.mjs
+      # run 동안 api 파드 로그를 받아 두는 수집기(HPA 축소로 지워질 파드의 감사 줄 보존 — Platform 축 run). 가짜 kubectl로 생성·삭제·끊김을 흉내 낸다.
+      - name: loadtest api log collector test (축소 파드 감사 로그 보존)
+        run: node --test scripts/loadtest/collect-api-logs.test.mjs
 
   backend:
     name: 백엔드 (하네스 → 테스트)

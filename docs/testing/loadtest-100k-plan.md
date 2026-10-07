@@ -209,6 +209,7 @@ CPU와 replica 수를 기록하고(`baseline-<구성>.json`), 같은 구성의 r
 | `infra/k6/booking-e2e.js` | E2E 입장자 시험(§2.1 "E2E 입장자 시험"). 사용자 100명이 진입 → ADMITTED → T0에 함께 hold → 주문 → 결제. 역할 6개(정상·경합·더블클릭·실패 후 재시도·실패 후 포기·1인 한도)로 정합성 시나리오를 한 run에 겹친다. VU마다 결과 한 줄(토큰 없음) |
 | `infra/loadgen/run-booking.sh` | E2E run 하나를 발생기 한 대에서 실행(meta·end·발생기 자원 기록은 `run-entry.sh`와 같은 형식) |
 | `scripts/loadtest/booking-expect.mjs`·`check-booking.sh` | E2E 판정: 역할별 클라이언트 기대값 + DB 기대값(좌석 최종 상태·경합 좌석 승자 1·hold당 주문 1·역할별 결제 행·1인 한도·`order.paid` 아웃박스). 기존 `check-correctness.sh`와 함께 돌린다 |
+| `scripts/loadtest/collect-api-logs.mjs` | run 동안 api 파드 로그를 파드별로 받아 둔다(컨테이너가 시작된 새 파드는 주기적으로 찾아 붙고, 축소로 지워지는 파드는 스트림이 닫힐 때까지, 끊기면 지우지 않고 이어 받음). `check-correctness.sh --api-logs`와 `pod-coverage.mjs --collected`가 이것으로 판정 — HPA 축소가 있는 run에서도 감사 줄을 잃지 않는다 |
 | `infra/loadgen/mock-booking-server.mjs` | E2E 스크립트·판정 도구의 로컬 스모크 전용 목 서버. 측정에 쓰지 않는다 |
 
 (당시 기록) ②의 "k6 코어에는 SSE 클라이언트가 없다"는 외부 지식이었고, 연결 하나를 VU 하나로 붙드는 구조를 피하려고

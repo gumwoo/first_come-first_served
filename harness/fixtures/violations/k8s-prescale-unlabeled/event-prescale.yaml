@@ -1,0 +1,7 @@
+# 위반: 사전 확장을 켰는데 공연·기한을 적지 않았다.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flowticket-api
+spec:
+  minReplicas: 9

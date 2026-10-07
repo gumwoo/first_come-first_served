@@ -4,7 +4,7 @@ metadata:
   name: flowticket-api
   namespace: flowticket
 spec:
-  # replicas를 두지 않는다. 이 Deployment는 HPA가 소유한다(api-hpa.yaml, min 3 / max 7).
+  # replicas를 두지 않는다. 이 Deployment는 HPA가 소유한다(api-hpa.yaml, min 3 / max 9 — ADR-025).
   # 값을 두면 ArgoCD sync가 HPA가 정한 파드 수를 Git 값으로 덮어쓰고, RespectIgnoreDifferences로는
   # 막히지 않았다(TS-022). 하한은 HPA의 minReplicas가 담당한다.
   selector:
@@ -108,7 +108,11 @@ spec:
             # 2Gi는 그 OOM 재시작을 없애 단계 6을 판정 가능한 조건으로 만들려는 다음 후보다 — 용량 산정값이 아니고,
             # 메모리를 S-10K의 최초 병목으로 확정한 것도 아니다(원인 귀속은 추론). 힙(MaxRAMPercentage=75)은 약 1.5GiB.
             # requests도 함께 올려 스케줄러가 노드 메모리를 실제 사용에 가깝게 예약하게 한다.
-            requests: { cpu: "300m", memory: "1536Mi" }
+            # cpu(ADR-025): 진입 burst 실측 비용으로 정한다 — 0.826 ms/req(IMP-027 §7 10,000/s 판정 3회 중앙값) × 파드당 1,111 req/s
+            # (10,000/s ÷ 9) × 여유 1.2 ≈ 1.10코어 → 1100m(계산값). 이전 300m는 노드 3대 예산에 맞춘 값이라 HPA 60% 기준선이 처리 용량과
+            # 동떨어졌고, 노드에 api가 여럿 들어가 CA가 동작할 조건(Pending)이 생기지 않았다. 1100m면 m6i.large(allocatable 1,930m)에 api가
+            # 하나만 들어간다 — api 확장이 곧 노드 확장이고, HPA 60%(목표 660m)가 진입 처리 용량 근처에서 반응한다.
+            requests: { cpu: "1100m", memory: "1536Mi" }
             limits: { memory: "2Gi" }
 
           securityContext:

@@ -550,7 +550,7 @@ SSE capacity는 **설정값으로 추정하지 않는다.** 톰캣 기본 `maxCo
 | **티켓 오픈 순간(10초 진입)** | **오픈 전 사전 확장된 용량** | 사전 확장한 용량으로 진입 부하를 수용했는가 |
 | **이후 대기·SSE 지속 부하**, 예상보다 긴 고부하 | **HPA/CA 반응형 확장·축소** | 정의한 정책대로 늘고 줄었는가 |
 
-**사전 확장은 지금 수단이 없다.** 레포에 예약 확장 구성(KEDA cron 등)이 없고, ArgoCD가 `selfHeal: true`라
+(2026-10-07 [[ADR-025]]: 사전 확장은 Git — overlay `event-prescale.yaml` HPA 하한 PR로 정했다. 아래는 당시 서술.) **사전 확장은 지금 수단이 없다.** 레포에 예약 확장 구성(KEDA cron 등)이 없고, ArgoCD가 `selfHeal: true`라
 HPA `minReplicas`를 `kubectl`로 올리면 Git 상태로 되돌린다(`k8s/argocd/application.yaml`. selfHeal을 켠 이유가
 [[TS-021]] §6-1의 수동 HPA 패치 드리프트다). 사전 확장은 **Git 변경으로 하거나 예약 확장 수단을 따로 둬야** 하고, 노드 증설까지
 필요하면 CA 반응 시간(위 110초는 1대 기준)만큼 **앞서** 시작해야 한다. 방식은 단계 10에서 정한다.

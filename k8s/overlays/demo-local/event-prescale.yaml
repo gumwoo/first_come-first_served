@@ -1,0 +1,22 @@
+# 공연 오픈 사전 확장(ADR-025) — Git으로 켜고 끈다. 평소에는 base와 같은 3이라 효과가 없다.
+#
+# 오픈 순간(10초 진입)은 HPA·CA가 흡수하지 못한다(loadtest-100k-plan §6 "확장의 역할"). 그래서 오픈 전에 이 값을 올리는 PR을
+# 머지한다 → ArgoCD가 HPA 하한을 맞춘다 → api 요청 1100m라 늘어난 파드가 Pending → Cluster Autoscaler가 노드를 붙인다.
+# 오픈이 지나면 3으로 되돌리는 PR을 머지해 이후는 HPA 정책(3~9, CPU 60%)에 맡긴다. 노드 그룹 설정은 건드리지 않는다.
+#
+# 3보다 크게 올릴 때는 아래 두 줄을 반드시 채운다(하네스 k8s 규칙 11). off-by가 지났는데 3보다 크면 k8s 하네스가 실패한다 —
+# 단 k8s 하네스는 CI backend job(apps/api·contracts·harness·k8s·ci.yml이 바뀐 PR)에서만 돈다. 그 밖의 PR·PR이 없는 기간에는 막지 않으니
+# 사전 확장을 켠 사람이 off-by까지 되돌린다(켜 둔 채 잊으면 노드 9대 비용이 계속 나간다).
+# 사전 확장 중(하한 9 = 노드 9)에는 이미지가 바뀌는 PR을 머지하지 않는다 — 롤링 surge가 10번째 노드를 못 얻어 멈춘다(ADR-025).
+#   event: <공연 id>          off-by: <되돌릴 UTC 시각, YYYY-MM-DDTHH:MM:SSZ>
+# 노드 Ready(CA 실측 110초, IMP-021)·파드 기동까지 고려해 오픈 최소 15분 전에 머지한다(계산 아님 — 운영 여유).
+#
+# event: -
+# off-by: -
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  minReplicas: 3

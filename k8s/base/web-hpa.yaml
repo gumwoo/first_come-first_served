@@ -1,14 +1,9 @@
 # web 수평 확장. 600 rps 실측에서 첫 실패 지점이 web 티어였다(ALB → web target 구간,
 # ELB_5XX == TargetConnectionError, Target_5XX 0). api만 늘려도 앞단 web이 막히면 502가 난다.
 #
-# 노드 예산: allocatable 5,790m 안에서 api·web이 동시에 최대로 갈 수 없다.
-#   api 7×300 + web 4×300 + 기타 1,650 = 4,950m (85%)
-#
-# 롤링 배포 surge까지 보면 여유가 얇다. 둘 다 maxSurge=1 / maxUnavailable=0 이므로
-# 최악의 경우(양쪽이 최대 상태에서 동시에 롤링) +600m이 더 붙는다.
-#   4,950 + 600 = 5,550m / 5,790m  → 남는 여유 240m
-# 다른 Pod의 requests가 조금만 늘어도 바로 빡빡해진다. 새 워크로드를 얹기 전에 이 계산을
-# 다시 해야 한다.
+# 노드 예산(ADR-025 이후): api는 requests 1100m로 노드당 하나라 노드 수를 정하고(CA), web은 그 노드들의 남는 자리에 들어간다.
+# 노드별로 본다(합계가 아니라): flowticket 밖 요청이 노드별 410·600·750m(측정 세션 20261007-e2e)라 api를 놓고 남는 자리는 420·230·80m —
+# web(300m)은 한 노드에만 들어가 web 2개 중 하나는 4번째 노드가 필요하다(계산). 노드 3대 안에 가두던 이전 예산식은 더 쓰지 않는다.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -24,7 +19,7 @@ spec:
         name: cpu
         # api와 같은 기준을 쓴다. requests 300m 기준 180m을 넘으면 확장.
         # 실측상 600 rps에서 web은 파드당 약 0.59 core를 썼다. 4파드로도 타깃(180m)에
-        # 도달하지 못하고 상한에 붙을 가능성이 높다. 그때는 노드 추가 없이는 더 못 늘린다.
+        # 도달하지 못하고 상한에 붙을 가능성이 높다. 상한 4를 넘기려면 maxReplicas를 바꿔야 한다. CA(ADR-025 이후)는 그 4개가 들어갈 노드 자리를 만들 뿐이다.
         target: { type: Utilization, averageUtilization: 60 }
   behavior:
     scaleUp:

@@ -1,16 +1,20 @@
 package com.flowticket.queue;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
+import com.flowticket.global.error.BusinessException;
+import com.flowticket.global.error.ErrorCode;
 import com.flowticket.support.IntegrationTestSupport;
 import org.springframework.test.context.TestPropertySource;
 
 import com.flowticket.queue.service.QueueAdmissionService;
 import com.flowticket.queue.service.QueueService;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -75,6 +79,49 @@ class QueueIntegrationTest extends IntegrationTestSupport {
         assertThat(status.status()).isEqualTo(second.status());
         assertThat(status.rank()).isEqualTo(second.rank());
         assertThat(status.total()).isEqualTo(second.total());
+    }
+
+    @Test
+    void 상태_조회는_입장_대기_만료를_판정하고_다음_조회_최소_대기를_준다() {
+        // STATUS_LUA 한 번으로 판정한다(예전 6왕복과 같은 규칙). 정원 3: 앞 3명 입장, 나머지 대기.
+        List<String> tokens = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            tokens.add(queueService.issue(4000L + i, EVENT).token());
+        }
+        admissionService.admit(EVENT);
+
+        var admitted = queueService.status(tokens.get(0));
+        assertThat(admitted.status()).isEqualTo("ADMITTED");
+        assertThat(admitted.rank()).isZero();
+        assertThat(admitted.total()).isEqualTo(7);
+        assertThat(admitted.retryAfterMs()).isZero(); // 종료 상태 — 더 묻지 않는다
+
+        var waiting = queueService.status(tokens.get(3));
+        assertThat(waiting.status()).isEqualTo("WAITING");
+        assertThat(waiting.rank()).isEqualTo(1);
+        assertThat(waiting.total()).isEqualTo(7);
+        assertThat(waiting.retryAfterMs()).isEqualTo(2000); // 앞쪽(정원 × 2 안)
+
+        // 대기·입장 어디에도 없고 메타만 남은 토큰(회수된 죽은 토큰) = EXPIRED
+        redisTemplate.opsForZSet().remove("queue:wait:" + EVENT, tokens.get(9));
+        var expired = queueService.status(tokens.get(9));
+        assertThat(expired.status()).isEqualTo("EXPIRED");
+        assertThat(expired.retryAfterMs()).isZero();
+
+        // 메타가 없으면(수명 만료) 오류
+        assertThatThrownBy(() -> queueService.status("no-such-token"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.QUEUE_EXPIRED);
+    }
+
+    @Test
+    void 진입_응답에도_첫_조회_최소_대기가_있다() {
+        var first = queueService.issue(4100L, EVENT);
+        assertThat(first.retryAfterMs()).isEqualTo(2000); // 순번 1 — 앞쪽
+        admissionService.admit(EVENT);
+        var again = queueService.issue(4100L, EVENT); // 입장 상태 재진입(같은 토큰)
+        assertThat(again.status()).isEqualTo("ADMITTED");
+        assertThat(again.retryAfterMs()).isZero();
     }
 
     @Test

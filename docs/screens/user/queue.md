@@ -14,7 +14,7 @@
 
 ## 사용 API
 - `POST /events/:id/queue/token` — 진입 토큰 발급(회원)
-- `GET /queue/status?token=` — `{ rank, total, etaSeconds, status }` 폴링(폴백)
+- `GET /queue/status?token=` — `{ rank, total, etaSeconds, status, retryAfterMs }` 폴링(폴백). retryAfterMs는 다음 조회까지 최소 대기(ms)
 - `GET /sse/queue/:token` — 실시간 push(queue.admitted/queue.expired), 폴링과 이중화
 
 ## 화면 요소 (DoD 체크리스트)

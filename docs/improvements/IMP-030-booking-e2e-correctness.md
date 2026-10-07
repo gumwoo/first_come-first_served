@@ -4,7 +4,7 @@
 - 날짜: 2026-10-07
 - 유형: 정성(동작) + 수치 기록 — 사전 등록한 기대값과의 일치 판정(before/after 개선 비교가 아니다)
 - 관련 커밋/PR: 도구 #358(`booking-e2e.js`·`booking-expect.mjs`·`check-booking.sh`·`run-booking.sh`·`diag.sh pay-mock`), 도구·web 이미지 main `d14e36b`.
-  api는 태그 `d14e36b`로 배포됐지만 amd64 이미지 manifest(`sha256:db4dfe…`)가 `874a980` 태그와 같다(api 코드 변경 없음 — 빌드 캐시). 그래서 런타임·kube-state-metrics는 `874a980`으로 표시한다(ECR manifest로 확인)
+  api는 태그 `d14e36b`로 배포됐지만 amd64 이미지 manifest(`sha256:db4dfe…`)가 `874a980` 태그와 같다(api 코드 변경 없음 — 같은 digest가 나온 원인은 빌드 캐시로 추정). 런타임·kube-state-metrics는 `874a980`으로 표시한다(manifest 동일은 ECR로 확인, 표시 방식의 이유는 추정)
 - 벤치 파일: 레포 밖 `artifacts/loadtest/20261007-e2e/` — 판정 `e2e-r1`·`e2e-r2`·`e2e-r3`, preflight `e2e-preflight`(판정 제외), 사전 등록 `e2e-prereg.md`(변경 기록·확정 절 포함),
   운영 기록 `session.log`. run 폴더마다 `results-g1.jsonl`(VU별 결과 — 토큰 없음)·`booking/`(client.json·expect.sql·db.csv·summary.txt)·`correctness/`·`prom/`
 

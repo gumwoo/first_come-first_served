@@ -153,12 +153,19 @@ try {
     const mSince = Date.parse(m?.since ?? "");
     if (!Number.isFinite(mSince)) throw new Error(`${a.collected}: since를 읽지 못했다`);
     if (mSince > since) throw new Error(`로그 수집이 run 시작보다 늦은 시각부터다(${m.since} > ${a.since}) — run 시작 이전부터 받아야 한다`);
+    // 수집기 자체가 run 전체를 덮어야 한다: run 시작 전에 떠 있었고(뜨기 전 회전된 앞부분을 잃지 않게) run 종료 + 여유 뒤에 멈췄어야 한다
+    // (일찍 멈췄으면 살아 있던 파드가 collector-stopped·complete로 남아도 그 뒤 줄이 없다). 이전 run 디렉터리를 잘못 준 경우도 여기서 걸린다.
+    const mStart = Date.parse(m?.startedAt ?? ""), mEnd = Date.parse(m?.endedAt ?? "");
+    const collectorWindow = `${m?.startedAt}~${m?.endedAt}`;
+    if (!Number.isFinite(mStart) || !Number.isFinite(mEnd)) throw new Error(`${a.collected}: startedAt·endedAt을 읽지 못했다(수집기가 정상 종료하지 않았다)`);
+    if (mStart > since) throw new Error(`로그 수집기가 run 시작 뒤에 떴다(${m.startedAt} > ${a.since}) — run 시작 전에 띄운다`);
+    if (mEnd < until + graceMs) throw new Error(`로그 수집기가 run 종료 + 여유(${new Date(until + graceMs).toISOString()}) 전에 멈췄다(${m.endedAt}) — 그 뒤 줄이 없다`);
     const notCollected = seen.filter((p) => !m.pods?.[p]);
     const incomplete = seen.filter((p) => m.pods?.[p] && m.pods[p].complete !== true)
       .map((p) => ({ pod: p, endReason: m.pods[p].endReason, follows: m.pods[p].follows }));
     const ok = notCollected.length === 0 && incomplete.length === 0 && restartedInRun.length === 0;
     console.log(JSON.stringify({
-      mode: "collected", seen, notCollected, incomplete, restartedInRun, outsideRun, graceSec: graceMs / 1000, complete: ok,
+      mode: "collected", seen, notCollected, incomplete, restartedInRun, outsideRun, collectorWindow, graceSec: graceMs / 1000, complete: ok,
     }, null, 2));
     process.exitCode = ok ? 0 : 2;
   } else {

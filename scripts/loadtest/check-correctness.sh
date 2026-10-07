@@ -217,7 +217,8 @@ rm -f "$D/queue-order.json" "$D/queue-order.err" "$D/admission-overlap.json" "$D
 collect_logs() {
   if [ -n "$API_LOGS" ]; then
     [ -s "$API_LOGS/manifest.json" ] || { echo "    받아 둔 로그에 manifest.json이 없다: $API_LOGS(수집기가 정상 종료하지 않았다)" >&2; return 1; }
-    cat "$API_LOGS"/*.log > "$D/api.log"
+    # --since 이후 줄만, kubelet 시각을 떼어 kubectl logs --prefix와 같은 형식으로 합친다(형식 밖 줄이 있으면 실패).
+    node "$HERE/collect-api-logs.mjs" merge --dir "$API_LOGS" --since "$SINCE" > "$D/api.log"
   else
     kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 --prefix --max-log-requests=20 > "$D/api.log"
   fi
@@ -472,7 +473,7 @@ esac
   # .err에 남는다. summary에도 보인다.
   echo "--- admission-overlap(실효 입장 초과)"; [ -s "$D/admission-overlap.err" ] && sed 's/^/  사유: /' "$D/admission-overlap.err"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"capacity="+r.capacity+" admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed+" duplicateAdmits="+r.duplicateAdmits+" endsBeforeAdmit="+r.endsBeforeAdmit+" maxConcurrent="+JSON.stringify(Object.fromEntries(Object.entries(r.events).map(([k,v])=>[k,v.maxConcurrent]))))}catch{console.log("판정 불가")}' "$D/admission-overlap.json" 2>/dev/null
   echo "--- queue-order"; [ -s "$D/queue-order.err" ] && sed 's/^/  사유: /' "$D/queue-order.err"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.admits===0?"판정 불가(승격 기록 0건)":"admits="+r.admits+" violations="+r.violations+" malformed="+r.malformed)}catch{console.log("판정 불가")}' "$D/queue-order.json" 2>/dev/null
-  echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}catch{console.log("판정 불가(확인 실패)")}' "$D/pod-coverage.json" 2>/dev/null
+  echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(r.mode==="collected"){console.log(r.complete?"run 동안 받아 둔 로그로 run과 겹친 파드 "+r.seen.length+"개를 끝까지 받음(축소로 지워진 파드 포함)":"판정 불가 — 받지 못한 파드 "+r.notCollected.length+", 다 받지 못한 파드 "+r.incomplete.length+", run 중 재시작 "+r.restartedInRun.length+(r.collectorWindow?", 수집기 구간 "+r.collectorWindow:""))}else{console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}}catch{console.log("판정 불가(확인 실패 — pod-coverage.json·stderr를 본다)")}' "$D/pod-coverage.json" 2>/dev/null
   echo "--- 내보낸 구간(파드 대조·승격 처리 실패의 전제)"; cat "$D/export-window.txt" 2>/dev/null
   echo "--- run 시각 대조(발생기 시작·종료 기록 vs --since·--until)"; cat "$D/run-window.txt" 2>/dev/null
   echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null

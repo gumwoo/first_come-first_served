@@ -12,7 +12,9 @@
 # 사용(발생기 인스턴스, Linux):
 #   infra/loadgen/run-entry.sh --session 20261002-1400 --run step7-50k_constant-r1 --gen g1 \
 #     --base https://flow-ticket.com/api --event 1733 --users ~/tokens.json --users-n 25000 --offset 0 \
-#     --entry-seconds 10 --dist constant
+#     --entry-seconds 10 --dist constant [--poll-hold 300]
+#   --poll-hold N: 대기 토큰을 poll-hold.mjs가 받아 첫 토큰부터 N초 동안 상태를 묻는다(결과 <run>/poll-<gen>/).
+#     발생기 종료(end-<gen>.json)는 k6와 폴링이 모두 끝난 시각이라 사후 검사 --until은 폴링 끝 뒤로 잡힌다.
 #
 # 분산 실행(발생기 G대가 한 run을 나눠 건다):
 #   --gens G를 주면 --users-n은 **전체** 사용자 수, --offset은 전체의 시작 인덱스다. 각 발생기는 --gen gK(K=1..G)로

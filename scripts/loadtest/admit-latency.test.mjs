@@ -7,7 +7,7 @@ import { parseAdmits, summarize } from "./admit-latency.mjs";
 const line = (ref, at) =>
   `2026-10-07T01:00:00.000Z INFO flowticket.queue.audit - queue.audit kind=admit event=7 token=${ref} seq=12 at=${at} keyAt=${at + 3} admitExpAt=1791300300 admitKeyTtl=300`;
 
-test("승격 줄에서 ref와 at(승격 시각)만 읽는다 — keyAt·admitExpAt은 at이 아니다", () => {
+test("승격 줄에서 ref와 at(승격 시각)만 읽는다 — 회수 줄·무관한 줄은 건너뛴다", () => {
   const m = parseAdmits([line("aaaaaaaaaaaaaaaa", 1000), "queue.audit kind=reclaim event=7 token=bbbbbbbbbbbbbbbb at=5", "무관한 줄"]);
   assert.deepEqual([...m], [["aaaaaaaaaaaaaaaa", 1000]]);
 });

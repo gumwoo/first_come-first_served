@@ -86,6 +86,9 @@ jobs:
       # 대기자 폴링 발생기(프론트와 같은 간격 규칙·토큰 참조·mock 상대 동작)와 입장 인지 지연 집계.
       - name: loadgen poll-hold test (대기자 폴링 발생기·입장 인지 지연)
         run: node --test infra/loadgen/poll-hold.test.mjs scripts/loadtest/admit-latency.test.mjs
+      # Downstream E2E(입장자) 시험 판정 — 역할별 클라이언트 기대값과 DB 기대값 SQL 생성(fixture는 mock 서버 상대 실행 결과).
+      - name: loadtest booking e2e test (E2E 입장자 시험 판정)
+        run: node --test scripts/loadtest/booking-expect.test.mjs
       # 실효 입장 초과 판정식(loadtest-100k-plan §3.3)의 단위 테스트. 의존성 없는 node 내장 테스트.
       - name: loadtest correctness test (실효 입장 초과 재구성)
         run: node --test scripts/loadtest/admission-overlap.test.mjs

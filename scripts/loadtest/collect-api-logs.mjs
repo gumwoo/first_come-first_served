@@ -111,6 +111,8 @@ function collectMain(argv) {
     process.exit(2);
   }
   const INTERVAL_MS = num("interval", a.interval, 0.1) * 1000;
+  const SINCE_MS = Date.parse(a.since);
+  const STARTUP_SLACK_MS = 120_000;
   const FOR_S = a.for === undefined ? null : num("for", a.for, 1);
   const MAX_FAILURES = num("max-failures", a["max-failures"], 1);
   const RETRY_MS = num("retry-ms", a["retry-ms"], 0);
@@ -144,8 +146,9 @@ function collectMain(argv) {
   let lastListOk = null;
   let stopping = false;
 
-  function track(name, containerId) {
-    const p = { name, firstSeenAt: new Date().toISOString(), containerId, follows: 0, failures: 0, endReason: null, complete: false,
+  // startedMs: 컨테이너 시작 시각(ms, 모르면 NaN). run 시작 뒤에 뜬 파드의 첫 받기가 회전으로 잘렸는지 보는 데 쓴다(take).
+  function track(name, containerId, startedMs = NaN) {
+    const p = { name, firstSeenAt: new Date().toISOString(), containerId, startedMs, follows: 0, failures: 0, endReason: null, complete: false,
       lines: 0, lastTs: null, lastSecond: new Set(), overlap: null, child: null,
       file: createWriteStream(join(a.out, `${name}.log`), { flags: "a" }), done: false, timer: null };
     pods.set(name, p);
@@ -157,6 +160,11 @@ function collectMain(argv) {
     const m = LINE.exec(line);
     const key = m ? tsKey(m[2]) : null;
     if (key === null) { p.file.write(line + "\n"); p.lines++; return; } // 형식 밖 줄도 남긴다(merge가 판정 불가로 알린다)
+    // 첫 받기의 회전: run 시작 뒤에 뜬 파드는 첫 줄이 JVM 기동 줄이라 컨테이너 시작 시각 근처여야 한다. 첫 받기가 늦게 붙는 사이 회전돼
+    // 앞부분이 잘렸으면 첫 줄이 그보다 한참 늦다 — 컨테이너 시작 + 120초(pod-coverage의 기동 여유와 같은 값)보다 늦으면 구멍으로 본다.
+    // run 시작 전부터 있던 파드는 수집기가 run 시작 직후 붙으므로(시작 전에 띄운다) 이 검사 대상이 아니다.
+    if (p.lines === 0 && p.lastTs === null && Number.isFinite(p.startedMs) && p.startedMs >= SINCE_MS
+        && secOf(key) > p.startedMs + STARTUP_SLACK_MS) p.gap = true;
     if (p.overlap) {
       if (key < p.overlap.fromKey) return; // 다시 받기의 since(초 단위)보다 앞 — 오지 않아야 하지만 방어
       if (key <= p.overlap.lastKey) {
@@ -260,7 +268,7 @@ function collectMain(argv) {
       const c = apiStatus(pod);
       if (!c?.containerID) { pending.add(name); continue; } // 아직 컨테이너가 없다 — 다음 주기에 다시 본다
       pending.delete(name);
-      follow(track(name, c.containerID));
+      follow(track(name, c.containerID, Date.parse(c.state?.running?.startedAt ?? c.state?.terminated?.startedAt ?? "")));
     }
     for (const name of [...pending]) if (!present.has(name)) { pending.delete(name); (recent ? neverStarted : unknown).add(name); }
     lastListOk = qStart;

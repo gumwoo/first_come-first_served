@@ -18,7 +18,7 @@ const state = load() ?? process.exit(1);
 const podJson = (name, p) => ({
   metadata: { name },
   status: { containerStatuses: [{ name: "api", ...(p.containerID ? { containerID: p.containerID } : {}),
-    state: p.state === "terminated" ? { terminated: { exitCode: 0 } } : p.state === "waiting" ? { waiting: {} } : { running: {} } }] },
+    state: p.state === "terminated" ? { terminated: { exitCode: 0 } } : p.state === "waiting" ? { waiting: {} } : { running: p.startedAt ? { startedAt: p.startedAt } : {} } }] },
 });
 
 const li = args.indexOf("logs");

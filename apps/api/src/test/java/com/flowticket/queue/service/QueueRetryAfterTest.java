@@ -24,7 +24,7 @@ class QueueRetryAfterTest {
     }
 
     @Test
-    void 뒤쪽은_앞쪽까지_최소_소요_시간이고_상한에서_멈춘다() {
+    void 뒤쪽은_정원씩_빠질_때_입장까지_시간이고_상한에서_멈춘다() {
         assertThat(service.retryAfterMs(QueueStatus.WAITING, 201)).isEqualTo(4500);   // ceil(2.01) = 3 × 1.5초
         assertThat(service.retryAfterMs(QueueStatus.WAITING, 1000)).isEqualTo(15000); // 10 × 1.5초
         assertThat(service.retryAfterMs(QueueStatus.WAITING, 2000)).isEqualTo(30000); // 20 × 1.5초 = 상한

@@ -281,6 +281,9 @@ public class QueueService {
         List<?> r = redis.execute(STATUS_SCRIPT,
                 List.of(QueueKeys.admit(token), QueueKeys.admitExp(eventId), QueueKeys.wait(eventId)),
                 token, String.valueOf(Instant.now(clock).getEpochSecond()));
+        if (r == null || r.size() != 3) {
+            throw new IllegalStateException("STATUS_LUA 결과가 없다(파이프라인·트랜잭션 안에서 호출됨)");
+        }
         long code = ((Number) r.get(0)).longValue();
         QueueStatus st = code == 2 ? QueueStatus.ADMITTED : code == 1 ? QueueStatus.WAITING : QueueStatus.EXPIRED;
         return new Snapshot(st, ((Number) r.get(1)).longValue(), ((Number) r.get(2)).longValue());
@@ -289,10 +292,12 @@ public class QueueService {
     /**
      * 다음 상태 조회까지 기다릴 시간(ms) — 클라이언트는 이보다 일찍 다시 묻지 않는다(최소 대기, ADR-023 §2 — 사용자 결정 2~30초).
      *
-     * 앞쪽(순번 ≤ 정원 × 2)은 pollMinMs. 그 뒤는 "대기열이 가장 빨리 줄어도 내가 앞쪽에 닿기까지 걸리는 시간"
-     * = ceil(순번 ÷ 정원) × 승격 주기를 [pollMinMs, pollMaxMs]로 자른다 — 승격은 주기마다 최대 정원만큼이라
-     * 그보다 일찍 물어도 입장했을 수 없다. 입장·만료(종료 상태)면 0(더 묻지 않는다).
-     * 대기 10만 명이면 대부분이 상한 30초라 조회 부하는 약 3,300 req/s다(계산값).
+     * 앞쪽(순번 ≤ 정원 × 2)은 pollMinMs. 그 뒤는 "승격 주기마다 정원만큼 빠진다고 볼 때 내가 입장하기까지 걸리는 시간"
+     * = ceil(순번 ÷ 정원) × 승격 주기를 [pollMinMs, pollMaxMs]로 자른다. 엄밀한 하한은 아니다 — 승격 워커가 파드마다 돌아
+     * 슬롯이 빨리 비면 한 주기에 정원보다 많이 빠질 수 있고, 응답 직후 첫 틱이 바로 올 수도 있다. 그만큼 입장 인지가 늦어질 수
+     * 있어 최종 시험에서 입장 인지 지연을 잰다. 입장·만료(종료 상태)면 0(더 묻지 않는다).
+     * 대기 10만 명(정적 대기열 가정)이면 앞쪽 200명 2초 + 201~2,000명 4.5~30초 + 나머지 30초로
+     * 조회 부하는 약 3,500 req/s다(계산값, jitter 없이 — jitter 평균 +10%면 약 3,200).
      */
     long retryAfterMs(QueueStatus status, long rank) {
         if (status != QueueStatus.WAITING) {

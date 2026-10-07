@@ -22,7 +22,8 @@
 // 고정 창(--t0, UTC ISO): 시험 전에 정한 창 [T0, T0 + 진입 시간)에 들어온 도착만 따로 센다. 결과를 본 뒤 가장 잘 나온
 // 창을 고르지 않기 위해서다. T0는 분산 발생기에 준 공통 START_AT이다. T0 기준 1초 bucket(0..진입시간−1)과, 목표 도착률
 // (users-n / entry-seconds) 대비 ±--rate-tolerance-pct 밖 bucket을 낸다. 발생기별 첫 도착 시각과 그 차이(시작 어긋남)도
-// 낸다. 이것은 발생기가 "보낸" 시각이다 — 서버가 받은 시각의 증거(ALB access log)는 따로 남긴다.
+// 낸다. 이것은 iteration이 시작된 시각이다 — 연결 대기(entryConnectionWait)만큼 실제 송신보다 이를 수 있고,
+// 서버가 받은 시각의 증거(ALB access log)는 따로 남긴다.
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
@@ -57,6 +58,10 @@ if (t0 !== null && !/^[1-9]\d*$/.test(opts["entry-seconds"] ?? "")) {
 }
 const firstByFile = new Map(); // 파일(발생기) → 첫 도착 ms
 const arrivalMs = []; // [ms, value] — 고정 창 계산용
+// 진입 요청이 보내지기 전 연결 대기(k6 http_req_blocked: 연결 풀 대기 + 새 TCP·TLS 수립). entry_arrivals는 iteration 시작
+// 시각이라 이 대기만큼 실제 송신보다 이르다 — 대기가 길면 도착 분포가 목표대로 보여도 서버에는 늦게 닿는다.
+// (측정 세션 20261005-1440 10,000/s burst: entry_arrivals 매초 약 1만인데 새 연결 대기 p95 3.7초로 첫 1초 실제 송신 약 2천.)
+const blockedMs = [];
 
 for (const f of files) {
   if (!firstByFile.has(f)) firstByFile.set(f, null); // 도착이 0인 발생기도 남긴다
@@ -73,6 +78,10 @@ for (const f of files) {
       continue;
     }
     if (p?.type !== "Point") continue;
+    if (p.metric === "http_req_blocked" && p.data.tags?.name === "queue_entry") {
+      blockedMs.push(p.data.value);
+      continue;
+    }
     if (!(p.metric in sums)) continue;
     sums[p.metric] += p.data.value;
     if (p.metric === "entry_arrivals") {
@@ -140,6 +149,14 @@ if (t0 !== null) {
   };
 }
 
+// 진입 요청의 연결 대기 요약. over100ms가 크면 도착(iteration 시작)과 실제 송신이 어긋난 run이다.
+function connectionWait(values) {
+  if (values.length === 0) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const q = (p) => +s[Math.min(s.length - 1, Math.floor(s.length * p))].toFixed(1);
+  return { requests: s.length, over100ms: s.filter((v) => v > 100).length, p50Ms: q(0.5), p95Ms: q(0.95), maxMs: +s.at(-1).toFixed(1) };
+}
+
 const result = {
   files,
   malformedLines,
@@ -161,6 +178,7 @@ const result = {
   generatorStartSkewMs: startSkewMs,
   generatorsWithoutArrivals,
   window,
+  entryConnectionWait: connectionWait(blockedMs),
   // 첫·마지막 1초 창은 부분 구간일 수 있다. peak 해석 때 함께 본다.
   perSecond: series,
 };

@@ -152,3 +152,26 @@ test("--t0과 함께 쓰는 --entry-seconds는 양의 정수여야 한다", () =
   assert.equal(arrivals([[point(at(0))]], "--t0", "2026-10-07T01:00:00Z", "--entry-seconds", "2.5").code, 2);
   assert.equal(arrivals([[point(at(0))]], "--t0", "2026-10-07T01:00:00Z", "--entry-seconds", "abc").code, 2);
 });
+
+test("--warm-seconds는 --start-at과 함께만 받고 계획에 남는다", () => {
+  const p = plan("--users-n", "1000", "--start-at", "2026-10-07T01:00:00Z", "--warm-seconds", "30").plan;
+  assert.equal(p.warmSeconds, 30);
+  assert.equal(plan("--users-n", "1000").plan.warmSeconds, 0);
+  assert.equal(plan("--users-n", "1000", "--start-at", "2026-10-07T01:00:00Z", "--warm-seconds", "1.5").code, 2);
+});
+
+// k6 http_req_blocked 점(name 태그로 진입·연결 미리 맺기 요청을 가른다)
+const blocked = (ms, name = "queue_entry") =>
+  JSON.stringify({ type: "Point", metric: "http_req_blocked", data: { time: at(0), value: ms, tags: { name } } });
+
+test("진입 요청의 연결 대기만 따로 요약한다(연결 미리 맺기 요청은 뺀다)", () => {
+  const { out } = arrivals([[point(at(0)), blocked(0), blocked(0.2), blocked(3700), blocked(9000, "warm_connect")]], "--entry-seconds", "1");
+  assert.equal(out.entryConnectionWait.requests, 3);
+  assert.equal(out.entryConnectionWait.over100ms, 1);
+  assert.equal(out.entryConnectionWait.maxMs, 3700);
+});
+
+test("연결 대기 점이 없으면 null(옛 출력과 구별)", () => {
+  const { out } = arrivals([[point(at(0))]], "--entry-seconds", "1");
+  assert.equal(out.entryConnectionWait, null);
+});

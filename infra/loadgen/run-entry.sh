@@ -20,6 +20,8 @@
 #   --start-at(UTC ISO)을 주면 k6 setup()이 그 시각까지 기다렸다가 도착을 시작한다(VU 할당이 끝난 뒤 장벽).
 #   모든 발생기에 같은 --start-at을 준다. 이미 지난 시각이면 그 발생기는 시작하지 않는다.
 #   scripts/loadtest/loadgen.sh exec -- 'infra/loadgen/run-entry.sh ... --gen $GEN --gens 3 --start-at 2026-10-07T01:00:00Z'
+#   --warm-seconds W: 진입 시작(--start-at) 전 W초 동안 VU마다 keep-alive 연결을 미리 맺는다(queue-entry-rate.js WARM_SECONDS).
+#     T0에 새 연결이 한꺼번에 열리며 실제 송신이 늦어지는 것을 막는다. 기본 0(끔).
 #   --print-plan: 계산한 몫(gen·usersN·offset·startAt)만 JSON 한 줄로 내고 끝낸다(실행 전 확인·테스트용).
 set -euo pipefail
 
@@ -27,7 +29,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
 SESSION="" RUN="" GEN="g1" GEN_SET=0 BASE="" EVENT="" USERS="" USERS_N="" OFFSET=0
-ENTRY_SECONDS=10 DIST=constant SSE_HOLD=300 PRE_VUS="" MAX_VUS="" NO_SSE=0 GENS="" START_AT="" PRINT_PLAN=0
+ENTRY_SECONDS=10 DIST=constant SSE_HOLD=300 PRE_VUS="" MAX_VUS="" NO_SSE=0 GENS="" START_AT="" WARM_SECONDS=0 PRINT_PLAN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --session) SESSION="$2"; shift 2 ;;
@@ -46,6 +48,7 @@ while [ $# -gt 0 ]; do
     --no-sse) NO_SSE=1; shift ;;
     --gens) GENS="$2"; shift 2 ;;
     --start-at) START_AT="$2"; shift 2 ;;
+    --warm-seconds) WARM_SECONDS="$2"; shift 2 ;;
     --print-plan) PRINT_PLAN=1; shift ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2 ;;
   esac
@@ -57,11 +60,12 @@ done
 # k6의 open()은 상대경로를 스크립트 디렉터리(infra/k6) 기준으로 읽는다. 절대경로로 바꿔 넘긴다.
 [ -f "$USERS" ] || { echo "사용자 토큰 파일이 없다: $USERS" >&2; exit 2; }
 USERS="$(cd "$(dirname "$USERS")" && pwd)/$(basename "$USERS")"
-for v in "$USERS_N" "$ENTRY_SECONDS" "$OFFSET" "$SSE_HOLD"; do
-  case "$v" in ""|*[!0-9]*) echo "--users-n/--entry-seconds/--offset/--sse-hold는 정수여야 한다: $v" >&2; exit 2 ;; esac
+for v in "$USERS_N" "$ENTRY_SECONDS" "$OFFSET" "$SSE_HOLD" "$WARM_SECONDS"; do
+  case "$v" in ""|*[!0-9]*) echo "--users-n/--entry-seconds/--offset/--sse-hold/--warm-seconds는 정수여야 한다: $v" >&2; exit 2 ;; esac
 done
 # 앞자리 0(예: 08)은 JSON 숫자가 아니다. 10진수로 정규화한다.
 USERS_N=$((10#$USERS_N)); ENTRY_SECONDS=$((10#$ENTRY_SECONDS)); OFFSET=$((10#$OFFSET)); SSE_HOLD=$((10#$SSE_HOLD))
+WARM_SECONDS=$((10#$WARM_SECONDS))
 
 # 분산 실행이면 전체 사용자 수와 시작 인덱스에서 이 발생기의 몫을 계산한다.
 USERS_TOTAL=$USERS_N OFFSET_BASE=$OFFSET
@@ -91,15 +95,17 @@ fi
 
 if [ "$PRINT_PLAN" = 1 ]; then
   SA=null; [ -n "$START_AT" ] && SA="\"$START_AT\""
-  printf '{"gen":"%s","gens":%s,"usersN":%s,"offset":%s,"usersTotal":%s,"startAt":%s}\n' \
-    "$GEN" "${GENS:-null}" "$USERS_N" "$OFFSET" "$USERS_TOTAL" "$SA"
+  printf '{"gen":"%s","gens":%s,"usersN":%s,"offset":%s,"usersTotal":%s,"startAt":%s,"warmSeconds":%s}\n' \
+    "$GEN" "${GENS:-null}" "$USERS_N" "$OFFSET" "$USERS_TOTAL" "$SA" "$WARM_SECONDS"
   exit 0
 fi
 
 # 시작 대기 시간 검사: 이미 지났거나 k6 setupTimeout(SETUP_TIMEOUT, 기본 900s)보다 멀면 기다리기 전에 거부한다
 # (k6에서 실패하면 토큰 파싱·VU 할당을 다 하고 나서야, 멀면 setupTimeout 뒤에야 끝난다).
 if [ -n "$START_AT" ]; then
-  node -e 'const t=Date.parse(process.argv[1]);const lim=parseInt(process.env.SETUP_TIMEOUT||"900",10);const w=(t-Date.now())/1000;if(w<0){console.error("--start-at이 이미 "+(-w).toFixed(1)+"초 지났다");process.exit(1)}if(w>lim-30){console.error("--start-at까지 "+w.toFixed(0)+"초 — SETUP_TIMEOUT("+lim+"s)에서 init 여유 30초를 뺀 값보다 멀다");process.exit(1)}' "$START_AT" || exit 2
+  WARM_SECONDS="$WARM_SECONDS" node -e 'const t=Date.parse(process.argv[1]);const lim=parseInt(process.env.SETUP_TIMEOUT||"900",10);const w=(t-Date.now())/1000;if(w<0){console.error("--start-at이 이미 "+(-w).toFixed(1)+"초 지났다");process.exit(1)}const warm=Number(process.env.WARM_SECONDS||0);if(w<warm){console.error("--start-at까지 "+w.toFixed(1)+"초 — 연결 미리 맺기("+warm+"초)를 시작할 시각이 지났다");process.exit(1)}if(w>lim-30){console.error("--start-at까지 "+w.toFixed(0)+"초 — SETUP_TIMEOUT("+lim+"s)에서 init 여유 30초를 뺀 값보다 멀다");process.exit(1)}' "$START_AT" || exit 2
+elif [ "$WARM_SECONDS" != 0 ]; then
+  echo "--warm-seconds는 --start-at과 함께 쓴다(진입 시작 시각을 기준으로 앞당긴다)" >&2; exit 2
 fi
 
 OUT="$ROOT/artifacts/loadtest/$SESSION/$RUN"
@@ -116,7 +122,7 @@ cat > "$OUT/meta-$GEN.json" <<EOF
   "base": "$BASE", "event": "$EVENT", "dist": "$DIST", "usersN": $USERS_N, "offset": $OFFSET,
   "entrySeconds": $ENTRY_SECONDS, "sseHoldSeconds": $SSE_HOLD, "sse": $([ "$NO_SSE" = 1 ] && echo false || echo true),
   "preVus": "${PRE_VUS:-default}", "maxVus": "${MAX_VUS:-default}",
-  "gens": ${GENS:-null}, "usersTotal": $USERS_TOTAL, "offsetBase": $OFFSET_BASE, "startAt": $([ -n "$START_AT" ] && echo "\"$START_AT\"" || echo null),
+  "gens": ${GENS:-null}, "usersTotal": $USERS_TOTAL, "offsetBase": $OFFSET_BASE, "startAt": $([ -n "$START_AT" ] && echo "\"$START_AT\"" || echo null), "warmSeconds": $WARM_SECONDS,
   "clockSync": "$( (chronyc tracking 2>/dev/null | grep -E 'System time|Leap status' | tr -s ' ' | tr '\n' ';') || echo unknown)"
 }
 EOF
@@ -136,6 +142,7 @@ K6_ARGS=(run --log-format=raw
 [ -n "$PRE_VUS" ] && K6_ARGS+=(-e PRE_VUS="$PRE_VUS")
 [ -n "$MAX_VUS" ] && K6_ARGS+=(-e MAX_VUS="$MAX_VUS")
 [ -n "$START_AT" ] && K6_ARGS+=(-e START_AT="$START_AT")
+[ "$WARM_SECONDS" != 0 ] && K6_ARGS+=(-e WARM_SECONDS="$WARM_SECONDS")
 
 # k6가 중단·실패로 끝나도 그때까지의 원시 출력으로 지표는 계산해 둔다. 종료 코드는 마지막에 돌려준다.
 set +e

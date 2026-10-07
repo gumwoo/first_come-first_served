@@ -99,6 +99,7 @@ function collectMain(argv) {
       container: { type: "string", default: "api" },
       "max-failures": { type: "string", default: "10" },
       "retry-ms": { type: "string", default: "2000" },
+      "attempt-slack": { type: "string", default: "5" }, // run 전부터 있던 파드의 첫 시도가 run 시작보다 이만큼(초) 넘게 늦으면 "늦게 붙음"
     },
   });
   const num = (name, v, min) => {
@@ -116,6 +117,7 @@ function collectMain(argv) {
   const FOR_S = a.for === undefined ? null : num("for", a.for, 1);
   const MAX_FAILURES = num("max-failures", a["max-failures"], 1);
   const RETRY_MS = num("retry-ms", a["retry-ms"], 0);
+  const ATTEMPT_SLACK_MS = num("attempt-slack", a["attempt-slack"], 0) * 1000;
   if (existsSync(a.out) && readdirSync(a.out).length) {
     console.error(`out 디렉터리가 비어 있지 않다: ${a.out} — 이전 run의 로그·manifest와 섞이지 않게 새 디렉터리를 준다`);
     process.exit(2);
@@ -139,7 +141,6 @@ function collectMain(argv) {
   };
 
   const startedAt = new Date().toISOString();
-  const COLLECTOR_START_MS = Date.parse(startedAt);
   const pods = new Map();
   const pending = new Set(); // 아직 컨테이너가 없는 파드(Pending·ContainerCreating) — 시작하지 못하고 사라지면 neverStarted
   const neverStarted = new Set();
@@ -168,8 +169,9 @@ function collectMain(argv) {
     if (p.lines === 0 && p.lastTs === null) {
       const startedAfterSince = Number.isFinite(p.startedMs) && p.startedMs >= SINCE_MS;
       const ref = startedAfterSince ? p.startedMs : SINCE_MS;
-      // 첫 시도가 늦었나: 수집기 시작·컨테이너 시작 중 늦은 쪽보다 30초 넘게 뒤에 띄웠으면(목록 조회 장애 등으로 발견이 늦음).
-      const troubled = p.follows > 1 || p.firstAttemptAt > Math.max(COLLECTOR_START_MS, Number.isFinite(p.startedMs) ? p.startedMs : 0) + FIRST_SLACK_MS;
+      // 첫 시도가 늦었나: 확인할 수 없는 구간의 시작(run 뒤 뜬 파드는 컨테이너 시작, 그 밖은 run 시작)보다 늦게 띄웠으면(목록 조회 장애 등으로 발견이 늦음).
+      // 여유: run 뒤 뜬 파드는 30초(새 파일은 비어서 시작), 그 밖은 --attempt-slack(기본 5초 — 수집기를 run 시작 전·직전에 띄우면 첫 조회가 그 안에 끝난다).
+      const troubled = p.follows > 1 || p.firstAttemptAt > (startedAfterSince ? p.startedMs + FIRST_SLACK_MS : SINCE_MS + ATTEMPT_SLACK_MS);
       // 줄 시각 여유는 run 시작 뒤에 뜬 파드에만 준다 — 새 컨테이너의 로그 파일은 비어서 시작하므로 30초 안에 회전할 만큼 차지 않는다(추론).
       // run 시작 전부터 있던 파드(또는 시작 시각을 모름)는 파일이 이미 차 있어 run 시작 직후에도 회전할 수 있으므로 여유 0.
       if (troubled && secOf(key) > ref + (startedAfterSince ? FIRST_SLACK_MS : 0)) p.gap = true;

@@ -21,7 +21,9 @@ function start(state, extra = []) {
   const stateFile = join(dir, "state.json");
   writeFileSync(stateFile, JSON.stringify(state));
   const out = join(dir, "logs");
-  const child = spawn(process.execPath, [SCRIPT, "--out", out, "--since", SINCE, "--interval", "0.2", "--retry-ms", "100", ...extra],
+  const child = spawn(process.execPath, [SCRIPT, "--out", out, "--since", SINCE, "--interval", "0.2", "--retry-ms", "100",
+    // 테스트의 since는 고정된 과거 시각이라 "run 시작보다 늦게 붙음" 검사를 끄고(아주 큰 여유) 실패 이력·회전 검사만 본다 — 늦은 발견은 아래 별도 테스트(실제 시각)
+    "--attempt-slack", "1000000000", ...extra],
     { env: { ...process.env, KUBECTL: FAKE, FAKE_KUBE_STATE: stateFile }, stdio: ["ignore", "ignore", "pipe"] });
   const exited = new Promise((r) => child.on("exit", r));
   // 임시 파일 + rename — 가짜 kubectl이 쓰는 도중의 빈 파일을 읽지 않게(CI에서 실제로 흔들렸다)
@@ -259,4 +261,26 @@ test("run 시작 뒤에 뜬 파드라도 첫 줄이 기동 줄(시작 직후)이
     logs: { b: { lines: [[T(2), "b start"], [T(5), "queue.audit kind=admit B"]], mode: "hold" } } }, ["--for", "2"]);
   assert.equal(await c.exited, 0);
   assert.equal(c.manifest().pods.b.complete, true);
+});
+
+test("run 시작 전부터 있던 파드를 목록 조회 장애로 늦게 발견해 첫 시도가 run 시작보다 늦으면, 그 사이 회전으로 잘린 것을 구멍으로 본다(G1 재현 lateDiscovery)", async () => {
+  const base = Math.floor(Date.now() / 1000) * 1000;
+  const at = (ms) => new Date(base + ms).toISOString().replace("Z", "000000Z").replace(/.(d{3})000000Z$/, ".$1000000Z");
+  const since = new Date(base).toISOString().replace(".000Z", "Z");
+  const dir = mkdtempSync(join(tmpdir(), "collect-api-logs-late-"));
+  const stateFile = join(dir, "state.json");
+  writeFileSync(stateFile, JSON.stringify({ getPodsFail: true, pods: { a: { containerID: "ca", state: "running", startedAt: "2026-01-01T00:00:00Z" } },
+    logs: { a: { lines: [[at(500), "queue.audit kind=admit A"], [at(3000), "a after rotation"]], mode: "hold", rotatedFrom: at(2000) } } }));
+  const out = join(dir, "logs");
+  const child = spawn(process.execPath, [SCRIPT, "--out", out, "--since", since, "--interval", "0.2", "--attempt-slack", "1", "--for", "4"],
+    { env: { ...process.env, KUBECTL: FAKE, FAKE_KUBE_STATE: stateFile }, stdio: "ignore" });
+  const exited = new Promise((r) => child.on("exit", r));
+  await sleep(1800);
+  const st = JSON.parse(readFileSync(stateFile, "utf8")); st.getPodsFail = false;
+  writeFileSync(stateFile + ".t", JSON.stringify(st));
+  for (let i = 0; ; i++) { try { renameSync(stateFile + ".t", stateFile); break; } catch (e) { if (i > 50) throw e; await sleep(10); } }
+  assert.equal(await exited, 0);
+  const m = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8"));
+  assert.equal(m.pods.a.complete, false);
+  assert.ok(!readFileSync(join(out, "a.log"), "utf8").includes("kind=admit"));
 });

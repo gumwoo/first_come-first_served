@@ -33,7 +33,7 @@
 //   k6 run -e K6_BASE_URL=... -e EVENT_ID=1733 -e USERS=/abs/path/tokens.json -e USERS_N=10000 \
 //          -e DIST=constant --out json=entry.json infra/k6/queue-entry-rate.js
 import http from "k6/http";
-import { check, sleep } from "k6";
+import { sleep } from "k6";
 import exec from "k6/execution";
 import { SharedArray } from "k6/data";
 import { Counter } from "k6/metrics";
@@ -117,7 +117,13 @@ function scenarios() {
   };
 }
 
+// 발생기 CPU를 아끼려고 k6 JSON 출력을 줄인다(최종 시험 v2에서 발생기 한 대가 진입 burst 동안 1초 최대 80~82% — 기준 80% 미만 미충족).
+// 요청마다 모든 지표 점이 태그와 함께 JSON 한 줄씩 쓰이므로, 아무 도구도 읽지 않는 태그(url·proto·tls_version·group·check 등)를 뺀다.
+// 남기는 태그: status(cpu-per-req 상태 분포)·name(진입/연결 미리 맺기 구분)·scenario·method·expected_response(http_req_failed)·error·error_code.
+const SYSTEM_TAGS = ["status", "method", "name", "scenario", "expected_response", "error", "error_code"];
+
 export const options = {
+  systemTags: SYSTEM_TAGS,
   scenarios: scenarios(),
   setupTimeout: SETUP_TIMEOUT,
   thresholds: {}, // 판정은 계획서 §3이 한다. 여기서 실패 표시를 내면 판정과 섞인다.
@@ -170,17 +176,16 @@ export default function () {
   let token = null;
   let retryAfterMs = null;
   try {
-    status = res.json("data.status");
-    token = res.json("data.token");
-    retryAfterMs = res.json("data.retryAfterMs");
+    const d = res.json("data"); // 본문을 한 번만 읽는다
+    status = d?.status ?? null;
+    token = d?.token ?? null;
+    retryAfterMs = d?.retryAfterMs ?? null;
   } catch (e) {
-    /* 파싱 실패는 아래 check에서 잡힌다 */
+    /* 파싱 실패는 아래 판정에서 처리된 진입으로 세지 않는다 */
   }
-  const ok = check(res, {
-    "진입 200": (r) => r.status === 200,
-    // 정원 초과분은 에러가 아니라 WAITING이어야 한다.
-    "WAITING 또는 ADMITTED": () => status === "WAITING" || status === "ADMITTED",
-  });
+  // 처리된 진입 = 200이고 WAITING/ADMITTED(정원 초과분은 에러가 아니라 WAITING이어야 한다). 예전 check()는 iteration마다
+  // checks 지표 점 2개를 JSON에 더 썼는데 아무 도구도 읽지 않아 뺐다 — 판정은 entry_processed로 본다.
+  const ok = res.status === 200 && (status === "WAITING" || status === "ADMITTED");
   if (ok) processed.add(1, { dist: DIST });
   // 입장한 토큰은 더 묻지 않으므로 대기 토큰만 넘긴다. retryAfterMs가 없으면(구버전 서버) 토큰만 낸다.
   if (EMIT_TOKENS && token && status === "WAITING") console.log(Number.isFinite(retryAfterMs) ? `QTOKEN ${token} ${retryAfterMs}` : `QTOKEN ${token}`);

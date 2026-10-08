@@ -25,8 +25,8 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 |---|---|---|
 | 대기열 진입 10만 명 / 10초 + 자동 확장 | 판정 3회 모두 진입 요청 100,000건 정상 처리, 정원 초과·정합성 위반 0. 같은 실행에서 폴링이 몰리자 Pod 3→9·Node 6→9로 확장했다가 다시 축소 | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) |
 | 입장자 동시 예매 | 입장자 100명이 동시에 좌석 선점·주문·결제(경합·더블클릭·결제 실패 후 재시도·1인 한도 포함), 판정 3회 정합성 위반 0 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) |
-| 무중단 배포 | 롤링 배포 중 502 → 0 (`preStop` 25s) | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md) |
-| 장애 주입 | RDS·Redis Multi-AZ 페일오버, 노드 오토스케일 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |
+| 무중단 배포 | 롤링 배포 중 5xx → 0 (`preStop` 25s) | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md) |
+| 장애 주입 | RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구, 노드 오토스케일로 Pending 파드 수용 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |
 
 ## 서비스 흐름
 
@@ -127,7 +127,7 @@ flowchart TB
 
 ### 10만 명 / 10초 — 보낸 숫자가 아니라 받은 숫자로
 
-부하 도구가 "보냈다"고 기록한 요청 수는 서버 도착의 증거가 아닙니다. 그래서 ALB access log에 찍힌 **서버 도착 시각**으로 10초 창 안의 진입을 셌고, 판정 기준은 측정 전에 정해 두었습니다.
+부하 도구가 "보냈다"고 기록한 요청 수는 서버 도착의 증거가 아닙니다. 그래서 ALB access log에 찍힌 **서버 도착 시각**으로 10초 창 안의 진입을 셌습니다.
 
 같은 실행 안에서 공연 오픈 전 Git PR로 Pod를 미리 늘리고, 오픈 직후 HPA·Cluster Autoscaler에 넘긴 뒤, 대기자 폴링이 몰리자 다시 Pod와 Node가 늘었다가 줄어드는 흐름까지 이어서 확인했습니다. 세 번 반복해 세 번 모두 진입 100,000건 정상 처리, 정원 초과·정합성 위반 0이었습니다([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)).
 

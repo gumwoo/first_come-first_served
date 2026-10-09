@@ -251,18 +251,24 @@ allocatable 5,790m
 
 ### Kafka 배치 (rack awareness ≠ Pod 분산)
 ```yaml
+# Kafka.spec.kafka                              # Kafka에 broker.rack 제공 → 복제본을 AZ에 걸쳐 배치
 rack:
-  topologyKey: topology.kubernetes.io/zone     # Kafka에 broker.rack 제공
+  type: topology-label
+  topologyKey: topology.kubernetes.io/zone
+# KafkaNodePool.spec                            # 브로커 Pod를 AZ별 1개씩 강제
 template:
   pod:
-    topologySpreadConstraints:                 # Pod를 AZ별 1개씩 강제
+    topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: topology.kubernetes.io/zone
         whenUnsatisfiable: DoNotSchedule
-        labelSelector: { matchLabels: { strimzi.io/name: flowticket-kafka-kafka } }
+        labelSelector: { matchLabels: { strimzi.io/cluster: flowticket, strimzi.io/pool-name: dual-role } }
 ```
 **rack awareness만으로는 브로커 Pod가 AZ에 균등 분산되지 않는다** — 둘은 역할이 다르다(ADR-012 §6).
-설정 문법은 작성 시점의 Strimzi 공식 문서로 확인한 뒤 반영한다.
+**반영(2026-10-09, `k8s/kafka/kafka.yaml`)**: Strimzi 1.2.0 CRD 스키마로 확인했다 — `rack.type`(생략 시 `topology-label`)·`topologyKey`,
+노드 풀의 `template.pod.topologySpreadConstraints`. 노드 풀 Pod 라벨 `strimzi.io/pool-name`은 1.2.0 소스(`Labels.STRIMZI_POOL_NAME_LABEL`,
+`KafkaPool`이 붙임)로 확인했다. 노드 풀을 쓰면 Pod 이름·라벨이 `<클러스터>-<풀>-<id>` 기준이라 예전 예시의 `strimzi.io/name` 값은 맞지 않는다.
+**실제 브로커 배치와 AZ 장애 동작은 클러스터에서 확인하지 않았다.**
 
 ### CA와 상태 저장 워크로드
 

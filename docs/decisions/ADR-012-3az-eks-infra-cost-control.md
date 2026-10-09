@@ -148,6 +148,9 @@ topologySpreadConstraints (maxSkew=1, DoNotSchedule)
   → Kubernetes가 브로커 Pod를 AZ별 1개씩 실제 배치
 ```
 **rack awareness만으로는 브로커 Pod가 AZ에 균등 분산되지 않는다.** 둘 다 필요하다.
+> **반영 지연(2026-10-09 확인·반영)**: 이 결정은 문서에만 있었고 `k8s/kafka/kafka.yaml`에는 rack도 topology spread도 없었다
+> (리뷰에서 발견). Strimzi 1.2.0 스키마에 맞춰 둘 다 넣었다(terraform-design "Kafka 배치"). 그동안의 측정(IMP-016 등)은
+> 이 제약 없이 돌았고, 브로커가 실제로 AZ마다 하나씩 놓였는지는 기록에 없다.
 `RF=3`, `min.insync.replicas=2`, `acks=all` → 브로커 1대가 죽어도 ISR 2개가 남아 쓰기가 지속된다.
 
 ### 7. 스토리지 — `volumeBindingMode: WaitForFirstConsumer`

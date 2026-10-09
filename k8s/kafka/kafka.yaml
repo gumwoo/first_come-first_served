@@ -27,6 +27,25 @@ spec:
     # 클러스터를 새로 만들 때마다 실제 이름을 확인해야 한다(gp3인 환경도 흔하다).
     class: gp2
     deleteClaim: true # 데모는 매번 새로 만든다. false면 destroy 후 EBS가 남아 요금이 붙는다.
+  # 브로커 Pod를 AZ마다 하나씩 둔다(ADR-012 §6). 아래 Kafka의 rack(broker.rack)은 파티션 복제본을 AZ에 걸쳐 놓게 할 뿐
+  # 브로커 Pod 배치는 정하지 않는다 — Strimzi 1.2.0은 rack 설정 시 zone 라벨이 있는 노드로 제한하는 node affinity만 붙이고
+  # AZ 분산 규칙은 붙이지 않는다. 둘 다 있어야 "AZ 하나가 죽어도 브로커 2대·복제본 2개가 남는다"가 성립한다.
+  #
+  # DoNotSchedule: 분산을 못 지키면 그 브로커를 띄우지 않는다(Pending). 노드그룹이 AZ별이라 CA가 그 AZ에 노드를 붙인다(ADR-012 §3).
+  # ScheduleAnyway면 한 AZ에 두 대가 몰려도 뜨고, 그 AZ가 죽으면 ISR이 1로 떨어져 acks=all 발행이 멈춘다.
+  # ⚠️ 이미 돌고 있는 클러스터에 처음 넣을 때: 브로커 PVC(EBS)는 AZ에 묶여 있어, 지금 배치가 고르지 않으면 롤링으로
+  # 다시 뜨는 브로커가 제약과 자기 볼륨의 AZ를 동시에 만족하지 못해 Pending에 걸린다. 그때는 해당 브로커 PVC를 지우고
+  # 복제로 다시 채우는 절차가 필요하다. 이 데모는 기동마다 새로 만들어(deleteClaim: true) 처음부터 고르게 놓인다.
+  template:
+    pod:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              strimzi.io/cluster: flowticket
+              strimzi.io/pool-name: dual-role
 ---
 apiVersion: kafka.strimzi.io/v1
 kind: Kafka
@@ -39,6 +58,12 @@ metadata:
 spec:
   kafka:
     version: 4.3.0
+    # 노드의 zone 라벨을 broker.rack으로 넣는다 → 토픽 생성 시 파티션 복제본을 서로 다른 AZ에 둔다(RF 3 = AZ 3).
+    # 초기화 컨테이너가 노드 라벨을 읽으며, 필요한 권한(strimzi-kafka-broker ClusterRole 위임)은 Strimzi helm 차트가 설치한다.
+    # Pod 배치는 위 KafkaNodePool의 topologySpreadConstraints가 맡는다(역할이 다르다 — ADR-012 §6).
+    rack:
+      type: topology-label
+      topologyKey: topology.kubernetes.io/zone
     listeners:
       - name: plain
         port: 9092

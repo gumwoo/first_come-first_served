@@ -250,7 +250,7 @@ public class QueueService {
             // 늦게 끝난다), 같은 틱에서 빈 슬롯이 다른 사람에게 다시 승격된다. 여기서 통과시키면 그 창 동안
             // 실효 입장자가 정원을 넘는다(loadtest-100k-plan §3.3). 게이트가 admitExp 원소만 받으면 실효 입장자는
             // 항상 admitExp의 부분집합이라, over-admit 판정(admitExp 원소 수 > 정원)이 실효 입장 초과까지 덮는다.
-            // 거부한 횟수를 센다 — 0보다 크면 그 창이 실제로 생겼다는 뜻이다.
+            // 거부한 횟수를 센다 — 0보다 크면 그 창이 실제로 생겼다는 뜻이다(주인 확인을 통과한 요청만 여기 온다).
             if (sameEvent) {
                 metrics.gateFallback().increment();
             }

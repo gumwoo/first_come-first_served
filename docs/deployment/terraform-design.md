@@ -49,8 +49,15 @@ infra/terraform/
    │  ├─ rds/
    │  ├─ elasticache/
    │  └─ endpoints/
-   └─ environments/demo/     #   변수 조합 (유일한 환경)
+   └─ environments/
+      ├─ demo/               #   변수 조합 (유일한 환경)
+      └─ demo-alarms/        #   ALB 계층 오류 알람 + SNS — ALB가 생긴 뒤 별도 적용(아래)
 ```
+
+**ALB 알람을 별도 스택으로 두는 이유**: ALB는 Terraform이 아니라 AWS Load Balancer Controller가 Ingress를 보고 만든다.
+`demo`를 apply하는 시점에는 ALB가 없어 알람 차원(`LoadBalancer=app/<이름>/<id>`)을 알 수 없다. 그래서 ALB가 생긴 뒤
+`scripts/alb-alarms.sh apply`가 Ingress의 ALB 주소로 ALB·대상 그룹 식별자를 찾아 변수로 넘긴다. `data "aws_lb"`로 찾지 않는다 —
+data 소스는 destroy 때도 다시 읽혀 ALB가 이미 없으면 철거가 실패한다. state 키는 `platform/demo-alarms.tfstate`(같은 버킷).
 
 **왜 나누나**: `platform destroy`가 도메인·인증서·이미지까지 지우면 다시 켤 때마다 DNS 검증을
 새로 기다려야 한다. bootstrap은 **연간 $15 수준**이라 남겨두는 편이 압도적으로 싸다.
@@ -288,6 +295,7 @@ template:
 5. kubectl/kustomize Kafka CR(k8s/kafka) → 관측 리소스(k8s/monitoring) → ArgoCD Application
 6. ArgoCD            k8s/overlays/demo-local → k8s/base — 앱(api/web)·HPA·PDB·Ingress만
 7. 검증              Ingress ALB 생성 확인 → HTTPS → /actuator/health/readiness
+8. ALB 알람          bash scripts/alb-alarms.sh apply   (demo-alarms — ALB가 생긴 뒤에만 가능, ALARM_EMAIL=... 로 이메일 구독)
 ```
 
 `terraform plan` 결과를 반드시 검토한 뒤 `apply`한다. **2단계의 ACM DNS 검증은 대기 시간이 있다.**
@@ -297,13 +305,15 @@ template:
 **순서를 지키지 않으면 리소스가 남아 계속 과금된다.**
 
 ```
+0. bash scripts/alb-alarms.sh destroy  # ALB 알람 스택. ArgoCD 앱 삭제보다도 먼저 — 앱 삭제가 Ingress·파드를 연쇄 삭제해
+                                       #   대상 그룹이 비는 순간 '정상 대상 0'이 울린다
 1. kubectl delete ingress --all        # ALB 제거. 안 하면 VPC 삭제가 막힌다
                                        #   (ALB는 Terraform이 모르는 리소스)
 2. Kafka CR 삭제 → PVC 삭제 확인        # StatefulSet PVC는 자동 삭제되지 않는다
 3. 나머지 Kubernetes 리소스 삭제
 4. EBS 볼륨 잔여 확인 (콘솔/CLI)        # 남으면 GB-월 과금 지속
 5. terraform destroy (platform)
-6. 잔여 점검: ALB · NAT · Elastic IP · EBS · 스냅샷
+6. 잔여 점검: ALB · NAT · Elastic IP · EBS · 스냅샷 · CloudWatch 알람(flowticket-alb-*) · SNS 토픽
 ```
 
 - **bootstrap은 destroy하지 않는다.**

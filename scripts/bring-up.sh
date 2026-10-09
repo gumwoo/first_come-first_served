@@ -230,6 +230,10 @@ if [ "$CODE" != "200" ]; then
   exit 1
 fi
 
+echo
+# ALB 계층 오류 알람은 terraform apply라 여기서 하지 않는다(머리말 — apply는 의식적 행위로 남긴다).
+echo "ALB 계층 오류 알람(앱 5xx 알람이 못 보는 ALB 502·504·대상 연결 실패): bash scripts/alb-alarms.sh apply"
+
 if [ "$SEED" -eq 1 ]; then
   echo
   bash "$HERE/seed-demo-data.sh"

@@ -93,7 +93,7 @@ class QueueSaleStateIntegrationTest extends IntegrationTestSupport {
 
         String token = queueService.issue(1L, eventId).token();
         admissionService.admit(eventId);
-        assertThat(queueService.isAdmitted(token, eventId)).isTrue();
+        assertThat(queueService.isAdmitted(token, eventId, 1L)).isTrue();
 
         // 운영자가 판매를 내린다. 토큰은 admit-ttl 동안 여전히 유효하므로
         // 발급 시점 게이트만으로는 이 요청을 막을 수 없다.

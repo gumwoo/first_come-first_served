@@ -136,7 +136,7 @@ class QueueIntegrationTest extends IntegrationTestSupport {
         String token = queueService.issue(500L, EVENT).token();
         assertThat(redisTemplate.opsForZSet().zCard("queue:wait:" + EVENT)).isEqualTo(1L);
 
-        queueService.leave(token);
+        queueService.leave(token, 500L);
 
         assertThat(redisTemplate.opsForZSet().zCard("queue:wait:" + EVENT)).isEqualTo(0L);
         assertThat(redisTemplate.hasKey("queue:token:" + token)).isFalse();
@@ -148,7 +148,7 @@ class QueueIntegrationTest extends IntegrationTestSupport {
         admissionService.admit(EVENT);
         assertThat(admitCount()).isEqualTo(1);
 
-        queueService.leave(token);
+        queueService.leave(token, 600L);
 
         assertThat(admitCount()).isEqualTo(0); // 입장 슬롯 반환
     }
@@ -167,7 +167,7 @@ class QueueIntegrationTest extends IntegrationTestSupport {
             pool.submit(() -> {
                 try {
                     start.await();
-                    queueService.leave(token); // 같은 토큰 동시 이탈
+                    queueService.leave(token, 700L); // 같은 토큰 동시 이탈
                 } catch (InterruptedException ignored) {
                     Thread.currentThread().interrupt();
                 }
@@ -240,7 +240,7 @@ class QueueIntegrationTest extends IntegrationTestSupport {
     void 이탈_후_재발급하면_새_토큰을_받는다() {
         // 상태기계 분기: leave로 소유권이 정리되면 재진입은 새 순번(WAITING)이어야 함.
         String t1 = queueService.issue(60L, EVENT).token();
-        queueService.leave(t1);
+        queueService.leave(t1, 60L);
 
         var reissued = queueService.issue(60L, EVENT);
         assertThat(reissued.token()).isNotEqualTo(t1);    // 새 토큰

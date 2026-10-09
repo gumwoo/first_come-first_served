@@ -7,6 +7,9 @@
   동시 leave나 만료 sweep과 겹쳐도 이중 차감(음수)이 없다. 나가기 버튼이 실제로 정리한다. [T]
 - 토큰 상태: `WAITING → ADMITTED → (좌석선택)` / TTL 만료 시 `EXPIRED`. [T]
 - ADMITTED 안 된 토큰으로 좌석/주문 접근 금지 → `QUEUE_NOT_ADMITTED`. (실차단은 S04 좌석 API)
+- **입장 토큰은 발급받은 회원만 쓴다** — 좌석 게이트는 토큰 메타의 `userId`와 요청 회원을 맞추고(다르면 `QUEUE_NOT_ADMITTED`),
+  이탈은 본인 토큰만(다르면 `FORBIDDEN`, 대기·입장 상태 그대로). 승격 때 메타 수명을 입장창 + 60초 이상으로 늘려(`EXPIRE GT`)
+  오래 기다린 뒤 승격돼도 입장창 안에서 주인 확인이 된다. 메타가 없으면(수명이 다한 토큰) 거부한다([[TS-043]]). [T]
 - 대기 만료 → `QUEUE_EXPIRED`.
 
 ## 구현 (Redis, ADR-002)

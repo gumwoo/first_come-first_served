@@ -153,6 +153,17 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 다른_회원의_입장토큰으로는_선점이_거부된다() {
+        // 입장 토큰 하나를 여러 계정이 같이 쓰면 대기열을 한 번만 통과하고 여러 계정이 좌석을 잡는다.
+        String token = admittedToken(70L, eventId); // 70번 회원이 입장
+        assertThatThrownBy(() -> seatService.hold(71L, eventId, List.of(aSeatId), token))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.QUEUE_NOT_ADMITTED);
+        // 주인은 그대로 선점할 수 있다(거부가 토큰을 망가뜨리지 않는다).
+        assertThat(seatService.hold(70L, eventId, List.of(aSeatId), token).seatIds()).containsExactly(aSeatId);
+    }
+
+    @Test
     void 입장토큰_선점_성공하고_같은좌석_재선점은_SEAT_CONFLICT() {
         String token = admittedToken(7L, eventId);
         assertThat(seatService.hold(7L, eventId, List.of(aSeatId), token).seatIds()).containsExactly(aSeatId);

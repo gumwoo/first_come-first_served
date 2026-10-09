@@ -90,7 +90,7 @@ public class QueueAdmissionService {
             """;
     private static final DefaultRedisScript<Long> PURGE_DEAD_SCRIPT =
             new DefaultRedisScript<>(PURGE_DEAD_LUA, Long.class);
-    /** 한 틱에서 앞쪽 죽은 토큰을 치우는 최대 회수(회당 여유 슬롯 수만큼 본다). 남은 것은 다음 틱이 이어서 치운다. */
+    /** 한 틱에서 앞쪽 죽은 토큰을 치우는 최대 회수(회당 여유 슬롯 수만큼 본다). 다 못 치우면 그 틱은 승격하지 않고 다음 틱이 잇는다. */
     private static final int PURGE_MAX_ROUNDS = 5;
 
     @SuppressWarnings("rawtypes")
@@ -123,7 +123,10 @@ public class QueueAdmissionService {
 
     /** 여유 슬롯만큼 승격. 승격된 토큰 수 반환. */
     public int admit(Long eventId) {
-        purgeDeadHead(eventId);
+        if (!purgeDeadHead(eventId)) {
+            // 앞쪽 죽은 토큰을 이번 틱에 다 치우지 못했다 — 지금 승격하면 남은 죽은 토큰이 슬롯을 쥔다. 다음 틱(승격 주기)에 잇는다.
+            return 0;
+        }
         long expiresAt = Instant.now(clock).getEpochSecond() + admitTtl;
         List<?> popped = redis.execute(ADMIT_SCRIPT,
                 List.of(QueueKeys.wait(eventId), QueueKeys.admitCount(eventId), QueueKeys.admitExp(eventId)),
@@ -157,14 +160,20 @@ public class QueueAdmissionService {
      * 대기열에 남아 순서대로 승격됐고, 아무도 쓰지 않는 입장 슬롯을 입장창(admit-ttl) 동안 쥐었다. 앞쪽만 보는 이유는
      * 승격될 차례인 토큰만 확인하면 되기 때문이다 — 뒤쪽의 죽은 토큰은 차례가 오면 치운다(그때까지는 순번·대기 수에 포함된다).
      * 이 확인과 승격 Lua 사이에 수명이 끝나는 토큰은 승격될 수 있다(경계 순간 — 슬롯을 입장창만큼 쥐었다가 회수된다).
+     *
+     * @return 승격해도 되는가 — 앞쪽(여유 슬롯 수만큼)에 죽은 토큰이 남지 않았거나 여유 슬롯이 없으면 true.
+     *         최대 회수를 다 써도 계속 지울 것이 나오면(대량 만료) false — 그 틱은 승격하지 않는다.
      */
-    private void purgeDeadHead(Long eventId) {
+    private boolean purgeDeadHead(Long eventId) {
         String admittedRaw = redis.opsForValue().get(QueueKeys.admitCount(eventId));
         long free = capacity - (admittedRaw == null ? 0 : Long.parseLong(admittedRaw));
-        for (int round = 0; round < PURGE_MAX_ROUNDS && free > 0; round++) {
+        if (free <= 0) {
+            return true; // 승격할 자리가 없다 — 승격 Lua도 아무것도 꺼내지 않는다
+        }
+        for (int round = 0; round < PURGE_MAX_ROUNDS; round++) {
             Set<String> head = redis.opsForZSet().range(QueueKeys.wait(eventId), 0, free - 1);
             if (head == null || head.isEmpty()) {
-                return;
+                return true;
             }
             List<String> keys = new ArrayList<>(head.size() + 1);
             keys.add(QueueKeys.wait(eventId));
@@ -173,10 +182,11 @@ public class QueueAdmissionService {
             }
             Long removed = redis.execute(PURGE_DEAD_SCRIPT, keys, head.toArray());
             if (removed == null || removed == 0L) {
-                return; // 앞쪽이 모두 살아 있다
+                return true; // 앞쪽이 모두 살아 있다
             }
             metrics.purgedDead().increment(removed);
         }
+        return false;
     }
 
     /** 입장창 만료 토큰 회수(슬롯 반환). 회수된 토큰 목록 반환. */

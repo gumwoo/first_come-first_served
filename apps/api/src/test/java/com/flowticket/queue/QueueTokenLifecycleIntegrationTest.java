@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.test.context.TestPropertySource;
 
 /**
  * 대기 토큰 수명주기(Testcontainers Redis) — 사용자 결정: 폴링할 때마다 token-ttl(30분) 연장, 발급 뒤 절대 상한 6시간.
@@ -23,6 +24,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  * - 발급 시각 + 절대 상한을 넘겨서는 늘리지 않는다. 발급 시각이 없는 옛 토큰은 늘리지 않는다.
  * - 수명이 끝난(메타 없는) 토큰은 승격 직전 대기열 앞에서 빠져, 입장 슬롯을 쥐지 않는다.
  */
+@TestPropertySource(properties = {"queue.capacity=2"})
 @SpringBootTest
 class QueueTokenLifecycleIntegrationTest extends IntegrationTestSupport {
 
@@ -127,6 +129,34 @@ class QueueTokenLifecycleIntegrationTest extends IntegrationTestSupport {
         assertThat(redisTemplate.opsForZSet().score("queue:admitexp:" + EVENT, alive)).isNotNull();
         assertThat(redisTemplate.opsForValue().get("queue:admitcount:" + EVENT)).isEqualTo("1");
         assertThat(meterRegistry.get("flowticket.queue.purged.dead").counter().count()).isEqualTo(before + 1);
+    }
+
+    @Test
+    void 앞쪽_죽은_토큰을_한_틱에_다_못_치우면_그_틱은_승격하지_않는다() {
+        // 정원 2 → 한 회에 앞쪽 2개씩, 최대 5회 = 10개까지 본다. 죽은 토큰 11개 + 산 토큰 1개.
+        for (int i = 0; i < 11; i++) {
+            String dead = queueService.issue(3200L + i, EVENT).token();
+            redisTemplate.delete(meta(dead));
+        }
+        String alive = queueService.issue(3299L, EVENT).token();
+
+        assertThat(admissionService.admit(EVENT)).isZero(); // 죽은 토큰을 승격하지 않는다
+        assertThat(redisTemplate.opsForZSet().zCard("queue:admitexp:" + EVENT)).isZero();
+
+        assertThat(admissionService.admit(EVENT)).isEqualTo(1); // 다음 틱이 나머지를 치우고 산 토큰을 올린다
+        assertThat(redisTemplate.opsForZSet().score("queue:admitexp:" + EVENT, alive)).isNotNull();
+        assertThat(redisTemplate.opsForZSet().zCard("queue:wait:" + EVENT)).isZero();
+    }
+
+    @Test
+    void 입장한_토큰의_폴링은_대기_연장을_하지_않는다() {
+        String token = queueService.issue(3080L, EVENT).token();
+        admissionService.admit(EVENT); // 메타는 승격 때 입장창 + 60초 이상으로 늘어난다(EXPIRE GT)
+        redisTemplate.expire(userKey(3080L), Duration.ofSeconds(100));
+
+        assertThat(queueService.status(token).status()).isEqualTo("ADMITTED");
+
+        assertThat(ttl(userKey(3080L))).isLessThanOrEqualTo(100); // 대기 연장 분기를 타지 않는다
     }
 
     @Test

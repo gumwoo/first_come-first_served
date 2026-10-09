@@ -267,7 +267,11 @@ template:
 **rack awareness만으로는 브로커 Pod가 AZ에 균등 분산되지 않는다** — 둘은 역할이 다르다(ADR-012 §6).
 **반영(2026-10-09, `k8s/kafka/kafka.yaml`)**: Strimzi 1.2.0 CRD 스키마로 확인했다 — `rack.type`(생략 시 `topology-label`)·`topologyKey`,
 노드 풀의 `template.pod.topologySpreadConstraints`. 노드 풀 Pod 라벨 `strimzi.io/pool-name`은 1.2.0 소스(`Labels.STRIMZI_POOL_NAME_LABEL`,
-`KafkaPool`이 붙임)로 확인했다. 노드 풀을 쓰면 Pod 이름·라벨이 `<클러스터>-<풀>-<id>` 기준이라 예전 예시의 `strimzi.io/name` 값은 맞지 않는다.
+`KafkaPool`이 붙임)로 확인했다. 노드 풀을 쓰면 Pod 이름은 `<클러스터>-<풀>-<id>`이고 `strimzi.io/name`은 `<클러스터>-kafka`(= `flowticket-kafka`)다 —
+예전 예시의 `flowticket-kafka-kafka`는 틀린 값이었다. 풀 단위로 고르려고 `strimzi.io/pool-name`을 쓴다.
+`minDomains`는 두지 않았다 — 스케줄 시점에 노드가 없는 zone은 분산 도메인에서 빠지므로, 그 순간 노드 있는 zone이 2개뿐이면 2+1 배치도 허용된다
+(평소에는 AZ별 노드그룹 min 1이라 각 AZ에 노드가 있다 — 추론). 볼륨이 Pod의 AZ에 생기려면 StorageClass가 `WaitForFirstConsumer`여야 하는데,
+Kafka가 쓰는 EKS 기본 `gp2`의 실제 바인딩 모드는 **확인하지 않았다**(ADR-012 §7은 설계 의도).
 **실제 브로커 배치와 AZ 장애 동작은 클러스터에서 확인하지 않았다.**
 
 ### CA와 상태 저장 워크로드

@@ -46,7 +46,7 @@ REST 기준. 인증은 `Authorization: Bearer <accessToken>`. 에러는 공통 �
 
 ## 대기열 (S03) — Redis Sorted Set
 - `POST /events/:id/queue/token` — 대기열 진입, 토큰 발급(회원). user 키 SET NX로 1인1토큰 원자 보장 → `{ token, status, rank, total, retryAfterMs }`
-- `DELETE /queue/token?token=` — 이탈(나가기, 회원): 대기 제거 / 입장 슬롯 반환(원자)
+- `DELETE /queue/token?token=` — 이탈(나가기, 회원): 대기 제거 / 입장 슬롯 반환(원자). 본인 토큰만 — 남의 토큰이면 `FORBIDDEN`
 - `GET /queue/status?token=` — `{ rank, total, etaSeconds, status, retryAfterMs }`. **토큰으로 조회(Bearer 불필요)**
   - retryAfterMs: 다음 조회까지 **최소** 대기(ms). 순번 ≤ 정원×2는 2초, 그 뒤는 ceil(순번÷정원)×승격 주기를 2~30초로 자른 값, 입장·만료면 0(ADR-023 §2)
   - status: `WAITING | ADMITTED | EXPIRED`
@@ -61,7 +61,7 @@ REST 기준. 인증은 `Authorization: Bearer <accessToken>`. 에러는 공통 �
 ## 좌석·재고 (S04) — Redis 재고 원자적 차감
 - 좌석 등급: `SeatGrade`(VIP/R/S/A), 등급별 가격은 이벤트별로 정의(KOPIS엔 없음)
 - `GET /events/:id/seats` — 좌석맵/등급별 잔여
-- `POST /events/:id/seats/hold` — 좌석 선점(HOLD, TTL ~5분) → `holdId`
+- `POST /events/:id/seats/hold` — 좌석 선점(HOLD, TTL ~5분) → `holdId`. `queueToken`은 요청 회원 본인이 받은 입장 토큰이어야 한다(아니면 `QUEUE_NOT_ADMITTED`)
   - 잔여 0 → `SOLD_OUT` / 고른 좌석만 선점됨 → `SEAT_CONFLICT`(다시 고르기)
 - `DELETE /seats/hold/:holdId` — 선점 해제
 - HOLD TTL 만료 → `HOLD_EXPIRED`

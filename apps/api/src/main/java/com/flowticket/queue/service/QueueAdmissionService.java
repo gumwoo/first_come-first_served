@@ -67,12 +67,24 @@ public class QueueAdmissionService {
                     tonumber(redis.call('GET', KEYS[3]) or '0')}
             """;
 
+    // 승격된 토큰의 메타 수명을 입장창보다 길게 늘린다(EXPIRE GT — 이미 더 길면 그대로, 메타가 없으면 아무것도 안 한다).
+    // 좌석 게이트가 메타의 userId로 토큰 주인을 확인하는데(QueueService.isAdmitted), 메타 TTL(queue.token-ttl)은 발급 시각부터
+    // 세므로 오래 기다린 뒤 승격된 토큰은 입장창 도중에 메타가 사라져 주인 확인에 실패할 수 있다. 토큰 키는 KEYS로 받는다.
+    private static final String EXTEND_META_LUA = """
+            return redis.call('EXPIRE', KEYS[1], ARGV[1], 'GT')
+            """;
+    private static final DefaultRedisScript<Long> EXTEND_META_SCRIPT =
+            new DefaultRedisScript<>(EXTEND_META_LUA, Long.class);
+
     @SuppressWarnings("rawtypes")
     private static final DefaultRedisScript<List> ADMIT_SCRIPT = new DefaultRedisScript<>(ADMIT_LUA, List.class);
     @SuppressWarnings("rawtypes")
     private static final DefaultRedisScript<List> RECLAIM_SCRIPT = new DefaultRedisScript<>(RECLAIM_LUA, List.class);
     @SuppressWarnings("rawtypes")
     private static final DefaultRedisScript<List> SNAPSHOT_SCRIPT = new DefaultRedisScript<>(SNAPSHOT_LUA, List.class);
+
+    /** 입장창이 끝난 뒤 회수 틱(승격 주기)까지의 여유. 메타가 회수보다 먼저 사라지지 않게 한다. */
+    private static final long META_GRACE_SECONDS = 60;
 
     private final StringRedisTemplate redis;
     private final int capacity;
@@ -112,6 +124,8 @@ public class QueueAdmissionService {
             String token = String.valueOf(popped.get(i));
             String seq = String.valueOf(popped.get(i + 1)); // wait ZSet 점수 = 진입 순번(ISSUE_LUA의 INCR)
             redis.opsForValue().set(QueueKeys.admit(token), "1", Duration.ofSeconds(admitTtl));
+            // 입장창(admitTtl) + 회수 지연 여유 동안 주인 확인이 가능하도록 메타를 남긴다(EXTEND_META_LUA).
+            redis.execute(EXTEND_META_SCRIPT, List.of(QueueKeys.token(token)), String.valueOf(admitTtl + META_GRACE_SECONDS));
             QueueAudit.admitted(eventId, token, seq, admittedAt, clock.millis(), expiresAt, admitTtl);
             admitted++;
         }

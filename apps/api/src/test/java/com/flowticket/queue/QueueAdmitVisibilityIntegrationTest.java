@@ -112,7 +112,7 @@ class QueueAdmitVisibilityIntegrationTest extends IntegrationTestSupport {
         assertThat(queueService.status(token).status()).isEqualTo("ADMITTED");
         // 좌석 게이트도 같은 규칙이어야 한다. 한쪽만 고치면
         // "대기열은 입장이라는데 좌석은 거절"이라는 더 나쁜 불일치가 생긴다.
-        assertThat(queueService.isAdmitted(token, EVENT)).isTrue();
+        assertThat(queueService.isAdmitted(token, EVENT, 900L)).isTrue();
     }
 
     /**
@@ -130,7 +130,7 @@ class QueueAdmitVisibilityIntegrationTest extends IntegrationTestSupport {
         assertThat(redisTemplate.hasKey("queue:admit:" + token)).isTrue();
         double before = meterRegistry.get("flowticket.queue.gate.fallback").counter().count();
 
-        assertThat(queueService.isAdmitted(token, EVENT)).isFalse();
+        assertThat(queueService.isAdmitted(token, EVENT, 930L)).isFalse();
 
         assertThat(meterRegistry.get("flowticket.queue.gate.fallback").counter().count()).isEqualTo(before + 1);
     }
@@ -143,13 +143,13 @@ class QueueAdmitVisibilityIntegrationTest extends IntegrationTestSupport {
     void 다른_이벤트로_온_토큰은_거부하고_세지_않는다() {
         String token = queueService.issue(932L, EVENT).token();
         admissionService.admit(EVENT);
-        assertThat(queueService.isAdmitted(token, EVENT)).isTrue();
+        assertThat(queueService.isAdmitted(token, EVENT, 932L)).isTrue();
         Long otherEvent = eventRepository.save(Event.builder()
                 .kopisId("QUEUE-ADMIT-OTHER").title("다른 공연").genre("연극").status(EventStatus.ON_SALE).build())
                 .getId();
         double before = meterRegistry.get("flowticket.queue.gate.fallback").counter().count();
 
-        assertThat(queueService.isAdmitted(token, otherEvent)).isFalse();
+        assertThat(queueService.isAdmitted(token, otherEvent, 932L)).isFalse();
 
         assertThat(meterRegistry.get("flowticket.queue.gate.fallback").counter().count()).isEqualTo(before);
     }
@@ -166,7 +166,7 @@ class QueueAdmitVisibilityIntegrationTest extends IntegrationTestSupport {
         redisTemplate.opsForZSet().add("queue:admitexp:" + EVENT, token, 1);
         double before = meterRegistry.get("flowticket.queue.gate.fallback").counter().count();
 
-        assertThat(queueService.isAdmitted(token, EVENT)).isTrue();
+        assertThat(queueService.isAdmitted(token, EVENT, 931L)).isTrue();
 
         assertThat(meterRegistry.get("flowticket.queue.gate.fallback").counter().count()).isEqualTo(before);
     }

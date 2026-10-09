@@ -74,7 +74,7 @@ public class SeatService {
         if (seatIds == null || seatIds.isEmpty()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
-        if (!queueService.isAdmitted(queueToken, eventId)) {
+        if (!queueService.isAdmitted(queueToken, eventId, userId)) {
             throw new BusinessException(ErrorCode.QUEUE_NOT_ADMITTED);
         }
         // 판매 상태 게이트. 대기열이 이미 같은 검사를 하지만 여기서도 본다.

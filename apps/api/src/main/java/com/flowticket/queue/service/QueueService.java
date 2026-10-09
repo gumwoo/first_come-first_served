@@ -190,13 +190,17 @@ public class QueueService {
      * 입장 슬롯 반환은 Lua로 원자화: admitExp에서 실제로 제거한 요청만 카운트를 줄여
      * 동시 leave나 만료 sweep과 겹쳐도 이중 차감(음수)이 나지 않는다.
      */
-    public void leave(String token) {
+    public void leave(String token, Long requesterId) {
         Map<Object, Object> meta = redis.opsForHash().entries(QueueKeys.token(token));
         if (meta.isEmpty()) {
             return; // 이미 정리됨
         }
         Long eventId = Long.valueOf((String) meta.get("eventId"));
         Long userId = Long.valueOf((String) meta.get("userId"));
+        // 본인 토큰만 이탈시킨다. 토큰(비밀 UUID)을 알게 된 다른 회원이 남의 대기·입장을 지우지 못하게 한다.
+        if (!userId.equals(requesterId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
 
         Long freed = redis.execute(LEAVE_ADMIT_SCRIPT,
                 List.of(QueueKeys.admitExp(eventId), QueueKeys.admitCount(eventId), QueueKeys.admit(token)),
@@ -212,9 +216,21 @@ public class QueueService {
         redis.delete(QueueKeys.user(eventId, userId));
     }
 
-    /** 좌석 선점 게이트: 이 토큰이 해당 이벤트에 입장(ADMITTED)했는가. */
-    public boolean isAdmitted(String token, Long eventId) {
-        if (token == null) {
+    /**
+     * 좌석 선점 게이트: 이 토큰이 해당 이벤트에 입장(ADMITTED)했고, 요청한 회원이 그 토큰의 주인인가.
+     *
+     * 소유자 확인이 없으면 입장 토큰 하나를 여러 계정이 함께 쓸 수 있다 — 한 명이 대기열을 통과하면 다른 계정들이
+     * 그 토큰으로 대기 없이 좌석을 잡는다(1인 한도는 계정 단위라 막지 못한다). 주인은 발급 때 토큰 메타에 남긴 userId다.
+     * 메타는 승격 때 입장창보다 오래 살도록 늘린다(QueueAdmissionService.admit) — 그래서 입장창 안에서 메타가 없으면
+     * 이미 죽은 토큰이 승격된 경우라 거부한다.
+     */
+    public boolean isAdmitted(String token, Long eventId, Long requesterId) {
+        if (token == null || requesterId == null) {
+            return false;
+        }
+        List<Object> meta = redis.opsForHash().multiGet(QueueKeys.token(token), List.<Object>of("userId", "eventId"));
+        Object owner = meta.get(0);
+        if (owner == null || !requesterId.equals(Long.valueOf((String) owner))) {
             return false;
         }
         // admitExp는 이벤트 단위 ZSet이라 이 검사 자체가 소속 이벤트를 보장한다.
@@ -226,7 +242,7 @@ public class QueueService {
         if (!Boolean.TRUE.equals(redis.hasKey(QueueKeys.admit(token)))) {
             return false;
         }
-        Object tokenEvent = redis.opsForHash().get(QueueKeys.token(token), "eventId");
+        Object tokenEvent = meta.get(1);
         boolean sameEvent = tokenEvent != null && eventId.equals(Long.valueOf((String) tokenEvent));
         if (expiresAt == null) {
             // 이미 회수(또는 이탈)돼 admitExp에 없는 토큰은 admit 키가 남아 있어도 통과시키지 않는다.

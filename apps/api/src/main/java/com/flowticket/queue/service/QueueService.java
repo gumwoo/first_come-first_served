@@ -20,18 +20,29 @@ import org.springframework.stereotype.Service;
 @Service
 public class QueueService {
 
-    // 입장 슬롯 반환 원자화: admitExp에서 실제로 제거한 요청만 카운트 감소(중복 DECR 방지).
-    // 동시 leave / leave↔만료 sweep이 같은 토큰을 이중 차감하는 것을 막는다.
-    private static final String LEAVE_ADMIT_LUA = """
+    // 이탈 원자화: 입장 슬롯 반환·대기열 제거·메타 삭제·유저키 정리를 한 번에.
+    //   - 입장 슬롯은 admitExp에서 실제로 제거한 요청만 카운트 감소(중복 DECR 방지) — 동시 leave / leave↔만료 sweep의 이중 차감 방지.
+    //   - 유저키는 **아직 이 토큰을 가리킬 때만** 지운다(CAS). 예전에는 메타를 읽은 뒤 유저키를 무조건 지워, 그 사이 같은 회원이
+    //     새 토큰을 받았으면 새 토큰의 유저키까지 지웠다 — 그러면 다음 진입이 SET NX에 성공해 한 회원의 활성 토큰이 둘이 된다.
+    // KEYS: admitExp, admitCount, admitKey, wait, tokenMeta, userKey / ARGV: token
+    // 반환: 1 = 입장 슬롯을 반환함, 0 = 대기 중이었거나 이미 정리됨
+    private static final String LEAVE_LUA = """
+            local freed = 0
             if redis.call('ZREM', KEYS[1], ARGV[1]) == 1 then
               redis.call('DECR', KEYS[2])
-              redis.call('DEL', KEYS[3])
-              return 1
+              freed = 1
+            else
+              redis.call('ZREM', KEYS[4], ARGV[1])
             end
-            return 0
+            redis.call('DEL', KEYS[3])
+            redis.call('DEL', KEYS[5])
+            if redis.call('GET', KEYS[6]) == ARGV[1] then
+              redis.call('DEL', KEYS[6])
+            end
+            return freed
             """;
-    private static final DefaultRedisScript<Long> LEAVE_ADMIT_SCRIPT =
-            new DefaultRedisScript<>(LEAVE_ADMIT_LUA, Long.class);
+    private static final DefaultRedisScript<Long> LEAVE_SCRIPT =
+            new DefaultRedisScript<>(LEAVE_LUA, Long.class);
 
     // 토큰 발급 원자화: 유저키 예약(SET NX)과 대기열 등록(순번·ZSet·메타·TTL·활성이벤트)을 한 번에 실행한다.
     // 예전엔 예약과 등록이 여러 왕복으로 나뉘어, 중간에 Redis 장애가 나면 "유저키는 있는데 대기 ZSet엔
@@ -56,10 +67,21 @@ public class QueueService {
     @SuppressWarnings("rawtypes")
     private static final DefaultRedisScript<List> ISSUE_SCRIPT = new DefaultRedisScript<>(ISSUE_LUA, List.class);
 
-    // 죽은 토큰 회수 후 재발급(소유권 이전). 예약을 강제로 덮어쓰는 것만 다르고 등록 절차는 동일하며,
-    // 옛 토큰 메타 정리(KEYS[6])까지 같은 원자 단위에 넣어 중간 상태를 남기지 않는다.
+    // 죽은 토큰 회수 후 재발급(소유권 이전). 등록 절차는 ISSUE와 같고, 옛 토큰 정리(메타 KEYS[6]·대기열 원소)까지 같은 원자 단위다.
+    // **CAS**: 유저키가 아직 호출부가 읽은 값(ARGV[5], 없었으면 '')일 때만 덮어쓴다. 예전에는 확인 없이 덮어써, 같은 회원의
+    // 동시 요청 여럿이 모두 "죽은 토큰"을 보면 각자 새 토큰을 만들었다 — 유저키는 마지막 것만 가리키고 나머지는 대기열에 남아
+    // 한 회원이 줄을 여러 번 선다. CAS에 지면 0을 반환하고 호출부가 이긴 요청의 토큰을 다시 판정한다.
+    // KEYS: userKey, seqKey, waitKey, newTokenMeta, activeEvents, oldTokenMeta / ARGV: token, ttl, userId, eventId, expectedOld
     private static final String TAKEOVER_LUA = """
-            redis.call('DEL', KEYS[6])
+            local cur = redis.call('GET', KEYS[1])
+            if cur == false then cur = '' end
+            if cur ~= ARGV[5] then
+              return 0
+            end
+            if ARGV[5] ~= '' then
+              redis.call('ZREM', KEYS[3], ARGV[5])
+              redis.call('DEL', KEYS[6])
+            end
             redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
             local seq = redis.call('INCR', KEYS[2])
             redis.call('ZADD', KEYS[3], seq, ARGV[1])
@@ -135,30 +157,41 @@ public class QueueService {
         String userKey = QueueKeys.user(eventId, userId);
         String token = UUID.randomUUID().toString();
 
-        // 예약 + 대기열 등록을 한 원자 단위로. 성공하면 부분 상태가 남을 수 없다.
-        List<?> issued = redis.execute(ISSUE_SCRIPT, issueKeys(userKey, eventId, token),
-                token, String.valueOf(tokenTtl), String.valueOf(userId), String.valueOf(eventId));
-        if (issued != null && issued.size() == 3 && ((Number) issued.get(0)).longValue() == 1L) {
-            // 신규 발급: 상태·순번·전체 수가 스크립트 결과에 있다(추가 왕복 없음 — ISSUE_LUA 주석).
-            long rank = ((Number) issued.get(1)).longValue();
-            return new QueueTokenResponse(token, QueueStatus.WAITING.name(), rank,
-                    ((Number) issued.get(2)).longValue(), retryAfterMs(QueueStatus.WAITING, rank));
-        }
+        // 경합에 지면(다른 요청이 그 사이 유저키를 바꿈) 처음부터 다시 판정한다. 매번 상태가 바뀌어야 지므로 몇 번이면 끝난다.
+        for (int attempt = 0; attempt < MAX_ISSUE_ATTEMPTS; attempt++) {
+            // 예약 + 대기열 등록을 한 원자 단위로. 성공하면 부분 상태가 남을 수 없다.
+            List<?> issued = redis.execute(ISSUE_SCRIPT, issueKeys(userKey, eventId, token),
+                    token, String.valueOf(tokenTtl), String.valueOf(userId), String.valueOf(eventId));
+            if (issued != null && issued.size() == 3 && ((Number) issued.get(0)).longValue() == 1L) {
+                // 신규 발급: 상태·순번·전체 수가 스크립트 결과에 있다(추가 왕복 없음 — ISSUE_LUA 주석).
+                long rank = ((Number) issued.get(1)).longValue();
+                return new QueueTokenResponse(token, QueueStatus.WAITING.name(), rank,
+                        ((Number) issued.get(2)).longValue(), retryAfterMs(QueueStatus.WAITING, rank));
+            }
 
-        // 예약 실패 = 이미 이 유저의 토큰이 있다. 재사용 판단은 읽기 위주라 애플리케이션에 둔다.
-        String existing = redis.opsForValue().get(userKey);
-        if (existing != null && isReusable(existing, eventId)) {
-            return currentOrWaiting(existing, eventId); // 살아있는 토큰(1인1토큰)
+            // 예약 실패 = 이미 이 유저의 토큰이 있다. 재사용 판단은 읽기 위주라 애플리케이션에 둔다.
+            String existing = redis.opsForValue().get(userKey);
+            if (existing != null && isReusable(existing, eventId)) {
+                return currentOrWaiting(existing, eventId); // 살아있는 토큰(1인1토큰)
+            }
+            // (1) 입장 후 만료된 죽은 토큰이 유저키에 남아 재예매를 막던 것, 또는
+            // (2) 극히 드문 경합(예약 확인~조회 사이 만료) → 소유권을 이 요청이 회수하고 새로 발급.
+            // 유저키가 방금 읽은 값 그대로일 때만(CAS) 옛 토큰 정리부터 재등록까지 원자적으로 한다.
+            List<String> keys = new ArrayList<>(issueKeys(userKey, eventId, token));
+            keys.add(QueueKeys.token(existing != null ? existing : token)); // 정리 대상(없으면 무해한 자기 키)
+            Long took = redis.execute(TAKEOVER_SCRIPT, keys,
+                    token, String.valueOf(tokenTtl), String.valueOf(userId), String.valueOf(eventId),
+                    existing != null ? existing : "");
+            if (took != null && took == 1L) {
+                return tokenResponse(token, eventId);
+            }
+            // CAS에 졌다: 다른 요청이 유저키를 먼저 바꿨다. 다음 시도에서 그 토큰을 다시 판정한다.
         }
-        // (1) 입장 후 만료된 죽은 토큰이 유저키에 남아 재예매를 막던 것, 또는
-        // (2) 극히 드문 경합(예약 확인~조회 사이 만료) → 소유권을 이 요청이 회수하고 새로 발급.
-        // 옛 메타 정리부터 재등록까지 원자적으로(중간 상태 없음).
-        List<String> keys = new ArrayList<>(issueKeys(userKey, eventId, token));
-        keys.add(QueueKeys.token(existing != null ? existing : token)); // 정리 대상(없으면 무해한 자기 키)
-        redis.execute(TAKEOVER_SCRIPT, keys,
-                token, String.valueOf(tokenTtl), String.valueOf(userId), String.valueOf(eventId));
-        return tokenResponse(token, eventId);
+        throw new IllegalStateException("대기열 토큰 발급 경합이 " + MAX_ISSUE_ATTEMPTS + "회 연속됐다(eventId=" + eventId + ")");
     }
+
+    /** 발급 경합 재시도 상한. 한 번 지려면 그 사이 다른 요청이 유저키를 바꿔야 해서, 정상 상황에서는 1~2회로 끝난다. */
+    private static final int MAX_ISSUE_ATTEMPTS = 5;
 
     /**
      * 판매 중인 공연인지 확인한다. 대기열 진입의 첫 관문이다.
@@ -202,18 +235,14 @@ public class QueueService {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
 
-        Long freed = redis.execute(LEAVE_ADMIT_SCRIPT,
-                List.of(QueueKeys.admitExp(eventId), QueueKeys.admitCount(eventId), QueueKeys.admit(token)),
+        // 슬롯 반환(또는 대기열 제거)·메타 삭제·유저키 CAS 삭제를 한 원자 단위로(LEAVE_LUA).
+        Long freed = redis.execute(LEAVE_SCRIPT,
+                List.of(QueueKeys.admitExp(eventId), QueueKeys.admitCount(eventId), QueueKeys.admit(token),
+                        QueueKeys.wait(eventId), QueueKeys.token(token), QueueKeys.user(eventId, userId)),
                 token);
         if (freed != null && freed == 1L) {
             QueueAudit.leftAdmitted(eventId, token, clock.millis());
         }
-        if (freed == null || freed == 0L) {
-            // 입장 상태가 아니었음 → 대기열에서 제거(ZREM은 멱등, 카운터 없음)
-            redis.opsForZSet().remove(QueueKeys.wait(eventId), token);
-        }
-        redis.delete(QueueKeys.token(token));
-        redis.delete(QueueKeys.user(eventId, userId));
     }
 
     /**
@@ -330,15 +359,16 @@ public class QueueService {
     /**
      * 유저키에 남아있는 기존 토큰이 재사용 가능한(살아있는) 토큰인가.
      * WAITING/ADMITTED면 재사용(1인1토큰 유지). 입장 후 만료돼 wait/admit 어디에도 없는
-     * '죽은 토큰'이면 false → 호출부가 정리하고 새 토큰을 발급(재예매 허용).
-     * 단, 아직 wait 등록 전인 '경합 중 신규 토큰'은 메타가 없어 EXPIRED로 보이므로
-     * 이 경우엔 true를 반환해 중복 발급을 막는다.
+     * '죽은 토큰'이면 false → 호출부가 회수(TAKEOVER, 유저키 CAS)하고 새 토큰을 발급(재예매 허용).
+     *
+     * 판정은 STATUS_LUA 한 번의 스냅샷으로 한다. 입장 여부·대기 여부를 따로 읽으면 그 사이 승격이 끼어 막 입장한 토큰을
+     * EXPIRED로 오판하고, 회수가 입장 토큰의 메타를 지울 수 있다.
+     * 예전에는 "메타가 없으면 등록 중인 신규 토큰"으로 보고 재사용했지만, 발급·회수가 유저키와 메타를 한 Lua로 함께 쓰므로
+     * 그 상태는 생기지 않는다. 오히려 다른 요청이 그 토큰을 막 회수·이탈시킨 경우를 재사용으로 오판해 죽은 토큰을 돌려줬다(TS-044).
+     * 메타가 없으면 회수로 넘긴다 — 유저키가 그새 바뀌었으면 CAS에 져서 다시 판정하고, 그대로면 고아 키라 덮어쓰는 게 맞다.
      */
     private boolean isReusable(String token, Long eventId) {
-        if (statusOf(token, eventId) != QueueStatus.EXPIRED) {
-            return true; // WAITING 또는 ADMITTED
-        }
-        return !Boolean.TRUE.equals(redis.hasKey(QueueKeys.token(token))); // 메타 없으면 경합 중 신규 → 재사용
+        return snapshot(token, eventId).status() != QueueStatus.EXPIRED;
     }
 
     private QueueStatus statusOf(String token, Long eventId) {

@@ -47,6 +47,7 @@ public class QueueMetrics {
     private final Timer tick;
     private final Counter gateFallback;
     private final Counter tickFailures;
+    private final Counter purgedDead;
 
     /** 이벤트별 최신값. 게이지가 이 객체를 계속 읽으므로 틱마다 새로 등록하지 않는다. */
     private final Map<Long, Values> current = new ConcurrentHashMap<>();
@@ -78,6 +79,11 @@ public class QueueMetrics {
                 .register(registry);
         // 처리에 실패한 활성 이벤트는 직전 값을 유지한다. 실패가 이어지면 게이지가 마지막 값에 고정되므로,
         // 실패 횟수를 따로 내보내 "값이 멈춘 것"과 "상태가 그대로인 것"을 구분한다.
+        // 승격 직전 대기열 앞에서 치운 죽은 토큰(메타 만료 — 폴링이 끊겨 유휴 만료됐거나 절대 상한을 넘김). 이게 없으면
+        // 죽은 토큰이 승격돼 입장 슬롯을 비운 채 쥐었다.
+        this.purgedDead = Counter.builder("flowticket.queue.purged.dead")
+                .description("승격 직전 대기열 앞에서 치운 만료 토큰 수(승격돼 슬롯을 낭비하지 않도록). 파드 합으로 집계")
+                .register(registry);
         this.tickFailures = Counter.builder("flowticket.queue.admit.tick.failures")
                 .description("승격 워커가 이벤트 하나를 처리하다 실패한 횟수. 0보다 크면 대기열 게이지가 멈췄을 수 있다")
                 .register(registry);
@@ -85,6 +91,10 @@ public class QueueMetrics {
 
     Counter tickFailures() {
         return tickFailures;
+    }
+
+    Counter purgedDead() {
+        return purgedDead;
     }
 
     Counter gateFallback() {

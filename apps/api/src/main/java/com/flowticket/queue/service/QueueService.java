@@ -52,12 +52,13 @@ public class QueueService {
     // 응답을 만들려고 입장 여부(EXISTS·ZSCORE)·순번(ZRANK 2회)·전체 수(ZCARD)를 따로 읽어 진입 1건이 Redis를
     // 7번 왕복했고, 측정 세션 20261005-1440의 4,000/s에서 Redis 메인 스레드가 요청당 0.172ms를 써 단일 스레드 상한이
     // 약 5,800/s로 계산됐다. 같은 키(KEYS[3])만 읽으므로 Lua 안에서 키를 만들지 않는다.
-    // KEYS: userKey, seqKey, waitKey, tokenKey, activeEvents / ARGV: token, ttl, userId, eventId
+    // 메타에 발급 시각(issuedAt, epoch 초)을 남긴다 — 폴링 연장의 절대 상한(queue.token-max-lifetime)을 세는 기준이다.
+    // KEYS: userKey, seqKey, waitKey, tokenKey, activeEvents / ARGV: token, ttl, userId, eventId, nowEpochSeconds
     private static final String ISSUE_LUA = """
             if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2]) then
               local seq = redis.call('INCR', KEYS[2])
               redis.call('ZADD', KEYS[3], seq, ARGV[1])
-              redis.call('HSET', KEYS[4], 'userId', ARGV[3], 'eventId', ARGV[4])
+              redis.call('HSET', KEYS[4], 'userId', ARGV[3], 'eventId', ARGV[4], 'issuedAt', ARGV[5])
               redis.call('EXPIRE', KEYS[4], ARGV[2])
               redis.call('SADD', KEYS[5], ARGV[4])
               return {1, redis.call('ZRANK', KEYS[3], ARGV[1]) + 1, redis.call('ZCARD', KEYS[3])}
@@ -71,7 +72,7 @@ public class QueueService {
     // **CAS**: 유저키가 아직 호출부가 읽은 값(ARGV[5], 없었으면 '')일 때만 덮어쓴다. 예전에는 확인 없이 덮어써, 같은 회원의
     // 동시 요청 여럿이 모두 "죽은 토큰"을 보면 각자 새 토큰을 만들었다 — 유저키는 마지막 것만 가리키고 나머지는 대기열에 남아
     // 한 회원이 줄을 여러 번 선다. CAS에 지면 0을 반환하고 호출부가 이긴 요청의 토큰을 다시 판정한다.
-    // KEYS: userKey, seqKey, waitKey, newTokenMeta, activeEvents, oldTokenMeta / ARGV: token, ttl, userId, eventId, expectedOld
+    // KEYS: userKey, seqKey, waitKey, newTokenMeta, activeEvents, oldTokenMeta / ARGV: token, ttl, userId, eventId, expectedOld, nowEpochSeconds
     private static final String TAKEOVER_LUA = """
             local cur = redis.call('GET', KEYS[1])
             if cur == false then cur = '' end
@@ -85,7 +86,7 @@ public class QueueService {
             redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
             local seq = redis.call('INCR', KEYS[2])
             redis.call('ZADD', KEYS[3], seq, ARGV[1])
-            redis.call('HSET', KEYS[4], 'userId', ARGV[3], 'eventId', ARGV[4])
+            redis.call('HSET', KEYS[4], 'userId', ARGV[3], 'eventId', ARGV[4], 'issuedAt', ARGV[6])
             redis.call('EXPIRE', KEYS[4], ARGV[2])
             redis.call('SADD', KEYS[5], ARGV[4])
             return 1
@@ -118,10 +119,49 @@ public class QueueService {
     @SuppressWarnings("rawtypes")
     private static final DefaultRedisScript<List> STATUS_SCRIPT = new DefaultRedisScript<>(STATUS_LUA, List.class);
 
+    // 폴링용 상태 조회: STATUS_LUA와 판정이 같고, 대기 중(WAITING)이면 토큰 수명을 연장한다(유휴 만료).
+    // 예전에는 메타·유저키 TTL이 발급 시각부터 고정이라(queue.token-ttl 1,800초) 30분 넘게 기다리면 대기 중에도 만료됐다 —
+    // 상태 조회가 QUEUE_EXPIRED가 되고, 대기열 원소는 남아 순서를 차지하다가 승격돼 입장 슬롯을 비운 채 쥐었다.
+    // 이제 폴링하는 동안은 자격을 유지하고, 폴링이 끊기면 마지막 폴링 뒤 token-ttl이 지나 만료된다.
+    //   - 연장 값(ARGV[3])은 호출부가 계산한다: min(token-ttl, 발급 시각 + 절대 상한 − 지금). 0이면 연장하지 않는다
+    //     (상한을 넘었거나 발급 시각이 없는 옛 토큰).
+    //   - 남은 수명이 ARGV[4](token-ttl의 절반) 아래일 때만 연장한다 — 대부분의 조회는 TTL 1회만 더 한다(폴링은 최대 30초 간격).
+    //   - 유저키는 아직 이 토큰을 가리킬 때만 함께 연장한다(1인 1토큰 — 다른 토큰의 키를 늘리지 않는다).
+    // KEYS: admitKey, admitExpKey, waitKey, tokenMeta, userKey / ARGV: token, nowEpochSeconds, extendTtl, refreshBelow
+    private static final String STATUS_POLL_LUA = """
+            local total = redis.call('ZCARD', KEYS[3])
+            if redis.call('EXISTS', KEYS[1]) == 1 then
+              return {2, 0, total}
+            end
+            local exp = redis.call('ZSCORE', KEYS[2], ARGV[1])
+            if exp and tonumber(exp) > tonumber(ARGV[2]) then
+              return {2, 0, total}
+            end
+            local r = redis.call('ZRANK', KEYS[3], ARGV[1])
+            if r then
+              local extend = tonumber(ARGV[3])
+              if extend > 0 then
+                local ttl = redis.call('TTL', KEYS[4])
+                if ttl >= 0 and ttl < tonumber(ARGV[4]) then
+                  redis.call('EXPIRE', KEYS[4], extend)
+                  if redis.call('GET', KEYS[5]) == ARGV[1] then
+                    redis.call('EXPIRE', KEYS[5], extend)
+                  end
+                end
+              end
+              return {1, r + 1, total}
+            end
+            return {0, 0, total}
+            """;
+    @SuppressWarnings("rawtypes")
+    private static final DefaultRedisScript<List> STATUS_POLL_SCRIPT = new DefaultRedisScript<>(STATUS_POLL_LUA, List.class);
+
     private final StringRedisTemplate redis;
     private final BookableEventCache bookableEvents;
     private final int capacity;
     private final long tokenTtl;
+    /** 폴링 연장의 절대 상한(초, 발급 시각부터). 폴링을 계속해도 이 시간이 지나면 더 연장하지 않는다. */
+    private final long tokenMaxLifetime;
     private final long admitIntervalMs;
     /** 다음 상태 조회까지 최소 대기(ms): 앞쪽 순번 값과 상한 — retryAfterMs. */
     private final long pollMinMs;
@@ -133,6 +173,7 @@ public class QueueService {
     public QueueService(StringRedisTemplate redis, BookableEventCache bookableEvents,
                         @Value("${queue.capacity:100}") int capacity,
                         @Value("${queue.token-ttl:1800}") long tokenTtl,
+                        @Value("${queue.token-max-lifetime:21600}") long tokenMaxLifetime,
                         @Value("${queue.admit-interval-ms:1500}") long admitIntervalMs,
                         @Value("${queue.poll-min-ms:2000}") long pollMinMs,
                         @Value("${queue.poll-max-ms:30000}") long pollMaxMs,
@@ -143,6 +184,7 @@ public class QueueService {
         this.bookableEvents = bookableEvents;
         this.capacity = capacity;
         this.tokenTtl = tokenTtl;
+        this.tokenMaxLifetime = tokenMaxLifetime;
         this.admitIntervalMs = admitIntervalMs;
         this.pollMinMs = pollMinMs;
         this.pollMaxMs = pollMaxMs;
@@ -161,7 +203,7 @@ public class QueueService {
         for (int attempt = 0; attempt < MAX_ISSUE_ATTEMPTS; attempt++) {
             // 예약 + 대기열 등록을 한 원자 단위로. 성공하면 부분 상태가 남을 수 없다.
             List<?> issued = redis.execute(ISSUE_SCRIPT, issueKeys(userKey, eventId, token),
-                    token, String.valueOf(tokenTtl), String.valueOf(userId), String.valueOf(eventId));
+                    token, String.valueOf(tokenTtl), String.valueOf(userId), String.valueOf(eventId), nowSeconds());
             if (issued != null && issued.size() == 3 && ((Number) issued.get(0)).longValue() == 1L) {
                 // 신규 발급: 상태·순번·전체 수가 스크립트 결과에 있다(추가 왕복 없음 — ISSUE_LUA 주석).
                 long rank = ((Number) issued.get(1)).longValue();
@@ -181,7 +223,7 @@ public class QueueService {
             keys.add(QueueKeys.token(existing != null ? existing : token)); // 정리 대상(없으면 무해한 자기 키)
             Long took = redis.execute(TAKEOVER_SCRIPT, keys,
                     token, String.valueOf(tokenTtl), String.valueOf(userId), String.valueOf(eventId),
-                    existing != null ? existing : "");
+                    existing != null ? existing : "", nowSeconds());
             if (took != null && took == 1L) {
                 return tokenResponse(token, eventId);
             }
@@ -301,13 +343,29 @@ public class QueueService {
         return tokenResponse(token, eventId);
     }
 
-    /** 상태 폴링. 토큰 메타가 사라졌으면(수명 만료) QUEUE_EXPIRED. Redis 2왕복(메타의 eventId + STATUS_LUA). */
+    /**
+     * 상태 폴링. 토큰 메타가 사라졌으면(수명 만료) QUEUE_EXPIRED. Redis 2왕복(메타 HMGET + STATUS_POLL_LUA).
+     * 대기 중이면 토큰 수명을 연장한다(STATUS_POLL_LUA 주석) — 폴링하는 동안 대기 자격이 유지되고, 발급 뒤
+     * queue.token-max-lifetime이 지나면 더 연장하지 않는다.
+     */
     public QueueStatusResponse status(String token) {
-        Object eventId = redis.opsForHash().get(QueueKeys.token(token), "eventId");
-        if (eventId == null) {
+        List<Object> meta = redis.opsForHash().multiGet(QueueKeys.token(token), List.<Object>of("eventId", "userId", "issuedAt"));
+        if (meta.get(0) == null) {
             throw new BusinessException(ErrorCode.QUEUE_EXPIRED);
         }
-        Snapshot s = snapshot(token, Long.valueOf((String) eventId));
+        Long eventId = Long.valueOf((String) meta.get(0));
+        long now = Instant.now(clock).getEpochSecond();
+        long extend = 0; // 발급 시각이 없는 옛 토큰은 연장하지 않는다(예전 동작)
+        if (meta.get(1) != null && meta.get(2) != null) {
+            long remainingLifetime = Long.parseLong((String) meta.get(2)) + tokenMaxLifetime - now;
+            extend = Math.max(0, Math.min(tokenTtl, remainingLifetime));
+        }
+        // 연장하지 않는 경우(extend 0)에도 KEYS 자리를 채운다 — 스크립트가 이 키를 읽지 않는다.
+        String userKey = QueueKeys.user(eventId, meta.get(1) != null ? Long.valueOf((String) meta.get(1)) : 0L);
+        Snapshot s = toSnapshot(redis.execute(STATUS_POLL_SCRIPT,
+                List.of(QueueKeys.admit(token), QueueKeys.admitExp(eventId), QueueKeys.wait(eventId),
+                        QueueKeys.token(token), userKey),
+                token, String.valueOf(now), String.valueOf(extend), String.valueOf(tokenTtl / 2)));
         long eta = s.status() == QueueStatus.WAITING ? etaSeconds(s.rank()) : 0;
         return new QueueStatusResponse(s.rank(), s.total(), eta, s.status().name(),
                 retryAfterMs(s.status(), s.rank()));
@@ -323,9 +381,16 @@ public class QueueService {
     }
 
     private Snapshot snapshot(String token, Long eventId) {
-        List<?> r = redis.execute(STATUS_SCRIPT,
+        return toSnapshot(redis.execute(STATUS_SCRIPT,
                 List.of(QueueKeys.admit(token), QueueKeys.admitExp(eventId), QueueKeys.wait(eventId)),
-                token, String.valueOf(Instant.now(clock).getEpochSecond()));
+                token, nowSeconds()));
+    }
+
+    private String nowSeconds() {
+        return String.valueOf(Instant.now(clock).getEpochSecond());
+    }
+
+    private Snapshot toSnapshot(List<?> r) {
         if (r == null || r.size() != 3) {
             throw new IllegalStateException("STATUS_LUA 결과가 없다(파이프라인·트랜잭션 안에서 호출됨)");
         }

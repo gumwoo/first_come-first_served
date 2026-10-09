@@ -76,6 +76,23 @@ public class QueueAdmissionService {
     private static final DefaultRedisScript<Long> EXTEND_META_SCRIPT =
             new DefaultRedisScript<>(EXTEND_META_LUA, Long.class);
 
+    // 승격 직전 대기열 앞의 죽은 토큰(메타 만료) 치우기. 메타 키는 호출부가 KEYS로 넘긴다 — Lua 안에서 토큰으로 키를 만들지
+    // 않는다(IMP-004 §8 규칙). 각 후보의 메타가 없으면 대기열에서 뺀다. 반환: 뺀 수.
+    // KEYS: waitKey, meta(token1), meta(token2), ... / ARGV: token1, token2, ...
+    private static final String PURGE_DEAD_LUA = """
+            local removed = 0
+            for i = 1, #ARGV do
+              if redis.call('EXISTS', KEYS[i + 1]) == 0 then
+                removed = removed + redis.call('ZREM', KEYS[1], ARGV[i])
+              end
+            end
+            return removed
+            """;
+    private static final DefaultRedisScript<Long> PURGE_DEAD_SCRIPT =
+            new DefaultRedisScript<>(PURGE_DEAD_LUA, Long.class);
+    /** 한 틱에서 앞쪽 죽은 토큰을 치우는 최대 회수(회당 여유 슬롯 수만큼 본다). 남은 것은 다음 틱이 이어서 치운다. */
+    private static final int PURGE_MAX_ROUNDS = 5;
+
     @SuppressWarnings("rawtypes")
     private static final DefaultRedisScript<List> ADMIT_SCRIPT = new DefaultRedisScript<>(ADMIT_LUA, List.class);
     @SuppressWarnings("rawtypes")
@@ -106,6 +123,7 @@ public class QueueAdmissionService {
 
     /** 여유 슬롯만큼 승격. 승격된 토큰 수 반환. */
     public int admit(Long eventId) {
+        purgeDeadHead(eventId);
         long expiresAt = Instant.now(clock).getEpochSecond() + admitTtl;
         List<?> popped = redis.execute(ADMIT_SCRIPT,
                 List.of(QueueKeys.wait(eventId), QueueKeys.admitCount(eventId), QueueKeys.admitExp(eventId)),
@@ -130,6 +148,35 @@ public class QueueAdmissionService {
             admitted++;
         }
         return admitted;
+    }
+
+    /**
+     * 승격 직전, 대기열 앞쪽(여유 슬롯 수만큼)에서 메타가 없는 토큰을 뺀다.
+     *
+     * 메타가 없다 = 토큰 수명이 끝났다(폴링이 끊겨 유휴 만료, 또는 절대 상한 — QueueService.status). 예전에는 이런 토큰이
+     * 대기열에 남아 순서대로 승격됐고, 아무도 쓰지 않는 입장 슬롯을 입장창(admit-ttl) 동안 쥐었다. 앞쪽만 보는 이유는
+     * 승격될 차례인 토큰만 확인하면 되기 때문이다 — 뒤쪽의 죽은 토큰은 차례가 오면 치운다(그때까지는 순번·대기 수에 포함된다).
+     * 이 확인과 승격 Lua 사이에 수명이 끝나는 토큰은 승격될 수 있다(경계 순간 — 슬롯을 입장창만큼 쥐었다가 회수된다).
+     */
+    private void purgeDeadHead(Long eventId) {
+        String admittedRaw = redis.opsForValue().get(QueueKeys.admitCount(eventId));
+        long free = capacity - (admittedRaw == null ? 0 : Long.parseLong(admittedRaw));
+        for (int round = 0; round < PURGE_MAX_ROUNDS && free > 0; round++) {
+            Set<String> head = redis.opsForZSet().range(QueueKeys.wait(eventId), 0, free - 1);
+            if (head == null || head.isEmpty()) {
+                return;
+            }
+            List<String> keys = new ArrayList<>(head.size() + 1);
+            keys.add(QueueKeys.wait(eventId));
+            for (String token : head) {
+                keys.add(QueueKeys.token(token));
+            }
+            Long removed = redis.execute(PURGE_DEAD_SCRIPT, keys, head.toArray());
+            if (removed == null || removed == 0L) {
+                return; // 앞쪽이 모두 살아 있다
+            }
+            metrics.purgedDead().increment(removed);
+        }
     }
 
     /** 입장창 만료 토큰 회수(슬롯 반환). 회수된 토큰 목록 반환. */

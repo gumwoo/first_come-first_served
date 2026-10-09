@@ -247,7 +247,8 @@ app:
 # 대기열: Redis ZSet 기반 선착순 직렬화
 queue:
   capacity: ${QUEUE_CAPACITY:100}            # 이벤트당 동시 입장 정원
-  token-ttl: ${QUEUE_TOKEN_TTL:1800}         # 대기 토큰 수명(초)
+  token-ttl: ${QUEUE_TOKEN_TTL:1800}         # 대기 토큰 유휴 수명(초) — 대기 중 폴링마다 이만큼 연장(남은 수명이 절반 아래일 때)
+  token-max-lifetime: ${QUEUE_TOKEN_MAX_LIFETIME:21600} # 폴링 연장의 절대 상한(초, 발급 시각부터) — 6시간(사용자 결정 2026-10-09)
   admit-ttl: ${QUEUE_ADMIT_TTL:300}          # 입장 후 좌석선택 제한(초)
   admit-interval-ms: ${QUEUE_ADMIT_INTERVAL:1500}  # 승격 워커 주기(ms)
   # 상태 폴링 다음 조회 최소 대기(retryAfterMs, ms): 앞쪽 순번(정원×2 안)은 min, 뒤는 ceil(순번÷정원)×승격 주기를 [min, max]로 자른다

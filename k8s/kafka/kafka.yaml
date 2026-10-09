@@ -31,7 +31,7 @@ spec:
   # 브로커 Pod 배치는 정하지 않는다 — Strimzi 1.2.0은 rack 설정 시 zone 라벨이 있는 노드로 제한하는 node affinity만 붙이고
   # AZ 분산 규칙은 붙이지 않는다. 둘 다 있어야 "AZ 하나가 죽어도 브로커 2대·복제본 2개가 남는다"가 성립한다.
   #
-  # DoNotSchedule: 분산을 못 지키면 그 브로커를 띄우지 않는다(Pending). 노드그룹이 AZ별이라 CA가 그 AZ에 노드를 붙인다(ADR-012 §3).
+  # DoNotSchedule: 분산을 못 지키면 그 브로커를 띄우지 않는다(Pending). 노드그룹이 AZ별이라 CA가 그 AZ에 노드를 붙인다(ADR-012 §3 — 이 제약에서의 CA 동작은 미검증).
   # ScheduleAnyway면 한 AZ에 두 대가 몰려도 뜨고, 그 AZ가 죽으면 ISR이 1로 떨어져 acks=all 발행이 멈춘다.
   # ⚠️ 이미 돌고 있는 클러스터에 처음 넣을 때: 브로커 PVC(EBS)는 AZ에 묶여 있어, 지금 배치가 고르지 않으면 롤링으로
   # 다시 뜨는 브로커가 제약과 자기 볼륨의 AZ를 동시에 만족하지 못해 Pending에 걸린다. 그때는 해당 브로커 PVC를 지우고

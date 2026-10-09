@@ -39,7 +39,7 @@ variable "alarm_email" {
 variable "elb_5xx_threshold" {
   description = <<-EOT
     1분 동안 ALB가 직접 만든 5xx(대상에 닿지 못한 502·503·504 등) 수의 경보 임계(1분 하나로 판정).
-    시작값 5: TS-035의 롤링 배포 장애는 약 14초에 13~16건이었다(실측). 실제 트래픽에서 조정하지 않았다.
+    시작값 5: TS-035 롤링 배포 장애는 재현 실험 16건이 약 14초 창에 몰렸고, C 조건은 13건이었다(실측). 실제 트래픽에서 조정하지 않았다.
   EOT
   type        = number
   default     = 5

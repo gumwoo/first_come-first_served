@@ -157,6 +157,9 @@ closed model은 응답이 느려지면 부하가 스스로 줄어 장애 창을 
 - `preStop` 최소 필요값 탐색
 - 등록 해제 전파 시간 실측 — 파드 Terminating부터 ALB 타깃이 `deregistering`이 되기까지.
   이 값을 알아야 `preStop`을 근거로 정할 수 있다(지금은 여유를 크게 잡은 것뿐이다).
+- **관측(2026-10-09 보강)**: 이 장애는 앱 5xx가 0이라 PrometheusRule의 서버 오류 알람(`outcome="SERVER_ERROR"`)으로는 보이지 않았다.
+  ALB 계층 알람 스택(`demo-alarms` — `HTTPCode_ELB_5XX_Count`·`TargetConnectionErrorCount`·대상 그룹별 `HealthyHostCount` → SNS)을 추가했다.
+  구성은 정적 검증(`terraform validate`)까지만 했고, 실제 장애에서 알람이 울리는지는 확인하지 않았다.
 - 이 계열을 정적으로 막을 수 있는가 — 다만 `preStop` vs `deregistration_delay` 크기 비교로는
   안 된다(둘은 다른 구간을 가리킨다). 전파 시간이 기준이라 정적 규칙으로 만들기 어렵다.
 

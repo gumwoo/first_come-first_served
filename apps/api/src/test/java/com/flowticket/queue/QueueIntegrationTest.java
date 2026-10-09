@@ -94,7 +94,7 @@ class QueueIntegrationTest extends IntegrationTestSupport {
     @Test
     void 죽은_토큰이_유저키에_남아있으면_회수하고_재발급한다() {
         // 입장창까지 지나 대기열에서 빠진(=EXPIRED) 토큰이 유저키에 남으면 재예매가 막혔었다.
-        // 메타는 남아 있어야 "경합 중 신규"가 아닌 죽은 토큰으로 판정된다(isReusable=false).
+        // 재사용 판단은 STATUS_LUA 스냅샷(대기·입장 어디에도 없으면 EXPIRED → isReusable=false, TS-044).
         // 회수(옛 메타 정리)와 재등록도 한 원자 단위로 처리된다.
         String dead = queueService.issue(32L, EVENT).token();
         redisTemplate.opsForZSet().remove("queue:wait:" + EVENT, dead); // 대기열 이탈 → EXPIRED

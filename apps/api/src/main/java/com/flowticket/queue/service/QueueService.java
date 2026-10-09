@@ -359,15 +359,16 @@ public class QueueService {
     /**
      * 유저키에 남아있는 기존 토큰이 재사용 가능한(살아있는) 토큰인가.
      * WAITING/ADMITTED면 재사용(1인1토큰 유지). 입장 후 만료돼 wait/admit 어디에도 없는
-     * '죽은 토큰'이면 false → 호출부가 정리하고 새 토큰을 발급(재예매 허용).
-     * 단, 아직 wait 등록 전인 '경합 중 신규 토큰'은 메타가 없어 EXPIRED로 보이므로
-     * 이 경우엔 true를 반환해 중복 발급을 막는다.
+     * '죽은 토큰'이면 false → 호출부가 회수(TAKEOVER, 유저키 CAS)하고 새 토큰을 발급(재예매 허용).
+     *
+     * 판정은 STATUS_LUA 한 번의 스냅샷으로 한다. 입장 여부·대기 여부를 따로 읽으면 그 사이 승격이 끼어 막 입장한 토큰을
+     * EXPIRED로 오판하고, 회수가 입장 토큰의 메타를 지울 수 있다.
+     * 예전에는 "메타가 없으면 등록 중인 신규 토큰"으로 보고 재사용했지만, 발급·회수가 유저키와 메타를 한 Lua로 함께 쓰므로
+     * 그 상태는 생기지 않는다. 오히려 다른 요청이 그 토큰을 막 회수·이탈시킨 경우를 재사용으로 오판해 죽은 토큰을 돌려줬다(TS-044).
+     * 메타가 없으면 회수로 넘긴다 — 유저키가 그새 바뀌었으면 CAS에 져서 다시 판정하고, 그대로면 고아 키라 덮어쓰는 게 맞다.
      */
     private boolean isReusable(String token, Long eventId) {
-        if (statusOf(token, eventId) != QueueStatus.EXPIRED) {
-            return true; // WAITING 또는 ADMITTED
-        }
-        return !Boolean.TRUE.equals(redis.hasKey(QueueKeys.token(token))); // 메타 없으면 경합 중 신규 → 재사용
+        return snapshot(token, eventId).status() != QueueStatus.EXPIRED;
     }
 
     private QueueStatus statusOf(String token, Long eventId) {

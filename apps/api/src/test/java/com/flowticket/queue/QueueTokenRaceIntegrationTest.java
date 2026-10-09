@@ -47,7 +47,7 @@ class QueueTokenRaceIntegrationTest extends IntegrationTestSupport {
     void 죽은_토큰을_동시에_재발급해도_새_토큰은_하나만_생긴다() throws Exception {
         long user = 2000L;
         String dead = queueService.issue(user, EVENT).token();
-        redisTemplate.opsForZSet().remove(wait(), dead); // 대기열에서 빠진 죽은 토큰(메타는 남음 → isReusable=false)
+        redisTemplate.opsForZSet().remove(waitKey(), dead); // 대기열에서 빠진 죽은 토큰(메타는 남음 → isReusable=false)
 
         Set<String> tokens = concurrently(30, () -> queueService.issue(user, EVENT).token());
 
@@ -55,7 +55,7 @@ class QueueTokenRaceIntegrationTest extends IntegrationTestSupport {
         String fresh = tokens.iterator().next();
         assertThat(fresh).isNotEqualTo(dead);
         assertThat(redisTemplate.opsForValue().get(userKey(user))).isEqualTo(fresh);
-        assertThat(redisTemplate.opsForZSet().zCard(wait())).isEqualTo(1L); // 대기열에도 하나만 선다
+        assertThat(redisTemplate.opsForZSet().zCard(waitKey())).isEqualTo(1L); // 대기열에도 하나만 선다
         assertThat(redisTemplate.hasKey("queue:token:" + dead)).isFalse(); // 옛 메타는 정리됨
     }
 
@@ -69,7 +69,7 @@ class QueueTokenRaceIntegrationTest extends IntegrationTestSupport {
         queueService.leave(t1, user);
 
         assertThat(redisTemplate.opsForValue().get(userKey(user))).isEqualTo("newer-token");
-        assertThat(redisTemplate.opsForZSet().score(wait(), t1)).isNull();
+        assertThat(redisTemplate.opsForZSet().score(waitKey(), t1)).isNull();
         assertThat(redisTemplate.hasKey("queue:token:" + t1)).isFalse();
     }
 
@@ -90,7 +90,7 @@ class QueueTokenRaceIntegrationTest extends IntegrationTestSupport {
             leave.get(); // 작업 안에서 난 예외를 테스트 실패로 올린다
             reissue.get();
 
-            Set<String> waiting = redisTemplate.opsForZSet().range(wait(), 0, -1);
+            Set<String> waiting = redisTemplate.opsForZSet().range(waitKey(), 0, -1);
             String owned = redisTemplate.opsForValue().get(userKey(user));
             long mine = waiting.stream()
                     .filter(tok -> String.valueOf(user).equals(redisTemplate.opsForHash().get("queue:token:" + tok, "userId")))
@@ -105,7 +105,7 @@ class QueueTokenRaceIntegrationTest extends IntegrationTestSupport {
         }
     }
 
-    private String wait() {
+    private String waitKey() {
         return "queue:wait:" + EVENT;
     }
 

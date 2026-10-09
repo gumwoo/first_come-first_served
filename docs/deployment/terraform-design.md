@@ -305,7 +305,8 @@ template:
 **순서를 지키지 않으면 리소스가 남아 계속 과금된다.**
 
 ```
-0. bash scripts/alb-alarms.sh destroy  # ALB 알람 스택. ALB보다 먼저 — 대상 그룹이 사라지면 '정상 대상 0'이 울린다
+0. bash scripts/alb-alarms.sh destroy  # ALB 알람 스택. ArgoCD 앱 삭제보다도 먼저 — 앱 삭제가 Ingress·파드를 연쇄 삭제해
+                                       #   대상 그룹이 비는 순간 '정상 대상 0'이 울린다
 1. kubectl delete ingress --all        # ALB 제거. 안 하면 VPC 삭제가 막힌다
                                        #   (ALB는 Terraform이 모르는 리소스)
 2. Kafka CR 삭제 → PVC 삭제 확인        # StatefulSet PVC는 자동 삭제되지 않는다

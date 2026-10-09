@@ -17,13 +17,16 @@ variable "alb_arn_suffix" {
   }
 }
 
-variable "target_group_arn_suffixes" {
-  description = "정상 대상 수를 볼 Target Group ARN 접미사(targetgroup/<이름>/<id>) 목록 — web·api 서비스마다 하나."
-  type        = list(string)
+variable "target_groups" {
+  description = <<-EOT
+    정상 대상 수를 볼 대상 그룹. 키 = 서비스 이름(알람 이름에 쓴다), 값 = ARN 접미사(targetgroup/<이름>/<id>).
+    scripts/alb-alarms.sh가 대상 그룹 태그(ingress.k8s.aws/resource)에서 서비스 이름을 읽어 넘긴다.
+  EOT
+  type        = map(string)
 
   validation {
-    condition     = alltrue([for t in var.target_group_arn_suffixes : can(regex("^targetgroup/[^/]+/[0-9a-f]+$", t))])
-    error_message = "target_group_arn_suffixes의 원소는 targetgroup/<이름>/<id> 형식이어야 한다."
+    condition     = alltrue([for k, v in var.target_groups : can(regex("^targetgroup/[^/]+/[0-9a-f]+$", v)) && can(regex("^[a-z0-9-]+$", k))])
+    error_message = "target_groups는 {서비스이름(소문자·숫자·하이픈) = targetgroup/<이름>/<id>} 형식이어야 한다."
   }
 }
 
@@ -34,9 +37,12 @@ variable "alarm_email" {
 }
 
 variable "elb_5xx_threshold" {
-  description = "1분 동안 ALB가 직접 만든 5xx(대상에 닿지 못한 502·503·504 등) 수의 경보 임계."
+  description = <<-EOT
+    1분 동안 ALB가 직접 만든 5xx(대상에 닿지 못한 502·503·504 등) 수의 경보 임계(1분 하나로 판정).
+    시작값 5: TS-035의 롤링 배포 장애는 약 14초에 13~16건이었다(실측). 실제 트래픽에서 조정하지 않았다.
+  EOT
   type        = number
-  default     = 10
+  default     = 5
 }
 
 variable "runbook_url" {

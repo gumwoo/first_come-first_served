@@ -18,8 +18,11 @@ MODE="${1:-}"
 
 tf() { terraform -chdir="$DIR" "$@"; }
 
+case "$MODE" in apply | plan | destroy) ;; *) echo "사용: bash scripts/alb-alarms.sh apply|plan|destroy" >&2; exit 2 ;; esac
+
 # demo와 같은 state 버킷을 쓴다(키만 다르다 — versions.tf). backend.hcl은 커밋하지 않는 파일이라 demo 것을 그대로 쓴다.
 tf init -input=false -reconfigure -backend-config="$ROOT/infra/terraform/platform/environments/demo/backend.hcl" >/dev/null
+REGION_VAR=(-var "region=$AWS_DEFAULT_REGION")
 
 case "$MODE" in
   apply|plan)
@@ -30,9 +33,17 @@ case "$MODE" in
     LB_SUFFIX="${LB_ARN#*:loadbalancer/}"                       # app/<이름>/<id>
     TGS="$(aws elbv2 describe-target-groups --load-balancer-arn "$LB_ARN" --query 'TargetGroups[].TargetGroupArn' --output text | tr -d '\r')"
     [ -n "$TGS" ] || { echo "ALB에 대상 그룹이 없다" >&2; exit 1; }
-    TG_JSON="$(for a in $TGS; do printf '%s\n' "${a##*:}"; done | jq -R . | jq -sc .)"   # ["targetgroup/<이름>/<id>", ...]
-    echo "    ALB $LB_SUFFIX, 대상 그룹 $(echo "$TG_JSON" | jq length)개"
-    ARGS=(-input=false -var "alb_arn_suffix=$LB_SUFFIX" -var "target_group_arn_suffixes=$TG_JSON" -var "alarm_email=${ALARM_EMAIL:-}")
+    # 대상 그룹 → 서비스 이름. LBC가 붙이는 태그 ingress.k8s.aws/resource = "<네임스페이스>/<인그레스>-<서비스>:<포트>".
+    # 서비스 이름에서 공통 접두어(flowticket-)를 떼어 알람 이름에 쓴다(예: api·web). 태그가 없으면 대상 그룹 이름을 쓴다.
+    TG_JSON="{}"
+    for a in $TGS; do
+      RES="$(aws elbv2 describe-tags --resource-arns "$a" --query "TagDescriptions[0].Tags[?Key=='ingress.k8s.aws/resource'].Value | [0]" --output text | tr -d '\r')"
+      NAME="$(printf '%s' "${RES%:*}" | sed -E 's#^.*/##; s#^(flowticket-)+##; s#[^a-z0-9-]#-#g')"
+      if [ -z "$NAME" ] || [ "$RES" = "None" ]; then NAME="$(printf '%s' "${a##*:}" | cut -d/ -f2 | tr 'A-Z' 'a-z')"; fi
+      TG_JSON="$(echo "$TG_JSON" | jq -c --arg k "$NAME" --arg v "${a##*:}" '. + {($k): $v}')"
+    done
+    echo "    ALB $LB_SUFFIX, 대상 그룹 $(echo "$TG_JSON" | jq -c 'keys')"
+    ARGS=(-input=false "${REGION_VAR[@]}" -var "alb_arn_suffix=$LB_SUFFIX" -var "target_groups=$TG_JSON" -var "alarm_email=${ALARM_EMAIL:-}")
     if [ "$MODE" = plan ]; then tf plan "${ARGS[@]}"; else tf apply -auto-approve "${ARGS[@]}"; fi
     ;;
   destroy)
@@ -42,9 +53,6 @@ case "$MODE" in
     fi
     if [ -z "$STATE" ]; then echo "    알람 스택 state가 비어 있다. 건너뛴다"; exit 0; fi
     # destroy는 state에 있는 것을 지운다. 변수는 형식 검사만 통과하면 되고 실제 ALB가 없어도 된다(data 소스를 쓰지 않는 이유).
-    tf destroy -auto-approve -input=false -var "alb_arn_suffix=app/none/0" -var 'target_group_arn_suffixes=[]'
-    ;;
-  *)
-    echo "사용: bash scripts/alb-alarms.sh apply|plan|destroy" >&2; exit 2
+    tf destroy -auto-approve -input=false "${REGION_VAR[@]}" -var "alb_arn_suffix=app/none/0" -var 'target_groups={}'
     ;;
 esac

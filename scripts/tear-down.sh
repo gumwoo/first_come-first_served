@@ -67,7 +67,7 @@ audit() {
   # 부하 발생기(loadtest-100k-plan §4). 위 EC2 항목에도 잡히지만, 발생기만 따로 보이게 한다 —
   # 측정 세션을 강제 종료한 경로에서 남기 쉬운 것이 이쪽이다. 결과 버킷은 force_destroy라 terraform이 지운다.
   chk "EC2(부하 발생기)"  "$(aws ec2 describe-instances --filters "$TAG" Name=tag:Role,Values=loadgen Name=instance-state-name,Values=running,pending,stopping,stopped --query 'length(Reservations[])' --output text 2>/dev/null)"
-  # ALB 알람 스택(demo-alarms) — 0b 단계에서 지운다. 알람·토픽은 이름으로 센다(Project 태그는 SNS에만 붙는다).
+  # ALB 알람 스택(demo-alarms) — 0a 단계에서 지운다. 알람·토픽은 이름으로 센다(describe-alarms·list-topics는 태그로 거르지 못한다).
   chk "CloudWatch 알람(ALB)" "$(aws cloudwatch describe-alarms --alarm-name-prefix flowticket-alb- --query 'length(MetricAlarms)' --output text 2>/dev/null)"
   chk "SNS 토픽(ALB 알람)"   "$(aws sns list-topics --query "length(Topics[?ends_with(TopicArn,':flowticket-alb-alarms')])" --output text 2>/dev/null)"
   chk "S3(발생기 결과)"   "$(aws s3api list-buckets --query "length(Buckets[?starts_with(Name,'$CLUSTER-loadgen-')])" --output text 2>/dev/null)"
@@ -78,6 +78,12 @@ if [ "$AUDIT_ONLY" -eq 1 ]; then
   audit; exit $?
 fi
 
+echo "==> 0a ALB 알람 스택 삭제"
+# 알람 스택(demo-alarms)은 demo와 다른 state라 아래 terraform destroy가 지우지 않는다. 맨 먼저 지운다 —
+# 다음 단계의 ArgoCD Application 삭제가 finalizer로 Ingress·Service·Deployment까지 연쇄 삭제해, 그 뒤에 지우면
+# 파드·대상 그룹이 사라지는 순간 '정상 대상 0' 알람이 울린다. 변수만 넘기면 되므로 ALB가 이미 없어도 지워진다.
+bash "$HERE/alb-alarms.sh" destroy || { echo "알람 스택 삭제 실패 — 계속 진행하고 잔여 점검에서 다시 본다" >&2; }
+
 echo "==> 0/7 ArgoCD Application 삭제"
 # 먼저 지우지 않으면 아래에서 지운 워크로드를 ArgoCD가 되살린다(selfHeal).
 if have_cluster; then
@@ -85,11 +91,6 @@ if have_cluster; then
 else
   echo "    클러스터에 접근할 수 없다. k8s 단계를 건너뛴다"
 fi
-
-echo "==> 0b ALB 알람 스택 삭제"
-# 알람 스택(demo-alarms)은 demo와 다른 state라 아래 terraform destroy가 지우지 않는다. ALB를 지우기 전에 먼저 지운다 —
-# 순서가 바뀌면 대상 그룹이 사라진 순간 '정상 대상 0' 알람이 울린다. 변수만 넘기면 되므로 ALB가 이미 없어도 지워진다.
-bash "$HERE/alb-alarms.sh" destroy || { echo "알람 스택 삭제 실패 — 계속 진행하고 잔여 점검에서 다시 본다" >&2; }
 
 if have_cluster; then
   echo "==> 1/7 Ingress 삭제 → ALB 제거"

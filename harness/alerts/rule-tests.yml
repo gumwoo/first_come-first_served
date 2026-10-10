@@ -2,8 +2,10 @@
 # Prometheus 서버도 클러스터도 부하도 필요 없다.
 #
 # 이 테스트가 잡지 못하는 것: 지표 이름 오타. 규칙과 테스트에 같은 이름을 쓰면 둘 다
-# 통과한다. 그쪽은 렌더링된 스크랩 출력과 대조하는 백엔드 테스트가 맡는다
-# (apps/api/src/test/java/com/flowticket/global/metrics/OperationalMetricsTest.java).
+# 통과한다. 그쪽은 렌더링된 스크랩 출력과 대조하는 백엔드 테스트가 맡는데
+# (apps/api/src/test/java/com/flowticket/global/metrics/OperationalMetricsTest.java), 대상은 outbox·DLQ 지표뿐이다.
+# auth_blacklist_check_failures_total(Micrometer 이름의 count만 TokenBlacklistFailOpenTest가 봄)과
+# kafka_consumer_fetch_manager_records_lag(Kafka 클라이언트 지표)은 스크랩 이름 대조 테스트가 없다.
 #
 # 음성 케이스(`exp_alerts: []`)만 두면 공허하게 통과한다. alertname에 오타가 있으면
 # 규칙을 못 찾아 알림이 0건이 되고, 그게 기대값과 일치해 버린다. 그래서 음성 케이스가 있는
@@ -152,10 +154,10 @@ tests:
     name: "lag이 5분 미만으로 튀었다 가라앉으면 울리지 않는다"
     input_series:
       - series: 'kafka_consumer_fetch_manager_records_lag{job="flowticket-api"}'
-        values: "5000x3 0x10" # 0~3분 5000, 이후 0
+        values: "5000x4 0x10" # 0~4분 5000(활성 4분 < for 5m), 이후 0
     alert_rule_test:
-      # 스파이크 한가운데서 본다. 가라앉은 뒤에만 보면 for를 줄여도 통과해 공허하다.
-      - eval_time: 3m
+      # 스파이크 끝(4m)에서 본다. 가라앉은 뒤에만 보면 for를 줄여도 통과해 공허하다.
+      - eval_time: 4m
         alertname: FlowticketConsumerLag
         exp_alerts: []
       - eval_time: 8m
@@ -182,12 +184,13 @@ tests:
   # 카운터는 누적값이라 실패가 멈춘 뒤에도 0이 아니다. 표현식이 rate가 아니라 원값을 보면
   # 장애가 끝난 뒤에도 영원히 울린다 — 음성 케이스가 그걸 막는다.
   - interval: 1m
-    name: "실패 카운터가 더 늘지 않으면(장애 종료) 누적값이 남아 있어도 울리지 않는다"
+    name: "실패가 멈춘 뒤(카운터가 더 늘지 않으면) 누적값이 남아 있어도 울리지 않는다"
     input_series:
       - series: 'auth_blacklist_check_failures_total{job="flowticket-api"}'
-        values: "5x20"
+        values: "0+60x10 600x20" # 0~10분 분당 60건 실패(이때는 울린다) → 이후 600에서 멈춤
     alert_rule_test:
-      - eval_time: 12m
+      # 마지막 증가(10m)에서 rate 창 5분이 지난 뒤. 원값을 보는 표현식이면 600 > 0이라 계속 울린다.
+      - eval_time: 20m
         alertname: FlowticketBlacklistCheckFailing
         exp_alerts: []
 

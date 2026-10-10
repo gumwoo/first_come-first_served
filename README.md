@@ -27,6 +27,9 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 | 입장자 동시 예매 | 입장자 100명이 동시에 좌석 선점·주문·결제(경합·더블클릭·결제 실패 후 재시도·1인 한도 포함), 판정 3회 정합성 위반 0 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) |
 | 무중단 배포 | 롤링 배포 중 5xx → 0 (`preStop` 25s) | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md) |
 | 장애 주입 | RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구, 노드 오토스케일로 Pending 파드 수용 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |
+| 대기열 토큰 정합성 보강 | 토큰 소유권(남의 입장 토큰으로 선점·이탈 차단), 재발급·이탈 경합(1인 1토큰), 대기 토큰 수명(폴링 연장·만료 토큰 승격 차단)을 통합 테스트로 검증 | [TS-043](docs/troubleshooting/TS-043-queue-token-ownership.md) · [TS-044](docs/troubleshooting/TS-044-queue-takeover-leave-race.md) · [TS-045](docs/troubleshooting/TS-045-queue-token-lifecycle.md) |
+
+10만 명 진입·자동 확장 수치는 측정 당시 api 이미지(`419c96b`, [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)) 기준입니다. 이후 대기열 보강(TS-043~045)은 통합 테스트로 검증했습니다.
 
 ## 서비스 흐름
 
@@ -38,7 +41,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 
 ## 핵심 설계
 
-- **대기열**: Redis Lua 스크립트로 토큰 발급·입장 승격을 원자적으로 처리합니다.
+- **대기열**: Redis Lua 스크립트로 토큰 발급·입장 승격을 원자적으로 처리합니다. 좌석 선점·이탈은 토큰을 발급받은 회원만 할 수 있고, 대기 토큰은 폴링하는 동안 수명이 연장됩니다.
 - **좌석과 주문**: PostgreSQL 조건부 `UPDATE`와 영향 행 수 검증으로 중복 선점·초과판매를 막습니다.
 - **결제 상태 전이**: 주문·결제·좌석·hold 상태를 명시적으로 전이하고 멱등성 키를 사용합니다.
 - **이벤트 전달**: 비즈니스 트랜잭션과 Outbox 기록을 함께 저장하고 Kafka 발행·DLQ 처리를 분리합니다.

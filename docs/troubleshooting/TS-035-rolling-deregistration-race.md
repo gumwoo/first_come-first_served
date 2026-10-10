@@ -160,6 +160,7 @@ closed model은 응답이 느려지면 부하가 스스로 줄어 장애 창을 
 - **관측(2026-10-09 보강)**: 이 장애는 앱 5xx가 0이라 PrometheusRule의 서버 오류 알람(`outcome="SERVER_ERROR"`)으로는 보이지 않았다.
   ALB 계층 알람 스택(`demo-alarms` — `HTTPCode_ELB_5XX_Count`·`TargetConnectionErrorCount`·대상 그룹별 `HealthyHostCount` → SNS)을 추가했다.
   구성은 정적 검증(`terraform validate`)까지만 했고, 실제 장애에서 알람이 울리는지는 확인하지 않았다.
+  2026-10-10: SNS 토픽에 Lambda 구독을 붙여 Prometheus 알림과 같은 Slack 웹훅으로도 보낸다(`demo-alarms/slack.tf`).
 - 이 계열을 정적으로 막을 수 있는가 — 다만 `preStop` vs `deregistration_delay` 크기 비교로는
   안 된다(둘은 다른 구간을 가리킨다). 전파 시간이 기준이라 정적 규칙으로 만들기 어렵다.
 

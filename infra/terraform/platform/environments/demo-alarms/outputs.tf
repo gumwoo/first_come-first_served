@@ -9,3 +9,8 @@ output "alarm_names" {
     [for a in aws_cloudwatch_metric_alarm.no_healthy_targets : a.alarm_name],
   )
 }
+
+output "slack_notify_function" {
+  description = "ALB 알람 → Slack 중계 Lambda(slack_enabled=false면 null). 발화 확인은 이 함수의 로그 그룹을 본다."
+  value       = var.slack_enabled ? aws_lambda_function.slack_notify[0].function_name : null
+}

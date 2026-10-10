@@ -4,7 +4,7 @@
 
 - **동시성 정합성** — 대기열·좌석·결제를 Redis Lua·조건부 `UPDATE`·멱등성 키로 원자화합니다.
 - **10만 명 / 10초 진입 검증** — AWS EKS에서 판정 3회, 서버가 실제로 받은 요청 기준으로 정원 초과·정합성 위반 0을 확인했습니다.
-- **자동 확장** — 부하에 따라 Pod(HPA)와 Node(Cluster Autoscaler)가 늘고 줄며, 공연 오픈 전 사전 확장은 Git으로 켜고 끕니다.
+- **자동 확장** — 부하에 따라 Pod(HPA)와 Node(Cluster Autoscaler)가 늘고 줄며, 공연 오픈 전 사전 확장은 Git으로 켜고 끕니다. 같은 판정 run에서 노드 9 고정 대비 노드-시간을 11~13% 덜 썼습니다(실측 노드 곡선으로 계산).
 - **GitOps 배포 · 장애 주입** — Terraform(인프라)과 Argo CD(앱)로 소유를 나눠 EKS에 올리고, 배포·노드·DB·캐시에 실제로 장애를 넣어 거동을 측정합니다.
 
 ## 왜 만들었나
@@ -24,6 +24,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 | 검증 | 결과(실측) | 근거 |
 |---|---|---|
 | 대기열 진입 10만 명 / 10초 + 자동 확장 | 판정 3회 모두 진입 요청 100,000건 정상 처리, 정원 초과·정합성 위반 0. 같은 실행에서 폴링이 몰리자 Pod 3→9·Node 6→9로 확장했다가 다시 축소 | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) |
+| 자동 확장 비용 효과 | 같은 판정 run의 실측 노드 곡선을 시간으로 적분해, 노드 9 고정 대비 노드-시간 11~13% 절감(계산). 오픈 1회·평시 4대를 가정한 하루 환산 약 54%(m6i.large 서울 $0.118/h 기준 하루 약 $13.7). 남은 초과의 절반 이상이 폭증 뒤 CA 축소 대기(약 11분)임을 확인 | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) |
 | 입장자 동시 예매 | 입장자 100명이 동시에 좌석 선점·주문·결제(경합·더블클릭·결제 실패 후 재시도·1인 한도 포함), 판정 3회 정합성 위반 0 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) |
 | 무중단 배포 | 롤링 배포 중 5xx → 0 (`preStop` 25s) | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md) |
 | 장애 주입 | RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구, 노드 오토스케일로 Pending 파드 수용 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |

@@ -58,6 +58,7 @@ infra/terraform/
 `demo`를 apply하는 시점에는 ALB가 없어 알람 차원(`LoadBalancer=app/<이름>/<id>`)을 알 수 없다. 그래서 ALB가 생긴 뒤
 `scripts/alb-alarms.sh apply`가 Ingress의 ALB 주소로 ALB·대상 그룹 식별자를 찾아 변수로 넘긴다. `data "aws_lb"`로 찾지 않는다 —
 data 소스는 destroy 때도 다시 읽혀 ALB가 이미 없으면 철거가 실패한다. state 키는 `platform/demo-alarms.tfstate`(같은 버킷).
+알람은 SNS 토픽에서 Lambda(`slack.tf`)가 받아 Prometheus 알림과 같은 Slack 웹훅으로 보낸다 — 웹훅은 실행 중 SSM에서 읽어 state에 남기지 않는다.
 
 **왜 나누나**: `platform destroy`가 도메인·인증서·이미지까지 지우면 다시 켤 때마다 DNS 검증을
 새로 기다려야 한다. bootstrap은 **연간 $15 수준**이라 남겨두는 편이 압도적으로 싸다.
@@ -305,7 +306,7 @@ Kafka가 쓰는 EKS 기본 `gp2`의 실제 바인딩 모드는 **확인하지 �
 5. kubectl/kustomize Kafka CR(k8s/kafka) → 관측 리소스(k8s/monitoring) → ArgoCD Application
 6. ArgoCD            k8s/overlays/demo-local → k8s/base — 앱(api/web)·HPA·PDB·Ingress만
 7. 검증              Ingress ALB 생성 확인 → HTTPS → /actuator/health/readiness
-8. ALB 알람          bash scripts/alb-alarms.sh apply   (demo-alarms — ALB가 생긴 뒤에만 가능, ALARM_EMAIL=... 로 이메일 구독)
+8. ALB 알람          bash scripts/alb-alarms.sh apply   (demo-alarms — ALB가 생긴 뒤에만 가능, Slack 중계 Lambda 포함, ALARM_EMAIL=... 로 이메일 구독)
 ```
 
 `terraform plan` 결과를 반드시 검토한 뒤 `apply`한다. **2단계의 ACM DNS 검증은 대기 시간이 있다.**

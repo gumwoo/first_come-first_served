@@ -50,3 +50,20 @@ variable "runbook_url" {
   type        = string
   default     = "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-035-rolling-deregistration-race.md"
 }
+
+variable "slack_enabled" {
+  description = "ALB 알람을 Slack으로도 보낸다(SNS → Lambda → 웹훅, slack.tf). 끄면 SNS 토픽·이메일 구독만 남는다."
+  type        = bool
+  default     = true
+}
+
+variable "slack_webhook_param" {
+  description = "Slack 웹훅 URL이 든 SSM SecureString 이름. Alertmanager가 쓰는 것과 같다(k8s/external-secrets/externalsecret-alertmanager.yaml)."
+  type        = string
+  default     = "/flowticket/SLACK_ALERT_WEBHOOK_URL"
+
+  validation {
+    condition     = can(regex("^/flowticket/[A-Za-z0-9_./-]+$", var.slack_webhook_param))
+    error_message = "slack_webhook_param은 /flowticket/ 아래 SSM 파라미터 이름이어야 한다."
+  }
+}

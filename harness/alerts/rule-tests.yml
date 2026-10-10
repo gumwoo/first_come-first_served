@@ -2,15 +2,17 @@
 # Prometheus 서버도 클러스터도 부하도 필요 없다.
 #
 # 이 테스트가 잡지 못하는 것: 지표 이름 오타. 규칙과 테스트에 같은 이름을 쓰면 둘 다
-# 통과한다. 그쪽은 렌더링된 스크랩 출력과 대조하는 백엔드 테스트가 맡는다
-# (apps/api/src/test/java/com/flowticket/global/metrics/OperationalMetricsTest.java).
+# 통과한다. 그쪽은 렌더링된 스크랩 출력과 대조하는 백엔드 테스트가 맡는데
+# (apps/api/src/test/java/com/flowticket/global/metrics/OperationalMetricsTest.java), 알림 규칙이 쓰는 지표 중 대상은 outbox·DLQ뿐이다.
+# auth_blacklist_check_failures_total(Micrometer 이름의 count만 TokenBlacklistFailOpenTest가 봄)과
+# kafka_consumer_fetch_manager_records_lag(Kafka 클라이언트 지표)은 스크랩 이름 대조 테스트가 없다.
 #
 # 음성 케이스(`exp_alerts: []`)만 두면 공허하게 통과한다. alertname에 오타가 있으면
 # 규칙을 못 찾아 알림이 0건이 되고, 그게 기대값과 일치해 버린다. 그래서 음성 케이스가 있는
 # alertname마다 같은 이름을 쓰는 양성 케이스를 짝지었다. 이름이 틀리면 양성 쪽이 깨진다.
 #
-# 남은 공백: FlowticketDlqBacklog · FlowticketConsumerLag · FlowticketBlacklistCheckFailing은
-# `check rules`(문법·표현식)만 거치고 발화 판정 테스트가 없다.
+# 규칙 6개 모두 음성·양성 케이스가 있다. DLQ·ConsumerLag·BlacklistCheckFailing 케이스(2026-10-10 추가)는
+# 규칙을 일부러 망가뜨렸을 때(임계 >→>=·상향, for 단축·연장, rate 제거) 각각 실제로 깨지는 것을 로컬 promtool로 확인했다.
 rule_files:
   - rules.yml
 
@@ -109,3 +111,101 @@ tests:
               summary: "아웃박스 미발행 적체가 10분째 500건을 넘는다 (현재 600)"
               description: "브로커 장애가 지속되고 있을 가능성이 높다. Kafka 상태와 릴레이 로그를 본다."
               runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/improvements/IMP-011-outbox-delivery.md"
+
+  # ── DLQ 적체: 임계 경계(> 10)와 지속 조건(10분) ─────────────────
+  - interval: 1m
+    name: "DLQ 미처리가 정확히 10건이면 울리지 않는다(임계는 초과)"
+    input_series:
+      - series: 'flowticket_dlq_messages{job="flowticket-api",status="PENDING"}'
+        values: "10x20"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: FlowticketDlqBacklog
+        exp_alerts: []
+
+  - interval: 1m
+    name: "DLQ 미처리가 10건을 넘은 채 10분이 안 됐으면 아직 울리지 않는다"
+    input_series:
+      - series: 'flowticket_dlq_messages{job="flowticket-api",status="PENDING"}'
+        values: "11x20"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: FlowticketDlqBacklog
+        exp_alerts: []
+
+  - interval: 1m
+    name: "DLQ 미처리가 10분 넘게 10건을 넘으면 울린다(위 두 음성 케이스와 짝)"
+    input_series:
+      - series: 'flowticket_dlq_messages{job="flowticket-api",status="PENDING"}'
+        values: "11x20"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: FlowticketDlqBacklog
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "DLQ 미처리 메시지가 10건을 넘는다 (현재 11)"
+              description: "/admin/dlq 에서 원본 payload와 오류를 보고 재처리 또는 폐기를 판단한다."
+              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-020-kafka-poison-pill-infinite-retry.md"
+
+  # ── 컨슈머 lag: 짧은 스파이크는 무시, 지속되면 울린다 ───────────
+  - interval: 1m
+    name: "lag이 5분 미만으로 튀었다 가라앉으면 울리지 않는다"
+    input_series:
+      - series: 'kafka_consumer_fetch_manager_records_lag{job="flowticket-api"}'
+        values: "5000x4 0x10" # 0~4분 5000(활성 4분 < for 5m), 이후 0
+    alert_rule_test:
+      # 스파이크 끝(4m)에서 본다. 가라앉은 뒤에만 보면 for를 줄여도 통과해 공허하다.
+      - eval_time: 4m
+        alertname: FlowticketConsumerLag
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: FlowticketConsumerLag
+        exp_alerts: []
+
+  - interval: 1m
+    name: "lag이 5분 넘게 1000을 넘으면 울린다(위 스파이크 음성 케이스와 짝)"
+    input_series:
+      - series: 'kafka_consumer_fetch_manager_records_lag{job="flowticket-api"}'
+        values: "1500x10"
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: FlowticketConsumerLag
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Kafka consumer lag이 5분째 1000을 넘는다 (현재 1500)"
+              description: "소비가 발행을 못 따라간다. 컨슈머 오류율과 파드 수를 본다."
+              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-023-multipod-failover-verification.md"
+
+  # ── 블랙리스트 조회 실패(ADR-016 fail-open의 유일한 신호) ───────
+  # 카운터는 누적값이라 실패가 멈춘 뒤에도 0이 아니다. 표현식이 rate가 아니라 원값을 보면
+  # 장애가 끝난 뒤에도 영원히 울린다 — 음성 케이스가 그걸 막는다.
+  - interval: 1m
+    name: "실패가 멈춘 뒤(카운터가 더 늘지 않으면) 누적값이 남아 있어도 울리지 않는다"
+    input_series:
+      - series: 'auth_blacklist_check_failures_total{job="flowticket-api"}'
+        values: "0+60x10 600x20" # 0~10분 분당 60건 실패(이때는 울린다) → 이후 600에서 멈춤
+    alert_rule_test:
+      # 마지막 증가(10m)에서 rate 창 5분이 지난 뒤. 원값을 보는 표현식이면 600 > 0이라 계속 울린다.
+      - eval_time: 20m
+        alertname: FlowticketBlacklistCheckFailing
+        exp_alerts: []
+
+  - interval: 1m
+    name: "블랙리스트 조회 실패가 5분 넘게 이어지면 울린다(위 음성 케이스와 짝)"
+    input_series:
+      - series: 'auth_blacklist_check_failures_total{job="flowticket-api"}'
+        values: "0+60x20" # 분당 60건 실패
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: FlowticketBlacklistCheckFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "토큰 블랙리스트 조회가 5분째 실패하고 있다"
+              description: "Redis를 읽지 못해 fail-open으로 통과시키는 중이다. 이 구간에는 로그아웃된 access token이 남은 TTL(최대 30분) 동안 유효하다. Redis 상태를 확인한다."
+              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/decisions/ADR-016-redis-outage-auth-fail-open.md"

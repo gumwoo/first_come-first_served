@@ -80,8 +80,9 @@ auth_blacklist_check_failures_total
 ~~⚠️ **알림은 없다.** Alertmanager는 수신처가 없어 의도적으로 꺼져 있으므로, 이 지표는 누군가 대시보드를 봐야 드러난다.~~
 → **해소(2026-08-21, 커밋 561fd3c)**: 알림 파이프라인을 연결했다 — PrometheusRule `FlowticketBlacklistCheckFailing`
 (`k8s/monitoring/prometheusrule-flowticket.yaml`, 5분 이상 실패율 > 0 → warning)이 Alertmanager의 Slack 수신처
-(`kube-prometheus-stack.values.yaml`, 웹훅은 ExternalSecret)로 간다. 남은 공백: 이 규칙은 `promtool check rules`(문법·표현식)만 거치고
-발화 판정 테스트가 없다(`harness/alerts/rule-tests.yml` 머리말). 실제 Slack 도착은 이 문서에서 확인한 기록이 없다.
+(`kube-prometheus-stack.values.yaml`, 웹훅은 ExternalSecret)로 간다. 발화 판정은 `harness/alerts/rule-tests.yml`이 CI(promtool)에서 본다 —
+실패가 5분 넘게 이어지면 울리고, 카운터가 더 늘지 않으면(장애 종료) 누적값이 남아도 울리지 않는다(2026-10-10 추가).
+남은 공백: 실제 Slack 도착은 이 문서에서 확인한 기록이 없다.
 (이 문장은 2026-10-10 리뷰에서 현재 설정과 어긋난 것을 발견해 고쳤다.)
 
 ## 검증
@@ -103,4 +104,4 @@ auth_blacklist_check_failures_total
   진실원이라 fail-open이 성립하지 않는다(회전 기록 없이 통과시키면 재사용 탐지가 무력화된다).
   Redis 장애 중 refresh가 실패하는 것은 **의도된 동작으로 남긴다** — 다만 그 판단을 이 문서에서
   내린 것은 아니고, 별도로 검토한 적도 없다.
-- ~~알림 부재~~ → 알림은 연결됨(561fd3c). 남은 공백: `FlowticketBlacklistCheckFailing`의 발화 판정 테스트가 없고, 실제 Slack 도착을 확인한 기록이 없다(위 §관측).
+- ~~알림 부재~~ → 알림은 연결됨(561fd3c). 발화 판정 테스트도 있다(promtool, CI). 남은 공백: 실제 Slack 도착을 확인한 기록이 없다(위 §관측).

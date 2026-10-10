@@ -3,7 +3,7 @@
 #
 # 이 테스트가 잡지 못하는 것: 지표 이름 오타. 규칙과 테스트에 같은 이름을 쓰면 둘 다
 # 통과한다. 그쪽은 렌더링된 스크랩 출력과 대조하는 백엔드 테스트가 맡는데
-# (apps/api/src/test/java/com/flowticket/global/metrics/OperationalMetricsTest.java), 대상은 outbox·DLQ 지표뿐이다.
+# (apps/api/src/test/java/com/flowticket/global/metrics/OperationalMetricsTest.java), 알림 규칙이 쓰는 지표 중 대상은 outbox·DLQ뿐이다.
 # auth_blacklist_check_failures_total(Micrometer 이름의 count만 TokenBlacklistFailOpenTest가 봄)과
 # kafka_consumer_fetch_manager_records_lag(Kafka 클라이언트 지표)은 스크랩 이름 대조 테스트가 없다.
 #

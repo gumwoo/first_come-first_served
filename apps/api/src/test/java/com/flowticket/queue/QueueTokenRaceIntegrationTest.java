@@ -47,7 +47,7 @@ class QueueTokenRaceIntegrationTest extends IntegrationTestSupport {
     void 죽은_토큰을_동시에_재발급해도_새_토큰은_하나만_생긴다() throws Exception {
         long user = 2000L;
         String dead = queueService.issue(user, EVENT).token();
-        redisTemplate.opsForZSet().remove(waitKey(), dead); // 대기열에서 빠진 죽은 토큰(메타는 남음 → isReusable=false)
+        redisTemplate.opsForZSet().remove(waitKey(), dead); // 대기열에서 빠진 죽은 토큰(스냅샷이 EXPIRED → isReusable=false)
 
         Set<String> tokens = concurrently(30, () -> queueService.issue(user, EVENT).token());
 

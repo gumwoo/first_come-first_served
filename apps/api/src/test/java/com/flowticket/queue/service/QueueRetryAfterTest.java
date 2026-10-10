@@ -15,7 +15,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 class QueueRetryAfterTest {
 
     private final QueueService service = new QueueService(mock(StringRedisTemplate.class), mock(BookableEventCache.class),
-            100, 1800, 1500, 2000, 30000, Clock.systemUTC(), mock(QueueMetrics.class));
+            100, 1800, 21600, 1500, 2000, 30000, Clock.systemUTC(), mock(QueueMetrics.class));
 
     @Test
     void 앞쪽_순번은_최소_대기() {

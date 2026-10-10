@@ -72,7 +72,8 @@ audit() {
   chk "SNS 토픽(ALB 알람)"   "$(aws sns list-topics --query "length(Topics[?ends_with(TopicArn,':flowticket-alb-alarms')])" --output text 2>/dev/null)"
   # ALB 알람 → Slack 중계(demo-alarms/slack.tf). 같은 0a 단계에서 지워진다.
   chk "Lambda(ALB 알람 Slack)" "$(aws lambda list-functions --query "length(Functions[?FunctionName=='flowticket-alb-alarms-slack'])" --output text 2>/dev/null)"
-  chk "로그 그룹(Slack 중계)" "$(aws logs describe-log-groups --log-group-name-prefix /aws/lambda/flowticket-alb-alarms-slack --query 'length(logGroups)' --output text 2>/dev/null)"
+  # 슬래시로 시작하는 인자는 Git Bash가 Windows 경로로 바꾼다 — MSYS_NO_PATHCONV로 막는다(k8s/external-secrets/bootstrap.sh와 같은 이유).
+  chk "로그 그룹(Slack 중계)" "$(MSYS_NO_PATHCONV=1 aws logs describe-log-groups --log-group-name-prefix /aws/lambda/flowticket-alb-alarms-slack --query 'length(logGroups)' --output text 2>/dev/null)"
   chk "S3(발생기 결과)"   "$(aws s3api list-buckets --query "length(Buckets[?starts_with(Name,'$CLUSTER-loadgen-')])" --output text 2>/dev/null)"
   return $fail
 }

@@ -24,16 +24,21 @@ def _webhook_url():
     return _webhook
 
 
+def _esc(s):
+    """Slack mrkdwn 제어 문자(&, <, >)를 escape한다. CloudWatch 사유 문장에 '->' 등이 들어간다."""
+    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _text(sns):
     """CloudWatch 알람 메시지(JSON)를 Alertmanager 알림과 비슷한 모양으로. JSON이 아니면 원문 그대로."""
     try:
         m = json.loads(sns["Message"])
         new = m["NewStateValue"]
     except (ValueError, TypeError, KeyError):
-        return "[ALB] {}\n{}".format(sns.get("Subject") or "", sns.get("Message", ""))
+        return "[ALB] {}\n{}".format(_esc(sns.get("Subject")), _esc(sns.get("Message")))
     return "{} [{}] ALB: {} ({} → {})\n*{}*\n{}".format(
         _MARK.get(new, ""), new, m.get("AlarmName", ""), m.get("OldStateValue", "?"), new,
-        m.get("NewStateReason", ""), m.get("AlarmDescription", ""),
+        _esc(m.get("NewStateReason")), _esc(m.get("AlarmDescription")),
     )
 
 

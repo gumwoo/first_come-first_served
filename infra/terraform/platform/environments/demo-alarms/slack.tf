@@ -19,6 +19,8 @@ data "archive_file" "slack_notify" {
   type        = "zip"
   source_file = "${path.module}/lambda/slack_notify.py"
   output_path = "${path.module}/.terraform/build/slack_notify.zip" # .terraform/은 gitignore 대상
+  # 파일 모드를 고정한다. Windows에서 묶으면 0666이라 apply하는 OS에 따라 해시가 달라져 Lambda가 불필요하게 다시 배포된다.
+  output_file_mode = "0644"
 }
 
 data "aws_iam_policy_document" "slack_assume" {

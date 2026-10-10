@@ -27,7 +27,7 @@ ALB 로그를 T0 기준 분 단위로 나누면(`re1`, 상태 조회만):
 ElastiCache 주 노드 `flowticket-redis-001`(`cache.t4g.micro`, 버스터블):
 - `CPUCreditBalance`(5분 최소): run 전 6.72(16:00 KST) → 6.61 → 5.74 → 4.83 → 2.92 → **0.006(16:25 KST = T0+22분 구간)** → 0.006 → 0.41.
 - `CPUUtilization`(1분 최대): 폭증 중 약 39% → T0+23분부터 **9.6% 안팎에 고정** — t4g.micro 기준 성능(약 10%)으로 묶인 모양.
-- 같은 부하에서 엔진 CPU(1분 평균, T0+N분은 T0 기준 정렬)는 IMP-031과 범위가 겹친다: 폭증이 온전히 걸린 T0+17~22분 re1 57~59% vs pf-r1 55~59%·pf-r2 56~57%·pf-r3 46~59%,
+- 같은 부하에서 엔진 CPU(1분 평균, 구간 시작 = T0를 분 단위로 내린 시각 + N분)는 IMP-031과 범위가 겹친다: 확장 공백이 지난 폭증 T0+18~22분 re1 57.1~58.9% vs pf-r1 56.6~58.7%·pf-r2 56.2~57.4%·pf-r3 54.0~58.9%,
   폴링만 구간(T0+5~12분 평균) 22.4% vs 22.5~22.7%.
 - IMP-031 run 동안 크레딧은 274~288(최대 288)이었다 — 바닥난 적이 없다.
 
@@ -51,5 +51,5 @@ ADR-012 §5는 크레딧이 결과에 개입하지 않게 **노드**를 `m6i.lar
 ## 5. 검증
 - 분별 지연: `scratchpad` ALB 로그 분석(상태 조회 GET `/api/queue/status`, 대상 처리 시간), 결과는 session.log `[re1 분석]`.
 - 크레딧·CPU: `aws cloudwatch get-metric-statistics --namespace AWS/ElastiCache --metric-name CPUCreditBalance|CPUUtilization|EngineCPUUtilization --dimensions Name=CacheClusterId,Value=flowticket-redis-001`.
-- IMP-031 비교 구간은 각 run의 `start-at.txt`(UTC) 기준 T0+5~13분(폴링만)·T0+15~23분(폭증).
+- IMP-031 비교 구간은 각 run의 `start-at.txt`(UTC) T0를 분 단위로 내린 시각 기준 T0+5~12분(폴링만, 8개 1분 값 평균)·T0+18~22분(폭증 플래토, 5개 1분 값 범위).
 - 확인하지 못한 것: 크레딧을 채운 상태에서 같은 이미지로 다시 재는 것(이번 세션 범위 밖 — 사용자 결정).

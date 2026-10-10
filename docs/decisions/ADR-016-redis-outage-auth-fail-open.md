@@ -77,9 +77,12 @@ logout()
 auth_blacklist_check_failures_total
 ```
 
-⚠️ **알림은 없다.** Alertmanager는 수신처가 없어 의도적으로 꺼져 있으므로
-(`k8s/monitoring/kube-prometheus-stack.values.yaml`), 이 지표는 **누군가 대시보드를 봐야**
-드러난다. 이것은 이 ADR이 해소하지 못한 부분이다.
+~~⚠️ **알림은 없다.** Alertmanager는 수신처가 없어 의도적으로 꺼져 있으므로, 이 지표는 누군가 대시보드를 봐야 드러난다.~~
+→ **해소(2026-08-21, 커밋 561fd3c)**: 알림 파이프라인을 연결했다 — PrometheusRule `FlowticketBlacklistCheckFailing`
+(`k8s/monitoring/prometheusrule-flowticket.yaml`, 5분 이상 실패율 > 0 → warning)이 Alertmanager의 Slack 수신처
+(`kube-prometheus-stack.values.yaml`, 웹훅은 ExternalSecret)로 간다. 남은 공백: 이 규칙은 `promtool check rules`(문법·표현식)만 거치고
+발화 판정 테스트가 없다(`harness/alerts/rule-tests.yml` 머리말). 실제 Slack 도착은 이 문서에서 확인한 기록이 없다.
+(이 문장은 2026-10-10 리뷰에서 현재 설정과 어긋난 것을 발견해 고쳤다.)
 
 ## 검증
 

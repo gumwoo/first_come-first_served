@@ -93,6 +93,22 @@ public class QueueAdmissionService {
     /** 한 틱에서 앞쪽 죽은 토큰을 치우는 최대 회수(회당 여유 슬롯 수만큼 본다). 다 못 치우면 그 틱은 승격하지 않고 다음 틱이 잇는다. */
     private static final int PURGE_MAX_ROUNDS = 5;
 
+    // 빈 공연을 활성 목록에서 빼기 — "대기 0·입장 카운터 0 확인"과 SREM을 한 원자 단위로.
+    // 예전에는 스냅숏(Lua)으로 확인한 뒤 SREM을 따로 해, 그 사이 신규 진입(ISSUE_LUA의 ZADD·SADD)이 끼면
+    // 대기자가 있는데 공연이 활성 목록에서 빠졌다 — 승격 워커가 그 공연을 돌지 않아, 다음 진입이 다시 SADD할 때까지
+    // 대기자가 승격되지 않는다. 이 스크립트와 ISSUE_LUA는 서로 원자라, 진입은 확인 전이나 제거 후에만 들어온다
+    // (제거 후 진입이면 ISSUE_LUA가 다시 SADD한다). 키는 모두 KEYS로 받는다.
+    // KEYS: waitKey, admitCountKey, activeEvents / ARGV: eventId / 반환: 1 = 뺐음, 0 = 아직 활성
+    private static final String RETIRE_IF_EMPTY_LUA = """
+            if redis.call('ZCARD', KEYS[1]) == 0 and (tonumber(redis.call('GET', KEYS[2]) or '0') <= 0) then
+              redis.call('SREM', KEYS[3], ARGV[1])
+              return 1
+            end
+            return 0
+            """;
+    private static final DefaultRedisScript<Long> RETIRE_IF_EMPTY_SCRIPT =
+            new DefaultRedisScript<>(RETIRE_IF_EMPTY_LUA, Long.class);
+
     @SuppressWarnings("rawtypes")
     private static final DefaultRedisScript<List> ADMIT_SCRIPT = new DefaultRedisScript<>(ADMIT_LUA, List.class);
     @SuppressWarnings("rawtypes")
@@ -226,8 +242,8 @@ public class QueueAdmissionService {
                     reclaim(eventId);
                     admit(eventId);
                     QueueMetrics.EventSnapshot snapshot = snapshot(eventId);
-                    if (snapshot.waiting() == 0 && snapshot.admitCount() <= 0) {
-                        redis.opsForSet().remove(QueueKeys.ACTIVE_EVENTS, e); // 정리
+                    // 스냅숏이 비었어도 제거는 RETIRE_IF_EMPTY_LUA가 다시 확인하고 한다(그 사이 진입이 끼어도 빼지 않는다).
+                    if (snapshot.waiting() == 0 && snapshot.admitCount() <= 0 && retireIfEmpty(eventId)) {
                         retained.remove(eventId);
                         continue;
                     }
@@ -239,6 +255,14 @@ public class QueueAdmissionService {
             }
         }
         metrics.publish(observed, retained);
+    }
+
+    /** 대기 0·입장 카운터 0이면 활성 목록에서 뺀다(확인과 제거가 원자 — RETIRE_IF_EMPTY_LUA). 뺐으면 true. */
+    boolean retireIfEmpty(Long eventId) {
+        Long removed = redis.execute(RETIRE_IF_EMPTY_SCRIPT,
+                List.of(QueueKeys.wait(eventId), QueueKeys.admitCount(eventId), QueueKeys.ACTIVE_EVENTS),
+                String.valueOf(eventId));
+        return removed != null && removed == 1L;
     }
 
     /** 대기 수·입장 토큰 수(admitExp)·카운터를 같은 시점에 읽는다(SNAPSHOT_LUA). */

@@ -24,6 +24,7 @@
   비원자면 동시 실행 시 정원 초과(over-admit) → 통합 테스트로 재현·방지([[IMP-004-queue-admission]]). [T]
 - 승격 워커 `@Scheduled`(queue.admit-interval-ms). 입장창(`queue.admit-ttl`) 만료 토큰은
   만료 ZSet sweep으로 회수해 슬롯 반환. [T]
+- 빈 공연(대기 0·입장 카운터 0)은 활성 목록에서 뺀다 — 확인과 `SREM`을 **한 Lua**로 해, 그 사이 신규 진입이 끼어도 대기자가 있는 공연을 빼지 않는다([[TS-046]]). [T]
 - 인증: 발급(POST)/이탈(DELETE)은 회원(Bearer). **status(GET)는 토큰(비밀 UUID)으로 접근**
   (permitAll) — 폴링마다 Bearer 요구 시 refresh가 반복되기 때문. [ADR-002]
 

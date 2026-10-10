@@ -207,4 +207,54 @@ class QueueAdmitVisibilityIntegrationTest extends IntegrationTestSupport {
         assertThat(Long.parseLong(count)).isZero();  // 슬롯이 온전히 돌아왔다
         assertThat(registered).isZero();
     }
+
+    // ── 상태 조회 · 재진입 판정 · 좌석 게이트가 같은 규칙인가(TS-047) ──────────────────────────────
+    // 규칙: admitExp에 있고, 입장창이 남았거나(점수 > 지금) 아직 회수 전이라 admit 키가 남아 있으면 입장.
+
+    @Test
+    void 회수돼_admitExp에_없으면_admit키가_남아도_상태는_EXPIRED이고_게이트도_거부한다() {
+        String token = queueService.issue(940L, EVENT).token();
+        admissionService.admit(EVENT);
+        redisTemplate.opsForZSet().add("queue:admitexp:" + EVENT, token, 0); // 점수를 과거로 → 회수 대상
+        assertThat(admissionService.reclaim(EVENT)).contains(token);
+        assertThat(redisTemplate.hasKey("queue:admit:" + token)).isTrue();  // 회수는 admit 키를 남긴다
+
+        // 예전에는 상태 조회가 admit 키만 보고 ADMITTED로 답했다 — 게이트는 거부하는데 화면은 입장으로 보였다.
+        assertThat(queueService.status(token).status()).isEqualTo("EXPIRED");
+        assertThat(queueService.isAdmitted(token, EVENT, 940L)).isFalse();
+    }
+
+    @Test
+    void 회수돼_admit키만_남은_토큰으로_재진입하면_새_토큰을_받는다() {
+        String token = queueService.issue(941L, EVENT).token();
+        admissionService.admit(EVENT);
+        redisTemplate.opsForZSet().add("queue:admitexp:" + EVENT, token, 0);
+        admissionService.reclaim(EVENT);
+
+        // 재진입 판정도 같은 규칙 — 회수된 토큰을 살아 있는 입장 토큰으로 돌려주지 않는다.
+        var again = queueService.issue(941L, EVENT);
+        assertThat(again.token()).isNotEqualTo(token);
+        assertThat(again.status()).isEqualTo("WAITING");
+    }
+
+    @Test
+    void 입장창이_지났지만_회수_전이면_상태와_게이트가_함께_입장으로_본다() {
+        String token = queueService.issue(942L, EVENT).token();
+        admissionService.admit(EVENT);
+        redisTemplate.opsForZSet().add("queue:admitexp:" + EVENT, token, 1); // 점수는 과거, 회수는 아직
+
+        assertThat(queueService.status(token).status()).isEqualTo("ADMITTED");
+        assertThat(queueService.isAdmitted(token, EVENT, 942L)).isTrue();
+    }
+
+    @Test
+    void 입장창이_지났고_admit키도_없으면_상태와_게이트가_함께_거부한다() {
+        String token = queueService.issue(943L, EVENT).token();
+        admissionService.admit(EVENT);
+        redisTemplate.opsForZSet().add("queue:admitexp:" + EVENT, token, 1);
+        redisTemplate.delete("queue:admit:" + token);
+
+        assertThat(queueService.status(token).status()).isEqualTo("EXPIRED");
+        assertThat(queueService.isAdmitted(token, EVENT, 943L)).isFalse();
+    }
 }

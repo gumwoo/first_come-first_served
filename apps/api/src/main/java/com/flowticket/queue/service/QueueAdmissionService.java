@@ -154,7 +154,8 @@ public class QueueAdmissionService {
         }
         // 여기 도착한 시점에 승격은 이미 확정이다(pop+카운트+만료등록이 위에서 원자로 끝났다).
         // admit 키는 그 확정을 뒤따르는 부수 작업이라, 중간에 죽어도 슬롯이 새지 않는다.
-        //   - admit 키: 상태 조회의 빠른 경로(권위는 admitExp). 없으면 admitExp로 판정된다.
+        //   - admit 키: 입장창(admitExp 점수)이 지났지만 아직 회수 전인 토큰을 판정할 때만 본다(권위는 admitExp, TS-047).
+        //     없어도 점수가 남아 있으면 입장이다(TS-024).
         // 입장 알림은 보내지 않는다 — 클라이언트가 상태 폴링으로 안다(ADR-023 §2, 대기열 SSE 제거).
         int admitted = 0;
         for (int i = 0; i < popped.size(); i += 2) { // {member,score,...}

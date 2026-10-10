@@ -94,8 +94,11 @@ public class QueueService {
     private static final DefaultRedisScript<Long> TAKEOVER_SCRIPT =
             new DefaultRedisScript<>(TAKEOVER_LUA, Long.class);
 
-    // 상태 한 번 읽기: 입장 여부·순번·전체 수를 한 Lua로. 판정 규칙은 statusOf·admittedNow와 같다(admit 키가 빠른 경로,
-    // 권위는 admitExp 점수 > 지금 — TS-024). 예전에는 상태 조회 1건이 메타(HGETALL)·EXISTS·ZSCORE·ZRANK·ZCARD·ZRANK로
+    // 상태 한 번 읽기: 입장 여부·순번·전체 수를 한 Lua로. 판정 규칙은 admittedNow·좌석 게이트(isAdmitted)와 같다 —
+    // **admitExp에 있고**, 입장창이 남았거나(점수 > 지금) 아직 회수 전이라 admit 키가 남아 있으면 ADMITTED.
+    // 예전에는 admit 키만 있어도 ADMITTED로 답해, 회수(admitExp에서 제거)된 뒤 admit 키 TTL이 남은 순간에 상태 조회는 ADMITTED인데
+    // 좌석 게이트는 거부했다. 이제 셋이 같은 규칙이다. admit 키가 아직 없는 승격 직후(TS-024)는 점수로 ADMITTED다.
+    // 예전에는 상태 조회 1건이 메타(HGETALL)·EXISTS·ZSCORE·ZRANK·ZCARD·ZRANK로
     // Redis를 6번 왕복했다. 대기 상태를 폴링 주 경로로 옮기면(ADR-023 §2) 대기자 전원이 이 경로를 주기적으로 부르므로
     // 메타 조회(eventId를 알아야 키를 만든다) 1회 + 이 스크립트 1회로 줄인다. 키는 모두 KEYS로 받는다(Lua 안에서 만들지 않는다).
     // admit 키는 토큰 단위라 이벤트 키와 슬롯이 다를 수 있다 — ISSUE_LUA도 여러 슬롯의 키를 함께 쓴다(클러스터 모드 아님).
@@ -103,11 +106,8 @@ public class QueueService {
     // 반환: {상태(0 EXPIRED·1 WAITING·2 ADMITTED), 순번(WAITING일 때 1부터, 아니면 0), 전체 대기 수}
     private static final String STATUS_LUA = """
             local total = redis.call('ZCARD', KEYS[3])
-            if redis.call('EXISTS', KEYS[1]) == 1 then
-              return {2, 0, total}
-            end
             local exp = redis.call('ZSCORE', KEYS[2], ARGV[1])
-            if exp and tonumber(exp) > tonumber(ARGV[2]) then
+            if exp and (tonumber(exp) > tonumber(ARGV[2]) or redis.call('EXISTS', KEYS[1]) == 1) then
               return {2, 0, total}
             end
             local r = redis.call('ZRANK', KEYS[3], ARGV[1])
@@ -130,11 +130,8 @@ public class QueueService {
     // KEYS: admitKey, admitExpKey, waitKey, tokenMeta, userKey / ARGV: token, nowEpochSeconds, extendTtl, refreshBelow
     private static final String STATUS_POLL_LUA = """
             local total = redis.call('ZCARD', KEYS[3])
-            if redis.call('EXISTS', KEYS[1]) == 1 then
-              return {2, 0, total}
-            end
             local exp = redis.call('ZSCORE', KEYS[2], ARGV[1])
-            if exp and tonumber(exp) > tonumber(ARGV[2]) then
+            if exp and (tonumber(exp) > tonumber(ARGV[2]) or redis.call('EXISTS', KEYS[1]) == 1) then
               return {2, 0, total}
             end
             local r = redis.call('ZRANK', KEYS[3], ARGV[1])
@@ -445,19 +442,24 @@ public class QueueService {
     }
 
     /**
-     * 입장 여부 판정의 단일 규칙. admit 키가 빠른 경로이고 권위는 admitExp다.
+     * 입장 여부 판정의 단일 규칙 — STATUS_LUA·STATUS_POLL_LUA·좌석 게이트(isAdmitted)와 같다.
+     * admitExp에 있어야 하고(권위), 입장창이 남았거나(점수 > 지금) 아직 회수 전이라 admit 키가 남아 있으면 입장이다.
      *
-     * 승격은 pop·카운트·admitExp 등록까지 한 Lua로 확정되고, admit 키는 그 뒤에 붙는다.
-     * 따라서 확정됐지만 admit 키가 아직 없는 순간이 존재하며, 그 창에서 admit 키만 보면
-     * "입장 안 했다"로 오판한다. 예전에 진입 응답이 EXPIRED로 나가던 원인이다(TS-024).
+     * 승격은 pop·카운트·admitExp 등록까지 한 Lua로 확정되고, admit 키는 그 뒤에 붙는다. 그래서 admit 키가 아직 없는
+     * 승격 직후에도 점수로 입장이다(TS-024). 반대로 회수는 admitExp만 지우고 admit 키는 TTL까지 남기므로, admit 키만으로
+     * 판정하면 회수된 토큰을 입장으로 오판한다 — 좌석 게이트는 거부하는데 상태는 ADMITTED가 되던 불일치(TS-047).
      * admitExp는 이벤트 단위 ZSet이라 소속 이벤트 검사도 겸한다.
      */
     private boolean admittedNow(String token, Long eventId) {
-        if (Boolean.TRUE.equals(redis.hasKey(QueueKeys.admit(token)))) {
-            return true; // 대부분 여기서 끝난다(왕복 1회)
-        }
         Double expiresAt = redis.opsForZSet().score(QueueKeys.admitExp(eventId), token);
-        return expiresAt != null && expiresAt > Instant.now(clock).getEpochSecond();
+        if (expiresAt == null) {
+            return false; // 회수·이탈됐거나 입장한 적 없음
+        }
+        if (expiresAt > Instant.now(clock).getEpochSecond()) {
+            return true;
+        }
+        // 입장창은 지났지만 아직 회수 전 — 좌석 게이트와 같이 admit 키가 남아 있으면 입장으로 본다(다음 회수 틱까지).
+        return Boolean.TRUE.equals(redis.hasKey(QueueKeys.admit(token)));
     }
 
     private long rankOf(String token, Long eventId) {

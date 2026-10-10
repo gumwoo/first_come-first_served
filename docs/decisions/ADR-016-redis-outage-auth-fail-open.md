@@ -103,4 +103,4 @@ auth_blacklist_check_failures_total
   진실원이라 fail-open이 성립하지 않는다(회전 기록 없이 통과시키면 재사용 탐지가 무력화된다).
   Redis 장애 중 refresh가 실패하는 것은 **의도된 동작으로 남긴다** — 다만 그 판단을 이 문서에서
   내린 것은 아니고, 별도로 검토한 적도 없다.
-- 알림 부재(위 §관측).
+- ~~알림 부재~~ → 알림은 연결됨(561fd3c). 남은 공백: `FlowticketBlacklistCheckFailing`의 발화 판정 테스트가 없고, 실제 Slack 도착을 확인한 기록이 없다(위 §관측).

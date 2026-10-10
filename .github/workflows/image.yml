@@ -48,7 +48,8 @@ jobs:
         with:
           # workflow_run 이벤트의 기본 checkout은 트리거 워크플로의 커밋이 아니다. head_sha를 명시.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 2
+          # 배포된 태그와의 차이를 보려면 그 커밋까지의 히스토리가 필요하다(아래 변경 판별).
+          fetch-depth: 0
       - id: check
         env:
           ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
@@ -74,7 +75,21 @@ jobs:
             fi
             echo "ready=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          if git diff --name-only HEAD^ HEAD | grep -qE '^(apps/(api|web)/|infra/|\.dockerignore|\.github/workflows/image\.yml)'; then
+          # 비교 기준은 직전 커밋(HEAD^)이 아니라 **지금 배포된 태그**다. CI는 같은 브랜치에 새 push가 오면
+          # 진행 중인 실행을 취소한다. 머지가 연달아 들어오면 앞 머지의 CI가 취소돼 그 커밋으로는 이 워크플로가
+          # 돌지 않고, 뒤 머지의 HEAD^ 비교에는 앞 머지의 앱 변경이 빠진다 — 앱 코드가 이미지로 나가지 않은 채
+          # 남는다(2026-10-10 #386 → #387 연속 머지에서 실제로 발생).
+          F=k8s/overlays/demo-local/kustomization.yaml
+          DEPLOYED=$(grep -oE 'newTag: [0-9a-f]{40}' "$F" 2>/dev/null | head -1 | awk '{print $2}' || true)
+          if [ -z "$DEPLOYED" ] || ! git cat-file -e "${DEPLOYED}^{commit}" 2>/dev/null \
+             || ! git merge-base --is-ancestor "$DEPLOYED" HEAD; then
+            # 배포 태그를 기준으로 쓸 수 없으면 판별 근거가 없다 — 빌드 쪽으로 기운다.
+            # 태그를 실제로 덮을지는 bump-tag의 조상 검사가 다시 판정한다(TS-029).
+            echo "::notice::배포 태그(${DEPLOYED:-없음})를 비교 기준으로 쓸 수 없어 빌드한다."
+            echo "ready=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "변경 판별 기준: 배포 태그 $DEPLOYED → $SHA"
+          if git diff --name-only "$DEPLOYED" HEAD | grep -qE '^(apps/(api|web)/|infra/|\.dockerignore|\.github/workflows/image\.yml)'; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::이미지에 영향 있는 변경이 없어 건너뜁니다."

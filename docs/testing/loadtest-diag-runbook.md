@@ -127,7 +127,7 @@
 - **워밍업**: 각 칸에서 같은 rate 사전 run 1회(결과 제외) → 판정 run 3회. 경로가 여럿이면 첫 run 순서를 교차한다.
 - **판정식 사전 등록**: run 전에 판정식과 임계치를 session.log에 적는다(결과를 본 뒤 정하지 않는다).
 - **Redis CPU 크레딧**: run 직전 주 노드의 `CPUCreditBalance`(CloudWatch `AWS/ElastiCache`, 5분 값)를 session.log에 적고, **40 미만이면 시작하지 않는다**.
-  `cache.t4g.micro`는 버스터블이라 크레딧이 바닥나면 기준 성능으로 묶여 상태 조회가 수백 ms로 느려진다(TS-049 — 새 클러스터는 거의 0에서 시작, run 1회 약 13 소비 관측, 40은 그 3배의 운영 여유).
+  `cache.t4g.micro`는 버스터블이라 크레딧이 바닥나면 기준 성능으로 묶여 상태 조회가 수백 ms로 느려진다(TS-049 — 새 클러스터는 거의 0에서 시작, run 1회 약 13 이상 소비 관측(하한), 40은 그 3배의 운영 여유 — 새 클러스터는 약 4.5시간 뒤 도달(계산)).
 - **발생기**: 여러 대면 `run-entry.sh --gens G --gen $GEN --start-at <UTC>`(START_AT은 2분 이상 뒤), 집계는 `entry-arrivals.mjs --t0`.
   burst(수천/s 이상)는 `--warm-seconds 30`으로 T0 전에 VU 연결을 미리 맺는다 — 끄면 T0에 VU 수만큼 새 연결이 한꺼번에 열려
   실제 송신이 늦어진다(10,000/s에서 첫 1초 약 2천 건). `entry-arrivals.mjs`의 `entryConnectionWait.over100ms`가 0에 가까운지 확인한다

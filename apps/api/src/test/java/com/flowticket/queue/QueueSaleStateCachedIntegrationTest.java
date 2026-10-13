@@ -11,18 +11,22 @@ import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
+import com.flowticket.queue.service.BookableEventCache;
 import com.flowticket.queue.service.QueueAdmissionService;
 import com.flowticket.queue.service.QueueService;
 import com.flowticket.seat.service.SeatSeeder;
 import com.flowticket.seat.service.SeatService;
 import com.flowticket.support.IntegrationTestSupport;
 import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * 운영 설정(판매 상태 캐시 TTL 1초 — ConfigMap QUEUE_BOOKABLE_CACHE_TTL_MS=1000, IMP-026)에서의 판매 상태 게이트.
@@ -44,6 +48,16 @@ class QueueSaleStateCachedIntegrationTest extends IntegrationTestSupport {
     @Autowired SeatSeeder seatSeeder;
     @SpyBean EventRepository eventRepository;
     @Autowired JdbcTemplate jdbc;
+    @Autowired BookableEventCache bookableEvents;
+
+    /**
+     * 캐시를 테스트마다 비운다. 공통 리셋이 테이블을 restart identity로 비우므로 공연 id가 매 테스트 1부터 다시 쓰이는데,
+     * 캐시는 컨텍스트에 남는다 — 앞 테스트가 남긴 "id 1 = PAUSED"가 다음 테스트의 새 공연에 맞아 거짓 실패가 난다(실행 순서에 의존).
+     */
+    @BeforeEach
+    void clearSaleStateCache() {
+        ((Map<?, ?>) ReflectionTestUtils.getField(bookableEvents, "entries")).clear();
+    }
 
     private Long saveOnSaleEvent(String key) {
         return eventRepository.save(Event.builder()

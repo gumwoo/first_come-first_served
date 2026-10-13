@@ -109,6 +109,7 @@ public class KafkaConfig {
         ConcurrentKafkaListenerContainerFactory<String, byte[]> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(byteFactory);
+        factory.setAutoStartup(false); // KafkaListenerStarter가 켠다(TS-016)
         // DLT 소비 실패를 다시 DLT로 보내지 않는다(무한 순환). 기본 로깅 핸들러에 맡긴다.
         return factory;
     }

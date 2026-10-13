@@ -531,6 +531,35 @@ const NON_APP_HEADROOM = 20;
             `얻지 못해 기동에 실패한다(TS-021)`
         );
       }
+      // 대기열 분리(B, k8s/components/queue-split — ADR-027)를 켜면 api와 대기열 전용 파드가 같은 DB를 나눠 쓴다.
+      // component가 api 상한을 낮추는 값과 대기열 HPA 상한·풀 크기까지 더해 같은 한도 안에 드는지 본다.
+      const COMP = process.env.HARNESS_K8S_COMPONENT_DIR || "k8s/components/queue-split";
+      const qHpa = path.join(REPO_ROOT, COMP, "queue-hpa.yaml");
+      const qDep = path.join(REPO_ROOT, COMP, "queue-deployment.yaml");
+      const qKz = path.join(REPO_ROOT, COMP, "kustomization.yaml");
+      if (fs.existsSync(qHpa) && fs.existsSync(qDep) && fs.existsSync(qKz)) {
+        const qMax = Number(read(qHpa).match(/^\s*maxReplicas:\s*(\d+)/m)?.[1]);
+        const qSurgeRaw = read(qDep).match(/^\s*maxSurge:\s*"?([0-9]+%?)"?/m)?.[1];
+        const surgeOf = (raw, max) =>
+          raw === undefined ? Math.ceil((max * 25) / 100) : raw.endsWith("%") ? Math.ceil((max * parseInt(raw, 10)) / 100) : Number(raw);
+        const qPoolRaw = read(qDep).match(/-\s*name:\s*DB_POOL_MAX\s*\r?\n\s*value:\s*"?(\d+)"?/)?.[1];
+        const qPool = qPoolRaw ? Number(qPoolRaw) : pool;
+        const apiMaxOverride = read(qKz).match(/path:\s*\/spec\/maxReplicas\s*\r?\n\s*value:\s*(\d+)/)?.[1];
+        const apiMaxB = apiMaxOverride ? Number(apiMaxOverride) : maxReplicas;
+        if (!qMax) {
+          r.fail(`대기열 분리 HPA의 maxReplicas를 못 읽었다: ${path.relative(REPO_ROOT, qHpa)} — 규칙 17(B)이 무력화된 상태`);
+        } else {
+          const apiPeak = apiMaxB + surgeOf(surgeRaw, apiMaxB);
+          const qPeak = qMax + surgeOf(qSurgeRaw, qMax);
+          const demandB = apiPeak * pool + qPeak * qPool;
+          if (demandB > budget) {
+            r.fail(
+              `DB 커넥션 상한 초과(대기열 분리 B): api (${apiMaxB} + surge) × pool ${pool} + 대기열 (${qMax} + surge) × pool ${qPool} = ${demandB} > ` +
+                `가용 ${budget}. 분리를 켜면 두 Deployment가 같은 DB를 나눠 쓴다 — 파드 예산이나 풀 크기를 줄인다(TS-021, ADR-027)`
+            );
+          }
+        }
+      }
     }
   }
 }

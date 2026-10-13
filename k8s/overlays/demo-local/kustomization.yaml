@@ -13,6 +13,10 @@ namespace: flowticket
 resources:
   - ../../base
 
+# 대기열 분리(B, ADR-027) — 아래 두 줄의 주석을 풀면 켜지고, 다시 주석 처리하면 A'(지금 구조)다. 켤 때는 사전 확장이 꺼져 있어야 한다.
+# components:
+#   - ../../components/queue-split
+
 # ── 이미지: base의 placeholder를 실제 레지스트리·태그로 ──────────────
 images:
   - name: flowticket-api

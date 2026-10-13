@@ -18,7 +18,8 @@ spec:
       maxSurge: 1
   template:
     metadata:
-      labels: { app: flowticket-api }
+      # flowticket.io/app: api — api와 대기열 전용 파드 공통. 로그 수집·정합성 검사가 이 라벨로 둘 다 고른다(ADR-027).
+      labels: { app: flowticket-api, flowticket.io/app: api }
     spec:
       # 앱의 SHUTDOWN_TIMEOUT(30s) + preStop(5s)보다 커야 한다. 작으면 진행 중 요청을
       # 마치기 전에 SIGKILL이 온다. graceful shutdown 설정이 무의미해지는 지점.
@@ -131,7 +132,9 @@ metadata:
     alb.ingress.kubernetes.io/healthcheck-path: /readyz
   # ServiceMonitor의 selector가 보는 건 Service의 metadata.labels다(아래 spec.selector가 아니다.
   # 그건 Pod를 고르는 것). 없으면 매칭이 0건인데 에러가 아니라 그냥 타깃이 안 생긴다.
-  labels: { app: flowticket-api }
+  # flowticket.io/metrics: ServiceMonitor 선택 기준. flowticket.io/job: job 라벨 값 — 대기열 전용 Service도 같은 값을 써서
+  # 알림 규칙(job="flowticket-api")이 분리 뒤에도 두 종류 파드를 함께 본다(ADR-027).
+  labels: { app: flowticket-api, flowticket.io/metrics: "true", flowticket.io/job: flowticket-api }
 spec:
   selector: { app: flowticket-api }
   ports:

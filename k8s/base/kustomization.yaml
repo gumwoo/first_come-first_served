@@ -8,6 +8,7 @@ resources:
   - api-deployment.yaml
   - api-hpa.yaml
   - api-pdb.yaml
+  - api-queue-service.yaml
   - web-deployment.yaml
   - web-hpa.yaml
   - web-pdb.yaml

@@ -160,13 +160,21 @@ if (fs.existsSync(webDockerfile)) {
 // 배포 파일에 값을 적어두는 것만으로는 부족하다. 지워져도 아무 증상이 없고, 그 다음 배포부터
 // 어긋나기 시작한다(오프셋 누락으로 좌석 선점이 즉시 만료된 사건과 같은 유형).
 // 그래서 규칙으로 못박는다. 존을 정말 바꾸려면 Instant/timestamptz 전환이 선행돼야 한다.
-const apiDeploy = manifests.find((f) => {
-  const raw = read(f);
-  return /\bkind:\s*Deployment\b/.test(raw) && /name:\s*flowticket-api\b/.test(raw);
+// api와 대기열 전용 Deployment(ADR-027)는 같은 이미지·같은 컨테이너다 — 둘 다 본다.
+// 문자열로 고르면 HPA의 scaleTargetRef(kind: Deployment, name: flowticket-api)까지 걸린다 — 문서 단위로 읽어 고른다.
+const apiDeploys = manifests.filter((f) => {
+  let parsed;
+  try {
+    parsed = yaml.loadAll(read(f));
+  } catch {
+    return false;
+  }
+  return parsed.some((d) => d?.kind === "Deployment" && ["flowticket-api", "flowticket-api-queue"].includes(d?.metadata?.name));
 });
-if (!apiDeploy) {
+if (apiDeploys.length === 0) {
   r.fail("flowticket-api Deployment를 못 찾았다. 규칙 ⑦이 무력화된 상태");
-} else {
+}
+for (const apiDeploy of apiDeploys) {
   const raw = read(apiDeploy);
   const rel = path.relative(REPO_ROOT, apiDeploy);
   // `- name: TZ` 바로 뒤의 value를 본다(규칙 1)과 같은 줄 단위 파싱).
@@ -244,11 +252,16 @@ for (const { doc, file } of docs) {
     );
   }
 }
-const apiDeployDoc = docs.find(({ doc }) => doc.kind === "Deployment" && doc.metadata?.name === "flowticket-api");
-const apiContainer = (apiDeployDoc?.doc.spec?.template?.spec?.containers ?? []).find((c) => c?.name === "api");
-if (!apiContainer) {
+const apiDeployDocs = docs.filter(({ doc }) => doc.kind === "Deployment" && ["flowticket-api", "flowticket-api-queue"].includes(doc.metadata?.name));
+if (!apiDeployDocs.some(({ doc }) => doc.metadata.name === "flowticket-api")) {
   r.fail("flowticket-api Deployment의 api 컨테이너를 못 찾았다. 규칙 ⑩이 무력화된 상태");
-} else {
+}
+for (const apiDeployDoc of apiDeployDocs) {
+  const apiContainer = (apiDeployDoc.doc.spec?.template?.spec?.containers ?? []).find((c) => c?.name === "api");
+  if (!apiContainer) {
+    r.fail(`${apiDeployDoc.doc.metadata.name} Deployment에 api 컨테이너가 없다. 규칙 ⑩이 무력화된 상태`);
+    continue;
+  }
   const rel = path.relative(REPO_ROOT, apiDeployDoc.file);
   const c = apiContainer;
   const envEntry = (c.env ?? []).find((e) => e?.name === "MANAGEMENT_SERVER_PORT");
@@ -276,6 +289,32 @@ if (!apiContainer) {
     }
   }
 }
+// ⑩-b 대기열 전용 Deployment(components/queue-split)는 api Deployment의 사본이다(ADR-027). 이름·app 라벨 말고 파드 사양이
+// 어긋나면(resources·env·probe 수치 등) A'/B 비교가 "분리" 말고 다른 차이까지 섞는다. 이름을 맞춘 뒤 파드 사양 전체를 비교한다.
+{
+  const byName = Object.fromEntries(apiDeployDocs.map(({ doc, file }) => [doc.metadata.name, { doc, file }]));
+  const api = byName["flowticket-api"];
+  const q = byName["flowticket-api-queue"];
+  if (api && q) {
+    const canon = (v) =>
+      Array.isArray(v)
+        ? v.map(canon)
+        : v && typeof v === "object"
+          ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))
+          : v;
+    const norm = (spec) => JSON.stringify(canon(spec ?? {})).replaceAll("flowticket-api-queue", "flowticket-api");
+    const a = norm(api.doc.spec?.template?.spec);
+    const b = norm(q.doc.spec?.template?.spec);
+    if (a !== b) {
+      let i = 0;
+      while (i < a.length && a[i] === b[i]) i++;
+      r.fail(
+        `대기열 전용 Deployment의 파드 사양이 api와 다르다: ${path.relative(REPO_ROOT, q.file)} ↔ ${path.relative(REPO_ROOT, api.file)} ` +
+          `(첫 차이 근처: …${b.slice(Math.max(0, i - 40), i + 40)}…). 이름·app 라벨 말고는 같아야 A'/B 비교가 분리 효과만 본다(ADR-027)`
+      );
+    }
+  }
+}
 
 // ---------- 2) 공개 Ingress가 API Service로 직결하는가 — ADR-024 허용 목록만 ----------
 //
@@ -286,6 +325,9 @@ if (!apiContainer) {
 //   - api 직결이 있으면 그 Service의 url-rewrite transform이 있어야 한다 — 없으면 Spring이 /api/...를 받아 404
 //   - Prefix 규칙이 허용 경로를 가리면 안 된다 — 컨트롤러가 Prefix를 ImplementationSpecific보다 앞에 두어
 //     진입이 오류 없이 web으로 간다(기본 경로는 ImplementationSpecific `/*`로 맨 뒤에)
+// API 파드로 가는 Service. 대기열 두 경로는 전용 Service(flowticket-api-queue)를 거친다 — 기본은 api 파드, 분리(B)면 대기열 전용 파드(ADR-027).
+// 이름 하나만 보면 경로가 다른 Service로 옮겨 갈 때 허용 목록·rewrite 검사가 통째로 빠진다.
+const API_SERVICES = new Set(["flowticket-api", "flowticket-api-queue"]);
 const API_DIRECT_ALLOWED = new Map([
   ["/api/queue/status", "Exact"],
   ["/api/events/*/queue/token", "ImplementationSpecific"],
@@ -294,7 +336,7 @@ for (const { doc, file } of docs) {
   if (doc.kind !== "Ingress") continue;
   const rel = path.relative(REPO_ROOT, file);
   const paths = (doc.spec?.rules ?? []).flatMap((rule) => rule?.http?.paths ?? []);
-  const apiPaths = paths.filter((p) => p?.backend?.service?.name === "flowticket-api");
+  const apiPaths = paths.filter((p) => API_SERVICES.has(p?.backend?.service?.name));
   for (const p of apiPaths) {
     if (API_DIRECT_ALLOWED.get(p.path) !== p.pathType) {
       r.fail(
@@ -304,16 +346,19 @@ for (const { doc, file } of docs) {
     }
   }
   if (apiPaths.length === 0) continue;
-  const t = doc.metadata?.annotations?.["alb.ingress.kubernetes.io/transforms.flowticket-api"] ?? "";
-  if (!/"type"\s*:\s*"url-rewrite"/.test(t)) {
-    r.fail(
-      `api 직결 경로에 /api 제거 rewrite가 없다: ${rel}. alb.ingress.kubernetes.io/transforms.flowticket-api(url-rewrite)가 ` +
-        `없으면 Spring이 /api/... 를 받아 404가 된다(ADR-024)`
-    );
+  // transforms 주석의 키는 백엔드 Service 이름이다 — 직결 경로가 가리키는 Service마다 rewrite가 있어야 한다.
+  for (const svc of new Set(apiPaths.map((p) => p.backend.service.name))) {
+    const t = doc.metadata?.annotations?.[`alb.ingress.kubernetes.io/transforms.${svc}`] ?? "";
+    if (!/"type"\s*:\s*"url-rewrite"/.test(t)) {
+      r.fail(
+        `api 직결 경로에 /api 제거 rewrite가 없다: ${rel}. alb.ingress.kubernetes.io/transforms.${svc}(url-rewrite)가 ` +
+          `없으면 Spring이 /api/... 를 받아 404가 된다(ADR-024)`
+      );
+    }
   }
   // ImplementationSpecific끼리는 매니페스트 순서가 우선순위다 — `/*` 같은 넓은 규칙이 api 직결 규칙보다 앞에 있으면 가린다.
   paths.forEach((p, i) => {
-    if (p?.pathType !== "ImplementationSpecific" || p?.backend?.service?.name === "flowticket-api") return;
+    if (p?.pathType !== "ImplementationSpecific" || API_SERVICES.has(p?.backend?.service?.name)) return;
     const re = new RegExp("^" + String(p.path ?? "").replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
     const later = apiPaths.filter((a) => a.pathType === "ImplementationSpecific" && paths.indexOf(a) > i && re.test(a.path.replace(/\*/g, "1")));
     if (later.length > 0) {
@@ -350,7 +395,8 @@ if (ingressFiles.length > 1) {
   );
 }
 for (const { doc, file } of docs) {
-  if (doc.kind !== "Kustomization") continue;
+  // Component(k8s/components)도 overlay에 섞여 들어가므로 같은 규칙을 적용한다(ADR-027).
+  if (doc.kind !== "Kustomization" && doc.kind !== "Component") continue;
   const rel = path.relative(REPO_ROOT, file);
   const bad = (why) =>
     r.fail(
@@ -464,6 +510,21 @@ if (fs.existsSync(ES_DIR)) {
     }
     if (min < base.minReplicas || min > base.maxReplicas) {
       r.fail(`사전 확장 하한이 정책 밖이다: ${rel} → minReplicas ${min}, base HPA ${base.minReplicas}~${base.maxReplicas}. 상한을 넘기려면 정책(ADR-025)부터 바꾼다`);
+      continue;
+    }
+    // 대기열 분리(components/queue-split, ADR-027)는 api 상한을 3으로 묶는다. 그 상태에서 사전 확장 하한을 올리면
+    // 하한 > 상한인 HPA가 되어 적용이 실패한다. 같은 overlay의 kustomization이 component를 켰는지 본다.
+    // 블록 목록(줄 끝 주석 허용)과 흐름 표기(`components: [..]`)를 둘 다 본다. `#`로 시작하는 줄은 꺼진 상태다.
+    const kzSame = path.join(path.dirname(f), "kustomization.yaml");
+    const kzText = fs.existsSync(kzSame) ? read(kzSame) : "";
+    const splitOn =
+      /^\s*-\s*[^#\n]*components\/queue-split\/?\s*(#.*)?$/m.test(kzText) ||
+      /^\s*components:\s*\[[^\]#\n]*components\/queue-split/m.test(kzText);
+    if (splitOn && min !== base.minReplicas) {
+      r.fail(
+        `대기열 분리를 켠 채 사전 확장을 켰다: ${rel} → minReplicas ${min}. queue-split은 api 상한을 3으로 묶어 ` +
+          `하한 ${min} > 상한이 된다(HPA 무효). 분리를 끄거나 사전 확장을 끈다(ADR-027)`
+      );
       continue;
     }
     if (min === base.minReplicas) continue; // 꺼진 상태

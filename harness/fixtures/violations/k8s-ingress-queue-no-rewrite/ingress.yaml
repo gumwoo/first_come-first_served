@@ -1,0 +1,20 @@
+# 위반: 대기열 경로가 flowticket-api-queue로 가는데 rewrite 주석 키가 flowticket-api다 — ALB가 /api를 떼지 않아 Spring 404.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flowticket
+  namespace: flowticket
+  annotations:
+    alb.ingress.kubernetes.io/transforms.flowticket-api: >-
+      [{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/api/(queue/status)$","replace":"/$1"}]}}]
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /api/queue/status
+            pathType: Exact
+            backend: { service: { name: flowticket-api-queue, port: { number: 80 } } }
+          - path: /*
+            pathType: ImplementationSpecific
+            backend: { service: { name: flowticket-web, port: { number: 80 } } }

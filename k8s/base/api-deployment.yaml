@@ -4,6 +4,7 @@ metadata:
   name: flowticket-api
   namespace: flowticket
 spec:
+  # 파드 사양을 바꾸면 대기열 전용 사본(k8s/components/queue-split/queue-deployment.yaml)도 같이 바꾼다 — 하네스 k8s 규칙 ⑩-b(ADR-027).
   # replicas를 두지 않는다. 이 Deployment는 HPA가 소유한다(api-hpa.yaml, min 3 / max 9 — ADR-025).
   # 값을 두면 ArgoCD sync가 HPA가 정한 파드 수를 Git 값으로 덮어쓰고, RespectIgnoreDifferences로는
   # 막히지 않았다(TS-022). 하한은 HPA의 minReplicas가 담당한다.
@@ -18,7 +19,8 @@ spec:
       maxSurge: 1
   template:
     metadata:
-      labels: { app: flowticket-api }
+      # flowticket.io/app: api — api와 대기열 전용 파드 공통. 로그 수집·정합성 검사가 이 라벨로 둘 다 고른다(ADR-027).
+      labels: { app: flowticket-api, flowticket.io/app: api }
     spec:
       # 앱의 SHUTDOWN_TIMEOUT(30s) + preStop(5s)보다 커야 한다. 작으면 진행 중 요청을
       # 마치기 전에 SIGKILL이 온다. graceful shutdown 설정이 무의미해지는 지점.
@@ -131,7 +133,9 @@ metadata:
     alb.ingress.kubernetes.io/healthcheck-path: /readyz
   # ServiceMonitor의 selector가 보는 건 Service의 metadata.labels다(아래 spec.selector가 아니다.
   # 그건 Pod를 고르는 것). 없으면 매칭이 0건인데 에러가 아니라 그냥 타깃이 안 생긴다.
-  labels: { app: flowticket-api }
+  # flowticket.io/metrics: ServiceMonitor 선택 기준. flowticket.io/job: job 라벨 값 — 대기열 전용 Service도 같은 값을 써서
+  # 알림 규칙(job="flowticket-api")이 분리 뒤에도 두 종류 파드를 함께 본다(ADR-027).
+  labels: { app: flowticket-api, flowticket.io/metrics: "true", flowticket.io/job: flowticket-api }
 spec:
   selector: { app: flowticket-api }
   ports:

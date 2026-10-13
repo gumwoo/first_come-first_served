@@ -1,0 +1,29 @@
+# HPA는 CPU만 기준으로 삼는다. Kafka 컨슈머 랙으로 오토스케일하는 것은 이 프로젝트에서
+# 억지다. 컨슈머 작업이 가벼워 랙이 CPU를 따라가지 않는다(aws-eks-deploy-plan.md §0).
+# api·web 두 티어 모두 HPA 대상이다(→ web-hpa.yaml).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flowticket-api
+  namespace: flowticket
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: flowticket-api }
+  minReplicas: 3
+  # 9(ADR-025): 10,000/s 진입 burst의 계산 용량(IMP-027 6b — api 9·노드 9)과 같다. 오픈 전에는 HPA 하한을 9로 올려
+  # 사전 확장하고(overlay event-prescale.yaml — Git PR), 오픈 뒤에는 이 정책(3~9, CPU 60% = 목표 파드 660m)이 지속 부하를 맡는다. requests 1100m라 api 하나가
+  # 노드 하나를 차지하므로 3 → 9는 노드 3 → 9(노드 그룹 AZ당 최대 3, loadtest.tfvars)이고 CA가 붙인다.
+  # 이전 7은 노드 3대 예산(api 7×300m)에서 나온 값이었다 — CA를 전제로 하지 않았다.
+  # DB 커넥션(TS-021, 하네스 backend 규칙): (9 + maxSurge 1) × 풀 5 = 50 ≤ 가용 56.
+  maxReplicas: 9
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }
+  behavior:
+    scaleUp:
+      # 선착순 트래픽은 계단식으로 들어온다. 천천히 늘리면 스파이크를 못 받는다.
+      stabilizationWindowSeconds: 0
+    scaleDown:
+      # 반대로 축소는 느리게. 빨리 줄이면 다음 파도에 다시 확장하느라 진동한다(flapping).
+      stabilizationWindowSeconds: 300

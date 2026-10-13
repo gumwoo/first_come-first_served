@@ -220,7 +220,7 @@ collect_logs() {
     # --since 이후 줄만, kubelet 시각을 떼어 kubectl logs --prefix와 같은 형식으로 합친다(형식 밖 줄이 있으면 실패).
     node "$HERE/collect-api-logs.mjs" merge --dir "$API_LOGS" --since "$SINCE" > "$D/api.log"
   else
-    kubectl -n "$NS" logs -l app=flowticket-api --since-time="$SINCE" --tail=-1 --prefix --max-log-requests=20 > "$D/api.log"
+    kubectl -n "$NS" logs -l flowticket.io/app=api --since-time="$SINCE" --tail=-1 --prefix --max-log-requests=20 > "$D/api.log"
   fi
 }
 if collect_logs; then
@@ -313,7 +313,7 @@ if [ -n "$API_LOGS" ]; then
   node "$HERE/pod-coverage.mjs" --pods "$OUT/prom/api_pods.json" --restarts "$OUT/prom/api_restarts.json" \
     --collected "$API_LOGS/manifest.json" --since "$SINCE" --until "$UNTIL" --meta "$OUT/prom/_meta.json" \
     > "$D/pod-coverage.json" && POD_OK=1 || { echo "    받아 두지 못한 파드 로그가 있다(pod-coverage.json)" >&2; BROKEN=1; }
-elif kubectl -n "$NS" get pods -l app=flowticket-api \
+elif kubectl -n "$NS" get pods -l flowticket.io/app=api \
      -o jsonpath='{range .items[*]}{.metadata.name} {.status.containerStatuses[?(@.name=="api")].restartCount} {.status.containerStatuses[?(@.name=="api")].state.running.startedAt}{"\n"}{end}' \
      > "$D/api-pods-now.txt"; then
   # 파드별 현재 로그 파일의 첫 줄 시각(--since-time 없이 앞에서부터 1KiB만). 읽지 못하면 빈 값 = 확인 불가.

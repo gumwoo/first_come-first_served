@@ -1,0 +1,10 @@
+# 위반: 대기열 분리를 켠 overlay에서 사전 확장 하한을 올렸다 — queue-split이 api 상한을 3으로 묶어 하한 9 > 상한.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: flowticket
+resources:
+  - api-hpa.yaml
+components:
+  - ../../../../k8s/components/queue-split   # B(분리) — 줄 끝 주석이 붙어도 켠 상태다
+patches:
+  - path: event-prescale.yaml

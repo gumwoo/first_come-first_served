@@ -95,7 +95,8 @@ function collectMain(argv) {
       interval: { type: "string", default: "5" },
       for: { type: "string" },
       namespace: { type: "string", default: "flowticket" },
-      selector: { type: "string", default: "app=flowticket-api" },
+      // api와 대기열 전용 파드(ADR-027) 공통 라벨 — 대기열 파드도 승격 감사 줄을 남긴다.
+      selector: { type: "string", default: "flowticket.io/app=api" },
       container: { type: "string", default: "api" },
       "max-failures": { type: "string", default: "10" },
       "retry-ms": { type: "string", default: "2000" },

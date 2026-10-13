@@ -1,0 +1,10 @@
+# 대기열 전용 파드는 최소 2개라 자발적 중단(드레인) 중에도 1개는 남긴다.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: flowticket-api-queue
+  namespace: flowticket
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: flowticket-api-queue }

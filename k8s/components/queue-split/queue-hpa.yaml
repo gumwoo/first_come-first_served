@@ -1,0 +1,22 @@
+# 대기열 전용 Deployment의 HPA(ADR-027). 파드 예산은 A'와 같은 9로 맞춘다 — api는 이 component가 3으로 묶고(kustomization 패치)
+# 대기열이 2~6을 쓴다. DB 커넥션 상한(하네스 backend 규칙 17): (3+1)×5 + (6+1)×5 = 55 ≤ 56.
+# 목표·확장 정책은 api HPA와 같다(CPU 60%, 즉시 확장·300초 축소) — A'/B 비교에서 정책 차이가 섞이지 않게.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flowticket-api-queue
+  namespace: flowticket
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: flowticket-api-queue }
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+    scaleDown:
+      stabilizationWindowSeconds: 300

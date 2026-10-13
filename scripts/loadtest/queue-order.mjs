@@ -6,7 +6,7 @@
 // 파드 사이 시계 차이와 처리 지연만큼은 순서가 뒤집혀 보일 수 있다. 그 허용 폭(--tolerance-ms)을 넘어서
 // 뒤집힌 경우만 위반으로 센다.
 //
-//   kubectl -n flowticket logs -l app=flowticket-api --since-time=<run 시작> --tail=-1 --prefix > api.log
+//   kubectl -n flowticket logs -l flowticket.io/app=api --since-time=<run 시작> --tail=-1 --prefix > api.log
 //   node scripts/loadtest/queue-order.mjs --tolerance-ms 1000 api.log
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";

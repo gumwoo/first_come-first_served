@@ -56,3 +56,8 @@ spec:
       name: flowticket-web
       jsonPointers:
         - /spec/replicas
+    - group: apps
+      kind: Deployment
+      name: flowticket-api-queue  # 대기열 분리(B, k8s/components/queue-split)를 켰을 때만 있다 — ADR-027
+      jsonPointers:
+        - /spec/replicas

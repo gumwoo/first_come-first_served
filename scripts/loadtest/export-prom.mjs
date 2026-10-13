@@ -84,6 +84,10 @@ export const QUERIES = {
   // run 조건 기록: 앱 파드의 노드 배치와 컨테이너 이미지 — 같은 조건 비교와 IMP before/after의 근거.
   app_pod_nodes: "max by (pod, node) (kube_pod_info{namespace=\"flowticket\", pod=~\"flowticket-(api|api-queue|web)-[a-z0-9]+-[a-z0-9]+\"})",
   app_images: "max by (pod, container, image) (kube_pod_container_info{namespace=\"flowticket\", container=~\"api|web\"})",
+  // 비용(ADR-027 A'/B 비교) — 요청 CPU·노드 수를 run 구간으로 적분해 노드-시간·요청 코어-시간을 낸다(cost-summary.mjs).
+  // 요청량은 스케줄러가 자리를 잡는 기준이라 노드 수를 정한다 — 사용량(app_cpu_by_pod)이 아니라 요청량이 비용에 가깝다.
+  cpu_requests_by_pod: "sum by (pod) (kube_pod_container_resource_requests{namespace=\"flowticket\", resource=\"cpu\"})",
+  nodes_ready: "sum(kube_node_status_condition{condition=\"Ready\", status=\"true\"})",
   // 아웃박스(ADR-022)
   outbox_oldest_pending_age: "max(flowticket_outbox_oldest_pending_age_seconds)",
 };

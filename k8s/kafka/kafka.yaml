@@ -1,8 +1,8 @@
 # Strimzi Kafka: 멀티브로커(ADR-008). KRaft 모드라 ZooKeeper가 없다.
 #
 # 앱의 KAFKA_BOOTSTRAP_SERVERS가 `flowticket-kafka-bootstrap.kafka.svc:9092`를 가리키므로
-# 클러스터 이름은 flowticket, 네임스페이스는 kafka여야 한다. 이름이 어긋나면 DNS가 안 풀리고
-# api Pod가 기동 자체에 실패한다(TS-016: readiness 제외와는 다른 문제였다).
+# 클러스터 이름은 flowticket, 네임스페이스는 kafka여야 한다. 이름이 어긋나면 DNS가 안 풀려 api의 Kafka 리스너가
+# 켜지지 않는다 — api는 기동하지만 주문 알림이 멈춘다(TS-016 — 예전에는 기동 자체가 실패했다).
 ---
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaNodePool

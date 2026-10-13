@@ -19,7 +19,8 @@ import org.springframework.stereotype.Component;
  * 같은 공연의 상태는 버스트 동안 거의 바뀌지 않으므로 짧게 기억한다.
  *
  * 대가: 관리자가 판매를 멈추거나 재개하면 TTL 동안 파드마다 이전 상태로 판정할 수 있다(진입 토큰 발급만 해당 —
- * 좌석 선점·주문은 이 캐시를 쓰지 않는다). 그래서 TTL은 짧게 두고 기본은 끈다(0 = 매번 DB, 지금까지와 같다).
+ * 좌석 선점·주문은 이 캐시를 쓰지 않는다). 그래서 TTL은 짧게 두고 앱 기본값은 끈다(0 = 매번 DB). 운영은 ConfigMap QUEUE_BOOKABLE_CACHE_TTL_MS=1000(IMP-026),
+ * 그 값에서의 게이트 동작은 QueueSaleStateCachedIntegrationTest가 본다.
  * 없는 공연(NOT_FOUND)은 기억하지 않는다 — 임의의 id로 맵이 커지지 않게. 맵 크기는 실재하는 공연 수로 묶인다.
  */
 @Component

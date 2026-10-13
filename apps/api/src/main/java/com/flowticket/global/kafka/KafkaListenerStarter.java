@@ -77,8 +77,8 @@ public class KafkaListenerStarter {
                 // ConcurrentMessageListenerContainer는 자식 컨슈머를 만들기 전에 running=true로 둔다.
                 // 그대로 두면 다음 start()가 아무것도 하지 않으므로 상태를 되돌린다.
                 stopQuietly(container);
-                log.warn("[kafka] 리스너 {} 기동 실패(시도 {}), {}초 뒤 다시 시도: {}",
-                        container.getListenerId(), attempts, retryInterval.toSeconds(), e.toString());
+                log.warn("[kafka] 리스너 {} 기동 실패(시도 {}), {} ms 뒤 다시 시도: {}",
+                        container.getListenerId(), attempts, retryInterval.toMillis(), e.toString());
             }
         }
         if (failed > 0) {

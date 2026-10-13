@@ -22,3 +22,9 @@ node_max_size = 3
 # 측정 세션의 단계 2에서 실제 발생 용량을 확인한다. 이 상한을 넘겨 늘리지 않는다.
 loadgen_instance_type  = "c6i.xlarge"
 loadgen_instance_count = 3
+
+# Redis를 비버스터블로(TS-049). t4g.micro는 크레딧이 바닥나면 기준 성능(약 10%)으로 묶여 상태 조회가 수백 ms로 느려졌다.
+# 새 클러스터는 크레딧이 거의 0에서 시작하고 폭증 run 1회가 13 이상을 써서, 기다리지 않으면 run이 무효가 된다.
+# m7g.large(2 vCPU · 6.38 GiB)는 크레딧이 없다. 서울 온디맨드 Redis $0.192/h × 2노드(primary+replica) —
+# t4g.micro($0.024/h)보다 세션당 약 +$1~2(4~6시간, 계산·2026-10-13 요금 API 조회). ElastiCache는 EC2 vCPU 쿼터와 별개다.
+redis_node_type = "cache.m7g.large"

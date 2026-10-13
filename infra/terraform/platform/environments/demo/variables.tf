@@ -130,6 +130,15 @@ variable "db_multi_az" {
   default     = true
 }
 
+variable "redis_node_type" {
+  description = <<-EOT
+    Redis 노드 타입. 기본은 버스터블 t4g.micro(평소·기능 검증용). 부하 측정은 loadtest.tfvars에서 비버스터블로 바꾼다 —
+    ElastiCache T 노드는 CPU 크레딧이 바닥나면 기준 성능으로 묶여, 새로 만든 클러스터(크레딧 ≈ 0에서 시작)의 측정이 무효가 된다(TS-049).
+  EOT
+  type        = string
+  default     = "cache.t4g.micro"
+}
+
 variable "redis_multi_az" {
   description = "대기열·SSE 팬아웃의 가용성. 정합성은 DB가 지키지만 간판 기능이 멈춘다(ADR-012 §10)."
   type        = bool

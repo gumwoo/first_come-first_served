@@ -168,7 +168,7 @@ k8s/                   Kubernetes base, overlay, Kafka, monitoring, Argo CD
 | 메타테스트 | 하네스가 위반을 실제로 잡는지 | 일부러 만든 위반 fixture 59개가 전부 차단되는지 |
 | 단위·통합 테스트 (Testcontainers) | 동시성·상태 전이·Outbox/Kafka 런타임 정합성 | 실제 PostgreSQL·Redis·Kafka 컨테이너 |
 | 알림 규칙 테스트 (promtool) | 알림이 울려야 할 때 울리고, 아닐 때 울리지 않는지 | 규칙 6개 모두 양성·음성 케이스 |
-| E2E (Playwright, CI 풀스택) | 브라우저↔API 경계와 UI 상태 | 실패하면 머지 차단, trace 업로드 |
+| E2E (Playwright, CI 풀스택) | 브라우저↔API 경계와 UI 상태 | 프론트·백엔드가 바뀐 PR에서 실행, 실패하면 PR 체크 실패와 trace 업로드 |
 | 부하 시험 (k6, 클러스터 세션) | 10만 명 진입·폴링 폭증에서 정합성이 깨지지 않는지 | 판정식을 먼저 적고 run → 사후 정합성 검사 |
 
 하네스의 범위, 명령, 검사 한계는 [docs/HARNESS.md](docs/HARNESS.md)에 정리되어 있습니다.

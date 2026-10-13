@@ -289,6 +289,32 @@ for (const apiDeployDoc of apiDeployDocs) {
     }
   }
 }
+// ⑩-b 대기열 전용 Deployment(components/queue-split)는 api Deployment의 사본이다(ADR-027). 이름·app 라벨 말고 파드 사양이
+// 어긋나면(resources·env·probe 수치 등) A'/B 비교가 "분리" 말고 다른 차이까지 섞는다. 이름을 맞춘 뒤 파드 사양 전체를 비교한다.
+{
+  const byName = Object.fromEntries(apiDeployDocs.map(({ doc, file }) => [doc.metadata.name, { doc, file }]));
+  const api = byName["flowticket-api"];
+  const q = byName["flowticket-api-queue"];
+  if (api && q) {
+    const canon = (v) =>
+      Array.isArray(v)
+        ? v.map(canon)
+        : v && typeof v === "object"
+          ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))
+          : v;
+    const norm = (spec) => JSON.stringify(canon(spec ?? {})).replaceAll("flowticket-api-queue", "flowticket-api");
+    const a = norm(api.doc.spec?.template?.spec);
+    const b = norm(q.doc.spec?.template?.spec);
+    if (a !== b) {
+      let i = 0;
+      while (i < a.length && a[i] === b[i]) i++;
+      r.fail(
+        `대기열 전용 Deployment의 파드 사양이 api와 다르다: ${path.relative(REPO_ROOT, q.file)} ↔ ${path.relative(REPO_ROOT, api.file)} ` +
+          `(첫 차이 근처: …${b.slice(Math.max(0, i - 40), i + 40)}…). 이름·app 라벨 말고는 같아야 A'/B 비교가 분리 효과만 본다(ADR-027)`
+      );
+    }
+  }
+}
 
 // ---------- 2) 공개 Ingress가 API Service로 직결하는가 — ADR-024 허용 목록만 ----------
 //
@@ -488,8 +514,12 @@ if (fs.existsSync(ES_DIR)) {
     }
     // 대기열 분리(components/queue-split, ADR-027)는 api 상한을 3으로 묶는다. 그 상태에서 사전 확장 하한을 올리면
     // 하한 > 상한인 HPA가 되어 적용이 실패한다. 같은 overlay의 kustomization이 component를 켰는지 본다.
+    // 블록 목록(줄 끝 주석 허용)과 흐름 표기(`components: [..]`)를 둘 다 본다. `#`로 시작하는 줄은 꺼진 상태다.
     const kzSame = path.join(path.dirname(f), "kustomization.yaml");
-    const splitOn = fs.existsSync(kzSame) && /^\s*-\s*[^#\n]*components\/queue-split\/?\s*$/m.test(read(kzSame));
+    const kzText = fs.existsSync(kzSame) ? read(kzSame) : "";
+    const splitOn =
+      /^\s*-\s*[^#\n]*components\/queue-split\/?\s*(#.*)?$/m.test(kzText) ||
+      /^\s*components:\s*\[[^\]#\n]*components\/queue-split/m.test(kzText);
     if (splitOn && min !== base.minReplicas) {
       r.fail(
         `대기열 분리를 켠 채 사전 확장을 켰다: ${rel} → minReplicas ${min}. queue-split은 api 상한을 3으로 묶어 ` +

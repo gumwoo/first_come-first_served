@@ -38,7 +38,16 @@
   대기열 쪽 사전 확장(오픈 순간 몰리는 곳)은 측정 뒤 정한다.
 - 대기열 파드도 같은 이미지라 스케줄러(승격·아웃박스 릴레이·만료 정리 등)와 Kafka 리스너가 함께 돈다. 승격은 Lua 원자, 나머지는 ShedLock·멱등이라 정합성 문제는 없다.
   폭증 때 대기열 파드의 CPU를 조금 나눠 쓴다.
-- 장애 시험 스크립트(rds/redis-failover-test, diag.sh 등)는 api Deployment만 본다 — B에서 쓸 때 대상 확인이 필요하다.
+- 장애 시험 스크립트(rds/redis-failover-test, diag.sh, node-autoscale-test 등)는 `app=flowticket-api`만 본다 — B에서 쓸 때 대상 확인이 필요하다.
+- **대상 그룹 교체(이 변경을 처음 반영할 때)**: 대기열 두 경로만 쓰던 api 대상 그룹이 사라지고 `flowticket-api-queue` 대상 그룹이 새로 생긴다.
+  - ALB 알람 스택은 `alb-alarms.sh apply`를 돌릴 때의 대상 그룹 태그로 알람 키를 정한다. 알람 스택이 떠 있는 채 반영하면
+    옛 `flowticket-alb-no-healthy-api`가 데이터 끊김(`treat_missing_data = breaching`)으로 울린다 — `alb-alarms.sh apply`를 다시 돌려 `api-queue` 키로 바꾼다.
+    클러스터를 새로 띄우는 경우(bring-up 뒤 apply)에는 처음부터 새 키로 만들어진다.
+  - 새 대상 그룹이 헬스체크를 통과하기 전 잠깐 대기열 경로가 503을 낼 수 있다(추론) — 오픈·측정 직전에 반영하지 않는다.
+- **ServiceMonitor는 ArgoCD가 아니라 bring-up의 `kubectl apply -k k8s/monitoring`으로 적용된다.** 떠 있는 클러스터에 반영할 때는 다시 적용해야
+  `jobLabel`·수집 라벨 선택이 바뀐다.
+- **롤링 중 공존 파드**: 파드 예산 9는 HPA 상한 기준이다. 롤링 중에는 A' 10(9 + surge 1), B 11(3 + 1 + 6 + 1)이 공존할 수 있다(계산 — DB 커넥션 계산에는 반영).
+- 두 Deployment의 파드 사양은 하네스 k8s 규칙 ⑩-b가 같게 묶는다(이름·app 라벨만 다름) — 사양이 어긋나면 A'/B 비교에 분리 말고 다른 차이가 섞인다.
 
 ## 5. 검증 계획(다음 클러스터 세션)
 같은 세션·같은 Redis(측정 프로파일 비버스터블)에서 A'와 B를 비교한다. 질문 하나: **폴링 폭증 중에도 좌석·주문 지연이 지켜지는가.**

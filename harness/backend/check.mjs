@@ -544,7 +544,11 @@ const NON_APP_HEADROOM = 20;
           raw === undefined ? Math.ceil((max * 25) / 100) : raw.endsWith("%") ? Math.ceil((max * parseInt(raw, 10)) / 100) : Number(raw);
         const qPoolRaw = read(qDep).match(/-\s*name:\s*DB_POOL_MAX\s*\r?\n\s*value:\s*"?(\d+)"?/)?.[1];
         const qPool = qPoolRaw ? Number(qPoolRaw) : pool;
-        const apiMaxOverride = read(qKz).match(/path:\s*\/spec\/maxReplicas\s*\r?\n\s*value:\s*(\d+)/)?.[1];
+        // api HPA(이름 flowticket-api)를 겨냥한 patch의 maxReplicas만 읽는다 — 대기열 HPA patch가 생겨도 섞이지 않게.
+        const apiMaxOverride = (loadYaml(path.join(COMP, "kustomization.yaml"))?.patches ?? [])
+          .filter((p) => p?.target?.kind === "HorizontalPodAutoscaler" && p?.target?.name === "flowticket-api" && typeof p.patch === "string")
+          .map((p) => p.patch.match(/path:\s*\/spec\/maxReplicas\s*\r?\n\s*value:\s*(\d+)/)?.[1])
+          .find(Boolean);
         const apiMaxB = apiMaxOverride ? Number(apiMaxOverride) : maxReplicas;
         if (!qMax) {
           r.fail(`대기열 분리 HPA의 maxReplicas를 못 읽었다: ${path.relative(REPO_ROOT, qHpa)} — 규칙 17(B)이 무력화된 상태`);

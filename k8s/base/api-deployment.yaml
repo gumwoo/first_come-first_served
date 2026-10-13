@@ -4,6 +4,7 @@ metadata:
   name: flowticket-api
   namespace: flowticket
 spec:
+  # 파드 사양을 바꾸면 대기열 전용 사본(k8s/components/queue-split/queue-deployment.yaml)도 같이 바꾼다 — 하네스 k8s 규칙 ⑩-b(ADR-027).
   # replicas를 두지 않는다. 이 Deployment는 HPA가 소유한다(api-hpa.yaml, min 3 / max 9 — ADR-025).
   # 값을 두면 ArgoCD sync가 HPA가 정한 파드 수를 Git 값으로 덮어쓰고, RespectIgnoreDifferences로는
   # 막히지 않았다(TS-022). 하한은 HPA의 minReplicas가 담당한다.

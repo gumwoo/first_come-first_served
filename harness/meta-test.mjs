@@ -53,6 +53,7 @@ const cases = [
   { name: "k8s-component-ingress-patch", script: "k8s/check.mjs", expect: "Ingress 패치가 허용 목록 밖이다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-component-ingress-patch" } },
   { name: "k8s-prescale-with-split", script: "k8s/check.mjs", expect: "대기열 분리를 켠 채 사전 확장을 켰다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-prescale-with-split" } },
   { name: "k8s-queue-no-tz", script: "k8s/check.mjs", expect: "API 컨테이너에 TZ가 고정돼 있지 않다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-queue-no-tz" } },
+  { name: "k8s-queue-spec-drift", script: "k8s/check.mjs", expect: "대기열 전용 Deployment의 파드 사양이 api와 다르다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-queue-spec-drift" } },
   { name: "k8s-buildtime-env", script: "k8s/check.mjs", expect: "빌드 시점 값을 런타임 env로 주입:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-buildtime-env" } },
   { name: "k8s-orphan-externalsecret", script: "k8s/check.mjs", expect: "ExternalSecret이 적용되지 않는다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-orphan-externalsecret" } },
   { name: "k8s-hpa-replicas", script: "k8s/check.mjs", expect: "HPA가 소유하는 Deployment에 replicas가 있다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-hpa-replicas" } },

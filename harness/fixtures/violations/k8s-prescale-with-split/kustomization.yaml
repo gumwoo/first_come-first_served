@@ -5,6 +5,6 @@ namespace: flowticket
 resources:
   - api-hpa.yaml
 components:
-  - ../../../../k8s/components/queue-split
+  - ../../../../k8s/components/queue-split   # B(분리) — 줄 끝 주석이 붙어도 켠 상태다
 patches:
   - path: event-prescale.yaml

@@ -243,7 +243,7 @@ public class QueueService {
      * 순회 대상이 무한히 쌓인다.
      *
      * 진입 경로에 DB 조회가 하나 늘어난다(측정: 진입 1건당 커넥션 획득 1.01회). 버스트에서는 진입 요청마다 그대로 DB 부하가 되어,
-     * 짧은 TTL로 파드 메모리에 기억할 수 있게 했다(BookableEventCache — 기본은 꺼져 있어 매번 DB).
+     * 짧은 TTL로 파드 메모리에 기억할 수 있게 했다(BookableEventCache — 앱 기본값은 꺼짐, 운영은 ConfigMap으로 1초: IMP-026).
      */
     private void requireBookable(Long eventId) {
         if (!bookableEvents.status(eventId).isBookable()) {

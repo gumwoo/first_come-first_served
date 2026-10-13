@@ -52,30 +52,6 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 
 ## 백엔드 아키텍처
 
-```mermaid
-flowchart LR
-    Browser["Browser"] --> Web["Next.js Web"]
-    Web -->|"/api proxy · 좌석·주문 SSE"| API["Spring Boot API"]
-
-    API --> Auth["Auth\nJWT · Refresh Rotation · OAuth2"]
-    API --> Event["Event\nSearch · KOPIS Sync"]
-    API --> Queue["Queue\nRedis Lua"]
-    API --> Booking["Seat · Order · Payment · Refund"]
-    API --> Admin["Admin · Alert · DLQ"]
-
-    Auth --> Postgres[("PostgreSQL")]
-    Event --> Postgres
-    Event --> Kopis["KOPIS OpenAPI"]
-    Queue --> Redis[("Redis")]
-    Booking --> Postgres
-    Booking --> Redis
-    Booking --> Outbox["Transactional Outbox"]
-    Outbox --> Kafka[("Kafka")]
-    Kafka --> Dlq["DLQ / Consumer"]
-    Admin --> Postgres
-    Admin --> Kafka
-```
-
 백엔드는 Controller → Service → Repository/Gateway 경계로 구성됩니다. 위험 도메인에서는 일반적인 엔티티 저장보다 상태 조건을 포함한 명시적 전이를 우선합니다.
 
 | 영역 | 책임 | 주요 구성 |
@@ -89,29 +65,9 @@ flowchart LR
 
 ## 인프라 아키텍처
 
-```mermaid
-flowchart TB
-    Internet["Internet"] --> ALB["ALB / Ingress"]
-    ALB --> Web["Next.js Pods"]
-    Web --> API["Spring Boot API Pods"]
-    ALB -->|"대기열 진입·상태 조회"| API
-    HPA["HPA 3~9"] -. Pod 확장 .-> API
-    CA["Cluster Autoscaler"] -. Node 확장 .-> EKS
+![FlowTicket AWS 인프라](docs/assets/architecture-infra.png)
 
-    API --> RDS["PostgreSQL 16\nPrivate RDS"]
-    API --> Redis["ElastiCache Redis 7.1"]
-    API --> Kafka["Kafka KRaft / Strimzi"]
-    API --> KOPIS["KOPIS OpenAPI"]
-
-    Terraform["Terraform"] -. 인프라 .-> EKS["AWS EKS"]
-
-    Dev["git push"] --> CI["GitHub Actions"]
-    CI -->|이미지 build/push| ECR["ECR"]
-    CI -->|매니페스트 newTag 커밋| Git["Git (k8s/overlays)"]
-    Git -->|pull 기반 동기화·selfHeal| Argo["Argo CD"]
-    Argo -->|앱| EKS
-    ECR -. image pull .-> EKS
-```
+<sub>원본: [`docs/assets/architecture-infra.drawio`](docs/assets/architecture-infra.drawio) — diagrams.net에서 열어 고칠 수 있습니다.</sub>
 
 배포는 **push가 아니라 pull**이다. CI는 이미지를 ECR에 올리고 매니페스트의 태그를 Git에
 커밋하는 데서 멈추며(`.github/workflows/image.yml`), 클러스터에 적용하는 것은 Argo CD다.
@@ -205,28 +161,15 @@ k8s/                   Kubernetes base, overlay, Kafka, monitoring, Argo CD
 
 하네스는 이 프로젝트의 기능 자체가 아니라, 기능 구현이 계약과 규칙에서 벗어나지 않는지 확인하는 안전망입니다.
 
-```mermaid
-flowchart LR
-    Contract["contracts/"] --> Schema["Schema Check"]
-    Contract --> Backend["Backend Check"]
-    Contract --> Frontend["Frontend Check"]
-    Rules["docs/rules/"] --> Docs["Docs / K8s Check"]
-    Meta["Invalid Fixtures"] --> MetaTest["Meta Test"]
-    Schema --> CI["GitHub Actions"]
-    Backend --> CI
-    Frontend --> CI
-    Docs --> CI
-    MetaTest --> CI
-    E2E["Playwright E2E"] --> CI
-```
-
-검증은 다음 원칙을 따릅니다.
-
-- 계약 파일에서 enum·API·이벤트·오류·계층 경계를 관리합니다.
-- 하네스는 계약 형식, 백엔드·프론트 구조, Kubernetes·문서의 알려진 드리프트를 검사합니다.
-- 메타테스트는 일부러 만든 위반 fixture가 실제로 차단되는지 확인합니다.
-- 단위·통합 테스트는 동시성, 상태 전이, 인증, Outbox/Kafka 같은 런타임 정합성을 검증합니다.
-- Playwright E2E와 k6는 사용자 흐름과 부하 상황을 확인합니다.
+| 단계 | 무엇을 확인하나 | 예 |
+|---|---|---|
+| 계약 (`contracts/`) | enum·API·이벤트·오류 코드·계층 규칙을 YAML 단일 진실원으로 고정 | `events.yaml`에서 구현됨(`implemented`)으로 선언한 이벤트는 실제 발행 코드가 있어야 통과 |
+| 정적 하네스 (`npm run harness:check`) | 계약과 코드·매니페스트·문서의 어긋남 | 상태 변경 UPDATE의 `WHERE status` 가드, 파괴적 DDL, `@Autowired` 금지(생성자 주입), SSE 훅의 재동기화 경로, 매니페스트↔앱 설정 |
+| 메타테스트 | 하네스가 위반을 실제로 잡는지 | 일부러 만든 위반 fixture 59개가 전부 차단되는지 |
+| 단위·통합 테스트 (Testcontainers) | 동시성·상태 전이·Outbox/Kafka 런타임 정합성 | 실제 PostgreSQL·Redis·Kafka 컨테이너 |
+| 알림 규칙 테스트 (promtool) | 알림이 울려야 할 때 울리고, 아닐 때 울리지 않는지 | 규칙 6개 모두 양성·음성 케이스 |
+| E2E (Playwright, CI 풀스택) | 브라우저↔API 경계와 UI 상태 | 실패하면 머지 차단, trace 업로드 |
+| 부하 시험 (k6, 클러스터 세션) | 10만 명 진입·폴링 폭증에서 정합성이 깨지지 않는지 | 판정식을 먼저 적고 run → 사후 정합성 검사 |
 
 하네스의 범위, 명령, 검사 한계는 [docs/HARNESS.md](docs/HARNESS.md)에 정리되어 있습니다.
 

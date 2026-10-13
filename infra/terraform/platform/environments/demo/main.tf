@@ -89,6 +89,7 @@ module "redis" {
 
   allowed_security_group_id = module.eks.cluster_security_group_id
 
+  node_type          = var.redis_node_type
   multi_az           = var.redis_multi_az
   transit_encryption = var.redis_transit_encryption
 

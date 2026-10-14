@@ -41,7 +41,7 @@ REST 기준. 인증은 `Authorization: Bearer <accessToken>`. 에러는 공통 �
 - 조회 기록: `GET /events/:id` 진입 시 `ZINCRBY`로 누적·실시간 ZSET 동시 +1.
   - 중복방지: `view:dedup:{eventId}:{ip}` TTL 60s — 같은 IP 60초 내 재조회는 무시.
 - 키: `event:views:total`(누적, 인기 TOP), `event:views:hot`(감쇠, 실시간), `search:keywords`(인기검색어).
-- 감쇠 배치: `@Scheduled` 5분마다 `event:views:hot` 전체 score `× 0.8`(반감기 ~15분),
+- 감쇠 배치: `@Scheduled` 5분 주기로 실행해 `event:views:hot` 전체 score에 **마지막 감쇠 뒤 흐른 시간만큼** `× 0.8^(경과/5분)`(반감기 ~15분 — 파드 수·실행 횟수와 무관, [TS-051](../troubleshooting/TS-051-ranking-decay-repeated-per-pod.md)),
   score < 0.1 항목은 `ZREM`으로 정리. (인기검색어도 동일 정책 적용 가능 — 단계적)
 
 ## 대기열 (S03) — Redis Sorted Set

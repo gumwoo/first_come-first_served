@@ -133,6 +133,39 @@ class RankingIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 위상이_다른_실행이_여러_번이어도_감쇠_총량은_흐른_시간으로_정해진다() {
+        // 운영에서는 파드마다 틱의 위상이 달라, 두 번째 실행은 0이 아닌 짧은 경과를 본다. 2분 + 3분 = 한 주기.
+        ranking.recordView(idA, "1.1.1.1"); // hot=1.0
+        ranking.decay(); // 기준(×0.8)
+        decayAfter(Duration.ofMinutes(2)); // 다른 파드
+        decayAfter(Duration.ofMinutes(3)); // 또 다른 파드
+
+        assertThat(hot(idA)).isCloseTo(0.8 * 0.8, within(1e-9));
+    }
+
+    @Test
+    void 긴_공백_뒤_첫_실행은_상한까지만_감쇠한다() {
+        // 롤백 뒤 재배포·장시간 중단 뒤에도 랭킹이 통째로 지워지지 않게 경과를 3주기로 자른다.
+        ranking.recordView(idA, "1.1.1.1"); // hot=1.0
+        ranking.decay(); // ×0.8
+        decayAfter(Duration.ofHours(1)); // 12주기 → 3주기로 제한
+
+        assertThat(hot(idA)).isCloseTo(0.8 * 0.512, within(1e-9));
+    }
+
+    @Test
+    void 한_주기보다_미래인_기록은_감쇠_없이_지금으로_다시_쓴다() {
+        // 시계가 앞선 파드가 미래 시각을 남기면 다른 파드들이 감쇠를 건너뛴다. 한 주기 넘게 앞서면 기록을 바로잡는다.
+        ranking.recordView(idA, "1.1.1.1"); // hot=1.0
+        ranking.decay(); // ×0.8, 기록 = t0
+        decayAfter(Duration.ofMinutes(-10)); // 기록이 10분 미래 → 지금(t0-10분)으로 다시 씀, 감쇠 없음
+        assertThat(hot(idA)).isCloseTo(0.8, within(1e-9));
+
+        decayAfter(PERIOD); // 다시 쓴 기록 기준 한 주기
+        assertThat(hot(idA)).isCloseTo(0.64, within(1e-9));
+    }
+
+    @Test
     void 파드_시계가_뒤처져_보이면_감쇠하지_않는다() {
         // 다른 파드의 시계가 늦어 지금이 마지막 감쇠보다 과거로 보이면 되돌리지도, 다시 곱하지도 않는다.
         ranking.recordView(idA, "1.1.1.1"); // hot=1.0

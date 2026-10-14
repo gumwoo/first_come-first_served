@@ -33,16 +33,21 @@ public class RankingService {
     /** 5분마다 ×0.8 → 반감기 ~15분. score<MIN_SCORE는 정리. */
     private static final double DECAY_FACTOR = 0.8;
     private static final double MIN_SCORE = 0.1;
+    /** 한 번에 인정하는 경과의 상한(주기 수). 롤백 뒤 재배포·긴 공백 뒤 첫 실행이 랭킹을 통째로 지우지 않게 한다. */
+    private static final int MAX_DECAY_PERIODS = 3;
 
     // 경과 시간만큼만 감쇠한다: score × FACTOR^(경과/주기). 마지막 감쇠 시각을 같은 원자 단위에서 읽고 갱신한다.
     //
     // 파드마다 decay()가 주기적으로 돌고 락(ranking-decay)은 lockAtLeastFor=PT0S라, "실행 횟수 × 0.8"이면
-    // 같은 주기에 파드 수만큼 거듭 감쇠된다(반감기가 파드 수에 반비례해 줄어든다 — TS-051). 횟수가 아니라 흐른 시간으로 곱하면
-    // 몇 번 실행되든 결과가 같다 — 같은 주기 안의 두 번째 실행은 경과가 0에 가까워 거의 그대로 둔다.
+    // 같은 주기에 파드 수만큼 거듭 감쇠된다(반감기가 파드 수에 반비례해 줄어든다 — TS-051). 흐른 시간으로 곱하면
+    // 실행이 여러 번이어도 감쇠 총량은 흐른 시간으로만 정해진다 — 0.8^(a/T)·0.8^(b/T) = 0.8^((a+b)/T).
     //
-    // 시각은 Java Clock으로 받는다(테스트에서 시계를 돌리기 위해). 파드 사이 시계가 어긋나 지금이 마지막 감쇠보다
-    // 과거로 보이면 아무것도 하지 않는다(되돌리지 않는다). 기록이 없으면(첫 실행·키 유실) 한 주기만큼 감쇠한다.
-    // KEYS: hot, decayedAt / ARGV: nowMs, periodMs, factor, minScore. 반환: 1=감쇠함, 0=건너뜀.
+    // 시각은 Java Clock으로 받는다(테스트에서 시계를 돌리기 위해).
+    // - 기록이 없으면(첫 실행·키 유실) 한 주기만큼 감쇠한다(기존 동작).
+    // - 지금이 마지막 감쇠보다 조금 과거로 보이면(파드 사이 시계 어긋남) 아무것도 하지 않는다.
+    // - 기록이 한 주기보다 더 미래면 시계가 앞선 파드가 남긴 값으로 보고, 감쇠 없이 지금으로 다시 쓴다(감쇠가 멈추지 않게).
+    // - 경과는 MAX_DECAY_PERIODS 주기까지만 인정한다(긴 공백 뒤 첫 실행에서 랭킹이 통째로 사라지지 않게).
+    // KEYS: hot, decayedAt / ARGV: nowMs, periodMs, factor, minScore, maxPeriods. 반환: 1=감쇠함, 0=건너뜀.
     private static final String DECAY_LUA = """
             local now = tonumber(ARGV[1])
             local period = tonumber(ARGV[2])
@@ -51,8 +56,16 @@ public class RankingService {
             if last then
               elapsed = now - last
             end
+            if elapsed < -period then
+              redis.call('SET', KEYS[2], ARGV[1])
+              return 0
+            end
             if elapsed <= 0 then
               return 0
+            end
+            local cap = period * tonumber(ARGV[5])
+            if elapsed > cap then
+              elapsed = cap
             end
             local weight = tonumber(ARGV[3]) ^ (elapsed / period)
             redis.call('ZUNIONSTORE', KEYS[1], 1, KEYS[1], 'WEIGHTS', string.format('%.17g', weight))
@@ -68,6 +81,10 @@ public class RankingService {
 
     public RankingService(StringRedisTemplate redis, Clock clock,
                           @Value("${ranking.decay-rate-ms:300000}") long decayPeriodMs) {
+        if (decayPeriodMs <= 0) {
+            // 0이면 Lua에서 0으로 나눠 가중치가 0이 되고 랭킹이 통째로 지워진다.
+            throw new IllegalArgumentException("ranking.decay-rate-ms는 양수여야 한다: " + decayPeriodMs);
+        }
         this.redis = redis;
         this.clock = clock;
         this.decayPeriodMs = decayPeriodMs;
@@ -145,7 +162,7 @@ public class RankingService {
         try {
             redis.execute(DECAY_SCRIPT, List.of(HOT, HOT_DECAYED_AT),
                     String.valueOf(clock.millis()), String.valueOf(decayPeriodMs),
-                    String.valueOf(DECAY_FACTOR), String.valueOf(MIN_SCORE));
+                    String.valueOf(DECAY_FACTOR), String.valueOf(MIN_SCORE), String.valueOf(MAX_DECAY_PERIODS));
         } catch (Exception e) {
             log.warn("[ranking] 실시간 감쇠 실패: {}", e.getMessage());
         }

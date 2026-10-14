@@ -60,16 +60,16 @@
 - 남기는 것: [[ADR-008]]·[[ADR-010]]·[[IMP-016]] 등 Kafka 문서는 지우지 않고 "ADR-028로 대체됨"을 표시해 **운영 실험의 기록**으로 둔다.
 
 ## 7. 제거 단계(개요 — 확정 순서·게이트·롤백은 [kafka-removal-design.md](../deployment/kafka-removal-design.md) §6)
-1. 문서(이 ADR·설계 문서) → 프론트 재조회 보완(Kafka와 독립) → 관리 화면을 아웃박스 기준으로 **추가**(V20, 기존 DLQ 유지).
+1. 문서(이 ADR·설계 문서) → 랭킹 감쇠 반복 실행 수정(Kafka와 무관한 선행 PR) → 프론트 재조회 보완(Kafka와 독립) → 관리 화면을 아웃박스 기준으로 **추가**(V20, 기존 DLQ 유지).
 2. **앱 전환 = 릴리스 N:** 릴레이 발행 대상 교체, 소비자·DLQ 제거, 테스트 교체, 계약·하네스 규칙과 함께 `configmap`의 `KAFKA_*`(하네스 k8s 규칙 1 — 앱이 읽지 않는 env 금지)·앱 지표 기반 알림(`prometheusrule`의 DLQ 적체·ConsumerLag, `harness/alerts/rule-tests.yml`)도 **같은 PR**에서 제거. 떠 있는 클러스터에서 전환하면 그 앞에 "발행 대상 설정 전환 → Kafka 배출 확인" 단계를 둔다(ShedLock은 발행 경로 하나를 보장하지 않는다).
-3. 운영 게이트 뒤 **인프라 제거:** Strimzi·Kafka 매니페스트, Kafka 브로커 모니터링(`dashboard-kafka.yaml`, `podmonitor-kafka.yaml`), bring-up·철거 단계, compose, 장애 시험. EBS CSI는 Prometheus PVC(gp2 20Gi)가 쓰므로 **유지**(terraform 주석만 정리).
+3. **인프라 제거는 두 번에 나눈다.** 측정 세션에서 N 게이트와 별도의 운영 삭제 게이트(삭제 뒤에는 즉시 롤백 불가)를 통과하면 떠 있는 클러스터에서 Strimzi·Kafka CR·PVC를 지우고 기록한다. 그 뒤 B₁(Kafka 없는 새 기준선)을 잰다. 저장소 정리는 관찰 기간 뒤 머지한다 — 그 사이 bring-up 재실행은 Kafka 단계(네임스페이스·Strimzi·Kafka CR·Kafka 모니터링)를 건너뛴다(P3a의 `SKIP_KAFKA=1`. 운영 삭제 표식 가드는 같은 클러스터 재실행만 막고, 새 클러스터는 `SKIP_KAFKA=1` 절차에 의존한다). 저장소 정리 대상: Strimzi·Kafka 매니페스트, Kafka 브로커 모니터링(`dashboard-kafka.yaml`, `podmonitor-kafka.yaml`), bring-up·철거 단계, compose, 장애 시험. EBS CSI는 Prometheus PVC(gp2 20Gi)가 쓰므로 **유지**(terraform 주석만 정리).
 4. N+1에서 `dlq_messages` 테이블·`dlq_pending_threshold` 컬럼 `DROP`(Expand-Contract, allow 주석), 마지막으로 문서 정리(ADR-008·010 상태, README·HARNESS·배포 문서).
-- 각 단계는 PR → G1 → CI. 실제 클러스터 동작은 다음 측정 세션에서 확인.
+- 각 단계는 PR → CI·하네스 → G1 리뷰. 실제 클러스터 동작은 다음 측정 세션에서 확인.
 
 ## 8. 영향
 - 평시 노드 하한의 이유 하나(Kafka 브로커 AZ 분산 `DoNotSchedule`)가 사라진다. 다만 AZ별 노드 그룹의 근거(EBS의 AZ 종속)는 Prometheus PVC에도 그대로 남는다 — 노드 그룹 구성은 api·대기열 파드의 가용성 목표(G1: 노드 1대 장애, G2: AZ 장애는 후속)와 Prometheus 배치로 다시 판단한다(RDS·Redis는 관리형이라 노드와 무관). 노드 수는 자원 산정에서 계산한다 — CPU requests 하한(A' 3·현재 B 5·B 2+2 후보 4)은 Kafka 제거만으로 낮아지지 않는다(설계 문서 §7).
 - 3 AZ·AZ별 NAT·RDS Multi-AZ는 이번에 **유지**하지만, 3 AZ의 주된 근거(브로커 장애 도메인 분리)가 사라지므로 최종 운영 정책에서 비용과 가용성(G1은 노드 장애라 3 AZ가 필수 조건이 아님, G2가 AZ 장애)으로 다시 평가한다.
-- 기존 B 성능 실측(IMP-033)은 Kafka가 있던 환경이다. 다음 측정은 "Kafka 제거만"과 "자원 최적화"를 나눠 잰다(설계 문서 §7.5).
+- 기존 B 성능 실측(IMP-033)은 Kafka가 있던 환경이다. 다음 측정은 Kafka 없는 새 기준선(B₁)과 자원 최적화(B′)를 나눠 잰다. B₀ 대비 차이는 세션 차이를 포함하므로 Kafka 제거만의 효과로 쓰지 않는다(설계 문서 §7.5, 기준선 (a) — 사용자 결정 2026-10-14).
 - [[ADR-012]] "2 AZ + 브로커 3개" 대안의 서술을 고친다: 2 AZ면 한 **AZ**에 브로커 2개가 몰린다(같은 노드라는 뜻은 아니다) — 그 AZ가 죽으면 ISR 1개로 쓰기 중단.
 
 ## 9. 확인하지 못한 것

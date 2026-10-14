@@ -12,7 +12,7 @@ variable "state_bucket" {
 }
 
 variable "azs" {
-  description = "3 AZ. Kafka 브로커를 서로 다른 장애 도메인에 하나씩 두기 위한 최소 구성이다."
+  description = "3 AZ. 처음 근거(Kafka 브로커를 장애 도메인마다 하나씩)는 Kafka 제거(ADR-028)로 사라졌고, 재평가(kafka-removal-design.md §7.4) 전까지 변경 범위를 줄이려고 유지한다."
   type        = list(string)
   default     = ["ap-northeast-2a", "ap-northeast-2b", "ap-northeast-2c"]
 }

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# 장애 주입 실증: 브로커 강제 종료(IMP-016) / 노드 드레인(IMP-017)을 부하 중에 재현한다.
+# 장애 주입 실증: 노드 드레인(IMP-017)을 부하 중에 재현한다.
+# (브로커 강제 종료(IMP-016) 시나리오는 Kafka 제거(ADR-028)로 뺐다. 기록은 IMP-016에 남아 있다.)
 #
-# 두 측정은 Cluster Autoscaler가 없는 상태에서 잰 값이다. CA의 scale-down은 상태 저장 워크로드를
+# 드레인 측정(IMP-017)은 Cluster Autoscaler가 없는 상태에서 잰 값이다. CA의 scale-down은 상태 저장 워크로드를
 # 옮길 수 있어(ADR-012 §한계) 전제가 바뀌므로 CA 도입 후 다시 잰다. 같은 조건으로 재현하도록
 # 절차를 스크립트로 둔다(TS-035).
 #
 # 사용:
-#   bash scripts/resilience-test.sh --scenario failover   # 브로커 1대 강제 종료
 #   bash scripts/resilience-test.sh --scenario drain      # 노드 1대 드레인
 #   bash scripts/resilience-test.sh --scenario drain --rate 25 --duration 4m
 #   bash scripts/resilience-test.sh --scenario drain --expect-no-ca   # CA 없는 기준선
@@ -17,7 +17,6 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 NS=flowticket
-KNS=kafka
 JOB=k6-resilience
 CM=k6-resilience
 
@@ -40,8 +39,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 case "$SCENARIO" in
-  failover|drain) ;;
-  *) echo "--scenario 는 failover | drain" >&2; exit 2;;
+  drain) ;;
+  *) echo "--scenario 는 drain(failover — 브로커 강제 종료 — 는 Kafka 제거로 뺐다, ADR-028)" >&2; exit 2;;
 esac
 
 WORK="$(mktemp -d)"
@@ -91,7 +90,7 @@ if [ "$EXPECT_NO_CA" -eq 1 ]; then
 else
   [ "$CA_ON" = "있음" ] || {
     echo "Cluster Autoscaler가 동작하지 않는다. 중단한다." >&2
-    echo "  이 스크립트의 목적은 CA 도입 후 IMP-016·017 재측정이다. 지금 돌리면" >&2
+    echo "  이 스크립트의 목적은 CA 도입 후 IMP-017 재측정이다. 지금 돌리면" >&2
     echo "  기존 값을 한 번 더 재는 것이고, 결과가 'CA 도입 후 근거'로 잘못 채택된다." >&2
     echo "  확인: kubectl -n kube-system get deploy -l app.kubernetes.io/name=aws-cluster-autoscaler" >&2
     echo "  CA 없는 기준선을 일부러 재려면: --expect-no-ca" >&2
@@ -100,34 +99,11 @@ fi
 NODE_TYPE="$(kubectl get nodes -o jsonpath='{.items[0].metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "?")"
 echo "    노드 $(kubectl get nodes --no-headers | wc -l | tr -d ' ')대 / $NODE_TYPE, Cluster Autoscaler $CA_ON"
 
-if [ "$SCENARIO" = "failover" ]; then
-  # 라벨 셀렉터를 하나만 믿지 않는다. strimzi.io/broker-role은 Strimzi 버전에 따라
-  # 없을 수 있고, 그러면 "브로커 0개"로 오판한다. pool 라벨로 폴백한다.
-  # (이 클러스터는 controller/broker 겸용 pool "dual-role" 하나다. k8s/kafka/kafka.yaml)
-  BSEL="strimzi.io/broker-role=true"
-  BROKERS="$(kubectl -n "$KNS" get pods -l "$BSEL" --no-headers 2>/dev/null | wc -l | tr -d ' ')"
-  if [ "${BROKERS:-0}" -eq 0 ]; then
-    BSEL="strimzi.io/cluster=flowticket,strimzi.io/pool-name=dual-role"
-    BROKERS="$(kubectl -n "$KNS" get pods -l "$BSEL" --no-headers 2>/dev/null | wc -l | tr -d ' ')"
-    [ "${BROKERS:-0}" -gt 0 ] && echo "    (broker-role 라벨이 없어 pool-name 셀렉터로 폴백했다)"
-  fi
-  if [ "${BROKERS:-0}" -eq 0 ]; then
-    echo "브로커 파드를 라벨로 찾지 못했다. 실제 라벨을 확인하라:" >&2
-    echo "  kubectl -n $KNS get pods --show-labels" >&2
-    exit 1
-  fi
-  [ "$BROKERS" -ge 3 ] || {
-    echo "브로커가 ${BROKERS}개다. min.insync=2 환경에서 1대를 죽이는 실험은 3대 이상에서만 의미가 있다" >&2
-    exit 1; }
-  TARGET="$(kubectl -n "$KNS" get pods -l "$BSEL" -o jsonpath='{.items[0].metadata.name}')"
-  echo "    브로커 ${BROKERS}대: 대상 $TARGET"
-else
-  # 파드가 가장 많은 노드를 고른다. 빈 노드를 드레인하면 아무것도 증명하지 못한다.
-  TARGET="$(kubectl -n "$NS" get pods -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' \
-    | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')"
-  [ -n "$TARGET" ] || { echo "드레인할 노드를 찾지 못했다" >&2; exit 1; }
-  echo "    대상 노드 $TARGET (해당 노드의 flowticket 파드 $(kubectl -n "$NS" get pods --field-selector spec.nodeName="$TARGET" --no-headers | wc -l | tr -d ' ')개)"
-fi
+# 파드가 가장 많은 노드를 고른다. 빈 노드를 드레인하면 아무것도 증명하지 못한다.
+TARGET="$(kubectl -n "$NS" get pods -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' \
+  | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')"
+[ -n "$TARGET" ] || { echo "드레인할 노드를 찾지 못했다" >&2; exit 1; }
+echo "    대상 노드 $TARGET (해당 노드의 flowticket 파드 $(kubectl -n "$NS" get pods --field-selector spec.nodeName="$TARGET" --no-headers | wc -l | tr -d ' ')개)"
 
 # ── 1. 부하 기동 ────────────────────────────────────────────────────
 say "1/6 부하 기동 (${RATE} rps)"
@@ -192,35 +168,19 @@ echo "    장애 전 non-2xx = $BASE_BAD"
 # ── 3. 장애 주입 ────────────────────────────────────────────────────
 say "3/6 장애 주입"
 T0="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-if [ "$SCENARIO" = "failover" ]; then
-  # 유예 없이 죽인다. graceful이면 브로커가 리더십을 미리 넘겨 장애가 아니게 된다(IMP-016 §3).
-  kubectl -n "$KNS" delete pod "$TARGET" --grace-period=0 --force >/dev/null 2>&1
-  echo "    T0=$T0  브로커 $TARGET 강제 종료(--grace-period=0 --force)"
-else
-  CORDONED="$TARGET"
-  kubectl drain "$TARGET" --ignore-daemonsets --delete-emptydir-data --timeout=10m
-  echo "    T0=$T0  노드 $TARGET 드레인 완료"
-fi
+CORDONED="$TARGET"
+kubectl drain "$TARGET" --ignore-daemonsets --delete-emptydir-data --timeout=10m
+echo "    T0=$T0  노드 $TARGET 드레인 완료"
 
 # ── 4. 회복 관찰 ────────────────────────────────────────────────────
 say "4/6 회복 관찰"
-if [ "$SCENARIO" = "failover" ]; then
-  # ISR이 줄었다가 돌아오는지 보고, 쓰기가 지속되는지는 5xx로 본다.
-  for i in $(seq 1 30); do
-    R="$(kubectl -n "$KNS" get pods -l "$BSEL" --no-headers 2>/dev/null | awk '$2=="1/1"' | wc -l | tr -d ' ')"
-    printf "    +%-4s 준비된 브로커 %s\n" "$((i*10))s" "$R"
-    [ "$R" -ge "$BROKERS" ] && { echo "    브로커 복귀 완료"; break; }
-    sleep 10
-  done
-else
-  for i in $(seq 1 30); do
-    P="$(kubectl -n "$NS" get pods --field-selector=status.phase=Pending --no-headers 2>/dev/null | wc -l | tr -d ' ')"
-    N="$(kubectl get nodes --no-headers | wc -l | tr -d ' ')"
-    printf "    +%-4s 노드 %s  Pending %s\n" "$((i*10))s" "$N" "$P"
-    [ "$P" -eq 0 ] && [ "$i" -ge 3 ] && break
-    sleep 10
-  done
-fi
+for i in $(seq 1 30); do
+  P="$(kubectl -n "$NS" get pods --field-selector=status.phase=Pending --no-headers 2>/dev/null | wc -l | tr -d ' ')"
+  N="$(kubectl get nodes --no-headers | wc -l | tr -d ' ')"
+  printf "    +%-4s 노드 %s  Pending %s\n" "$((i*10))s" "$N" "$P"
+  [ "$P" -eq 0 ] && [ "$i" -ge 3 ] && break
+  sleep 10
+done
 T1="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # ── 5. 종료 대기 ────────────────────────────────────────────────────
@@ -238,7 +198,7 @@ mkdir -p "$OUT"; cp "$WORK/k6.log" "$OUT/" 2>/dev/null || true
   echo "injection: $T0 -> recovery observed by $T1"
   echo "baseline_non2xx: $BASE_BAD"
 } > "$OUT/conditions.txt"
-{ echo "# 사후 상태"; kubectl -n "$KNS" get pods --no-headers 2>/dev/null || true
+{ echo "# 사후 상태"; kubectl -n "$NS" get pods -o wide --no-headers 2>/dev/null || true
   echo "--- nodes"; kubectl get nodes --no-headers 2>/dev/null || true; } > "$OUT/after.txt"
 
 SUMMARY="$(grep -o 'SUMMARY_JSON .*' "$WORK/k6.log" | tail -1 | sed 's/^SUMMARY_JSON //' || true)"

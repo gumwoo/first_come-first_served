@@ -47,7 +47,7 @@ case "$MODE" in
     if [ "$MODE" = plan ]; then tf plan "${ARGS[@]}"; else tf apply -auto-approve "${ARGS[@]}"; fi
     ;;
   destroy)
-    # 조회 실패와 빈 state를 구분한다(tear-down.sh 5단계와 같은 이유 — 실패를 "지울 것 없음"으로 읽지 않는다).
+    # 조회 실패와 빈 state를 구분한다(tear-down.sh 4단계와 같은 이유 — 실패를 "지울 것 없음"으로 읽지 않는다).
     if ! STATE="$(tf state list 2>&1)"; then
       echo "알람 스택 state 조회 실패:" >&2; echo "$STATE" | sed 's/^/      /' >&2; exit 1
     fi

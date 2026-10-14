@@ -4,7 +4,7 @@
 # 노드 그룹이 상한(측정 프로파일 9)에 닿으면 CA도 노드를 더 붙이지 못해 사전 확장(HPA 하한 9)이 api 8개에서 멈췄다
 # (측정 세션 20261007-platform pf-warm — 관찰: api 9번째 Pending, CA "max size reached").
 # web을 낮은 우선순위로 두면 Pending인 api(기본 우선순위 0)가 web 파드를 밀어내고, 밀려난 web은 새 api 노드의 남는 자리(약 650m — 계산)로 옮긴다.
-# api를 높이지 않고 web을 낮춘 이유: api를 높이면 같은 기본 우선순위(0)인 Kafka·Prometheus·ArgoCD 파드까지 밀어낼 수 있다.
+# api를 높이지 않고 web을 낮춘 이유: api를 높이면 같은 기본 우선순위(0)인 Prometheus·ArgoCD 파드까지 밀어낼 수 있다.
 # 대가: 다른 기본 우선순위 파드(예: 같은 namespace의 k6 Job)가 Pending이어도 web이 밀려날 수 있다 — web PDB(minAvailable 1)로 한꺼번에 비는 것을 줄인다
 # (선점은 PDB를 최대한 지키지만 보장하지 않는다). 선점은 CA가 노드를 붙일 수 있을 때도 일어난다(스케줄러는 CA를 기다리지 않는다).
 apiVersion: scheduling.k8s.io/v1

@@ -8,9 +8,6 @@ kind: Kustomization
 # 적용 순서:
 #   1) helm upgrade --install kube-prometheus-stack ... -f k8s/monitoring/kube-prometheus-stack.values.yaml
 #   2) kubectl apply -k k8s/monitoring
-#
-# Kafka 모니터링(PodMonitor·대시보드)은 k8s/monitoring/kafka로 분리했다 — bring-up이 Kafka 단계에서만 적용한다
-# (SKIP_KAFKA=1이면 건너뛴다, Kafka 제거 P3a). 이 디렉터리를 적용해도 그 둘은 들어가지 않는다.
 resources:
   - servicemonitor-api.yaml
   - dashboard-flowticket.yaml

@@ -83,7 +83,6 @@ terraform apply -var 'node_instance_type=m6i.large'
 
 ```bash
 kubectl delete ingress --all --all-namespaces   # ALB 제거. 안 하면 VPC 삭제가 막힌다
-kubectl delete kafka --all -n <ns>              # Strimzi CR
 kubectl get pvc -A                              # PVC가 남았는지 확인 후 삭제
 # EBS 볼륨이 실제로 사라졌는지 콘솔/CLI로 확인
 terraform destroy
@@ -109,12 +108,12 @@ destroy 후 잔여 점검: **ALB · NAT · Elastic IP · EBS · 스냅샷**.
 
 | 갈래 | 대상 | 어디서 |
 |---|---|---|
-| **Helm** | AWS Load Balancer Controller, **Cluster Autoscaler**, Strimzi **Operator**, kube-prometheus-stack, ArgoCD 자신 | `bring-up.sh` 3~4단계. 다섯 개 모두 **차트 버전 고정** |
-| **kubectl/kustomize** | Kafka CR(`k8s/kafka`)·Kafka 관측(`k8s/monitoring/kafka` — PodMonitor·Kafka 대시보드, 둘 다 `SKIP_KAFKA=1`이면 생략), 관측 리소스(`k8s/monitoring` — ServiceMonitor·대시보드·PrometheusRule), ArgoCD `Application` 자체 | `bring-up.sh` 6단계 |
+| **Helm** | AWS Load Balancer Controller, **Cluster Autoscaler**, kube-prometheus-stack, ArgoCD 자신 | `bring-up.sh` 3~4단계. 네 개 모두 **차트 버전 고정** |
+| **kubectl/kustomize** | 관측 리소스(`k8s/monitoring` — ServiceMonitor·대시보드·PrometheusRule), ArgoCD `Application` 자체 | `bring-up.sh` 6단계 |
 | **ArgoCD**(ADR-009) | `k8s/overlays/demo-local` → `k8s/base` — namespace·configmap·api/web Deployment·HPA·PDB·Ingress | 이후 지속 동기화 |
 
 ⚠️ **ArgoCD의 추적 범위는 `k8s/base`뿐이다.** `Application`의 `path`가 오버레이 하나를 가리키고
-그 오버레이는 `../../base`만 포함한다. Strimzi Operator·Kafka CR·관측 스택은 **추적 밖**이라
+그 오버레이는 `../../base`만 포함한다. 관측 스택은 **추적 밖**이라
 `prune`으로 지워지지도, 드리프트가 self-heal 되지도 않는다.
 
 ⚠️ **Cluster Autoscaler는 Kubernetes 마이너와 버전을 맞춰야 한다**(CA v1.35 → k8s 1.35).

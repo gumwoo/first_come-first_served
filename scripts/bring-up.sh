@@ -11,7 +11,6 @@
 #   terraform -chdir=infra/terraform/platform/environments/demo apply
 #   bash scripts/bring-up.sh              # 데이터 시딩까지
 #   bash scripts/bring-up.sh --no-seed    # 인프라만
-#   SKIP_KAFKA=1 bash scripts/bring-up.sh # Kafka 운영 삭제 뒤(저장소 P3 머지 전) — Kafka 단계를 건너뛴다(아래 "Kafka 단계 스위치")
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,39 +21,6 @@ CLUSTER="flowticket"
 SEED=1
 [ "${1:-}" = "--no-seed" ] && SEED=0
 
-# ── Kafka 단계 스위치(Kafka 제거 P3a — docs/deployment/kafka-removal-design.md §6.2·§6.3) ──────────
-# 앱(N)은 Kafka를 쓰지 않는다(ADR-028). 그래도 저장소 P3 머지 전까지 이 스크립트는 기본으로 Kafka를 설치한다 —
-# 세션 시작 때 N 게이트를 Kafka가 있는 상태에서 보고, 롤백(P2b revert)이 쓸 Kafka를 남기기 위해서다.
-# 운영 삭제 뒤에는 SKIP_KAFKA=1로 Kafka 단계(kafka 네임스페이스·Strimzi·Kafka CR·Kafka 모니터링)를 건너뛴다.
-#
-# 가드: 운영 삭제 표식이 있으면 스위치 없이 실행해도 아무것도 바꾸기 전에(kubeconfig 직후) 멈춘다. 표식은 둘이다.
-#   - 클러스터 표식: ConfigMap kube-system/kafka-removed — 같은 클러스터에서 다시 실행할 때만 보인다(철거하면 사라진다).
-#   - 로컬 표식: $KAFKA_MARK_LOCAL — 같은 사용자 홈(같은 셸 환경)에서 새 클러스터를 올릴 때도 보인다. 다른 PC, 홈이 다른
-#     셸(Git Bash와 WSL은 홈이 다르다), 초기화한 환경은 막지 못한다.
-# 표식은 운영 삭제 절차(§6.2 5단계)가 만들고, SKIP_KAFKA=1 실행이 kafka 네임스페이스가 없는 것을 확인한 뒤에도 만든다
-# (관찰 기간에 새로 올린 클러스터도 다음 재실행을 막도록). 다시 설치하려면 FORCE_KAFKA=1 — 설치를 마친 뒤 두 표식을 지운다.
-# 표식이 막지 못하는 경우(다른 PC·다른 홈에서 새 클러스터)는 SKIP_KAFKA=1을 쓰고 session.log에 남기는 절차에 의존한다.
-# 표식은 없을 때만 만든다 — 재실행이 처음 삭제 시각(removedAt)을 덮어쓰지 않게.
-SKIP_KAFKA="${SKIP_KAFKA:-0}"
-FORCE_KAFKA="${FORCE_KAFKA:-0}"
-KAFKA_MARK_CM="kafka-removed" # kube-system
-KAFKA_MARK_LOCAL="${KAFKA_MARK_LOCAL:-$HOME/.local/state/flowticket/kafka-removed}"
-for v in SKIP_KAFKA FORCE_KAFKA; do
-  case "${!v}" in 0|1) ;; *) echo "$v는 0 또는 1이어야 한다(지금: ${!v})" >&2; exit 1 ;; esac
-done
-if [ "$SKIP_KAFKA" = 1 ] && [ "$FORCE_KAFKA" = 1 ]; then
-  echo "SKIP_KAFKA=1과 FORCE_KAFKA=1은 함께 쓸 수 없다(건너뛰기와 재설치가 반대다)" >&2; exit 1
-fi
-mark_kafka_removed() { # 없는 표식만 만든다. 실패하면 1(호출 쪽이 경고만 남긴다 — 표식은 보조 장치다)
-  local at; at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  if [ -z "$MARK_CM" ]; then
-    kubectl -n kube-system create configmap "$KAFKA_MARK_CM" --from-literal="removedAt=$at" >/dev/null || return 1
-  fi
-  if [ ! -f "$KAFKA_MARK_LOCAL" ]; then
-    { mkdir -p "$(dirname "$KAFKA_MARK_LOCAL")" && printf '%s\n' "$at" > "$KAFKA_MARK_LOCAL"; } || return 1
-  fi
-}
-
 # ── helm 차트 버전 고정 ──────────────────────────────────────────────
 # 하나도 빠짐없이 박는다. 하나라도 floating이면 같은 커밋의 이 스크립트가 시점에 따라
 # 다른 클러스터를 만든다. "절차를 코드로 고정한다"는 이 스크립트의 전제가 무너진다.
@@ -63,7 +29,6 @@ mark_kafka_removed() { # 없는 표식만 만든다. 실패하면 1(호출 쪽�
 # 환경변수로 임시 override 할 수 있다(예: CA_CHART_VERSION=9.58.0 bash scripts/bring-up.sh).
 CA_CHART_VERSION="${CA_CHART_VERSION:-9.59.0}"          # cluster-autoscaler   app 1.35.0
 LBC_CHART_VERSION="${LBC_CHART_VERSION:-3.5.0}"         # aws-load-balancer-controller app v3.5.0
-STRIMZI_CHART_VERSION="${STRIMZI_CHART_VERSION:-1.2.0}" # strimzi-kafka-operator app 1.2.0
 KPS_CHART_VERSION="${KPS_CHART_VERSION:-88.5.4}"        # kube-prometheus-stack app v0.93.1
 ARGOCD_CHART_VERSION="${ARGOCD_CHART_VERSION:-10.4.0}"  # argo-cd             app v3.5.1
 
@@ -82,42 +47,15 @@ LBC_ROLE="$(tf output -json irsa_role_arns | jq -r '.load_balancer_controller')"
 CA_ROLE="$(tf output -json irsa_role_arns | jq -r '.cluster_autoscaler')"
 ZONE_ID="$(tf output -raw hosted_zone_id)"
 DOMAIN="$(tf output -raw domain_name)"
-echo "    cluster=$CLUSTER zone=$ZONE_ID domain=$DOMAIN SKIP_KAFKA=$SKIP_KAFKA FORCE_KAFKA=$FORCE_KAFKA"
+echo "    cluster=$CLUSTER zone=$ZONE_ID domain=$DOMAIN"
 
 echo "==> 1/7 kubeconfig"
 aws eks update-kubeconfig --name "$CLUSTER" --region "$REGION" >/dev/null
 VPC_ID="$(aws eks describe-cluster --name "$CLUSTER" --query 'cluster.resourcesVpcConfig.vpcId' --output text)"
 kubectl get nodes --no-headers | awk '{print "    node " $1 " " $2}'
-# Kafka 운영 삭제 표식 가드(위 "Kafka 단계 스위치"). 표식을 읽지 못하면 가드가 공허해지므로 멈춘다.
-MARK_CM="$(kubectl -n kube-system get configmap "$KAFKA_MARK_CM" --ignore-not-found -o name)" || {
-  echo "Kafka 운영 삭제 표식(ConfigMap kube-system/$KAFKA_MARK_CM)을 확인하지 못했다. 중단한다." >&2; exit 1; }
-MARKS=""
-[ -n "$MARK_CM" ] && MARKS="클러스터(kube-system/$KAFKA_MARK_CM)"
-[ -f "$KAFKA_MARK_LOCAL" ] && MARKS="${MARKS:+$MARKS, }로컬($KAFKA_MARK_LOCAL)"
-# kafka 네임스페이스 유무도 여기서 한 번 읽는다(SKIP 실행의 주의·표식 판단). 조회 실패를 "없음"으로 읽으면 Kafka가 떠 있는
-# 클러스터에 "삭제됨" 표식을 붙일 수 있어 멈춘다. SKIP 실행은 kafka 네임스페이스를 만들지 않으므로 6단계까지 그대로다.
-KAFKA_NS="$(kubectl get namespace kafka --ignore-not-found -o name)" || {
-  echo "kafka 네임스페이스 유무를 확인하지 못했다. 중단한다." >&2; exit 1; }
-if [ "$SKIP_KAFKA" = 1 ]; then
-  echo "    Kafka 단계를 건너뛴다(SKIP_KAFKA=1)${MARKS:+ — 운영 삭제 표식: $MARKS}"
-  if [ -n "$KAFKA_NS" ]; then
-    echo "    주의: kafka 네임스페이스가 이미 있다. 이 스크립트는 지우지 않는다(운영 삭제는 kafka-removal-design.md §6.2 절차)"
-  fi
-elif [ -n "$MARKS" ]; then
-  if [ "$FORCE_KAFKA" = 1 ]; then
-    echo "    운영 삭제 표식이 있지만 Kafka를 다시 설치한다(FORCE_KAFKA=1): $MARKS — 설치 뒤 표식을 지운다"
-  else
-    echo "Kafka 운영 삭제 표식이 있다: $MARKS" >&2
-    echo "  운영 삭제 뒤라면 Kafka 단계를 건너뛰고 실행하라:   SKIP_KAFKA=1 bash scripts/bring-up.sh" >&2
-    echo "  Kafka를 다시 설치하려는 것이면(롤백 등):            FORCE_KAFKA=1 bash scripts/bring-up.sh" >&2
-    echo "  아무것도 바꾸지 않고 중단한다(kafka-removal-design.md §6.3)." >&2
-    exit 1
-  fi
-fi
 
 echo "==> 2/7 helm 저장소"
 helm repo add eks https://aws.github.io/eks-charts >/dev/null 2>&1 || true
-helm repo add strimzi https://strimzi.io/charts/ >/dev/null 2>&1 || true
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null 2>&1 || true
 helm repo add argo https://argoproj.github.io/argo-helm >/dev/null 2>&1 || true
 helm repo add autoscaler https://kubernetes.github.io/autoscaler >/dev/null 2>&1 || true
@@ -137,7 +75,7 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
   --wait --timeout 6m >/dev/null
 echo "    ok"
 
-echo "==> 4/7 cluster-autoscaler / strimzi(SKIP_KAFKA=1이면 건너뜀) / kube-prometheus-stack / argocd"
+echo "==> 4/7 cluster-autoscaler / kube-prometheus-stack / argocd"
 # Cluster Autoscaler. IRSA 역할·ASG 태그·ignore_changes는 Terraform이 준비한다(ADR-012 §4).
 #
 # 차트 버전을 반드시 고정한다. floating으로 두면 같은 커밋의 bring-up.sh가
@@ -220,12 +158,6 @@ CA_RUNNING="$(printf '%s\n' "${CA_STATUS:-}" | awk '/^autoscalerStatus:/{print $
   exit 1; }
 echo "    cluster-autoscaler: $CA_POD ($CA_RUNNING, 노드그룹 ${NG_SEEN}개)"
 
-if [ "$SKIP_KAFKA" != 1 ]; then
-  kubectl create namespace kafka --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-  helm upgrade --install strimzi strimzi/strimzi-kafka-operator \
-    --version "$STRIMZI_CHART_VERSION" \
-    -n kafka --wait --timeout 6m >/dev/null
-fi
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --version "$KPS_CHART_VERSION" \
   -n monitoring --create-namespace \
@@ -244,31 +176,10 @@ kubectl apply -f "$ROOT/k8s/base/namespace.yaml" >/dev/null
 bash "$ROOT/k8s/external-secrets/bootstrap.sh"
 
 echo "==> 6/7 워크로드 배포"
-if [ "$SKIP_KAFKA" = 1 ]; then
-  echo "    Kafka CR·Kafka 모니터링을 건너뛴다(SKIP_KAFKA=1)"
-else
-  kubectl apply -k "$ROOT/k8s/kafka" >/dev/null
-  # Kafka 모니터링은 k8s/monitoring/kafka로 분리했다(P3a). 적용하는 리소스는 분리 전과 같다.
-  kubectl apply -k "$ROOT/k8s/monitoring/kafka" >/dev/null
-  if [ "$FORCE_KAFKA" = 1 ] && [ -n "$MARKS" ]; then
-    kubectl -n kube-system delete configmap "$KAFKA_MARK_CM" --ignore-not-found >/dev/null
-    rm -f "$KAFKA_MARK_LOCAL"
-    echo "    Kafka를 다시 적용해 운영 삭제 표식을 지웠다(FORCE_KAFKA=1)"
-  fi
-fi
 kubectl apply -k "$ROOT/k8s/monitoring" >/dev/null
 kubectl apply -f "$ROOT/k8s/argocd/application.yaml" >/dev/null
 echo "    ArgoCD가 앱을 동기화할 때까지 대기"
 kubectl wait --for=jsonpath='{.status.health.status}'=Healthy application/flowticket -n argocd --timeout=10m
-# 운영 삭제 표식(SKIP 실행, kafka 네임스페이스가 없을 때만 — Kafka가 떠 있는 클러스터에 "삭제됨" 표식을 붙이지 않는다).
-# 앱 배포 뒤에 둔다: 표식은 보조 장치라 만들지 못해도 기동을 막지 않고 경고만 남긴다.
-if [ "$SKIP_KAFKA" = 1 ] && [ -z "$KAFKA_NS" ]; then
-  if mark_kafka_removed; then
-    echo "    운영 삭제 표식: kube-system/$KAFKA_MARK_CM, $KAFKA_MARK_LOCAL(없던 것만 만들었다)"
-  else
-    echo "    주의: 운영 삭제 표식을 만들지 못했다 — 다음 재실행도 SKIP_KAFKA=1로 하고 session.log에 남긴다" >&2
-  fi
-fi
 
 echo "==> 7/7 Route53을 새 ALB로 갱신"
 # 클러스터를 재생성하면 ALB 이름이 바뀐다. 이 갱신을 빠뜨리면 도메인이 옛 ALB를 가리킨 채 남는다.

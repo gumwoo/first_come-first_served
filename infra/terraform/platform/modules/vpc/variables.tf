@@ -13,8 +13,8 @@ variable "azs" {
   type        = list(string)
 
   validation {
-    # 3 AZ는 ADR-012의 전제다. 2 AZ면 Kafka 브로커 3개 중 2개가 한 장애 도메인에 몰려
-    # "브로커 1대 장애에도 쓰기 지속"이라는 실증이 성립하지 않는다.
+    # 3 AZ는 ADR-012의 전제다. 처음 근거(Kafka 브로커 3개를 장애 도메인마다 하나씩)는 Kafka 제거(ADR-028)로
+    # 사라졌다. 가용성 G2(AZ 장애) 재평가(kafka-removal-design.md §7.4) 전까지 변경 범위를 줄이려고 유지한다.
     condition     = length(var.azs) == 3
     error_message = "AZ는 정확히 3개여야 한다(ADR-012)."
   }

@@ -2,7 +2,7 @@
 
 - 상태: **분석 — 역할 분리 결정 전**. 이 문서는 지금 코드의 사실과, 역할을 나눌 때 정해야 할 소유권·인계를 정리한다.
 - 날짜: 2026-10-14
-- 관련: [operating-requirements.md](operating-requirements.md)(운영 요구사항 후보), [[ADR-027]](대기열 전용 Deployment — 같은 이미지), [[TS-023]](다중 Pod에서 ShedLock 틱당 1회 실증),
+- 관련: [operating-requirements.md](operating-requirements.md)(운영 요구사항 후보), [[ADR-027]](대기열 전용 Deployment — 같은 이미지), [[TS-023]](outbox-relay 틱당 1회 실증·SSE 교차 파드 전달),
   [app-changes-for-k8s-kafka.md](app-changes-for-k8s-kafka.md)(멀티팟 D 섹션), `global/config/SchedulingConfig.java`·`SchedulerLockConfig.java`
 
 ## 1. 실행 모델 (코드 사실)
@@ -18,7 +18,7 @@
 | 대기열 승격·슬롯 회수 `QueueAdmissionService` | 1.5초 | **없음**(Lua 원자) | 틱마다 활성 공연 목록 조회(`SMEMBERS`) → 공연마다 만료 회수·정원만큼 승격·지표 스냅숏. Redis만 | 예(원자) | 대기자가 입장하지 못함, 만료 슬롯이 회수되지 않음 |
 | 아웃박스 릴레이 `OutboxRelay` | 1초 | outbox-relay(1분) | PENDING 이벤트를 Kafka로 발행(배치 100, 행 잠금 없이 읽음). DB·Kafka | **겹치지 않게 막는다**(틱 예산 < 임차, 하네스 `be-outbox-lease`). 겹치면 같은 PENDING을 다른 파드가 집어 **중복 발행** — 소비자 eventId 멱등(SETNX)이 흡수, 같은 주문 안 순서는 보장 안 됨(ADR-022) | 주문·결제 이벤트 발행 지연(실시간 알림 지연) — 데이터는 DB에 남음 |
 | 아웃박스 정리 | 매일 03:00 | outbox-purge(10분) | 오래된 발행 완료 행 삭제. DB | 예 | 테이블 증가(급하지 않음) |
-| 좌석 선점 만료 `SeatHoldExpiryService` | 60초 | seat-hold-sweep(50초) | 만료 hold 회수(벌크 UPDATE) + 풀린 좌석을 `seat.hold.expired`로 SSE 브로드캐스트. DB·Redis | 예(조건부 UPDATE — 실제로 만료된 hold만) | 만료 좌석이 다시 팔리지 않음(재고 묶임) |
+| 좌석 선점 만료 `SeatHoldExpiryService` | 60초 | seat-hold-sweep(50초) | 만료 hold 회수(hold별 조건부 UPDATE, `status = HELD`) + 풀린 좌석을 `seat.hold.expired`로 SSE 브로드캐스트. DB·Redis | 예(조건부 UPDATE — 실제로 만료된 hold만) | 만료 좌석이 다시 팔리지 않음(재고 묶임) |
 | 주문 만료 `OrderExpiryService` | 60초 | order-expiry-sweep(50초) | 결제 제한시각이 지난 미완료 주문을 EXPIRED로(상태 조건 bulk UPDATE). 좌석·hold 복구는 좌석 만료 sweep 몫. DB | 예 | 미결제 주문 만료 지연 |
 | 결제 대사 `PaymentReconciliationService` | 10분 | payment-reconcile(5분) | 미아 승인 정산(승인됐는데 주문에 반영 안 된 결제를 외부 PG로 조회·취소). DB·외부 PG | 예(멱등) | 결제 불일치 복구 지연 |
 | 환불 대사 `RefundReconciliationService` | 10분 | refund-reconcile(5분) | 환불 불일치 복구. DB·외부 | 예(멱등) | 환불 불일치 복구 지연 |

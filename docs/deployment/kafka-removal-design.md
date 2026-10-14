@@ -48,6 +48,8 @@
 ### 2.2 새 발행 메서드
 - `SsePubSub`에 **엄격 발행 메서드**를 추가한다(이름 예: `publishOrThrow`). 기존 `publish()`는 best-effort 호출부(좌석·주문 직접 알림)용으로 그대로 둔다.
   - **구현(P2b-1)에서 바뀐 점:** 1순위(전용 연결의 명령 타임아웃)를 쓰면 발행에 전용 Lettuce 연결이 필요하다. 그래서 엄격 발행은 `SsePubSub`의 메서드가 아니라 별도 컴포넌트 `RedisOutboxPublisher`(`OutboxPublisher` 구현)로 뒀다. `SsePubSub`는 바꾸지 않고, 봉투 타입 `SsePubSub.Envelope`과 채널 `OrderSseRegistry.CHANNEL`만 같이 쓴다. 릴레이는 `OutboxPublisher` 인터페이스에만 기대므로 테스트에서 실패·지연을 넣기 쉽다.
+  - 연결이 아직 없을 때(기동 직후·재연결)는 명령 타임아웃이 아니라 연결 수립 대기가 먼저다(Lettuce `SocketOptions` 기본 10초). 그래서 연결 타임아웃도 `send-timeout-ms`로 묶었다. 연결이 없는 상태의 한 건 최악은 이 값의 약 2배(연결 + handshake)다(추론 — G1 리뷰 지적, 측정하지 않았다).
+  - 필수 필드(type·orderId)가 빠진 payload는 역직렬화 단계에서 결정적 실패(DEAD)로 거른다. Jackson이 레코드의 빠진 값을 null로 채워 통과시키면 발행 단계 예외가 일시적 실패로 분류돼 그 행에서 배치가 매 틱 멈춘다(G1 리뷰 지적).
   - 직렬화·Redis 오류를 **그대로 던진다**.
   - 봉투는 지금 소비자 경로가 만드는 것과 같다: 채널 `OrderSseRegistry.CHANNEL`(`sse:order`), `Envelope(key = String.valueOf(orderId), event = row.type ("order.paid"), data = {"orderId": orderId})`(`OrderEventConsumer.java:42`와 동일 모양). 프론트가 보는 SSE 프레임은 바뀌지 않는다.
 - `OutboxRelay.send()`는 `kafkaTemplate.send(...).get(sendTimeoutMs)` 자리를 엄격 발행으로 바꾸고, 성공한 뒤에만 `markPublished`한다. 실패 분기(`markAttemptFailed` → 배치 중단 → 다음 틱)는 그대로 쓴다. 결정적 실패(역직렬화 → DEAD)·aggregate 보류 로직도 그대로다.
@@ -67,7 +69,7 @@
     - 실행기 포화 횟수를 지표로 남긴다.
   - 전역 `spring.data.redis.timeout` 설정은 대기열 Lua·ShedLock·SSE 구독까지 같은 커넥션 팩토리를 쓰므로(`application.yml` 주석) **이 작업에서 하지 않는다**. 다만 지금 미설정(60초 추론) 자체가 다른 경로에도 위험이므로 **별도 과제로 분리**한다.
   - `outbox.send-timeout-ms` 키는 **유지**한다. 규칙 22가 `application.yml`에서 **처음 나오는** `send-timeout-ms`를 읽는데, 지금은 `outbox`가 `dlq`보다 앞이라 맞다. `dlq` 블록을 지우면 남는 것은 `outbox` 것 하나다.
-- 지표: `flowticket.outbox.publish.ack`(이름 유지 — 대시보드 연속성), 설명만 "브로커 ACK" → "발행 확인 대기"로 바꾼다. `PUBLISH`의 수신자 수는 **확인 필요** — `StringRedisTemplate.convertAndSend`의 반환 타입이 쓰는 Spring Data Redis 버전에서 `Long`인지 구현 PR에서 확인한다. 받을 수 있으면 "수신 파드 0" 횟수를 카운터로 남긴다(실패로 보지 않는다).
+- 지표: `flowticket.outbox.publish.ack`(이름 유지 — 대시보드 연속성), 설명만 "브로커 ACK" → "발행 확인 대기"로 바꾼다. `PUBLISH`의 수신자 수는 `Long`으로 받을 수 있다(확인됨 — §8). 받은 구독자가 0이면 `flowticket.outbox.publish.no_receivers` 카운터를 올린다(실패로 보지 않는다 — P2b-1 구현).
 - 순서: 한 주문에 `order.paid`는 한 번이다. 릴레이는 생성 시각 순으로 한 건씩 동기 발행하므로 Kafka 파티션 키로 얻던 "같은 주문 내 순서"가 문제 될 이벤트가 없다(사실 — 아웃박스 이벤트 종류가 하나).
 
 ### 2.3 회귀 테스트 (P2b에 포함, CI Testcontainers Redis)
@@ -75,7 +77,7 @@
 |---|---|
 | 정상 발행 | `sse:order` 구독자가 `Envelope{key=orderId, event="order.paid", data.orderId}`를 받고, 행이 `PUBLISHED`·`publishedAt` 설정 |
 | 발행 → 마킹 순서 | **bean 릴레이**(프록시를 거쳐 `@Transactional`이 살아 있음)를 쓰되 테스트용 `LockProvider`(항상 락을 준다)로 ShedLock의 Redis 의존을 떼고, **실패하는 엄격 발행 목**을 넣는다. 또는 프록시 없이 만든 릴레이(`new OutboxRelay(...)`) 호출을 `TransactionTemplate`으로 감싼다 — 프록시 없는 릴레이를 그냥 부르면 ShedLock과 함께 `@Transactional`(`OutboxRelay.java:100`)도 빠져 `markAttemptFailed()`의 `attempts`·`lastError`가 DB에 반영되지 않는다(JPA 동작에서 끌어낸 추론). 판정은 **DB에서 다시 읽어** `attempts` 증가·`lastError` 기록·`PUBLISHED` 아님·배치 나머지 미발행. Redis 컨테이너 정지·`CLIENT PAUSE`는 쓰지 않는다 — `@SchedulerLock` 프록시는 직접 호출도 가로채므로(`KopisSyncLockIntegrationTest` 주석) 같은 Redis에 의존하는 락 획득이 먼저 실패하고, 공유 컨테이너를 멈추면 다른 테스트도 깨진다 |
-| 대기 상한 | 1순위 설계(전용 팩토리의 Lettuce `commandTimeout`)는 **클라이언트가 시간을 재야** 검증된다. 그래서 릴레이 전용 팩토리를 **별도 Redis 컨테이너**에 연결하고 그 컨테이너에만 `CLIENT PAUSE`(또는 `DEBUG SLEEP`)를 건다 — 공유 컨테이너와 ShedLock은 영향이 없다. 판정: 발행이 `send-timeout-ms` 안에 예외로 돌아오고 행은 PENDING, 틱이 임차를 넘지 않음. 지연하는 발행 목은 2순위(별도 실행기)를 쓸 때만 유효하다 — 1순위에서는 목이 지연하면 릴레이가 그냥 기다릴 뿐이라 시간 제한을 검증하지 못한다 |
+| 대기 상한 | 1순위 설계(전용 팩토리의 Lettuce `commandTimeout`)는 **클라이언트가 시간을 재야** 검증된다. 그래서 릴레이 전용 팩토리를 **별도 Redis 컨테이너**에 연결하고 그 컨테이너에만 `CLIENT PAUSE`(또는 `DEBUG SLEEP`)를 건다 — 공유 컨테이너와 ShedLock은 영향이 없다. 판정: 발행이 `send-timeout-ms` 안에 예외로 돌아오고 행은 PENDING, 틱이 임차를 넘지 않음. 지연하는 발행 목은 2순위(별도 실행기)를 쓸 때만 유효하다 — 1순위에서는 목이 지연하면 릴레이가 그냥 기다릴 뿐이라 시간 제한을 검증하지 못한다 — 구현(P2b-1): 발행기 단위(`RedisOutboxPublisherTimeoutTest`)로 확인하고, 틱 상한은 규칙 22의 계산(틱 예산 + send-timeout ≤ 임차)에 맡긴다. 릴레이 전체를 지연 Redis에 붙인 틱 단위 테스트는 두지 않았다 |
 | 지연 뒤 복구 | 지연이 풀린 뒤 같은 행이 두 번 발행될 수 있음을 허용하되, 릴레이 스레드 밖에 남은 작업이 없음(2순위 실행기를 쓰면 실행기 활성·대기 작업 수 0~1 상한) |
 | ShedLock 락 실패 | 예외를 던지는 테스트용 `LockProvider`로 만든다. 기대: 틱이 건너뛰어지고 행은 그대로 PENDING(발행 시도 0, `attempts` 불변) — 재시도 경로와 구별되는 별도 사례. "건너뛰어진다"는 ShedLock 5.16.0 동작에서 끌어낸 추론이라 이 테스트로 확인한다 |
 | 기본 팩토리 불변 | 컨텍스트의 `RedisConnectionFactory`·`StringRedisTemplate` bean이 각각 하나이고, 기본 팩토리의 명령 타임아웃이 전환 전과 같음 |
@@ -418,7 +420,7 @@
 |---|---|---|
 | `StringRedisTemplate.convertAndSend` 반환 타입 | **확인됨**: Spring Data Redis 3.3.5 API 문서 — `@Nullable Long convertAndSend(String destination, Object message)`, 받은 구독자 수(파이프라인·트랜잭션에서는 null) | P2b-1 |
 | Lettuce 명령 타임아웃 기본값, 전용 팩토리 `commandTimeout` 시간 초과 뒤 연결 상태 | **기본값 확인됨**: Spring Boot 3.3.5 `LettuceConnectionConfiguration`은 `spring.data.redis.timeout`이 null이면 `commandTimeout`을 설정하지 않고, `LettuceClientConfiguration` 기본값은 `RedisURI.DEFAULT_TIMEOUT` = 60초(Lettuce 6.3 소스). 시간 초과 뒤 연결 상태는 CI 테스트(`RedisOutboxPublisherTimeoutTest` — 별도 컨테이너 `CLIENT PAUSE`, 풀린 뒤 같은 발행기로 재발행)로 확인 | P2b-1 |
-| `@SchedulerLock`과 `@Transactional` 프록시 순서(락 해제와 커밋 중 무엇이 먼저인지) | 코드·CI 통합 테스트 — `SchedulerLockConfig` Javadoc의 "락은 트랜잭션 바깥에서 획득된다"는 주장을 확인 대상으로 삼는다(같은 Javadoc에 있던 "각 틱을 한 Pod만 실행"은 `PT0S`에서 보장되지 않아 TS-051에서 정정 — CI 재현: 같은 주기 두 번 실행 시 0.64, 기대 0.8). 필요하면 클러스터에서 재확인 | P2b-1 CI 테스트(`OutboxRelayLockIntegrationTest` — 락 획득·해제 시점의 트랜잭션 활성 여부를 기록) |
+| `@SchedulerLock`과 `@Transactional` 프록시 순서(락 해제와 커밋 중 무엇이 먼저인지) | **확인됨**: 락은 트랜잭션 바깥에서 잡고 푼다 — `OutboxRelayLockIntegrationTest`(락 획득·해제 시점의 트랜잭션 활성 여부 기록, 테스트용 `@Primary` LockProvider) CI 통과(PR #411, run 38583390823). `SchedulerLockConfig` Javadoc의 "락은 트랜잭션 바깥에서 획득된다"와 일치 | P2b-1 |
 | Strimzi가 만든 브로커·Entity Operator Pod의 실제 requests | 클러스터(기존 기록 없음) | 세션 §6.2 삭제 전 기록 |
 | t3.large(기본 프로파일) allocatable | 클러스터 또는 EKS 예약량 계산식 | 자원 산정 |
 | Hikari active·idle·pending 실측 | 부하를 건 클러스터 | 세션 B₁·B′ |

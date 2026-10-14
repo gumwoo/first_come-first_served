@@ -719,7 +719,7 @@ for (const file of javaFiles) {
 // 그래서 틱 예산(outbox.tick-budget-ms)을 두고, 여기서 세 값의 관계를 검사한다.
 // 마지막 한 건이 예산 직전에 시작될 수 있으므로 예산 + 발행 대기 ≤ 임차여야 한다.
 //
-// 런타임에 드러나지 않는다: 겹쳐 돌아도 소비자 멱등(eventId)이 중복을 흡수해 증상이 없다(ADR-022).
+// 런타임에 드러나지 않는다: 겹쳐 돌아도 중복 발행은 프론트 재조회 1회로 끝나 증상이 없다(ADR-022·028).
 const relayPath = path.join(REPO_ROOT, API, "src/main/java/com/flowticket/outbox/service/OutboxRelay.java");
 const outboxYmlPath = path.join(REPO_ROOT, API, "src/main/resources/application.yml");
 if (fs.existsSync(relayPath) && fs.existsSync(outboxYmlPath)) {
@@ -774,14 +774,21 @@ if (fs.existsSync(relayPath) && fs.existsSync(outboxYmlPath)) {
 // 런타임에 드러나지 않는다: 평소에는 둘 다 잘 전달되고, Redis 장애 때만 이벤트가 사라진다.
 // 그래서 outbox 패키지가 이 둘에 기대지 못하게 막는다(봉투 타입 SsePubSub.Envelope은 써도 된다).
 {
-  const outboxFiles = javaFiles.filter((f) => f.split(path.sep).join("/").includes("/com/flowticket/outbox/"));
+  // 대상: outbox 패키지 + 어디에 있든 OutboxPublisher를 구현한 클래스(발행기를 밖에 두고 broadcast로 위임하는 우회를 막는다).
+  const outboxFiles = javaFiles.filter((f) => {
+    const norm = f.split(path.sep).join("/");
+    return norm.includes("/com/flowticket/outbox/") || /implements[^{]*\bOutboxPublisher\b/.test(stripComments(read(f)));
+  });
   for (const file of outboxFiles) {
     const rel = path.relative(REPO_ROOT, file).split(path.sep).join("/");
-    const code = stripComments(read(file));
+    // 문자열 리터럴은 지운다("AfterCommit"이라는 로그 문구 같은 오탐을 막는다).
+    const code = stripComments(read(file)).replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
     const hits = [];
     if (/\bAfterCommit\b/.test(code)) hits.push("AfterCommit");
     if (/\.broadcast\s*\(/.test(code) || /\bOrderSseRegistry\s+\w+\s*[;,)=]/.test(code)) hits.push("OrderSseRegistry.broadcast");
-    if (/\bSsePubSub\s+\w+\s*[;,)=]/.test(code)) hits.push("SsePubSub 주입(publish는 예외를 삼킨다)");
+    if (/\bSsePubSub\s+\w+\s*[;,)=]/.test(code) || /<\s*SsePubSub\s*>/.test(code) || /\bSsePubSub\.class\b/.test(code)) {
+      hits.push("SsePubSub 주입·조회(publish는 예외를 삼킨다)");
+    }
     if (hits.length) {
       r.fail(
         `아웃박스가 실패를 삼키는 발행 경로를 쓴다: ${rel}: ${hits.join(", ")}. ` +

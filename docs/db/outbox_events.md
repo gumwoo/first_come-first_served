@@ -12,9 +12,9 @@ Redis 채널 `sse:order`로 발행하고 호출이 성공한 뒤 `PUBLISHED`로 
 ## 컬럼
 | 컬럼 | 타입 | NULL | 기본값 | 제약 | 설명 |
 |------|------|------|--------|------|------|
-| id | UUID | N | | PK | 이벤트 식별자 = 소비자 멱등 키(`dedup:order-event:{id}`) |
+| id | UUID | N | | PK | 이벤트 식별자 = payload의 eventId(추적용). Kafka 시기에는 소비자 멱등 키(`dedup:order-event:{id}`)였다 |
 | aggregate_type | VARCHAR(40) | N | | | 애그리거트 종류(현재 `order`) |
-| aggregate_id | BIGINT | N | | | orderId. 순서는 생성 시각 순 조회 + 동기 발행으로 지킨다(예전에는 Kafka 파티션 키) |
+| aggregate_id | BIGINT | N | | | orderId. 발행은 생성 시각 순 + 한 건씩이지만 구독 쪽 도착 순서는 보장되지 않는다 — 주문당 이벤트가 `order.paid` 하나라 문제 없음(예전에는 Kafka 파티션 키로 순서 보장) |
 | type | VARCHAR(60) | N | | | 이벤트 타입(현재 `order.paid`) |
 | payload | TEXT | N | | | 직렬화된 이벤트(JSON) |
 | status | VARCHAR(20) | N | 'PENDING' | | OutboxStatus(PENDING/PUBLISHED) |

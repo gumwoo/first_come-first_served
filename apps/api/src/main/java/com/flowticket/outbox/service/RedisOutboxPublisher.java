@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.flowticket.global.sse.SsePubSub;
 import com.flowticket.order.event.OrderEvent;
 import com.flowticket.order.sse.OrderSseRegistry;
+import io.lettuce.core.ClientOptions;
+import io.lettuce.core.SocketOptions;
+import io.lettuce.core.resource.ClientResources;
 import java.time.Duration;
 import java.util.Map;
 import org.springframework.beans.factory.DisposableBean;
@@ -29,6 +32,10 @@ import org.springframework.stereotype.Component;
  * 팩토리를 Spring 빈으로 올리지 않는다. RedisConnectionFactory가 둘이 되면 자동 구성이 물러나거나 타입 주입이
  * 모호해진다(kafka-removal-design §2.2). 연결 설정은 기본 팩토리와 같은 프로퍼티(RedisProperties)에서 읽는다.
  *
+ * 연결이 아직 없을 때(기동 직후·재연결)는 명령 타임아웃이 아니라 연결 수립 대기가 먼저다. 그래서 연결 타임아웃도 같은 값으로
+ * 묶는다(Lettuce 기본 10초). 연결 수립 뒤 handshake도 같은 값으로 묶이므로, 연결이 없는 상태의 한 건 최악은 이 값의
+ * 약 2배다(추론 — 측정하지 않았다). 기본값(3초)이면 틱 예산 45초 + 6초 < 임차 60초.
+ *
  * 시간 초과 뒤에도 서버가 명령을 늦게 처리해 실제로는 발행됐을 수 있다. 그 행은 PENDING으로 남아 다음 틱에
  * 한 번 더 나간다 — 중복은 프론트의 재조회 1회로 끝난다(ADR-028 §6).
  */
@@ -41,11 +48,18 @@ public class RedisOutboxPublisher implements OutboxPublisher, DisposableBean {
 
     /**
      * 테스트는 RedisProperties를 직접 만들어 다른 Redis(지연을 넣을 별도 컨테이너)를 가리키게 한다.
+     * spring.data.redis.url·sentinel·cluster 설정은 읽지 않는다(이 프로젝트는 host·port·ssl만 쓴다 — application.yml).
      */
-    public RedisOutboxPublisher(RedisProperties properties, ObjectMapper mapper,
+    public RedisOutboxPublisher(RedisProperties properties, ClientResources clientResources, ObjectMapper mapper,
                                 @Value("${outbox.send-timeout-ms:3000}") long sendTimeoutMs) {
-        LettuceClientConfiguration.LettuceClientConfigurationBuilder client =
-                LettuceClientConfiguration.builder().commandTimeout(Duration.ofMillis(sendTimeoutMs));
+        Duration timeout = Duration.ofMillis(sendTimeoutMs);
+        // ClientResources(이벤트 루프·스레드 풀)는 Boot가 만든 것을 같이 쓴다. 따로 만들면 풀이 하나 더 생기고 Lettuce 지표에서도 빠진다.
+        LettuceClientConfiguration.LettuceClientConfigurationBuilder client = LettuceClientConfiguration.builder()
+                .clientResources(clientResources)
+                .commandTimeout(timeout)
+                .clientOptions(ClientOptions.builder()
+                        .socketOptions(SocketOptions.builder().connectTimeout(timeout).build())
+                        .build());
         if (properties.getSsl().isEnabled()) {
             client.useSsl(); // ElastiCache는 전송 중 암호화를 켠다(application.yml REDIS_SSL_ENABLED)
         }

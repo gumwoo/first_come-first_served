@@ -5,6 +5,7 @@ import com.flowticket.order.event.OrderEvent;
 import com.flowticket.outbox.domain.OutboxEvent;
 import com.flowticket.outbox.domain.OutboxStatus;
 import com.flowticket.outbox.repository.OutboxEventRepository;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.time.Clock;
@@ -46,6 +47,8 @@ public class OutboxRelay {
     private final Timer ackTimer;
     /** 행이 생성되고 발행되기까지. 적체 개수로는 보이지 않는 지연을 본다. */
     private final Timer lagTimer;
+    /** 발행 호출은 성공했지만 받은 구독자가 0인 횟수. 실패가 아니다(ADR-028 §6) — 모든 파드의 구독이 끊긴 순간을 드러낸다. */
+    private final Counter noReceiverCounter;
     private final ObjectMapper mapper;
     private final int batchSize;
     /**
@@ -76,6 +79,9 @@ public class OutboxRelay {
                 .register(meterRegistry);
         this.lagTimer = Timer.builder("flowticket.outbox.publish.lag")
                 .description("아웃박스 행 생성부터 발행까지의 지연")
+                .register(meterRegistry);
+        this.noReceiverCounter = Counter.builder("flowticket.outbox.publish.no_receivers")
+                .description("발행은 성공했지만 받은 구독자가 0이었던 횟수")
                 .register(meterRegistry);
         this.repository = repository;
         this.publisher = publisher;
@@ -152,10 +158,20 @@ public class OutboxRelay {
         log.info("[outbox] 발행 {}/{}건 (격리 {}건, 보류 {}건)", published, batch.size(), dead, held);
     }
 
-    /** 역직렬화 실패 = 결정적 실패. 그 자리에서 DEAD로 격리하고 null을 돌려준다. */
+    /**
+     * 역직렬화 실패 = 결정적 실패. 그 자리에서 DEAD로 격리하고 null을 돌려준다.
+     *
+     * 필수 필드(type·orderId)가 빠진 payload도 결정적 실패다. Jackson은 레코드의 빠진 값을 null로 채워 역직렬화를
+     * 성공시키므로, 여기서 거르지 않으면 발행 단계에서 예외가 나 일시적 실패로 분류되고 매 틱 같은 행에서 배치가 멈춘다
+     * (뒤의 행이 모두 막힌다 — TS-032와 같은 종류).
+     */
     private OrderEvent deserialize(OutboxEvent row) {
         try {
-            return mapper.readValue(row.getPayload(), OrderEvent.class);
+            OrderEvent event = mapper.readValue(row.getPayload(), OrderEvent.class);
+            if (event.type() == null || event.orderId() == null) {
+                throw new IllegalArgumentException("필수 필드 누락(type·orderId)");
+            }
+            return event;
         } catch (Exception e) {
             row.markDead(e.toString());
             log.error("[outbox] payload 해석 불가: 격리(DEAD) id={} type={} aggregateId={}: {}",
@@ -169,8 +185,13 @@ public class OutboxRelay {
         long sendStartedAt = System.nanoTime();
         try {
             // 한 건씩 동기로 보낸다. 실패·시간 초과(발행기의 명령 타임아웃)는 예외로 돌아와 아래에서 PENDING으로 남는다.
-            // 같은 주문의 순서는 생성 시각 순 조회 + 동기 발행으로 지킨다(예전 Kafka 파티션 키의 역할).
-            publisher.publish(event);
+            // 순서: 생성 시각 순으로 한 건씩 보낸다. 다만 구독 쪽(RedisMessageListenerContainer)은 메시지마다 다른 스레드로
+            // 처리해 도착 순서를 보장하지 않고, createdAt이 같으면 조회 순서도 정해지지 않는다. 주문당 아웃박스 이벤트가
+            // order.paid 하나라 문제 될 이벤트가 없다(kafka-removal-design §2.2).
+            Long receivers = publisher.publish(event);
+            if (receivers != null && receivers == 0L) {
+                noReceiverCounter.increment();
+            }
             ackTimer.record(System.nanoTime() - sendStartedAt, TimeUnit.NANOSECONDS);
             LocalDateTime publishedAt = LocalDateTime.now(clock);
             lagTimer.record(Duration.between(row.getCreatedAt(), publishedAt));

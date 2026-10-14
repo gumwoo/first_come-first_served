@@ -7,9 +7,12 @@ import static org.awaitility.Awaitility.await;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.flowticket.order.event.OrderEvent;
 import com.flowticket.outbox.service.RedisOutboxPublisher;
+import io.lettuce.core.resource.ClientResources;
+import io.lettuce.core.resource.DefaultClientResources;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
+import org.springframework.dao.QueryTimeoutException;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -35,14 +38,15 @@ class RedisOutboxPublisherTimeoutTest {
         RedisProperties properties = new RedisProperties();
         properties.setHost(slowRedis.getHost());
         properties.setPort(slowRedis.getMappedPort(6379));
-        RedisOutboxPublisher publisher = new RedisOutboxPublisher(properties, new ObjectMapper(), TIMEOUT_MS);
+        ClientResources resources = DefaultClientResources.create();
+        RedisOutboxPublisher publisher = new RedisOutboxPublisher(properties, resources, new ObjectMapper(), TIMEOUT_MS);
         try {
             assertThat(publisher.publish(OrderEvent.of("order.paid", 1L))).isNotNull(); // 연결을 먼저 맺는다
 
             slowRedis.execInContainer("redis-cli", "CLIENT", "PAUSE", "3000", "ALL");
             long startedAt = System.nanoTime();
             assertThatThrownBy(() -> publisher.publish(OrderEvent.of("order.paid", 2L)))
-                    .isInstanceOf(RuntimeException.class);
+                    .isInstanceOf(QueryTimeoutException.class); // Lettuce RedisCommandTimeoutException의 Spring 번역
             long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
 
             // 60초(Lettuce 기본값)가 아니라 설정한 상한 근처에서 돌아온다. 여유는 CI 지연을 감안한 값이다.
@@ -54,6 +58,7 @@ class RedisOutboxPublisherTimeoutTest {
                     assertThat(publisher.publish(OrderEvent.of("order.paid", 3L))).isNotNull());
         } finally {
             publisher.destroy();
+            resources.shutdown();
         }
     }
 }

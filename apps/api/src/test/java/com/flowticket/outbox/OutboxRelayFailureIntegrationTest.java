@@ -14,6 +14,7 @@ import com.flowticket.outbox.repository.OutboxEventRepository;
 import com.flowticket.outbox.service.OutboxPublisher;
 import com.flowticket.outbox.service.OutboxRelay;
 import com.flowticket.support.IntegrationTestSupport;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,7 @@ class OutboxRelayFailureIntegrationTest extends IntegrationTestSupport {
     @Autowired OutboxEventRepository outboxRepository;
     @Autowired OutboxRelay relay;
     @Autowired ObjectMapper mapper;
+    @Autowired MeterRegistry meterRegistry;
 
     @Test
     void 발행이_실패하면_PENDING을_유지하고_시도와_오류를_남기며_배치_나머지는_보내지_않는다() throws Exception {
@@ -75,10 +77,31 @@ class OutboxRelayFailureIntegrationTest extends IntegrationTestSupport {
         // PUBLISHED = 발행 호출 성공. 수신 보장이 아니다(ADR-028 §6). 0은 실패로 보지 않는다.
         UUID id = append(4L);
         when(publisher.publish(any())).thenReturn(0L);
+        double before = meterRegistry.counter("flowticket.outbox.publish.no_receivers").count();
 
         relay.publishPending();
 
         assertThat(outboxRepository.findById(id).orElseThrow().getStatus()).isEqualTo(OutboxStatus.PUBLISHED);
+        // 실패는 아니지만 "아무도 못 받았다"는 사실은 남긴다(모든 파드의 구독이 끊긴 순간을 드러내는 신호).
+        assertThat(meterRegistry.counter("flowticket.outbox.publish.no_receivers").count()).isEqualTo(before + 1);
+    }
+
+    @Test
+    void orderId가_없는_payload는_DEAD로_격리하고_뒤의_행은_계속_발행한다() throws Exception {
+        // Jackson은 레코드의 빠진 값을 null로 채워 역직렬화를 성공시킨다. 발행 단계까지 가면 일시적 실패로 분류돼
+        // 매 틱 이 행에서 배치가 멈추고 뒤의 행이 모두 막힌다(TS-032와 같은 종류) — 결정적 실패로 걸러야 한다.
+        UUID broken = UUID.randomUUID();
+        outboxRepository.save(new OutboxEvent(broken, "order", 5L, "order.paid",
+                "{\"type\":\"order.paid\",\"eventId\":\"" + broken + "\"}"));
+        Thread.sleep(5); // createdAt 순서를 확실히 한다(같으면 조회 순서가 정해지지 않는다)
+        UUID next = append(6L);
+        when(publisher.publish(any())).thenReturn(1L);
+
+        relay.publishPending();
+
+        assertThat(outboxRepository.findById(broken).orElseThrow().getStatus()).isEqualTo(OutboxStatus.DEAD);
+        assertThat(outboxRepository.findById(next).orElseThrow().getStatus()).isEqualTo(OutboxStatus.PUBLISHED);
+        verify(publisher, times(1)).publish(any()); // 깨진 행은 발행기까지 가지 않는다
     }
 
     private UUID append(long orderId) throws Exception {

@@ -35,11 +35,13 @@
 7. metrics-server 애드온을 `v0.9.0-eksbuild.12` → `v0.9.0-eksbuild.11`로 내림(`aws eks update-addon`) →
    aggregator 갱신 뒤 protobuf **200**(503 두 번 뒤), `_v2` **0**, `kubectl top nodes` 정상.
 8. ArgoCD application-controller 재시작 + hard refresh → Synced/Healthy, Ingress ALB 할당.
+9. **역방향 대조(측정 세션 끝, 철거 전)**: eksbuild.11 상태에서 protobuf 200 ×6·`_v2` 0 → `update-addon`으로 **eksbuild.12** → protobuf **503 ×6**, `_v2` **14**(재현) →
+   eksbuild.11로 복원 → protobuf 200 ×6. 같은 클러스터에서 버전만 바꿔 증상이 켜지고 꺼졌다.
 
 ## 근본 원인
 - `aws_eks_addon`이 metrics-server 버전을 지정하지 않아 **생성 시점의 기본 호환 버전**이 설치된다. 이번 클러스터에는 `v0.9.0-eksbuild.12`(현재 기본값)가 깔렸다.
-- 이 빌드의 APIService가 내보내는 OpenAPI v2가 API 서버의 protobuf 직렬화를 실패시켰다(위 6·7). 깨진 정의가 왜 생기는지(빌드 내부 변경)는 확인하지 못했다.
-- 한계: eksbuild.12로 다시 올려 503이 재현되는지(역방향 대조)는 아직 하지 않았다. 그래서 "버전 때문"과 "APIService 재등록 효과"가 완전히 갈리지는 않는다. 7에서 eksbuild.11 APIService가 붙은 직후 503이 두 번 난 뒤 200이 된 것은 버전 쪽을 뒷받침한다. 역방향 대조는 측정 세션 끝(철거 전)에 한다.
+- 이 빌드의 APIService가 내보내는 OpenAPI v2가 API 서버의 protobuf 직렬화를 실패시켰다(위 6·7·9). 깨진 정의가 왜 생기는지(빌드 내부 변경)는 확인하지 못했다.
+- 역방향 대조(9)로 "APIService 재등록 효과"가 아니라 **버전**이 원인임을 확인했다 — eksbuild.11 → 12 → 11에서 200 → 503 → 200.
 - 2026-10-10 세션은 같은 코드로 문제가 없었다. 그 사이 기본 버전이 eksbuild.12로 바뀐 것으로 본다(추론 — 그 세션의 애드온 버전은 기록하지 않았다).
 
 ## 해결

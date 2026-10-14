@@ -774,10 +774,10 @@ if (fs.existsSync(relayPath) && fs.existsSync(outboxYmlPath)) {
 // 런타임에 드러나지 않는다: 평소에는 둘 다 잘 전달되고, Redis 장애 때만 이벤트가 사라진다.
 // 그래서 outbox 패키지가 이 둘에 기대지 못하게 막는다(봉투 타입 SsePubSub.Envelope은 써도 된다).
 {
-  // 대상: outbox 패키지 + OutboxPublisher를 참조하는 모든 파일(구현·상속·람다 빈으로 발행기를 밖에 두고 broadcast로 위임하는 우회를 막는다).
+  // 대상: outbox 패키지 + OutboxPublisher(구현체 이름 포함 — 예: RedisOutboxPublisher)를 참조하는 모든 파일(구현·상속·람다 빈으로 발행기를 밖에 두고 broadcast로 위임하는 우회를 막는다).
   const outboxFiles = javaFiles.filter((f) => {
     const norm = f.split(path.sep).join("/");
-    return norm.includes("/com/flowticket/outbox/") || /\bOutboxPublisher\b/.test(stripComments(read(f)));
+    return norm.includes("/com/flowticket/outbox/") || /OutboxPublisher\b/.test(stripComments(read(f)));
   });
   for (const file of outboxFiles) {
     const rel = path.relative(REPO_ROOT, file).split(path.sep).join("/");

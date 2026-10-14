@@ -151,7 +151,7 @@ management:
         flowticket.outbox.relay.tick: 60s
         # ACK 상한은 send-timeout(3초)이다. 타임아웃 자체가 보이도록 조금 여유를 둔다.
         flowticket.outbox.publish.ack: 5s
-        # 브로커 장애 때 지연은 분 단위로 벌어진다. 상한을 낮게 잡으면 그 구간이 +Inf로 뭉쳐
+        # 발행 대상(Redis) 장애 때 지연은 분 단위로 벌어진다. 상한을 낮게 잡으면 그 구간이 +Inf로 뭉쳐
         # "얼마나 밀렸는가"를 복구할 수 없다(http.server.requests와 같은 이유).
         flowticket.outbox.publish.lag: 5m
         # 승격 주기가 1.5초라 그보다 길면 이미 밀리고 있다. 얼마나 밀렸는지 보이도록 여유를 둔다.

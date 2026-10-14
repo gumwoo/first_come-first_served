@@ -18,7 +18,8 @@
 # DB에는 같은 UTC 벽시계로 바꿔 넘긴다 — 앱 컨테이너가 TZ=UTC이고 DB에도 UTC 벽시계가 쌓인다(api-deployment.yaml).
 #
 # 검사(결과는 <run>/correctness/ 아래):
-#   sql.csv            — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스(correctness.sql)
+#   sql.csv            — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스,
+#                        결제됐는데 order.paid 아웃박스 행이 없음(correctness.sql)
 #   queue-order.json   — 대기열 순서 위반(api 로그의 승격 감사 줄 대조, queue-order.mjs)
 #   admission-overlap.json — 실효 입장 초과(감사 줄로 재구성한 토큰별 슬롯 점유 구간의 동시 수 > 정원,
 #                        admission-overlap.mjs). 정원은 prom/queue_capacity_by_pod.json에서 읽는다(파드·시각 모두 한 값이어야 한다)
@@ -201,9 +202,11 @@ fi
 
 echo "==> 1/4 SQL 검사"
 if { printf "\\\\set since '%s'\n" "$SINCE_DB"; cat "$HERE/correctness.sql"; } | psql_pod "loadtest-check-sql" > "$D/sql.csv"; then
-  # 검사 8개가 모두 "<이름>,<수>" 한 줄씩 나와야 한다. 모자라면 일부 검사가 돌지 않은 것이다.
-  if [ "$(grep -cE '^[a-z_]+,[0-9]+$' "$D/sql.csv")" -ne 8 ]; then
-    echo "    SQL 결과가 8줄이 아니다" >&2; BROKEN=1
+  # 검사마다 "<이름>,<수>" 한 줄씩 나와야 한다. 모자라면 일부 검사가 돌지 않은 것이다. 기대 줄 수는 SQL의 검사 수에서 정한다
+  # (숫자를 박아 두면 검사를 더할 때 모든 run이 판정 불가로 떨어진다 — G1 리뷰).
+  SQL_EXPECTED="$(grep -c "^SELECT '" "$HERE/correctness.sql")"
+  if [ "$(grep -cE '^[a-z_]+,[0-9]+$' "$D/sql.csv")" -ne "$SQL_EXPECTED" ]; then
+    echo "    SQL 결과가 ${SQL_EXPECTED}줄이 아니다" >&2; BROKEN=1
   else
     awk -F, '$2 > 0 { bad=1 } END { exit bad }' "$D/sql.csv" || FAIL=1
   fi
@@ -353,7 +356,13 @@ node "$HERE/outbox-no-receivers.mjs" --prom-dir "$OUT/prom" --since "$SINCE" --u
 NR=$?
 case $NR in
   0) ;;
-  1) echo "    run 구간에 구독자 0으로 나간 발행이 있다(outbox-no-receivers.json)" >&2; FAIL=1 ;;
+  1)
+    # 종료 코드와 결과가 맞아야 믿는다 — 도구가 죽어도 1이 나올 수 있다(prom-recheck·queue-order와 같은 대조).
+    if node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).verdict === "violation" ? 0 : 1)' "$D/outbox-no-receivers.json" 2>/dev/null; then
+      echo "    run 구간에 구독자 0으로 나간 발행이 있다(outbox-no-receivers.json)" >&2; FAIL=1
+    else
+      echo "    구독자 부재 도구가 1로 끝났지만 결과가 위반이 아니다 — 판정 불가" >&2; BROKEN=1
+    fi ;;
   *) echo "    구독자 부재를 판정하지 못했다(outbox-no-receivers.json)" >&2; BROKEN=1 ;;
 esac
 

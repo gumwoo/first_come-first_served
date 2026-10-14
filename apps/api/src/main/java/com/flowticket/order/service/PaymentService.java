@@ -425,7 +425,7 @@ public class PaymentService {
 
     /**
      * 아웃박스 행 적재. id를 먼저 만들어 payload의 eventId와 같은 UUID를 쓴다.
-     * 행 PK가 곧 소비자 멱등 키라 릴레이가 재발행해도 소비는 한 번만 일어난다(ADR-010).
+     * eventId = 행 PK(추적용). 릴레이 재발행으로 생기는 중복은 프론트의 재조회 1회가 흡수한다(ADR-028).
      */
     private void appendOutbox(String type, Long orderId) {
         UUID eventId = UUID.randomUUID();

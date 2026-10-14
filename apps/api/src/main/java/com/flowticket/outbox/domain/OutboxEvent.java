@@ -61,8 +61,8 @@ public class OutboxEvent {
     private String lastError;
 
     /**
-     * id를 호출자가 정한다. 같은 UUID를 payload 안(eventId)에도 넣어 행 PK == 소비자 멱등 키를
-     * 맞추기 위함. 릴레이는 payload를 그대로 발행하므로 재발행돼도 소비자가 동일 키로 중복을 흡수한다.
+     * id를 호출자가 정한다. 같은 UUID를 payload 안(eventId)에도 넣어 행과 발행된 이벤트를 맞춰 추적하기 위함.
+     * 재발행으로 생기는 중복은 프론트의 재조회 1회가 흡수한다(ADR-028 — Kafka 시기에는 소비자가 이 키로 흡수했다).
      */
     public OutboxEvent(UUID id, String aggregateType, Long aggregateId, String type, String payload) {
         this.id = id;
@@ -134,7 +134,7 @@ public class OutboxEvent {
     }
 
     /**
-     * PENDING 행에는 두 전이를 허용하지 않는다. 브로커 장애로 밀려 있을 뿐 언젠가 나갈 이벤트라,
+     * PENDING 행에는 두 전이를 허용하지 않는다. 발행 대상(Redis) 장애로 밀려 있을 뿐 언젠가 나갈 이벤트라,
      * 운영자가 개입할 대상이 아니다(개입 대상은 DEAD).
      */
     private void requireDead(String action) {

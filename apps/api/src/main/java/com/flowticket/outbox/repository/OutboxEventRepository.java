@@ -18,7 +18,7 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
     /** 릴레이 배치: 미발행분을 오래된 순(적재 순서 = 발행 순서). ix_outbox_pending 부분 인덱스 사용. */
     List<OutboxEvent> findByStatusOrderByCreatedAtAsc(OutboxStatus status, Pageable pageable);
 
-    /** 운영/테스트: 미발행 적체 수(브로커 장애 관측). */
+    /** 운영/테스트: 미발행 적체 수(발행 대상 장애 관측). */
     long countByStatus(OutboxStatus status);
 
     /**

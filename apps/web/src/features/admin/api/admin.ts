@@ -5,6 +5,7 @@ import type { OutboxStatus } from "@/types/contracts";
 /**
  * 운영 대시보드 지표. kafkaConnected=실 연결, dlqPending=DLQ 적체.
  * outboxPending·outboxDead=아웃박스 미발행·격리 — 화면은 이쪽을 읽는다(ADR-028: Kafka 제거 뒤 앞의 둘은 사라진다).
+ * 새 필드는 선택으로 둔다: 롤링 배포 중 구 API 응답에는 없다.
  */
 export type AdminDashboard = {
   totalEvents: number;
@@ -12,8 +13,8 @@ export type AdminDashboard = {
   revenue: number;
   kafkaConnected: boolean;
   dlqPending: number;
-  outboxPending: number;
-  outboxDead: number;
+  outboxPending?: number;
+  outboxDead?: number;
 };
 
 /** 운영 주문 목록 항목(전 사용자). 주문자(userId/email) 포함. */
@@ -162,9 +163,9 @@ export type AlertSettings = {
   dlqPendingThreshold: number;
   dlqPending: number;
   breached: boolean;
-  outboxDeadThreshold: number;
-  outboxDead: number;
-  outboxBreached: boolean;
+  outboxDeadThreshold?: number;
+  outboxDead?: number;
+  outboxBreached?: boolean;
 };
 
 export const getAlerts = (token: string | null) =>

@@ -14,20 +14,21 @@ export default function AdminAlertsPage() {
   const [value, setValue] = useState("");
 
   useEffect(() => {
-    if (alerts.data) setValue(String(alerts.data.outboxDeadThreshold));
+    if (alerts.data?.outboxDeadThreshold != null) setValue(String(alerts.data.outboxDeadThreshold));
   }, [alerts.data]);
+
+  const a = alerts.data;
+  // 롤링 배포 중 구 API 응답에는 아웃박스 임계치가 없다. 그 API는 이 값을 저장하지 못하므로 입력·저장을 막는다.
+  const supported = a?.outboxDeadThreshold != null;
+  const dirty = a && supported && value !== String(a.outboxDeadThreshold);
 
   const save = () => {
     const n = Number(value);
     // DLQ 임계치도 함께 보낸다: 롤링 배포 중 구 API는 빠진 값을 0으로 덮어쓴다(admin.ts updateAlerts).
-    if (Number.isFinite(n) && n >= 0 && alerts.data) {
+    if (Number.isFinite(n) && n >= 0 && alerts.data && supported) {
       update.mutate({ outboxDeadThreshold: n, dlqPendingThreshold: alerts.data.dlqPendingThreshold });
     }
   };
-
-  const a = alerts.data;
-  const dirty = a && value !== String(a.outboxDeadThreshold);
-
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-8">
       <PageHeader title="알림" desc="운영 경고 임계치를 설정합니다." />
@@ -53,7 +54,7 @@ export default function AdminAlertsPage() {
             <div className="flex items-end gap-3 px-5 py-4">
               <div className="space-y-1">
                 <Label htmlFor="th" className="text-xs text-muted-foreground">경고 임계치</Label>
-                <Input id="th" type="number" min={0} value={value} onChange={(e) => setValue(e.target.value)} className="h-9 w-32" />
+                <Input id="th" type="number" min={0} value={value} disabled={!supported} onChange={(e) => setValue(e.target.value)} className="h-9 w-32" />
               </div>
               <Button onClick={save} disabled={update.isPending || !dirty}>
                 {update.isPending ? "저장 중…" : "저장"}

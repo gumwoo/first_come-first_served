@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { useAdminOutbox, useOutboxAction } from "@/features/admin/hooks/useAdmin";
 import type { OutboxEvent } from "@/features/admin/api/admin";
@@ -27,6 +27,12 @@ export default function AdminOutboxPage() {
   const outbox = useAdminOutbox(status, page);
   const action = useOutboxAction();
   const totalPages = outbox.data ? Math.max(1, Math.ceil(outbox.data.total / outbox.data.size)) : 1;
+
+  // 마지막 페이지의 행을 처리하면(재발행·폐기로 DEAD 목록에서 빠지면) 그 페이지가 비고 페이지 이동도 사라질 수 있다.
+  // 남은 마지막 페이지로 당긴다.
+  useEffect(() => {
+    if (outbox.data && page > 0 && page >= totalPages) setPage(totalPages - 1);
+  }, [outbox.data, page, totalPages]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-5 px-6 py-8">

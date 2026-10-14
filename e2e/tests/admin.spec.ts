@@ -6,7 +6,7 @@ import { loginAsAdmin, seedAdmittedUser } from "../helpers/seed";
  * 성공: 관리자는 사이드바로 대시보드·주문·아웃박스·DLQ·알림·공연에 접근하고 등록·설정을 한다.
  * 실패: 비관리자/미로그인은 접근 거부.
  * 관리자 계정은 백엔드가 ADMIN_EMAIL/ADMIN_PASSWORD로 부트스트랩(CI env 주입).
- * 주의: E2E CI 잡엔 Kafka 브로커가 없어 Kafka는 '미연결', DLQ는 빈 상태다. DLQ 재처리 로직은
+ * 주의: E2E CI 잡엔 Kafka 브로커가 없어 DLQ는 빈 상태다(대시보드는 Kafka 연결 대신 아웃박스 미발행 수를 보인다). DLQ 재처리 로직은
  *      백엔드 DlqIntegrationTest가 커버한다(브라우저로 실패 메시지 생성은 비실용적).
  */
 

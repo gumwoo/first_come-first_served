@@ -22,7 +22,7 @@ export default function AdminDashboardPage() {
         actions={
           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className={`h-1.5 w-1.5 rounded-full ${pending === 0 ? "bg-emerald-500" : "bg-amber-500"}`} />
-            {pending === undefined ? "아웃박스 …" : pending === 0 ? "미발행 없음" : `미발행 ${pending.toLocaleString()}건`}
+            {pending == null ? "아웃박스 …" : pending === 0 ? "미발행 없음" : `미발행 ${pending.toLocaleString()}건`}
           </span>
         }
       />
@@ -45,7 +45,12 @@ export default function AdminDashboardPage() {
           <StatCell label="총 공연" value={dash.data.totalEvents.toLocaleString()} />
           <StatCell label="결제 완료 주문" value={dash.data.paidOrders.toLocaleString()} />
           <StatCell label="누적 매출" value={won(dash.data.revenue)} />
-          <StatCell label="아웃박스 격리" value={dash.data.outboxDead.toLocaleString()} warn={dash.data.outboxDead > 0} />
+          {/* 롤링 배포 중 구 API 응답에는 outbox* 필드가 없다 — 없으면 "—"로 둔다(깨지지 않게). */}
+          <StatCell
+            label="아웃박스 격리"
+            value={dash.data.outboxDead?.toLocaleString() ?? "—"}
+            warn={(dash.data.outboxDead ?? 0) > 0}
+          />
         </div>
       ) : null}
 

@@ -4,3 +4,4 @@
 ALTER TABLE alert_settings ADD COLUMN outbox_dead_threshold INTEGER NOT NULL DEFAULT 1;
 
 COMMENT ON COLUMN alert_settings.outbox_dead_threshold IS '아웃박스 격리(DEAD) 행 경고 임계치. 이 값 이상이면 경고';
+COMMENT ON TABLE alert_settings IS '운영 알림 임계치(S07). 단일 행(id=1). DLQ 적체·아웃박스 격리 임계치.';

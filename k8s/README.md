@@ -116,7 +116,7 @@ Secrets Manager에 만든다. Deployment는 `secretRef: flowticket-api-secrets`�
 | `SHUTDOWN_TIMEOUT(30s)` ↔ `terminationGracePeriodSeconds(45)` | 앱 < Pod | 뒤집히면 진행 중 요청 중 SIGKILL |
 | web `preStop sleep 25` ↔ 등록 해제 **전파** 시간 | preStop > 전파 | 짧으면 컨테이너가 먼저 죽고, ALB가 아직 정상으로 아는 IP로 보내 502/504 — 2026-08-25 실측 13건([TS-035](../docs/troubleshooting/TS-035-rolling-deregistration-race.md)). `deregistration_delay`와 짝짓는 값이 **아니다**(그건 deregistering 이후의 드레이닝) |
 | web `preStop(25s)` ↔ `terminationGracePeriodSeconds(60)` | preStop < Pod | 뒤집히면 preStop 도중 SIGKILL — 고치려던 것보다 나빠진다 |
-| probe 경로 ↔ `application.yml`의 health group | — | readiness에 외부 의존성을 넣으면 그 하나가 흔들릴 때 API 전체가 빠진다(Kafka를 쓰던 때 브로커를 readiness에서 뺀 이유) |
+| probe 경로 ↔ `application.yml`의 health group | readiness = `readinessState, db, redis` | 요청 처리에 필수가 아닌 의존성(예전 Kafka 브로커)을 readiness에 넣으면 그 하나가 흔들릴 때 API 전체가 빠진다. DB·Redis는 없으면 요청을 처리할 수 없어 포함한다 |
 | `API_ORIGIN`(**build-arg**) ↔ `next.config.mjs` rewrites | `http://flowticket-api` | 이름·포트가 틀리면 프록시가 엉뚱한 곳으로 간다 |
 | `REDIS_SSL_ENABLED=true` ↔ ElastiCache TLS | 둘 다 켜짐 | 하나만 켜지면 **Pod가 영원히 Ready 안 됨** |
 

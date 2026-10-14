@@ -30,8 +30,9 @@ extraArgs:
   # 이걸 끄면 사실상 축소가 일어나지 않는다.
   skip-nodes-with-system-pods: false
   # 로컬 스토리지를 쓰는 파드가 있는 노드는 기본적으로 축소하지 않는다.
-  # Prometheus는 EBS(PVC)를 쓰므로 여기에 해당하지 않지만, emptyDir을 쓰는 파드가
-  # 생기면 축소가 막힌다. 측정에서 축소가 안 일어나면 이 값을 먼저 의심할 것.
+  # Prometheus 데이터는 EBS(PVC)에 있다. 다만 emptyDir을 쓰는 파드(prometheus-operator가 만드는 Prometheus Pod의 설정용
+  # emptyDir, storage 설정이 없는 Alertmanager 등 — 추론, 확인 안 함)가 있는 노드는 이 값이 true면 축소가 막힌다.
+  # 측정에서 축소가 안 일어나면 이 값을 먼저 의심할 것.
   skip-nodes-with-local-storage: false
   # 기본 10분. 측정 세션에서 축소를 관찰하려면 10분을 기다려야 한다.
   # 이 값을 줄이면 "기본 동작"이 아닌 것을 재게 된다. 기본값을 유지하고 기다린다.

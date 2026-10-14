@@ -75,7 +75,14 @@ SELECT 'paid_without_approved_payment', count(*) FROM orders o
  WHERE o.status = 'PAID' AND o.created_at >= :'since'
    AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id AND p.status = 'APPROVED');
 
--- 5) 발행되지 않은 아웃박스 행(PENDING·DEAD·DISCARDED). 측정 중에는 0이어야 한다 — 0이 아니면 이벤트 유실 후보다.
---    PUBLISHED 행이 실제로 소비됐는지는 check-correctness.sh가 Redis 멱등 키로 대조한다.
+-- 5) 발행되지 않은 아웃박스 행(PENDING·DEAD·DISCARDED). 측정 중에는 0이어야 한다 — 0이 아니면 알림 유실 후보다.
+--    발행 시점에 구독자가 있었는지는 check-correctness.sh 3단계(outbox-no-receivers.mjs)가 본다. 브라우저 수신은 판정하지 못한다(ADR-028).
 SELECT 'outbox_not_published', count(*) FROM outbox_events
  WHERE status <> 'PUBLISHED' AND created_at >= :'since';
+
+-- 5a) 결제됐는데(paid_at 있음) order.paid 아웃박스 행이 없다 — 이벤트 적재 누락. 결제 확정과 같은 트랜잭션에서 쌓으므로(ADR-010,
+--     PaymentService.finalizePaid) 0이어야 한다. 이후 취소·환불돼도 paid_at은 남으므로 상태와 상관없이 본다.
+SELECT 'paid_without_outbox_event', count(*) FROM orders o
+ WHERE o.paid_at IS NOT NULL AND o.paid_at >= :'since'
+   AND NOT EXISTS (SELECT 1 FROM outbox_events e
+                    WHERE e.aggregate_type = 'order' AND e.aggregate_id = o.id AND e.type = 'order.paid');

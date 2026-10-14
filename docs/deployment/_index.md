@@ -6,7 +6,7 @@
 - 우선순위: **S08 아웃박스(정합성)를 먼저** 끝낸 뒤 이 배포로. 배포는 "코드 선반영 완료"라 실증만 하고 동결.
 - 후속: S10 부하테스트·모니터링은 이 배포 위에서 실측.
 
-## 문서 5종 (상세)
+## 문서 7종 (상세)
 | 문서 | 내용 |
 |------|------|
 | [aws-eks-deploy-plan.md](aws-eks-deploy-plan.md) | EKS + Strimzi 멀티브로커 배포 단계(Phase 1~8)·역할분담·DoD |
@@ -14,6 +14,8 @@
 | [zero-downtime-deployment.md](zero-downtime-deployment.md) | **무중단의 정의와 조건** — REST/SSE/DB를 나눠서. ALB readiness gate, Expand-Contract, 검증 시나리오·예측 |
 | [app-changes-for-k8s-kafka.md](app-changes-for-k8s-kafka.md) | 파티션↑·복제↑·probe·graceful shutdown·**멀티팟 대응(D 섹션)** 코드/설정 변경 |
 | [portfolio-framing-and-decisions.md](portfolio-framing-and-decisions.md) | 납득 원칙·최종 스코프·**MSA 고려·기각**·면접 서사 |
+| [operating-requirements.md](operating-requirements.md) | **운영 요구사항 후보(결정 전)** — 가용성(노드·AZ 장애)·지연·부하 범위·RTO/RPO·평시/오픈 정책. 검증한 것과 안 한 것을 구분 |
+| [workload-responsibilities.md](workload-responsibilities.md) | **워크로드 역할과 장애 책임(분석)** — 같은 이미지의 api·대기열에서 도는 스케줄러·Kafka 리스너, 락·멱등, 역할이 사라질 때 멈추는 것과 인계 |
 
 ## 멀티팟 준비 체크리스트
 

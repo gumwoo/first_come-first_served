@@ -7,37 +7,37 @@
 
 ## 1. 실행 모델 (코드 사실)
 - api와 대기열 Deployment는 **같은 이미지**다. 스케줄러는 `flowticket.scheduling.enabled`(기본 true) **하나로 전부 켜고 끈다** — 작업 단위로 끄는 설정은 없다.
-- ShedLock 저장소는 **Redis**(`RedisLockProvider(…, "flowticket")`). 락을 쓰는 작업은 모든 파드가 매 틱 Redis에 락을 시도하고, **본문은 락을 잡은 파드 하나**가 실행한다([[TS-023]]에서 틱당 1회 실증).
-- ShedLock은 "정확히 한 번"을 보장하지 않는다 — 본문이 임차(`lockAtMostFor`)를 넘기면 겹칠 수 있다. 그래서 작업 본문은 **조건부 UPDATE·멱등**으로 짜여 있고, 아웃박스는 "틱이 임차보다 길 수 없다"를 하네스 규칙으로 검사한다(`be-outbox-lease` fixture).
+- ShedLock 저장소는 **Redis**(`RedisLockProvider(…, "flowticket")`). 락을 쓰는 작업은 모든 파드가 자기 틱마다 Redis에 락을 시도하고, 락을 잡은 파드가 본문을 실행한다. **모든 락이 `lockAtLeastFor = PT0S`**라 본문이 끝나면 락이 바로 풀린다 — 파드마다 기동 시각(틱 위상)이 다르면 **한 주기 안에 여러 파드가 차례로 본문을 실행할 수 있다**(ShedLock 동작에서 나온 추론, 측정하지 않음). "틱당 1회"는 `outbox-relay`(1초 주기, 본문 약 1초)에서만 실증됐다([[TS-023]] A4).
+- ShedLock은 "정확히 한 번"을 보장하지 않는다(위의 반복 실행, 임차 `lockAtMostFor` 초과 시 동시 실행). 그래서 겹쳐도 되는지는 **작업마다 다르다** — 아래 표의 "겹쳐도 안전한가" 열. 아웃박스는 "틱이 임차보다 길 수 없다"를 하네스 규칙으로 검사해 겹침 자체를 막는다(`be-outbox-lease` fixture).
 - 대기열 승격만 **락이 없다** — Redis Lua로 원자적이라 여러 파드가 동시에 돌아도 안전하고, 단일 리더로 묶으면 처리량이 줄어서다(코드 주석·배포 문서 D-3).
-- DB 커넥션: 파드마다 Hikari 풀(최대 5, `minimum-idle` 미지정 → 기본값상 유휴 커넥션도 최대치까지 유지할 수 있다). 파드가 늘면 **쥐는 커넥션**이 는다. 실제 사용(active)은 측정한 적 없다.
+- DB 커넥션: 파드마다 Hikari 풀(최대 5, `minimum-idle` 미지정 → HikariCP 기본값은 `minimumIdle = maximumPoolSize`, 즉 고정 크기 풀로 채워서 쥔다 — 라이브러리 기본값, 측정 아님). 파드가 늘면 **쥐는 커넥션**이 는다. active 실측은 초기 구성에만 있다(50 VU 파드당 0~1 — [[TS-021]], 1,800 rps 파드당 5(상한)·pending 116 — [[TS-034]]); 현 구성(1100m·B)과 대기열 파드에서는 재지 않았다.
 
 ## 2. 작업 목록 (지금은 두 Deployment의 모든 파드에서 시도)
 | 작업 | 주기 | 락(임차) | 하는 일 · 쓰는 것 | 겹쳐도 안전한가 | 아무 파드도 안 돌리면 |
 |---|---|---|---|---|---|
-| 대기열 승격·슬롯 회수 `QueueAdmissionService` | 1.5초 | **없음**(Lua 원자) | 활성 공연마다 만료 회수 → 정원만큼 승격 → 지표 스냅숏. Redis만 | 예(원자) | 대기자가 입장하지 못함, 만료 슬롯이 회수되지 않음 |
-| 아웃박스 릴레이 `OutboxRelay` | 1초 | outbox-relay(1분) | PENDING 이벤트를 Kafka로 발행(배치 100). DB·Kafka | 예(트랜잭션·임차 검사) | 주문·결제 이벤트 발행 지연(실시간 알림 지연) — 데이터는 DB에 남음 |
+| 대기열 승격·슬롯 회수 `QueueAdmissionService` | 1.5초 | **없음**(Lua 원자) | 틱마다 활성 공연 목록 조회(`SMEMBERS`) → 공연마다 만료 회수·정원만큼 승격·지표 스냅숏. Redis만 | 예(원자) | 대기자가 입장하지 못함, 만료 슬롯이 회수되지 않음 |
+| 아웃박스 릴레이 `OutboxRelay` | 1초 | outbox-relay(1분) | PENDING 이벤트를 Kafka로 발행(배치 100, 행 잠금 없이 읽음). DB·Kafka | **겹치지 않게 막는다**(틱 예산 < 임차, 하네스 `be-outbox-lease`). 겹치면 같은 PENDING을 다른 파드가 집어 **중복 발행** — 소비자 eventId 멱등(SETNX)이 흡수, 같은 주문 안 순서는 보장 안 됨(ADR-022) | 주문·결제 이벤트 발행 지연(실시간 알림 지연) — 데이터는 DB에 남음 |
 | 아웃박스 정리 | 매일 03:00 | outbox-purge(10분) | 오래된 발행 완료 행 삭제. DB | 예 | 테이블 증가(급하지 않음) |
-| 좌석 선점 만료 `SeatHoldExpiryService` | 60초 | seat-hold-sweep(50초) | 만료 hold 회수. DB | 예(조건부 UPDATE) | 만료 좌석이 다시 팔리지 않음(재고 묶임) |
-| 주문 만료 `OrderExpiryService` | 60초 | order-expiry-sweep(50초) | 미결제 주문 만료. DB | 예 | 미결제 주문·좌석 회수 지연 |
+| 좌석 선점 만료 `SeatHoldExpiryService` | 60초 | seat-hold-sweep(50초) | 만료 hold 회수(벌크 UPDATE) + 풀린 좌석을 `seat.hold.expired`로 SSE 브로드캐스트. DB·Redis | 예(조건부 UPDATE — 실제로 만료된 hold만) | 만료 좌석이 다시 팔리지 않음(재고 묶임) |
+| 주문 만료 `OrderExpiryService` | 60초 | order-expiry-sweep(50초) | 결제 제한시각이 지난 미완료 주문을 EXPIRED로(상태 조건 bulk UPDATE). 좌석·hold 복구는 좌석 만료 sweep 몫. DB | 예 | 미결제 주문 만료 지연 |
 | 결제 대사 `PaymentReconciliationService` | 10분 | payment-reconcile(5분) | 미아 승인 정산(승인됐는데 주문에 반영 안 된 결제를 외부 PG로 조회·취소). DB·외부 PG | 예(멱등) | 결제 불일치 복구 지연 |
 | 환불 대사 `RefundReconciliationService` | 10분 | refund-reconcile(5분) | 환불 불일치 복구. DB·외부 | 예(멱등) | 환불 불일치 복구 지연 |
-| 랭킹 감쇠 `RankingService` | 5분 | ranking-decay(4분) | 인기 순위 감쇠. Redis | 예 | 순위 갱신 지연 |
-| KOPIS 동기화 `KopisSyncScheduler` | 매일 04:00 | 서비스 안 자체 락(동시 실행이면 건너뜀) | 외부 공연 데이터 동기화. DB·외부 API | 예(건너뜀) | 공연 데이터 갱신 지연 |
+| 랭킹 감쇠 `RankingService` | 5분 | ranking-decay(4분) | 실시간 랭킹 ZSET 점수에 감쇠율을 곱함(`ZUNIONSTORE` weight). Redis | **아니오** — 곱셈이라 한 주기에 두 번 돌면 두 번 감쇠(과감쇠). 위 반복 실행이 실제로 일어나는지는 미측정 — 별도 확인 대상 | 순위 갱신 지연 |
+| KOPIS 동기화 `KopisSyncScheduler` | 매일 04:00 | `kopis-sync`(10분) — `KopisSyncService.sync()`에 걸림(수동 admin API와 같은 문) | 외부 공연 데이터 동기화. DB·외부 API | 예(락을 못 잡으면 건너뜀) | 공연 데이터 갱신 지연 |
 
 Kafka 리스너(같은 이미지라 모든 파드에서 시작):
 | 리스너 | consumer group | 하는 일 | 메모 |
 |---|---|---|---|
-| `OrderEventConsumer`(order-events) | `flowticket` | 주문·결제 이벤트 → 실시간 알림(SSE) 전달, eventId Redis SETNX 멱등 | 파티션 6개를 그룹 안 파드가 나눠 받는다 — 파드가 6개를 넘으면 일부는 놀고 있다. SSE 연결 파드와 소비 파드가 달라도 Redis 팬아웃으로 전달([[TS-023]]) |
+| `OrderEventConsumer`(order-events) | `flowticket` | 주문·결제 이벤트 → 실시간 알림(SSE) 전달, eventId Redis SETNX 멱등 | 파티션 6개를 그룹 안 파드가 나눠 받는다 — 파드가 6개를 넘으면 일부는 놀고 있다. SSE 연결 파드와 소비 파드가 달라도 전달됨([[TS-023]] A3, 4회 — Redis 경유는 TS가 "강한 추론"으로 표기) |
 | `DlqConsumer`(order-events.DLT) | `flowticket-dlq` | 실패 메시지를 `dlq_messages`에 기록(해석 안 함) | 판단은 사람이 admin API로 |
 
-파드 수에 비례해 느는 것: 승격 틱의 Redis 호출(**활성 공연이 있을 때**), ShedLock 락 시도(Redis), 쥐는 DB 커넥션, Kafka 그룹 구성원(6개 초과분은 유휴). **DB 작업 본문은 대부분 락 보유 파드 하나**다.
+파드 수에 비례해 느는 것: 승격 틱의 Redis 호출(틱마다 `SMEMBERS` 1회 + 활성 공연이 있으면 공연마다 Lua), ShedLock 락 시도(Redis), 쥐는 DB 커넥션, Kafka 그룹 구성원(6개 초과분은 유휴). 락 작업의 본문 실행 횟수는 위 추론대로 주기당 1회보다 많을 수 있다 — 미측정.
 
 ## 3. 역할이 통째로 사라지면 (B 구조, 지금 코드 그대로)
 요청 경로는 Ingress가 나눈다 — 대기열 두 경로(`/api/queue/status`, `/api/events/*/queue/token`)만 대기열 Service, 나머지는 web → api.
 | 사라진 것 | 멈추는 것 | 계속 되는 것 |
 |---|---|---|
-| 대기열 Deployment 전체 | **새 진입·상태 조회**(대기자는 입장 사실을 알 수 없다) | 이미 입장한 사용자의 선점·주문·결제(입장 확인은 api가 Redis로 한다), **승격**(api 파드에서도 돈다), 백그라운드 작업 전부 |
+| 대기열 Deployment 전체 | **새 진입·상태 조회**(대기자는 입장 사실을 알 수 없다) | 이미 입장한 사용자의 선점·주문·결제(입장 확인은 api가 Redis로 한다), **승격**(api 파드에서도 돈다), 대기열 이탈(`DELETE` — web → api 경로), 백그라운드 작업 전부 |
 | api Deployment 전체 | 좌석·주문·결제·조회 전부(web이 api를 부른다) | 대기열 진입·상태 조회·승격·백그라운드 작업(대기열 파드에서도 돈다) |
 → 지금은 같은 이미지가 모든 작업을 양쪽에서 돌리는 것이 **서로의 안전망** 노릇을 한다. 역할을 나누면 이 안전망이 사라지므로, 나눌 때는 인계를 같이 정해야 한다.
 

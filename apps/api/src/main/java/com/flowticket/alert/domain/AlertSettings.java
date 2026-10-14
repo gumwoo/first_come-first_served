@@ -22,24 +22,19 @@ public class AlertSettings {
     @Id
     private Long id;
 
-    @Column(name = "dlq_pending_threshold", nullable = false)
-    private int dlqPendingThreshold;
+    // dlq_pending_threshold 컬럼은 매핑하지 않는다(Kafka 제거 — ADR-028). 컬럼은 N+1 릴리스에서 지운다(Expand-Contract):
+    // 롤링 중 구버전 Pod가 아직 매핑하고 있어 이 릴리스에서 지우면 기동이 깨진다(kafka-removal-design §5.3).
 
-    /** 아웃박스 격리(DEAD) 행 경고 임계치(V20). Kafka 제거 뒤 DLQ 임계치를 대신한다(ADR-028). */
+    /** 아웃박스 격리(DEAD) 행 경고 임계치(V20). */
     @Column(name = "outbox_dead_threshold", nullable = false)
     private int outboxDeadThreshold;
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    /** 임계치 갱신. null인 값은 그대로 둔다(한쪽만 보내는 구·신 화면이 롤링 배포 중 공존한다). */
-    public void updateThresholds(Integer dlqPendingThreshold, Integer outboxDeadThreshold) {
-        if (dlqPendingThreshold != null) {
-            this.dlqPendingThreshold = dlqPendingThreshold;
-        }
-        if (outboxDeadThreshold != null) {
-            this.outboxDeadThreshold = outboxDeadThreshold;
-        }
+    /** 임계치 갱신. */
+    public void updateThreshold(int outboxDeadThreshold) {
+        this.outboxDeadThreshold = outboxDeadThreshold;
         this.updatedAt = LocalDateTime.now();
     }
 }

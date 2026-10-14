@@ -220,6 +220,7 @@
 | `scripts/tear-down.sh` | Kafka CR·NodePool 삭제 단계 제거. **PVC·EBS 잔존 확인 단계는 유지**(Prometheus PVC가 남는다) | P3 |
 | `scripts/resilience-test.sh` | 브로커 장애 시나리오 제거(나머지 유지) | P3 |
 | `scripts/node-autoscale-test.sh` | Kafka 언급 정리 | P3 |
+| `scripts/loadtest/check-correctness.sh` 3단계·`correctness.sql`·`export-prom.mjs`(G1 리뷰가 찾은 누락 — 목록에 없었다) | 이벤트 유실 판정이 Kafka 소비자의 Redis 멱등 키(`dedup:order-event:<id>`)에 기대고 있어, 소비자를 지우면 결제가 있는 모든 run이 위반이 된다. **서버 관측으로 대체**(사용자 결정 2026-10-15): 결제마다 아웃박스 행(`paid_without_outbox_event`)·모두 발행(`outbox_not_published`)·구독자 0 발행 카운터 증가 0(`outbox-no-receivers.mjs`, 단위 테스트 포함). 브라우저 수신은 판정하지 못한다 | P2b-2 |
 | `infra/docker-compose.yml`·`docker-compose.prod.yml` | `kafka` 서비스·앱의 `KAFKA_*` env 제거 | P3 |
 | `infra/k6/README.md`(`:10` compose kafka, `:22` 예정 `failure-dlq.js`), `AGENTS.md`(`:15` 스택, `:29`·`:78` compose kafka) | 문구 — 예정 시나리오는 삭제 | P3 |
 | `infra/terraform/.../modules/eks/main.tf` | **EBS CSI 애드온 유지**(Prometheus PVC gp2 20Gi가 쓴다 — `kube-prometheus-stack.values.yaml:93-100`). 주석 `:224` "Kafka 브로커 PVC"와 `:3-5`(AZ별 노드 그룹의 이유 = Kafka 브로커 EBS)를 갱신 — **AZ별 노드 그룹은 유지**한다. EBS가 AZ에 묶이는 성질은 Prometheus PVC에도 그대로라 근거가 사라지지 않는다 | P3 |
@@ -241,7 +242,7 @@
 
 전체 진행 순서(사용자 결정 2026-10-14). 각 단계는 CI·하네스 → 독립 검토(G1 리뷰) PASS를 거쳐 다음으로 간다. (이 문서에서 "G1 리뷰"는 PR 독립 검토, "가용성 G1"은 노드 1대 장애 목표 — [operating-requirements.md](operating-requirements.md) — 를 뜻한다.)
 1. 랭킹 감쇠 중복 실행 재현·필요 시 수정(Kafka와 무관한 별도 PR — ShedLock `PT0S` 문제) — **완료**: CI 재현(0.64, 기대 0.8)·경과 시간 기반 감쇠로 수정([TS-051](../troubleshooting/TS-051-ranking-decay-repeated-per-pod.md))
-2. P1 → P2a → P2b(클러스터 불필요) — P1 완료(#409), P2a 완료(#410). P2b는 둘로 나눈다: **P2b-1**(동작 변경 — 릴레이를 Redis 엄격 발행으로, 회귀 테스트·하네스 규칙 23) → **P2b-2**(삭제 — Kafka·DLQ 코드·계약·화면·설정·모니터링, 런타임 동작 변화 없음). 나누는 이유: 동작이 바뀌는 부분을 작게 따로 검증하기 위해서다. 둘 다 측정 세션 전에 끝나므로 순서 원칙은 같다.
+2. P1 → P2a → P2b(클러스터 불필요) — P1 완료(#409), P2a 완료(#410), P2b-1 완료(#411), P2b-2 진행 중(#412). P2b는 둘로 나눈다: **P2b-1**(동작 변경 — 릴레이를 Redis 엄격 발행으로, 회귀 테스트·하네스 규칙 23) → **P2b-2**(삭제 — Kafka·DLQ 코드·계약·화면·설정·모니터링, 런타임 동작 변화 없음). 나누는 이유: 동작이 바뀌는 부분을 작게 따로 검증하기 위해서다. 둘 다 측정 세션 전에 끝나므로 순서 원칙은 같다.
 3. 자원 산정·측정 계획 문서(후보·계획만 — 최종 requests·Hikari 풀·HPA·노드 수는 B₁·B′ 반복·가용성 G1 시험을 거친 뒤 확정) + P3a + 저장소 P3 준비
 4. 측정 세션: N 게이트(§6.1) → Kafka 운영 삭제 게이트(§6.2) → B₁ → B′(반복 조정 가능) → 가용성 G1 시험(최종 B′ 후보) — §7.5
 5. 관찰 기간 뒤 저장소 P3 머지, 충분히 안정된 뒤 P4, 마지막 P5

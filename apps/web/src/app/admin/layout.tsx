@@ -12,7 +12,6 @@ const NAV: NavItem[] = [
   { href: "/admin/orders", label: "주문 조회" },
   { href: "/admin/events", label: "공연 관리" },
   { href: "/admin/outbox", label: "아웃박스" },
-  { href: "/admin/dlq", label: "DLQ" },
   { href: "/admin/alerts", label: "알림" },
 ];
 

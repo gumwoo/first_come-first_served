@@ -31,7 +31,7 @@ Redis 채널 `sse:order`로 발행하고 호출이 성공한 뒤 `PUBLISHED`로 
 ## 도메인 규칙 연결
 - **적재**: `PaymentService.finalizePaid`가 같은 tx에서 INSERT(PENDING). 결제가 롤백되면 이 행도 사라짐 → 유령 이벤트 0.
 - **발행**: `OutboxRelay`(`@Scheduled` + `@SchedulerLock("outbox-relay")`)가 PENDING을 발행 → 성공 시 `PUBLISHED`+`published_at`, 실패 시 `attempts++` 후 다음 틱 재시도(**at-least-once**).
-- **소비 멱등**: 메시지의 `id`로 소비자가 `SETNX dedup:order-event:{id}` TTL 24h — 중복 흡수. Redis 장애 시 fail-open(경고 로그 후 전달 진행, SSE는 중복 무해).
+- **중복**: 멱등 키는 없다([[ADR-028]] — Kafka 소비자와 함께 `dedup:order-event:{id}` 기록을 없앴다). 재발행으로 생기는 중복은 프론트의 재조회 1회가 흡수한다(이벤트 payload를 읽지 않는다 — `kafka-removal-design.md` §1.2). Kafka 시기에는 소비자가 `SETNX dedup:order-event:{id}`(TTL 24h)로 흡수했다.
 - **보존/청소**: `PUBLISHED`는 운영 가시성을 위해 7일 보존 후 `@SchedulerLock("outbox-purge")` 스윕이 삭제.
   **`PENDING`·미발행 행은 절대 삭제하지 않는다.**
 - 관련 실증: IMP-011(브로커 다운 중 결제 → 복구 후 유실 0).

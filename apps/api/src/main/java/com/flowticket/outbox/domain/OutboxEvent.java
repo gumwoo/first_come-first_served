@@ -17,7 +17,7 @@ import lombok.NoArgsConstructor;
  * 결제가 롤백되면 이 행도 함께 사라진다(유령 이벤트 0). 폴링 릴레이가 PENDING을 Redis 채널(sse:order)로 발행하고
  * 호출 성공 후 PUBLISHED로 마킹한다(publish-then-mark → at-least-once — ADR-028).
  *
- * id(UUID)는 payload의 eventId와 같다(추적용). Kafka 소비자 멱등 키(`dedup:order-event:{id}`)로 쓰이던 자리다(ADR-028로 소비자 제거 예정).
+ * id(UUID)는 payload의 eventId와 같다(추적용). Kafka 시기에는 소비자 멱등 키(`dedup:order-event:{id}`)였다(ADR-028로 소비자 제거).
  */
 @Entity
 @Table(name = "outbox_events")
@@ -61,8 +61,8 @@ public class OutboxEvent {
     private String lastError;
 
     /**
-     * id를 호출자가 정한다. 같은 UUID를 payload 안(eventId)에도 넣어 행 PK == 소비자 멱등 키를
-     * 맞추기 위함. 릴레이는 payload를 그대로 발행하므로 재발행돼도 소비자가 동일 키로 중복을 흡수한다.
+     * id를 호출자가 정한다. 같은 UUID를 payload 안(eventId)에도 넣어 행과 발행된 이벤트를 맞춰 추적하기 위함.
+     * 재발행으로 생기는 중복은 프론트의 재조회 1회가 흡수한다(ADR-028 — Kafka 시기에는 소비자가 이 키로 흡수했다).
      */
     public OutboxEvent(UUID id, String aggregateType, Long aggregateId, String type, String payload) {
         this.id = id;
@@ -90,7 +90,7 @@ public class OutboxEvent {
 
     /**
      * 일시적 발행 실패: PENDING을 유지해 다음 틱에 재시도. 시도 횟수는 운영 가시성용.
-     * 브로커·네트워크 장애가 여기 해당하며, 시도 횟수만으로 DEAD로 넘기지 않는다.
+     * 발행 대상(Redis)·네트워크 장애가 여기 해당하며, 시도 횟수만으로 DEAD로 넘기지 않는다.
      *
      * 여기서 남긴 원인은 다음 시도가 성공하면 지워진다(markPublished()).
      */
@@ -134,7 +134,7 @@ public class OutboxEvent {
     }
 
     /**
-     * PENDING 행에는 두 전이를 허용하지 않는다. 브로커 장애로 밀려 있을 뿐 언젠가 나갈 이벤트라,
+     * PENDING 행에는 두 전이를 허용하지 않는다. 발행 대상(Redis) 장애로 밀려 있을 뿐 언젠가 나갈 이벤트라,
      * 운영자가 개입할 대상이 아니다(개입 대상은 DEAD).
      */
     private void requireDead(String action) {

@@ -2,7 +2,7 @@ spring:
   application:
     name: flowticket-api
   lifecycle:
-    # 롤링 배포·스케일인 시 진행 중 요청과 Kafka 소비를 마무리할 유예(graceful shutdown과 한 쌍).
+    # 롤링 배포·스케일인 시 진행 중 요청을 마무리할 유예(graceful shutdown과 한 쌍).
     timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
   # 컨테이너/K8s에서 localhost는 '그 Pod 자신'이라 외부 주소는 전부 환경변수로 받는다.
   # DB_URL을 주면 통째로 대체, 아니면 호스트/포트만 바꿔 쓸 수 있게 이중으로 열어둔다.
@@ -36,34 +36,6 @@ spring:
       # 자세한 체크리스트: docs/deployment/app-changes-for-k8s-kafka.md C-7
       ssl:
         enabled: ${REDIS_SSL_ENABLED:false}
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    consumer:
-      group-id: flowticket
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      # JsonDeserializer를 직접 쓰면 역직렬화 실패가 poll() 단계에서 터져 DefaultErrorHandler(+DLT)가
-      # 개입하지 못하고 같은 메시지를 무한 재시도한다(TS-020). ErrorHandlingDeserializer로 감싼다.
-      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
-      properties:
-        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
-        spring.json.trusted.packages: "com.flowticket.*"
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-      # 아웃박스 릴레이가 발행 성공을 확인하고 마킹하므로(publish-then-mark), 확인의 기준을
-      # 전체 ISR 반영으로 둔다. 프로듀서 재시도로 생기는 중복은 idempotence로 억제(ADR-010).
-      acks: all
-      properties:
-        # 브로커 불가 시 send()가 60s(기본) 블록되지 않도록 바운드.
-        # 실패해도 아웃박스 행이 PENDING으로 남아 다음 틱에 재시도된다(유실 0).
-        max.block.ms: 3000
-        enable.idempotence: true
-    listener:
-      # 브로커 미가용 환경(일부 통합테스트)에서 부팅 실패하지 않도록.
-      missing-topics-fatal: false
-      # 리스너는 KafkaListenerStarter가 기동 직후 켠다 — 브로커 DNS 실패가 API 기동 실패로 번지지 않게(TS-016).
-      auto-startup: false
   security:
     oauth2:
       client:
@@ -96,14 +68,6 @@ spring:
             token-uri: https://kauth.kakao.com/oauth/token
             user-info-uri: https://kapi.kakao.com/v2/user/me
             user-name-attribute: id
-
-# 토픽 생성 파라미터. 로컬·CI는 단일 브로커라 1/1(RF>브로커 수면 생성 실패),
-# 운영 Strimzi(브로커 3)에서는 파티션 6·RF 3으로 올린다. 파티션이 1이면 Pod를 늘려도
-# 같은 컨슈머 그룹에서 실제 소비는 하나뿐이라 병렬 확장이 의미가 없다.
-kafka:
-  topic:
-    partitions: ${KAFKA_TOPIC_PARTITIONS:1}
-    replicas: ${KAFKA_TOPIC_REPLICAS:1}
 
 server:
   port: 8080
@@ -138,8 +102,6 @@ management:
         add-additional-paths: true
       group:
         # readiness = "지금 트래픽을 받아도 되는가". DB·Redis는 없으면 요청을 못 처리하니 포함한다.
-        # Kafka는 일부러 뺀다. 브로커 장애는 알림 지연일 뿐이고(아웃박스가 유실을 막는다, ADR-008/010),
-        # 이걸 readiness에 넣으면 브로커 하나 죽었다고 API 전체가 트래픽에서 빠지는 과잉 차단이 된다.
         readiness:
           include: readinessState, db, redis
         # liveness = "프로세스를 재시작해야 하는가". 외부 의존성을 넣으면 DB 장애에 Pod가 무한 재시작한다.
@@ -189,7 +151,7 @@ management:
         flowticket.outbox.relay.tick: 60s
         # ACK 상한은 send-timeout(3초)이다. 타임아웃 자체가 보이도록 조금 여유를 둔다.
         flowticket.outbox.publish.ack: 5s
-        # 브로커 장애 때 지연은 분 단위로 벌어진다. 상한을 낮게 잡으면 그 구간이 +Inf로 뭉쳐
+        # 발행 대상(Redis) 장애 때 지연은 분 단위로 벌어진다. 상한을 낮게 잡으면 그 구간이 +Inf로 뭉쳐
         # "얼마나 밀렸는가"를 복구할 수 없다(http.server.requests와 같은 이유).
         flowticket.outbox.publish.lag: 5m
         # 승격 주기가 1.5초라 그보다 길면 이미 밀리고 있다. 얼마나 밀렸는지 보이도록 여유를 둔다.
@@ -286,9 +248,6 @@ outbox:
   tick-budget-ms: ${OUTBOX_TICK_BUDGET:45000}
   retention-days: ${OUTBOX_RETENTION_DAYS:7}        # PUBLISHED 보존 기간(운영 가시성): 이후 purge
   purge-cron: ${OUTBOX_PURGE_CRON:0 0 3 * * *}      # 매일 새벽 3시 정리(PENDING·실패는 제외)
-
-dlq:
-  send-timeout-ms: ${DLQ_SEND_TIMEOUT:3000}         # 운영 재발행 확인 대기 상한(TS-026)
 
 # 결제 PG(Toss) 호출 타임아웃. 이 호출은 DB 트랜잭션 안에서 일어나므로 상한이 없으면
 # 느린 PG 하나가 Hikari 커넥션(파드당 5)을 물고 늘어진다. 상세: TS-028

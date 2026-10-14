@@ -33,7 +33,7 @@ describe("AuthBootstrap", () => {
   function seeded() {
     const qc = new QueryClient();
     qc.setQueryData(meKeys.orderList("ALL", 0, 8), { content: ["이전 사용자의 예매"] });
-    qc.setQueryData(adminKeys.dashboard(), { dlqPending: 1 });
+    qc.setQueryData(adminKeys.dashboard(), { outboxDead: 1 });
     qc.setQueryData(eventKeys.popular(), ["공연"]);
     return qc;
   }

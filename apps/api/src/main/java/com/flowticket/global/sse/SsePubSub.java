@@ -10,7 +10,8 @@ import org.springframework.stereotype.Component;
  * 들고 있는 Pod가 다르면 알림이 누락된다. 그래서 브로드캐스트를 Redis pub/sub 채널로 발행하고,
  * 모든 Pod가 구독해 각자 로컬 SSE로 전달한다(자기 자신 포함, 단일 전달 경로).
  *
- * Kafka(내구성 이벤트 백본)를 대체하지 않는다. Pod 간 마지막 홉 팬아웃만 맡는다.
+ * Pod 간 마지막 홉 팬아웃만 맡는다. 아웃박스 이벤트(order.paid)도 이 채널로 나가지만, 그 발행은 실패를 던지는
+ * RedisOutboxPublisher가 한다 — 이 클래스의 publish()는 실패를 삼키므로 아웃박스에 쓰지 않는다(ADR-028, 하네스 규칙 23).
  * best-effort(미저장) 성격이 "SSE는 보조·DB가 진실원(ADR-008)"과 일치.
  */
 @Slf4j

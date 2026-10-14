@@ -18,15 +18,14 @@ export default function AdminAlertsPage() {
   }, [alerts.data]);
 
   const a = alerts.data;
-  // 롤링 배포 중 구 API 응답에는 아웃박스 임계치가 없다. 그 API는 이 값을 저장하지 못하므로 입력·저장을 막는다.
+  // 아웃박스 임계치가 없는 응답(P2a 이전 API)이면 저장하지 못하므로 입력·저장을 막는다. 지금 공존할 수 있는 API(P2a 이후)에는 항상 있다.
   const supported = a?.outboxDeadThreshold != null;
   const dirty = a && supported && value !== String(a.outboxDeadThreshold);
 
   const save = () => {
     const n = Number(value);
-    // DLQ 임계치도 함께 보낸다: 롤링 배포 중 구 API는 빠진 값을 0으로 덮어쓴다(admin.ts updateAlerts).
-    if (Number.isFinite(n) && n >= 0 && alerts.data && supported) {
-      update.mutate({ outboxDeadThreshold: n, dlqPendingThreshold: alerts.data.dlqPendingThreshold });
+    if (Number.isFinite(n) && n >= 0 && supported) {
+      update.mutate({ outboxDeadThreshold: n });
     }
   };
   return (

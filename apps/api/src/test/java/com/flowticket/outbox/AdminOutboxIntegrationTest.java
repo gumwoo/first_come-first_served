@@ -24,7 +24,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
@@ -44,8 +43,6 @@ class AdminOutboxIntegrationTest {
     @Container
     static GenericContainer<?> redis =
             new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
-    @Container
-    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:3.8.0"));
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
@@ -55,7 +52,6 @@ class AdminOutboxIntegrationTest {
         r.add("spring.datasource.password", postgres::getPassword);
         r.add("spring.data.redis.host", redis::getHost);
         r.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
-        r.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
         r.add("jwt.secret", () -> "integration-test-secret-0123456789-0123456789-0123456789");
     }
 

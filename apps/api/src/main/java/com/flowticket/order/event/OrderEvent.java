@@ -3,11 +3,11 @@ package com.flowticket.order.event;
 import java.util.UUID;
 
 /**
- * 주문 도메인 이벤트. Kafka order-events 토픽 페이로드.
+ * 주문 도메인 이벤트. 아웃박스 행의 payload(ADR-010) — 릴레이가 읽어 Redis 채널 sse:order로 내보낸다(ADR-028).
  * type 예: "order.paid". orderId는 주문 식별자.
  *
- * eventId는 소비자 멱등 키다(ADR-010). 아웃박스 경로는 outbox_events 행의 PK를 그대로 쓰므로,
- * 릴레이가 재시도로 같은 이벤트를 여러 번 발행해도(at-least-once) 소비자는 한 번만 처리한다.
+ * eventId는 outbox_events 행의 PK와 같다(추적용). Kafka 시기에는 소비자 멱등 키였다. 지금은 중복 발행(at-least-once)을
+ * 프론트의 재조회 1회가 흡수한다(ADR-028).
  */
 public record OrderEvent(String type, Long orderId, UUID eventId) {
 

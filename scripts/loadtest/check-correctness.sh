@@ -18,11 +18,13 @@
 # DB에는 같은 UTC 벽시계로 바꿔 넘긴다 — 앱 컨테이너가 TZ=UTC이고 DB에도 UTC 벽시계가 쌓인다(api-deployment.yaml).
 #
 # 검사(결과는 <run>/correctness/ 아래):
-#   sql.csv            — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스(correctness.sql)
+#   sql.csv            — 초과판매, 일시적 이중 판매, 결제·좌석 상태 불일치, 멱등 위반, 미발행 아웃박스,
+#                        결제됐는데 order.paid 아웃박스 행이 없음(correctness.sql)
 #   queue-order.json   — 대기열 순서 위반(api 로그의 승격 감사 줄 대조, queue-order.mjs)
 #   admission-overlap.json — 실효 입장 초과(감사 줄로 재구성한 토큰별 슬롯 점유 구간의 동시 수 > 정원,
 #                        admission-overlap.mjs). 정원은 prom/queue_capacity_by_pod.json에서 읽는다(파드·시각 모두 한 값이어야 한다)
-#   event-loss.txt     — 발행된 아웃박스 이벤트 중 소비 기록(Redis 멱등 키)이 없는 수
+#   outbox-no-receivers.json — run 구간에 구독자 0으로 나간 아웃박스 발행 수(outbox-no-receivers.mjs, ADR-028).
+#                        결제마다 아웃박스 행이 있는가·모두 발행됐는가는 sql.csv가 본다. 브라우저 수신은 판정하지 못한다
 #   watch-summary.json — (같은 run 디렉터리) 실시간 감시기의 결과를 최종 판정에 넣는다. 감시 구간(startedAt~endedAt)이
 #                        run을 덮을 때만 그 결과를 이 run의 것으로 본다: 3이면 위반, 0이면 통과, 그 밖은 판정 불가.
 #                        단, 먼저 violation.json을 본다: 위반 시각이 [since, until + 30초] 안이면 감시 결과 상태와
@@ -94,7 +96,7 @@ mkdir -p "$D" || exit 2
 # 이 실행이 도중에 끝나도 이전 run의 종합 판정이 남아 이 run의 결과로 읽히지 않게 먼저 지운다.
 rm -f "$D/summary.txt"
 # 옆의 도구를 못 찾으면(링크를 실제 경로로 풀지 못한 경우 등) 각 단계가 node 오류(1)로 끝나 거짓 위반이 된다. 시작 전에 막는다.
-for f in correctness.sql queue-order.mjs admission-overlap.mjs pod-coverage.mjs prom-recheck.mjs; do
+for f in correctness.sql queue-order.mjs admission-overlap.mjs pod-coverage.mjs prom-recheck.mjs outbox-no-receivers.mjs; do
   [ -f "$HERE/$f" ] || { echo "검사 도구를 찾지 못했다: $HERE/$f — 실제 경로로 실행한다" >&2; exit 2; }
 done
 
@@ -200,9 +202,11 @@ fi
 
 echo "==> 1/4 SQL 검사"
 if { printf "\\\\set since '%s'\n" "$SINCE_DB"; cat "$HERE/correctness.sql"; } | psql_pod "loadtest-check-sql" > "$D/sql.csv"; then
-  # 검사 8개가 모두 "<이름>,<수>" 한 줄씩 나와야 한다. 모자라면 일부 검사가 돌지 않은 것이다.
-  if [ "$(grep -cE '^[a-z_]+,[0-9]+$' "$D/sql.csv")" -ne 8 ]; then
-    echo "    SQL 결과가 8줄이 아니다" >&2; BROKEN=1
+  # 검사마다 "<이름>,<수>" 한 줄씩 나와야 한다. 모자라면 일부 검사가 돌지 않은 것이다. 기대 줄 수는 SQL의 검사 수에서 정한다
+  # (숫자를 박아 두면 검사를 더할 때 모든 run이 판정 불가로 떨어진다 — G1 리뷰).
+  SQL_EXPECTED="$(grep -c "^SELECT '" "$HERE/correctness.sql")"
+  if [ "$(grep -cE '^[a-z_]+,[0-9]+$' "$D/sql.csv")" -ne "$SQL_EXPECTED" ]; then
+    echo "    SQL 결과가 ${SQL_EXPECTED}줄이 아니다" >&2; BROKEN=1
   else
     awk -F, '$2 > 0 { bad=1 } END { exit bad }' "$D/sql.csv" || FAIL=1
   fi
@@ -342,39 +346,25 @@ if [ -n "$AO" ]; then
   case $AO in 0) ;; 1) FAIL=1 ;; *) BROKEN=1 ;; esac
 fi
 
-echo "==> 3/4 이벤트 유실(아웃박스 PUBLISHED vs 소비자 멱등 키)"
-# 이전 결과가 summary에 섞이지 않게 먼저 지운다.
-rm -f "$D/event-loss.txt"
-# 소비자는 처리한 이벤트를 dedup:order-event:<eventId>로 24시간 남긴다(OrderEventConsumer). 24시간 안에 돌린다.
-if printf "\\\\copy (SELECT id FROM outbox_events WHERE status = 'PUBLISHED' AND created_at >= '%s') TO STDOUT\n" "$SINCE_DB" \
-     | psql_pod "loadtest-check-outbox" > "$D/published-ids.txt"; then
-  n_pub="$(grep -c . "$D/published-ids.txt" || true)"
-  if [ "$n_pub" -eq 0 ]; then
-    echo "published=0 missing=0" > "$D/event-loss.txt"
-  else
-    # redis:7 이미지에는 CA 묶음이 없어 ElastiCache 인증서 검증이 실패한다(측정 세션 20261005-1440에서 확인).
-    # CA 묶음이 있는 alpine 이미지로 검증을 켠 채 접속한다(--insecure로 검증을 끄지 않는다).
-    REDIS_OVERRIDES="$(cat <<'EOF'
-{"spec":{"restartPolicy":"Never","containers":[{"name":"redis","image":"redis:7-alpine","stdin":true,"stdinOnce":true,
- "env":[
-  {"name":"RHOST","valueFrom":{"configMapKeyRef":{"name":"flowticket-api-config","key":"REDIS_HOST"}}},
-  {"name":"RPORT","valueFrom":{"configMapKeyRef":{"name":"flowticket-api-config","key":"REDIS_PORT"}}}],
- "command":["sh","-c","redis-cli --tls --cacert /etc/ssl/certs/ca-certificates.crt -h \"$RHOST\" -p \"$RPORT\" --no-raw"]}]}}
-EOF
-)"
-    # 한 줄에 EXISTS 하나. 결과는 줄마다 (integer) 0|1.
-    sed 's/^/EXISTS dedup:order-event:/' "$D/published-ids.txt" \
-      | kubectl run loadtest-check-redis -n "$NS" --rm -i --quiet --restart=Never --pod-running-timeout=5m \
-          --image=redis:7-alpine --overrides="$REDIS_OVERRIDES" > "$D/dedup-exists.txt"
-    n_found="$(grep -c '(integer) 1' "$D/dedup-exists.txt" || true)"
-    n_answers="$(grep -c '(integer)' "$D/dedup-exists.txt" || true)"
-    echo "published=$n_pub answered=$n_answers consumed=$n_found missing=$((n_pub - n_found))" > "$D/event-loss.txt"
-    if [ "$n_answers" -ne "$n_pub" ]; then BROKEN=1
-    elif [ "$n_found" -ne "$n_pub" ]; then FAIL=1; fi
-  fi
-else
-  echo "    아웃박스 조회 실패" >&2; BROKEN=1
-fi
+echo "==> 3/4 구독자 부재(구독자 0으로 나간 아웃박스 발행 — ADR-028)"
+# Kafka 제거(ADR-028) 뒤 서버가 판정할 수 있는 것은 셋이다: 결제마다 아웃박스 행이 생겼는가(sql.csv paid_without_outbox_event),
+# 그 행이 모두 발행됐는가(sql.csv outbox_not_published), 발행 시점에 구독자가 있었는가(여기). 브라우저가 실제로 받았는지는
+# 서버에서 판정하지 못한다(파드의 로컬 전달·SSE 전송 실패는 어디에도 남지 않는다).
+# 예전에는 Kafka 소비자의 Redis 멱등 키(dedup:order-event:<id>)로 "소비됐는가"를 봤다 — 소비자를 지우며 그 기록도 사라졌다.
+rm -f "$D/outbox-no-receivers.json" "$D/event-loss.txt"
+node "$HERE/outbox-no-receivers.mjs" --prom-dir "$OUT/prom" --since "$SINCE" --until "$UNTIL" > "$D/outbox-no-receivers.json"
+NR=$?
+case $NR in
+  0) ;;
+  1)
+    # 종료 코드와 결과가 맞아야 믿는다 — 도구가 죽어도 1이 나올 수 있다(prom-recheck·queue-order와 같은 대조).
+    if node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).verdict === "violation" ? 0 : 1)' "$D/outbox-no-receivers.json" 2>/dev/null; then
+      echo "    run 구간에 구독자 0으로 나간 발행이 있다(outbox-no-receivers.json)" >&2; FAIL=1
+    else
+      echo "    구독자 부재 도구가 1로 끝났지만 결과가 위반이 아니다 — 판정 불가" >&2; BROKEN=1
+    fi ;;
+  *) echo "    구독자 부재를 판정하지 못했다(outbox-no-receivers.json)" >&2; BROKEN=1 ;;
+esac
 
 echo "==> 4/4 실시간 조건 사후 재확인(내보낸 구간 — run 종료 + 30초까지)"
 # 감시기는 run 끝을 보지 못한다. over-admit·카운터 어긋남·초과판매·승격 처리 실패를 내보낸 데이터로 다시 보고,
@@ -476,7 +466,7 @@ esac
   echo "--- pod-coverage"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(r.mode==="collected"){console.log(r.complete?"run 동안 받아 둔 로그로 run과 겹친 파드 "+r.seen.length+"개를 끝까지 받음(축소로 지워진 파드 포함)":"판정 불가 — 받지 못한 파드 "+r.notCollected.length+", 다 받지 못한 파드 "+r.incomplete.length+", run 중 재시작 "+r.restartedInRun.length+(r.collectorWindow?", 수집기 구간 "+r.collectorWindow:""))}else{console.log(r.complete?"지워진 파드·재시작·run 구간 로그 회전 없음("+r.seen.length+"개)":"판정 불가 — 빠진 파드 "+r.missing.length+", run 중 재시작 "+r.restartedInRun.length+", 이후 재시작·불명 "+r.restartedAfterOrUnknown.length+", 로그 회전·불명 "+r.rotatedOrUnknown.length)}}catch{console.log("판정 불가(확인 실패 — pod-coverage.json·stderr를 본다)")}' "$D/pod-coverage.json" 2>/dev/null
   echo "--- 내보낸 구간(파드 대조·승격 처리 실패의 전제)"; cat "$D/export-window.txt" 2>/dev/null
   echo "--- run 시각 대조(발생기 시작·종료 기록 vs --since·--until)"; cat "$D/run-window.txt" 2>/dev/null
-  echo "--- event-loss"; cat "$D/event-loss.txt" 2>/dev/null
+  echo "--- outbox-no-receivers"; cat "$D/outbox-no-receivers.json" 2>/dev/null
   echo "--- 실시간 조건 사후 재확인(내보낸 구간, run 종료 + 30초까지)"; [ -s "$D/prom-recheck.err" ] && sed 's/^/  사유: /' "$D/prom-recheck.err"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.violations.length?"위반: "+r.violations.join("; ")+(r.problems.length?" / 판정 불가 사유도 있음: "+r.problems.join("; "):""):r.problems.length?"판정 불가: "+r.problems.join("; "):"위반 없음(관측 점 "+r.observedPoints+"개, 샘플 나이 최대 "+r.sampleAgeMaxSec+"초)")}catch{console.log("판정 불가(확인 실패)")}' "$D/prom-recheck.json" 2>/dev/null
   echo "--- 실시간 감시기(watch-summary.json)"; cat "$D/watch-verdict.txt" 2>/dev/null
   # 검사 일부가 실패해도 이미 찾은 위반은 함께 보인다.

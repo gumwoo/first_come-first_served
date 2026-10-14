@@ -94,6 +94,9 @@ export const QUERIES = {
   nodes_ready: "sum(kube_node_status_condition{condition=\"Ready\", status=\"true\"})",
   // 아웃박스(ADR-022)
   outbox_oldest_pending_age: "max(flowticket_outbox_oldest_pending_age_seconds)",
+  // 구독자 0으로 나간 발행(ADR-028) — 파드별 원시 카운터. increase()는 새 파드의 첫 샘플 이전 증가를 놓쳐서 쓰지 않는다
+  // (outbox-no-receivers.mjs가 원시 값으로 구간 증가를 계산한다).
+  outbox_no_receivers_by_pod: "max by (pod) (flowticket_outbox_publish_no_receivers_total)",
 };
 
 const toSec = (s) => (/^\d+(\.\d+)?$/.test(s) ? Number(s) : Date.parse(s) / 1000);

@@ -1,7 +1,5 @@
 package com.flowticket.global.metrics;
 
-import com.flowticket.dlq.domain.DlqStatus;
-import com.flowticket.dlq.repository.DlqMessageRepository;
 import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.outbox.domain.OutboxStatus;
 import com.flowticket.outbox.repository.OutboxEventRepository;
@@ -18,7 +16,7 @@ import org.springframework.stereotype.Component;
  * 사람이 개입해야 하는 적체를 지표로 노출한다.
  *
  * 사용자 요청은 전부 성공하는데 뒤에서만 쌓이는 값들이라 에러율·지연에 나타나지 않는다
- * (TS-032·ADR-008·ADR-016).
+ * (TS-032·ADR-016). DLQ 적체 지표는 Kafka 제거(ADR-028)와 함께 없앴다.
  *
  * 관리자 콘솔의 임계치(AlertSettings)와 공유하지 않는다. 콘솔 값은 운영 중 바뀌고
  * Prometheus 규칙은 Git에 고정돼 있어, 묶으면 어느 쪽이 기준인지 모호해진다.
@@ -31,14 +29,13 @@ public class OperationalMetrics {
 
     public OperationalMetrics(MeterRegistry registry,
                               OutboxEventRepository outboxRepository,
-                              DlqMessageRepository dlqRepository,
                               OrderRepository orderRepository,
                               Clock clock) {
         // 재시도로 풀리지 않아 격리된 이벤트. 0보다 크면 사람이 판단해야 한다(TS-032).
         register(registry, "flowticket.outbox.events", "DEAD",
                 r -> outboxRepository.countByStatus(OutboxStatus.DEAD),
                 "재시도로 성공할 수 없어 격리된 아웃박스 행 수");
-        // 미발행 적체. 브로커 장애의 직접 신호이고, 복구되면 스스로 줄어든다.
+        // 미발행 적체. 발행 대상(Redis) 장애의 직접 신호이고, 복구되면 스스로 줄어든다.
         register(registry, "flowticket.outbox.events", "PENDING",
                 r -> outboxRepository.countByStatus(OutboxStatus.PENDING),
                 "아직 발행되지 않은 아웃박스 행 수");
@@ -48,10 +45,6 @@ public class OperationalMetrics {
                 .baseUnit("seconds")
                 .description("가장 오래 기다린 미발행 아웃박스 행의 나이(초). 없으면 0")
                 .register(registry);
-        // 소비 실패로 DLQ에 남은 메시지. 판단은 사람이 한다(ADR-008).
-        register(registry, "flowticket.dlq.messages", "PENDING",
-                r -> dlqRepository.countByStatus(DlqStatus.PENDING),
-                "운영자 판단을 기다리는 DLQ 메시지 수");
         // 정상이면 항상 0이다. 0보다 크면 성능 문제가 아니라 정합성 결함이다(loadtest-100k-plan §3.3).
         Gauge.builder("flowticket.seat.oversold", () -> {
                     try {

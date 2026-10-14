@@ -25,5 +25,3 @@ required_fe_subscribes:
   - seat.hold.expired
   - order.paid
   - payment.vbank.deposited
-
-dlq_suffix: ".DLT"

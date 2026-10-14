@@ -1,4 +1,4 @@
-# 알림 규칙. 6개로 시작한다. 처음부터 다 켜면 소음이 되고, 소음은 알림이 없는 것과 같다(아무도 안 본다).
+# 알림 규칙. 6개로 시작했고, Kafka 제거(ADR-028)로 DLQ 적체·컨슈머 lag 두 개를 지워 지금은 4개다. 처음부터 다 켜면 소음이 되고, 소음은 알림이 없는 것과 같다(아무도 안 본다).
 #
 # 채택 기준: 이 알림을 받으면 사람이 지금 할 일이 있는가. 나중에 봐도 되는 것은 대시보드로 둔다.
 # 그래서 뺀 것:
@@ -68,26 +68,6 @@ spec:
             summary: "아웃박스 미발행 적체가 10분째 500건을 넘는다 (현재 {{ $value }})"
             description: "발행 대상(Redis) 장애나 명령 시간 초과가 지속되고 있을 가능성이 높다. 릴레이 로그([outbox] 발행 실패)와 행의 attempts·lastError를 본다(ADR-028)."
             runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/improvements/IMP-011-outbox-delivery.md"
-
-        - alert: FlowticketDlqBacklog
-          # 소비 실패로 남은 메시지. 판단(재시도/폐기)은 사람이 한다(ADR-008).
-          expr: max(flowticket_dlq_messages{job="flowticket-api",status="PENDING"}) > 10
-          for: 10m
-          labels: { severity: warning }
-          annotations:
-            summary: "DLQ 미처리 메시지가 10건을 넘는다 (현재 {{ $value }})"
-            description: "/admin/dlq 에서 원본 payload와 오류를 보고 재처리 또는 폐기를 판단한다."
-            runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-020-kafka-poison-pill-infinite-retry.md"
-
-        - alert: FlowticketConsumerLag
-          # 클라이언트(api)가 내보내는 lag을 쓴다. kafka-exporter 배선에 의존하지 않는다.
-          expr: max(kafka_consumer_fetch_manager_records_lag{job="flowticket-api"}) > 1000
-          for: 5m
-          labels: { severity: warning }
-          annotations:
-            summary: "Kafka consumer lag이 5분째 1000을 넘는다 (현재 {{ $value }})"
-            description: "소비가 발행을 못 따라간다. 컨슈머 오류율과 파드 수를 본다."
-            runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-023-multipod-failover-verification.md"
 
     - name: flowticket.silent-degradation
       # 사용자에게 보이지 않는 실패. 원칙적으로 알림은 증상에 걸지만, 이건 증상이 없다.

@@ -15,7 +15,7 @@ import { eventKeys, searchKeys } from "@/features/event/queryKeys";
 describe("clearUserScopedCache", () => {
   function seeded() {
     const qc = new QueryClient();
-    qc.setQueryData(adminKeys.dashboard(), { dlqPending: 3 });
+    qc.setQueryData(adminKeys.dashboard(), { outboxDead: 3 });
     qc.setQueryData(adminKeys.orderList("PAID", 0, 15), { content: ["이전 관리자의 주문"] });
     qc.setQueryData(meKeys.orderList("ALL", 0, 8), { content: ["이전 사용자의 예매"] });
     qc.setQueryData(meKeys.orderDetail(7), { id: 7 });
@@ -54,13 +54,13 @@ describe("queryKeys", () => {
   it("항목 키는 그룹 키로 시작한다", () => {
     expect(adminKeys.orderList("PAID", 1, 15).slice(0, 2)).toEqual(adminKeys.orders());
     expect(adminKeys.eventList(1, 15).slice(0, 2)).toEqual(adminKeys.events());
-    expect(adminKeys.dlqList("PENDING", 0, 10).slice(0, 2)).toEqual(adminKeys.dlq());
+    expect(adminKeys.outboxList("DEAD", 0, 10).slice(0, 2)).toEqual(adminKeys.outbox());
     expect(meKeys.orderDetail(1).slice(0, 2)).toEqual(meKeys.orders());
   });
 
   it("그룹 키는 루트로 시작한다", () => {
     for (const group of [adminKeys.dashboard(), adminKeys.orders(), adminKeys.events(),
-      adminKeys.dlq(), adminKeys.alerts()]) {
+      adminKeys.outbox(), adminKeys.alerts()]) {
       expect(group.slice(0, 1)).toEqual(adminKeys.all);
     }
     expect(meKeys.orders().slice(0, 1)).toEqual(meKeys.all);

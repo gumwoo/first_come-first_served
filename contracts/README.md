@@ -9,7 +9,7 @@
 | `allowed-stack.yaml` | 허용 의존성 | build.gradle.kts / package.json |
 | `enums.yaml` | 도메인 enum 값·전이 | BE enum / FE types/contracts.ts |
 | `api.yaml` | endpoint (method,path) | `@*Mapping` 컨트롤러 |
-| `events.yaml` | Kafka 발행 ↔ FE 구독 | producer / FE 구독 상수 |
+| `events.yaml` | SSE 이벤트 발행 ↔ FE 구독 | producer / FE 구독 상수 |
 | `error-codes.yaml` | 에러코드 | ErrorCode enum / 예외 |
 | `layer-rules.yaml` | 계층 import 경계 | import 문 |
 

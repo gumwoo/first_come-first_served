@@ -51,18 +51,6 @@ export function OrderStatusPill({ status }: { status: string }) {
   return <StatusDot tone={s.tone}>{s.label}</StatusDot>;
 }
 
-const DLQ_STATUS: Record<string, { label: string; tone: Tone }> = {
-  PENDING: { label: "대기", tone: "danger" },
-  RETRYING: { label: "재시도중", tone: "info" },
-  RETRIED: { label: "재시도됨", tone: "success" },
-  DISCARDED: { label: "폐기됨", tone: "muted" },
-};
-
-export function DlqStatusPill({ status }: { status: string }) {
-  const s = DLQ_STATUS[status] ?? { label: status, tone: "muted" as Tone };
-  return <StatusDot tone={s.tone}>{s.label}</StatusDot>;
-}
-
 const OUTBOX_STATUS: Record<string, { label: string; tone: Tone }> = {
   PENDING: { label: "미발행", tone: "warning" },
   PUBLISHED: { label: "발행됨", tone: "success" },

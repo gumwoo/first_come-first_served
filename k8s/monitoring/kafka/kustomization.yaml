@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Kafka 모니터링(브로커·Exporter PodMonitor, Kafka 대시보드). k8s/monitoring에서 분리한 이유: Kafka 제거(ADR-028)
+# 운영 삭제 뒤 bring-up을 `SKIP_KAFKA=1`로 돌리면 Kafka 단계와 함께 이것만 건너뛰어야 한다
+# (docs/deployment/kafka-removal-design.md P3a). 나머지 모니터링(api·알림 규칙·앱 대시보드)은 그대로 적용한다.
+# 파일을 옮긴 이유: kustomize는 이 디렉터리 밖의 파일을 resources로 참조하지 못한다.
+#
+# 적용 순서(scripts/bring-up.sh 6단계):
+#   1) kubectl apply -k k8s/kafka
+#   2) kubectl apply -k k8s/monitoring/kafka   (PodMonitor는 kube-prometheus-stack CRD에 의존)
+#   3) kubectl apply -k k8s/monitoring
+resources:
+  - podmonitor-kafka.yaml
+  - dashboard-kafka.yaml

@@ -190,7 +190,7 @@ ADR-012 §5 참조. **부하 측정 시 반드시 비버스터블로 바꾼 뒤 
 | ArgoCD | Helm(1회 부트스트랩) | 이후 **앱만** ArgoCD가 관리 — ADR-009 |
 | **Strimzi Operator** | **Helm**(부트스트랩) | ⚠️ ArgoCD가 아니다 — `bring-up.sh` 4단계 |
 | **kube-prometheus-stack** | **Helm**(부트스트랩) | ⚠️ 위와 같다 |
-| Kafka CR, 관측 리소스(ServiceMonitor·대시보드·PrometheusRule) | **kubectl/kustomize** | `k8s/kafka`·`k8s/monitoring`, `bring-up.sh` 6단계. **ArgoCD 추적 밖** |
+| Kafka CR, 관측 리소스(ServiceMonitor·대시보드·PrometheusRule) | **kubectl/kustomize** | `k8s/kafka`·`k8s/monitoring/kafka`·`k8s/monitoring`, `bring-up.sh` 6단계(Kafka 둘은 `SKIP_KAFKA=1`이면 생략). **ArgoCD 추적 밖** |
 | 앱(api/web)·HPA·PDB·Ingress·ConfigMap | **ArgoCD** | `k8s/overlays/demo-local` → `k8s/base`가 전부다 |
 
 > 경계 규칙(ADR-009): **인프라 = Terraform / 앱 = ArgoCD.**

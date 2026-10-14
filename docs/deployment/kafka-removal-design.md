@@ -73,12 +73,12 @@
 | 테스트 | 판정 |
 |---|---|
 | 정상 발행 | `sse:order` 구독자가 `Envelope{key=orderId, event="order.paid", data.orderId}`를 받고, 행이 `PUBLISHED`·`publishedAt` 설정 |
-| 발행 → 마킹 순서 | 프록시 없이 직접 생성한 릴레이(`new OutboxRelay(...)` — 기존 `OutboxDeliveryIntegrationTest`와 같은 방식)에 **실패하는 엄격 발행 목**을 넣고: 행이 **PENDING 유지**·`attempts` 증가·`lastError` 기록, 배치 나머지 미발행. Redis 컨테이너 정지·`CLIENT PAUSE`는 쓰지 않는다 — `@SchedulerLock` 프록시는 직접 호출도 가로채므로(`KopisSyncLockIntegrationTest` 주석) 같은 Redis에 의존하는 락 획득이 먼저 실패하고, 공유 컨테이너를 멈추면 다른 테스트도 깨진다 |
-| 대기 상한 | 릴레이 **전용** 커넥션 팩토리 앞에만 지연을 넣고(Toxiproxy 등 — 기본 팩토리는 정상) 발행이 `send-timeout-ms` 안에 예외로 돌아오고 행은 PENDING — 틱이 임차를 넘지 않음. 전용 팩토리만 지연시키기 어렵다면 지연하는 엄격 발행 목 + 프록시 없는 릴레이로 대신하고, 그 사실을 기록한다 |
+| 발행 → 마킹 순서 | **bean 릴레이**(프록시를 거쳐 `@Transactional`이 살아 있음)를 쓰되 테스트용 `LockProvider`(항상 락을 준다)로 ShedLock의 Redis 의존을 떼고, **실패하는 엄격 발행 목**을 넣는다. 또는 프록시 없이 만든 릴레이(`new OutboxRelay(...)`) 호출을 `TransactionTemplate`으로 감싼다 — 프록시 없는 릴레이를 그냥 부르면 ShedLock과 함께 `@Transactional`(`OutboxRelay.java:100`)도 빠져 `markAttemptFailed()`의 `attempts`·`lastError`가 DB에 반영되지 않는다(JPA 동작에서 끌어낸 추론). 판정은 **DB에서 다시 읽어** `attempts` 증가·`lastError` 기록·`PUBLISHED` 아님·배치 나머지 미발행. Redis 컨테이너 정지·`CLIENT PAUSE`는 쓰지 않는다 — `@SchedulerLock` 프록시는 직접 호출도 가로채므로(`KopisSyncLockIntegrationTest` 주석) 같은 Redis에 의존하는 락 획득이 먼저 실패하고, 공유 컨테이너를 멈추면 다른 테스트도 깨진다 |
+| 대기 상한 | 1순위 설계(전용 팩토리의 Lettuce `commandTimeout`)는 **클라이언트가 시간을 재야** 검증된다. 그래서 릴레이 전용 팩토리를 **별도 Redis 컨테이너**에 연결하고 그 컨테이너에만 `CLIENT PAUSE`(또는 `DEBUG SLEEP`)를 건다 — 공유 컨테이너와 ShedLock은 영향이 없다. 판정: 발행이 `send-timeout-ms` 안에 예외로 돌아오고 행은 PENDING, 틱이 임차를 넘지 않음. 지연하는 발행 목은 2순위(별도 실행기)를 쓸 때만 유효하다 — 1순위에서는 목이 지연하면 릴레이가 그냥 기다릴 뿐이라 시간 제한을 검증하지 못한다 |
 | 지연 뒤 복구 | 지연이 풀린 뒤 같은 행이 두 번 발행될 수 있음을 허용하되, 릴레이 스레드 밖에 남은 작업이 없음(2순위 실행기를 쓰면 실행기 활성·대기 작업 수 0~1 상한) |
-| ShedLock 락 실패 | 락 획득 단계에서 Redis 오류가 나면 틱이 건너뛰어지고 행은 그대로 PENDING(발행 시도 0, `attempts` 불변) — 재시도 경로와 구별되는 별도 사례 |
+| ShedLock 락 실패 | 예외를 던지는 테스트용 `LockProvider`로 만든다. 기대: 틱이 건너뛰어지고 행은 그대로 PENDING(발행 시도 0, `attempts` 불변) — 재시도 경로와 구별되는 별도 사례. "건너뛰어진다"는 ShedLock 5.16.0 동작에서 끌어낸 추론이라 이 테스트로 확인한다 |
 | 기본 팩토리 불변 | 컨텍스트의 `RedisConnectionFactory`·`StringRedisTemplate` bean이 각각 하나이고, 기본 팩토리의 명령 타임아웃이 전환 전과 같음 |
-| 복구 | Redis 복구 뒤 다음 틱에 발행·마킹 |
+| 복구 | 실패하던 발행 목(또는 별도 컨테이너의 `CLIENT PAUSE`)이 풀린 뒤 다음 틱에 발행·마킹 |
 | 결정적 실패 | payload 손상 행은 DEAD, 같은 aggregate 후속은 보류(기존 `OutboxPoisonEventIntegrationTest`를 Kafka 없이) |
 | `broadcast()` 미사용 | `OutboxRelay`가 `OrderSseRegistry`에 의존하지 않음(생성자 의존성). `AfterCommit`은 정적 유틸이라 생성자로 막을 수 없으므로 **하네스 grep 규칙**으로 막는다(§5.4 신규 규칙 후보) |
 | 기존 best-effort 경로 | `SseAfterCommitIntegrationTest` 그대로 통과(직접 알림은 여전히 커밋 후·실패 격리) |
@@ -232,7 +232,7 @@
 1. 랭킹 감쇠 중복 실행 재현·필요 시 수정(Kafka와 무관한 별도 PR — ShedLock `PT0S` 문제)
 2. P1 → P2a → P2b(클러스터 불필요)
 3. 자원 산정·측정 계획 문서(후보·계획만 — 최종 requests·Hikari 풀·HPA·노드 수는 B₁·B′ 반복·가용성 G1 시험을 거친 뒤 확정) + P3a + 저장소 P3 준비
-4. 측정 세션: N 게이트(§6.1) → Kafka 운영 삭제 게이트(§6.2) → B₁ → B′(반복 조정 가능) → G1(최종 B′ 후보) — §7.5
+4. 측정 세션: N 게이트(§6.1) → Kafka 운영 삭제 게이트(§6.2) → B₁ → B′(반복 조정 가능) → 가용성 G1 시험(최종 B′ 후보) — §7.5
 5. 관찰 기간 뒤 저장소 P3 머지, 충분히 안정된 뒤 P4, 마지막 P5
 
 
@@ -243,9 +243,9 @@
 | **P2a** | 아웃박스 기반 관리 필드 **추가**(대시보드·알림), V20, `/admin/outbox` 화면, 대시보드·알림 화면이 새 필드를 읽음. 기존 DLQ 필드·화면 유지 | 백엔드 CI(Testcontainers — 아직 Kafka 포함), 프론트 3종, 하네스(BE14·FE6) | `AdminAlertIntegrationTest`·`AdminOutboxIntegrationTest`, `e2e admin.spec.ts` | revert(V20은 추가 컬럼이라 남아도 무해) | G1 PASS |
 | **N₀**(떠 있는 클러스터에서 전환할 때만) | 릴레이 발행 대상 설정(`outbox.relay-target`, 기본 `kafka`) + Redis 엄격 발행 경로 추가. Kafka 소비자·DLQ·설정은 **그대로**. 새 env 키(`OUTBOX_RELAY_TARGET`)는 `application.yml`과 configmap에 **같은 PR**로 넣는다(하네스 k8s 규칙 1) | 백엔드 CI(Kafka 컨테이너 포함), 하네스 | 대상별 통합 테스트(`kafka`: 기존 `OrderEventKafkaIntegrationTest` 그대로 통과 = 기본값에서 동작 불변 / `redis`: §2.3 표) | PR revert(기본값이 `kafka`라 배포만으로는 동작이 바뀌지 않는다) | 아래 (나) 2~3단계 |
 | **P2b = 릴리스 N** | 릴레이 → Redis 엄격 발행(떠 있는 클러스터에서 전환하면 앞에 N₀·설정 전환 단계 — 아래 (나)), 소비자·DLQ·Kafka 설정·의존성 제거, 계약·하네스·configmap·앱 지표 규칙 동반 제거, 테스트 교체(§5) | 백엔드 CI(Kafka 컨테이너 없이), 프론트 3종, 하네스 전체(+ 신규 규칙 메타테스트) | §2.3 표 전부, `SseAfterCommitIntegrationTest`, 결제 E2E(`order.paid` SSE 수신 → 완료 화면) | **P2b PR을 revert**해 이미지와 configmap(`KAFKA_*`)을 함께 되돌린다(ArgoCD 동기화). 이미지만 N-1로 바꾸면 안 된다 — api는 configmap을 `envFrom`으로 받으므로(`api-deployment.yaml:62-63`) `KAFKA_BOOTSTRAP_SERVERS` 없이 `localhost:9092` 기본값으로 떠서 Kafka 경로가 조용히 죽는다. **Kafka 인프라가 남아 있어야 가능**(그래서 운영 삭제(§6.2)를 N 게이트 뒤 별도 게이트로 둔다) | 아래 운영 게이트 |
-| **P3a**(세션 전) | `bring-up.sh` 스위치 `SKIP_KAFKA=1` — 건너뛰는 것: `kafka` 네임스페이스 생성(`:163`), Strimzi `helm --wait`(`:164-166`, 운영자만 기다린다), `kubectl apply -k k8s/kafka`(`:185`, 대기 없음), 그리고 **Kafka 모니터링 두 리소스**(`podmonitor-kafka.yaml`·`dashboard-kafka.yaml` — 지금은 `k8s/monitoring/kustomization.yaml`에 들어 있어 `:186`이 함께 적용한다. 별도 kustomization으로 분리해 Kafka 단계에서만 적용). **기술적 가드**: 운영 삭제 때 표식(ConfigMap `kafka-removed`, `kube-system`)을 남기고, 스위치 없이 bring-up하면 표식을 보고 Kafka 단계 직전에 멈춘다(재설치 의도면 `FORCE_KAFKA=1`). 기본값은 지금처럼 설치(세션 시작 시 N 게이트를 Kafka가 있는 상태에서 보기 위해) | 하네스, `bash -n` | 스위치·표식 없을 때 적용 리소스가 이전과 같음(분리한 Kafka 모니터링 포함) | revert | G1 리뷰 PASS·머지 |
+| **P3a**(세션 전) | `bring-up.sh` 스위치 `SKIP_KAFKA=1` — 건너뛰는 것: `kafka` 네임스페이스 생성(`:163`), Strimzi `helm --wait`(`:164-166`, 운영자만 기다린다), `kubectl apply -k k8s/kafka`(`:185`, 대기 없음), 그리고 **Kafka 모니터링 두 리소스**(`podmonitor-kafka.yaml`·`dashboard-kafka.yaml` — 지금은 `k8s/monitoring/kustomization.yaml`에 들어 있어 `:186`이 함께 적용한다. 별도 kustomization으로 분리해 Kafka 단계에서만 적용). **기술적 가드**: 운영 삭제 때 표식(ConfigMap `kafka-removed`, `kube-system`)을 남기고, 스위치 없이 bring-up하면 표식을 보고 Kafka 단계 직전에 멈춘다(재설치 의도면 `FORCE_KAFKA=1`). **가드는 같은 클러스터에서 다시 실행할 때만 동작한다** — 표식이 클러스터 안에 있어, 철거 뒤 새 클러스터에서는 사라진다. 새 클러스터는 `SKIP_KAFKA=1`(사람의 절차, `session.log` 기록)에 의존한다. 클러스터 밖 표식(로컬 gitignore 파일 등)은 P3a에서 검토한다. 기본값은 지금처럼 설치(세션 시작 시 N 게이트를 Kafka가 있는 상태에서 보기 위해) | 하네스, `bash -n` | 스위치·표식 없을 때 적용 리소스가 이전과 같음(분리한 Kafka 모니터링 포함) | revert | G1 리뷰 PASS·머지 |
 | 운영 게이트 ① N 게이트 | (세션) §6.1 | — | — | P2b revert(Kafka 인프라 있음) | §6.1 통과 |
-| 운영 게이트 ② **Kafka 운영 삭제** | (세션) §6.2 — 통과하면 떠 있는 클러스터에서 Strimzi·Kafka CR·PVC·EBS를 지우고 절차·결과를 기록 | — | — | **즉시 롤백 불가** — Kafka 재설치(bring-up의 Kafka 단계) + P2b revert가 필요(§6.2) | §6.2 통과·삭제 기록 |
+| 운영 게이트 ② **Kafka 운영 삭제** | (세션) §6.2 — 통과하면 떠 있는 클러스터에서 Strimzi·Kafka CR·PVC·EBS를 지우고 절차·결과를 기록 | — | — | **즉시 롤백 불가** — Kafka 재설치(§6.2의 명령 순서 — bring-up에는 Kafka 단계만 돌리는 기능이 없다) + P2b revert가 필요 | §6.2 통과·삭제 기록 |
 | **P3**(저장소) | `k8s/kafka`·Kafka 모니터링·bring-up/tear-down Strimzi 단계(P3a 스위치 포함)·compose·장애 시험·Terraform/k8s 주석 삭제. **세션 전에 준비하고, 관찰 기간 뒤 머지**한다 | 하네스(k8s 규칙), `terraform validate`(문법), `terraform plan`이 변경 없음(주석만 바뀌었는지 — 클러스터를 올릴 때 확인) | 다음 bring-up에서 Kafka 없이 전 단계 통과, 결제 E2E | revert(이후 bring-up이 다시 Kafka를 설치) | 관찰 기간(§6.3) 동안 N 안정 |
 | **P4 = N+1**(충분히 안정된 뒤) | V21 `DROP TABLE dlq_messages`·`DROP COLUMN dlq_pending_threshold`(+ allow 주석), `docs/db` 표기 | 백엔드 CI(Flyway 적용·`validate` 통과), 하네스 BE14(사유 있는 allow) | 관리 화면·알림 API | **N-1로 롤백 불가**. N으로는 가능 | — |
 | **P5** | 문서 정리(§5.8), Terraform README, 남은 fixture 문구 | 하네스 docs | — | revert | — |
@@ -255,7 +255,7 @@
 **(가) 채택 — 클러스터가 없는 동안 전환한다.**
 - P2b를 클러스터가 내려가 있을 때 머지하면, 다음 bring-up이 N을 처음부터 올린다. Kafka 경로와 Redis 경로가 **공존하는 구간이 없다**. 그래서 아래 (나)의 문제(이중 발행 경로·미소비 메시지)가 생기지 않는다.
 - 세션 시작 시 bring-up은 Kafka를 계속 띄우지만(P3 머지 전) N은 쓰지 않는다(`KAFKA_*` env도 없음). 롤백(P2b revert)할 때 그 Kafka를 다시 쓴다.
-- 세션 순서는 §6.1 → §6.2 → §7.5(B₁ → B′ → G1)다.
+- 세션 순서는 §6.1 → §6.2 → §7.5(B₁ → B′ → 가용성 G1 시험)다.
 
 **(나) 떠 있는 클러스터에서 전환해야 할 때 — 발행 주체 전환을 단계로 나눈다.**
 - **ShedLock은 발행 경로의 단일성을 보장하지 않는다.**
@@ -297,14 +297,14 @@
   2. 구버전 Pod 0개(§6.1 첫 항목 재확인).
   3. Kafka 잔여 없음 — 통과 기준은 "토픽·소비자 그룹이 **없음**, 또는 있으면 lag 0·오프셋 증가 0"이다.
      - (가)에서는 토픽 `order-events`·`.DLT`(앱의 `NewTopic` bean — `KafkaConfig.java:55-61`)와 소비자 그룹 `flowticket`(`OrderEventConsumer.java:35`)을 만드는 코드가 N에 없다. 그래서 지표 시계열이 "0"이 아니라 **없을** 것으로 본다(추론). 빈 패널·빈 쿼리를 통과로 읽지 않도록 브로커에서 직접 확인한다:
-       `kubectl exec -n kafka <broker-pod> -- bin/kafka-topics.sh --bootstrap-server localhost:9092 --list`, `... bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group flowticket`
+       `kubectl exec -n kafka flowticket-dual-role-0 -- bin/kafka-topics.sh --bootstrap-server localhost:9092 --list`, `... bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group flowticket`  (Pod 이름은 Strimzi의 `<클러스터>-<노드 풀>-<ID>` 규칙에서 끌어낸 추론, `bin/` 상대 경로와 `localhost:9092`는 Strimzi 이미지 작업 디렉터리·리스너 전제 — 세션에서 `kubectl get pod -n kafka`로 이름을 확인하고 실행한다)
      - 토픽·그룹이 있으면: 소비자 lag 0(`kafka_consumergroup_lag` — 라벨 `consumergroup`, `dashboard-kafka.yaml:133`), 최신 오프셋 증가 0(Exporter의 오프셋 지표 — 이름 `kafka_topic_partition_current_offset`은 **미확인**, Strimzi Kafka Exporter 지표명 추론), `order-events.DLT` 메시지 0(Exporter `topicRegex: "order-events.*"`가 DLT도 포함 — `kafka.yaml:111`. 또는 위 CLI로 오프셋 확인).
      - `dlq_messages` PENDING 0(DB).
-  4. 롤백 경로 확인: 저장소에 Kafka 매니페스트와 bring-up Kafka 단계가 아직 있다(P3 미머지). 재설치 절차(아래)를 기록해 둔다.
+  4. 롤백 경로 확인: 저장소에 Kafka 매니페스트(`k8s/kafka`)와 Strimzi 차트 버전(`bring-up.sh`의 `STRIMZI_CHART_VERSION`)이 아직 있다(P3 미머지). 재설치는 아래 "삭제 뒤 롤백"의 명령 순서로 한다.
 - **삭제 전 기록**(§7.1·§8의 미확인 항목을 여기서 해소):
   - kafka 네임스페이스 Pod별 실제 `resources`(`kubectl get pod -n kafka -o jsonpath='{..resources}'`)와 노드 배치(`-o wide`)
   - 노드별 requests 합(`kubectl describe node`의 Allocated resources)
-  - PVC·PV·EBS 볼륨 ID
+  - PVC·PV·EBS 볼륨 ID — kafka 네임스페이스 것만(PV의 `spec.claimRef.namespace=kafka`로 걸러 `spec.csi.volumeHandle` 채집). `tear-down.sh:118-119`는 모든 PV를 채집해 Prometheus 볼륨도 들어가므로 그대로 쓰지 않는다
 - **삭제 절차**(순서대로, 명령과 출력은 `session.log`):
   1. `kubectl delete kafka --all -n kafka`, `kubectl delete kafkanodepool --all -n kafka`(`tear-down.sh:110-111`과 같은 명령). `KafkaNodePool`이 `deleteClaim: true`(`kafka.yaml:29`)라 PVC도 함께 정리될 것으로 본다 — 아래 3에서 확인한다.
   2. `helm uninstall strimzi -n kafka`
@@ -317,8 +317,8 @@
 ### 6.3 운영 삭제와 Git이 다른 기간 — 관찰 기간
 - 운영 삭제 뒤부터 저장소 P3 머지 전까지는 **클러스터에는 Kafka가 없고 Git(bring-up)에는 있다**.
   - Kafka는 ArgoCD 추적 밖이라 자동 동기화로 되살아나지는 않는다(사실 — §5.6 주의).
-  - 그러나 이 기간에 bring-up을 다시 돌리면 Kafka가 다시 생긴다. 그래서 이 기간의 bring-up 재실행은 **반드시 `SKIP_KAFKA=1`**(P3a)로 하고, 실행 명령을 `session.log`에 남긴다.
-- 관찰 기간에 확인할 것: B₁·B′·G1 측정 중 아웃박스 PENDING·DEAD·발행 지연, 결제 E2E의 `order.paid` 수신.
+  - 그러나 이 기간에 bring-up을 다시 돌리면 Kafka가 다시 생긴다. 그래서 이 기간의 bring-up 재실행은 **반드시 `SKIP_KAFKA=1`**(P3a)로 하고, 실행 명령을 `session.log`에 남긴다. 표식 가드(P3a)는 같은 클러스터 재실행만 막고 **새 클러스터는 막지 못한다**.
+- 관찰 기간에 확인할 것: B₁·B′ 측정·가용성 G1 시험 중 아웃박스 PENDING·DEAD·발행 지연, 결제 E2E의 `order.paid` 수신.
 - 관찰 기간이 끝나는 조건: 측정 세션 동안 위 항목에 이상이 없고, 이후 bring-up을 한 번 `SKIP_KAFKA=1`로 새로 올려도 전 단계가 통과한다. 그다음 저장소 P3를 머지한다.
 - P4(DB `DROP`)는 P3 머지 뒤, N-1로 돌아갈 일이 없다고 판단될 때 한다(파괴적 DDL — N-1 롤백이 영구히 불가능해진다).
 
@@ -396,7 +396,7 @@
   - B₁ 결과에는 B₀ 대비 달라진 조건을 함께 적는다: 세션 날짜·시간대, 노드 AMI와 노드별 Pod 배치, 시작 노드 수, 이미지 태그(앱 코드 변경 포함 — N), Kafka 유무, 부하 발생기 위치.
 - **B′는 반복 조정을 허용한다.**
   - 목표(예매 p95·정합성 위반 0·노드 수)와 판정식은 B′ 전에 사전 등록한다.
-  - 못 미치면 requests·HPA·DB 풀을 다시 조정하고 재측정한다. 매 조정은 PR → CI·하네스 → G1 → 머지 → ArgoCD 동기화·이미지/설정 확인을 거친다. k8s만 바뀌는 조정은 이미지를 다시 빌드하지 않는다.
+  - 못 미치면 requests·HPA·DB 풀을 다시 조정하고 재측정한다. 매 조정은 PR → CI·하네스 → G1 리뷰 → 머지 → ArgoCD 동기화·이미지/설정 확인을 거친다. k8s만 바뀌는 조정은 이미지를 다시 빌드하지 않는다.
   - **시도한 B′ 후보를 모두 기록한다**(가장 잘 나온 회차만 고르지 않는다).
 - **가용성 G1(노드 1대 비자발적 장애)은 최종 B′ 후보에서 검증한다.** 시험 전에 그 후보의 실제 Pod 배치(`-o wide`)와 노드별 남은 용량을 확인하고, 노드 하나를 잃었을 때 남은 노드에 api·대기열·web이 다시 들어갈 자리가 있는지 계산으로 먼저 본다. 자리가 없으면 시험 전에 후보를 고친다.
 - **한 세션 안에 모두 끝난다고 전제하지 않는다.** 사전 준비(P3a, B′ 매니페스트·하네스 수정안, 사전 등록 초안)를 끝내고 들어가되, 결과에 따라 세션을 나눈다. 세션이 바뀌면 B′와 같은 세션 비교를 위해 B₁을 다시 잴지 사전 등록 때 정한다.
@@ -409,7 +409,7 @@
 |---|---|---|
 | `StringRedisTemplate.convertAndSend` 반환 타입(`Long` 수신자 수 여부) | 라이브러리 소스·CI 컴파일 | P2b |
 | Lettuce 명령 타임아웃 기본값(설정 미지정 → 60초 추론), 전용 팩토리 `commandTimeout` 시간 초과 뒤 연결 상태 | Spring Boot 3.3.5·Lettuce 소스(정적) + CI 테스트(설정된 타임아웃 단언, Redis 지연 주입). 로컬 gradle이 없어 테스트는 CI에서만 | P2b |
-| `@SchedulerLock`과 `@Transactional` 프록시 순서(락 해제와 커밋 중 무엇이 먼저인지) | 코드·CI 통합 테스트 — `SchedulerLockConfig.java:13` Javadoc의 "락은 트랜잭션 바깥에서 획득된다"는 주장을 확인 대상으로 삼는다(같은 Javadoc의 "각 틱을 한 Pod만 실행"은 `PT0S`에서 성립하지 않는다 — 랭킹 감쇠 PR). 필요하면 클러스터에서 재확인 | P2b 전(랭킹 감쇠 PR과 함께 볼 수 있음) |
+| `@SchedulerLock`과 `@Transactional` 프록시 순서(락 해제와 커밋 중 무엇이 먼저인지) | 코드·CI 통합 테스트 — `SchedulerLockConfig.java:13` Javadoc의 "락은 트랜잭션 바깥에서 획득된다"는 주장을 확인 대상으로 삼는다(같은 Javadoc의 "각 틱을 한 Pod만 실행"은 `PT0S`에서 보장되지 않는다 — 랭킹 감쇠 PR #408에서 CI로 재현: 같은 주기 두 번 실행 시 0.64, 기대 0.8). 필요하면 클러스터에서 재확인 | P2b 전(랭킹 감쇠 PR과 함께 볼 수 있음) |
 | Strimzi가 만든 브로커·Entity Operator Pod의 실제 requests | 클러스터(기존 기록 없음) | 세션 §6.2 삭제 전 기록 |
 | t3.large(기본 프로파일) allocatable | 클러스터 또는 EKS 예약량 계산식 | 자원 산정 |
 | Hikari active·idle·pending 실측 | 부하를 건 클러스터 | 세션 B₁·B′ |

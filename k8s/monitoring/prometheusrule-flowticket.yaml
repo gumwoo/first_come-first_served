@@ -59,14 +59,14 @@ spec:
             runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-032-outbox-poison-row-head-of-line.md"
 
         - alert: FlowticketOutboxBacklog
-          # 브로커 장애의 직접 신호다. 복구되면 스스로 줄어들므로 for를 길게 잡는다.
+          # 발행 대상 장애의 직접 신호다. 복구되면 스스로 줄어들므로 for를 길게 잡는다.
           # 짧으면 정상적인 순간 적체에도 울린다.
           expr: max(flowticket_outbox_events{job="flowticket-api",status="PENDING"}) > 500
           for: 10m
           labels: { severity: warning }
           annotations:
             summary: "아웃박스 미발행 적체가 10분째 500건을 넘는다 (현재 {{ $value }})"
-            description: "브로커 장애가 지속되고 있을 가능성이 높다. Kafka 상태와 릴레이 로그를 본다."
+            description: "발행 대상(Redis) 장애나 명령 시간 초과가 지속되고 있을 가능성이 높다. 릴레이 로그([outbox] 발행 실패)와 행의 attempts·lastError를 본다(ADR-028)."
             runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/improvements/IMP-011-outbox-delivery.md"
 
         - alert: FlowticketDlqBacklog

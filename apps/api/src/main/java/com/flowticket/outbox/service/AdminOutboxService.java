@@ -41,8 +41,8 @@ public class AdminOutboxService {
     }
 
     /**
-     * 다시 발행 대상으로 되돌린다(DEAD → PENDING). 발행은 릴레이가 한다. 여기서 Kafka로 직접
-     * 쏘지 않는다. 아웃박스의 발행 책임은 OutboxRelay 하나여야 publish-then-mark
+     * 다시 발행 대상으로 되돌린다(DEAD → PENDING). 발행은 릴레이가 한다. 여기서 직접
+     * 발행하지 않는다. 아웃박스의 발행 책임은 OutboxRelay 하나여야 publish-then-mark
      * 순서와 aggregate 차단 판정이 한 곳에 남는다.
      */
     @Transactional

@@ -719,7 +719,7 @@ for (const file of javaFiles) {
 // 그래서 틱 예산(outbox.tick-budget-ms)을 두고, 여기서 세 값의 관계를 검사한다.
 // 마지막 한 건이 예산 직전에 시작될 수 있으므로 예산 + 발행 대기 ≤ 임차여야 한다.
 //
-// 런타임에 드러나지 않는다: 겹쳐 돌아도 소비자 멱등(eventId)이 중복을 흡수해 증상이 없다(ADR-022).
+// 런타임에 드러나지 않는다: 겹쳐 돌아도 중복 발행은 프론트 재조회 1회로 끝나 증상이 없다(ADR-022·028).
 const relayPath = path.join(REPO_ROOT, API, "src/main/java/com/flowticket/outbox/service/OutboxRelay.java");
 const outboxYmlPath = path.join(REPO_ROOT, API, "src/main/resources/application.yml");
 if (fs.existsSync(relayPath) && fs.existsSync(outboxYmlPath)) {
@@ -759,6 +759,40 @@ if (fs.existsSync(relayPath) && fs.existsSync(outboxYmlPath)) {
         `아웃박스 틱이 임차보다 길 수 있다: tick-budget(${budgetMs}ms) + send-timeout(${timeoutMs}ms) ` +
           `= ${needMs}ms > lockAtMostFor(${lease[1]} = ${leaseMs}ms). ` +
           `임차가 먼저 끝나면 다른 파드가 같은 PENDING을 집는다(ADR-022)`
+      );
+    }
+  }
+}
+
+// ---------- 23. 아웃박스 발행은 실패를 삼키거나 커밋 뒤로 미루는 경로를 쓰지 않는다 ----------
+//
+// 릴레이는 발행이 성공한 뒤에만 PUBLISHED로 마킹한다(publish-then-mark, ADR-010·028). 그런데 같은 채널(sse:order)로
+// 보내는 기존 경로 두 개가 이 순서를 조용히 깨뜨린다.
+//   - OrderSseRegistry.broadcast(): AfterCommit으로 커밋 뒤에 보낸다 → 릴레이 트랜잭션에서는 마킹이 먼저 커밋되고,
+//     커밋 뒤 실패는 로그로만 남는다(mark-then-publish = at-most-once).
+//   - SsePubSub.publish(): 예외를 삼킨다 → 실패해도 정상 반환해 PUBLISHED로 마킹된다.
+// 런타임에 드러나지 않는다: 평소에는 둘 다 잘 전달되고, Redis 장애 때만 이벤트가 사라진다.
+// 그래서 outbox 패키지가 이 둘에 기대지 못하게 막는다(봉투 타입 SsePubSub.Envelope은 써도 된다).
+{
+  // 대상: outbox 패키지 + OutboxPublisher(구현체 이름 포함 — 예: RedisOutboxPublisher)를 참조하는 모든 파일(구현·상속·람다 빈으로 발행기를 밖에 두고 broadcast로 위임하는 우회를 막는다).
+  const outboxFiles = javaFiles.filter((f) => {
+    const norm = f.split(path.sep).join("/");
+    return norm.includes("/com/flowticket/outbox/") || /OutboxPublisher\b/.test(stripComments(read(f)));
+  });
+  for (const file of outboxFiles) {
+    const rel = path.relative(REPO_ROOT, file).split(path.sep).join("/");
+    // 문자열 리터럴·텍스트 블록은 지운다("AfterCommit"이라는 로그 문구 같은 오탐을 막는다).
+    const code = stripComments(read(file)).replace(/"""[\s\S]*?"""/g, '""').replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
+    const hits = [];
+    if (/\bAfterCommit\b/.test(code)) hits.push("AfterCommit");
+    if (/\.broadcast\s*\(/.test(code) || /\bOrderSseRegistry\s+\w+\s*[;,)=]/.test(code)) hits.push("OrderSseRegistry.broadcast");
+    if (/\bSsePubSub\s+\w+\s*[;,)=]/.test(code) || /<\s*SsePubSub\s*>/.test(code) || /\bSsePubSub\.class\b/.test(code)) {
+      hits.push("SsePubSub 주입·조회(publish는 예외를 삼킨다)");
+    }
+    if (hits.length) {
+      r.fail(
+        `아웃박스가 실패를 삼키는 발행 경로를 쓴다: ${rel}: ${hits.join(", ")}. ` +
+          "OutboxPublisher(실패를 던지는 발행)만 써야 publish-then-mark가 지켜진다(kafka-removal-design §2)"
       );
     }
   }

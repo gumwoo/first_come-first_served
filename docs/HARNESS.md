@@ -45,10 +45,11 @@ Static/Unit/Integration이 다 초록인데도 E2E 계층(사람의 수동 클�
 - 백엔드: 금지 의존성, enum ordinal 금지, @Enumerated STRING, 생성자 주입, 시큐리티 개방 금지,
   Flyway 버전 유일, **구현 이벤트 발행 검증**(계약 선언 후 미구현 차단),
   **status 변경 UPDATE의 WHERE status 가드 강제**(check-then-act 레이스 차단, TS-011),
-  **파괴적 DDL 차단**(롤링 중 구버전 Pod 파손 방지) 등.
+  **파괴적 DDL 차단**(롤링 중 구버전 Pod 파손 방지),
+  **아웃박스가 실패를 삼키는 발행 경로(broadcast·AfterCommit·SsePubSub.publish)를 쓰지 못하게 차단**(publish-then-mark 보존, ADR-028) 등.
 - 프론트: allowed-stack, enum 미러, 이벤트 구독 일치, 계층 import 경계, 죽은 API 경로,
   **SSE 훅의 구독 공백 복구 경로 강제**(TS-012) 등.
-- **메타테스트(위반 fixture 65개)**: "하네스도 검증 대상." 위반 fixture를 넣어 하네스가 **실제로 실패를 잡는지**
+- **메타테스트(위반 fixture 66개)**: "하네스도 검증 대상." 위반 fixture를 넣어 하네스가 **실제로 실패를 잡는지**
   검사한다. 통과해버리면(false negative) 메타테스트가 실패한다.
 
 > **규칙 선정 기준**: 아무 실수나 규칙으로 만들지 않는다. ① 반복될 클래스이고 ② **무증상**이며

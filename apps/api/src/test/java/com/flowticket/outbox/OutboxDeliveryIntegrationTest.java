@@ -3,22 +3,24 @@ package com.flowticket.outbox;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.flowticket.global.config.KafkaConfig;
 import com.flowticket.order.event.OrderEvent;
 import com.flowticket.order.sse.OrderSseRegistry;
 import com.flowticket.outbox.domain.OutboxEvent;
 import com.flowticket.outbox.domain.OutboxStatus;
 import com.flowticket.outbox.repository.OutboxEventRepository;
+import com.flowticket.outbox.service.OutboxPublisher;
 import com.flowticket.outbox.service.OutboxRelay;
+import com.flowticket.support.IntegrationTestSupport;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
@@ -28,90 +30,55 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.SpyBean;
-import org.springframework.kafka.KafkaException;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.KafkaContainer;
-import org.testcontainers.utility.DockerImageName;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * IMP-011 측정(ADR-010): 브로커 장애 중 발행된 이벤트가 유실되는가를 before/after로 카운트한다.
+ * IMP-011 측정(ADR-010): 발행 대상 장애 중 결제된 이벤트가 유실되는가를 before/after로 센다.
+ * ADR-028 뒤로 발행 대상은 Kafka가 아니라 Redis 채널(sse:order)이고, 도달은 각 파드의 구독자가 로컬 전달을
+ * 시도한 것(OrderSseRegistry.deliverLocal)으로 센다.
  *
- * 장애는 KafkaTemplate.send가 실패하도록 스텁해 재현한다(결정적). 두 경로를 같은 장애 창에 넣고,
- * 복구 후 실제로 소비자에 도달한 건수를 세어 유실을 측정한다.
- *   - before(naive, 구 AFTER_COMMIT 브리지): 발행 실패를 삼킨다. 복구해도 재발행할 근거가
- *       어디에도 없어 영구 유실.
- *   - after(outbox): 이벤트가 결제와 같은 커밋으로 DB에 남아 PENDING 유지 → 복구 후 릴레이가
- *       재시도해 전량 발행.
+ * 장애는 발행기가 실패하도록 스텁해 재현한다(결정적). 두 경로를 같은 장애 창에 넣고, 복구 후 실제로
+ * 구독자에 도달한 건수를 세어 유실을 측정한다.
+ *   - before(naive, 커밋 후 직접 발행): 발행 실패를 삼킨다. 복구해도 재발행할 근거가 어디에도 없어 영구 유실.
+ *   - after(outbox): 이벤트가 결제와 같은 커밋으로 DB에 남아 PENDING 유지 → 복구 후 릴레이가 재시도해 전량 발행.
+ *
+ * 장애 중 릴레이는 프록시 없이 직접 만들어 실패하는 발행기를 넣는다(빈 릴레이의 발행기를 바꾸면 컨텍스트가 갈린다).
+ * 프록시가 없으면 @Transactional도 빠지므로 TransactionTemplate으로 감싸 실패 기록이 DB에 남게 한다.
  */
 @SpringBootTest
-@Testcontainers
-class OutboxDeliveryIntegrationTest {
+class OutboxDeliveryIntegrationTest extends IntegrationTestSupport {
 
     private static final int TRIALS = 10;
     private static final long NAIVE_BASE = 5_000_000L;  // before 경로 orderId 구간
     private static final long OUTBOX_BASE = 6_000_000L; // after 경로 orderId 구간
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-    @Container
-    static GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
-    @Container
-    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:3.8.0"));
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry r) {
-        // 배경 스케줄러 비활성: @Scheduled는 initialDelay가 없어 컨텍스트 기동 즉시 한 번 발사되고,
-        // 그 UPDATE가 테스트 초기화 TRUNCATE와 데드락을 만든다. 주기를 늘리는 것으로는 못 막는다.
-        r.add("flowticket.scheduling.enabled", () -> "false");
-        r.add("spring.datasource.url", postgres::getJdbcUrl);
-        r.add("spring.datasource.username", postgres::getUsername);
-        r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.data.redis.host", redis::getHost);
-        r.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
-        r.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
-        r.add("jwt.secret", () -> "integration-test-secret-0123456789-0123456789-0123456789");
-    }
-
     @SpyBean OrderSseRegistry orderSse;
     @Autowired OutboxEventRepository outboxRepository;
-    @Autowired OutboxRelay relay; // 복구 후 정상 발행에 쓰는 실제 빈
+    @Autowired OutboxRelay relay; // 복구 후 정상 발행에 쓰는 실제 빈(실제 Redis로 보낸다)
     @Autowired ObjectMapper mapper;
+    @Autowired PlatformTransactionManager transactionManager;
 
-    /**
-     * 브로커 장애 재현용. 스프링 빈을 스파이/모킹하면 KafkaTemplate 후보가 둘이 되어 주입이 모호해지므로
-     * (자동설정 빈은 KafkaTemplate<?,?>), 컨텍스트는 그대로 두고 실패하는 템플릿을 직접 주입한
-     * 릴레이를 따로 만든다. 발행 경로 코드는 실제 OutboxRelay 그대로다.
-     */
-    private KafkaTemplate<String, Object> failingKafka;
+    private OutboxPublisher failingPublisher;
     private OutboxRelay relayDuringOutage;
 
-    /** 소비자까지 실제로 도달한 orderId(= 유실되지 않은 이벤트). */
+    /** 구독자까지 실제로 도달한 orderId(= 유실되지 않은 이벤트). */
     private final Set<Long> delivered = ConcurrentHashMap.newKeySet();
 
     @BeforeEach
-    @SuppressWarnings("unchecked")
     void setUp() {
-        outboxRepository.deleteAll();
         delivered.clear();
         doAnswer(inv -> {
             delivered.add(inv.getArgument(0, Long.class));
             return null;
-        }).when(orderSse).broadcast(any(), eq("order.paid"), any());
+        }).when(orderSse).deliverLocal(any(), eq("order.paid"), any());
 
-        failingKafka = mock(KafkaTemplate.class);
-        doThrow(new KafkaException("broker down"))
-                .when(failingKafka).send(anyString(), anyString(), any());
-        // 실제 릴레이와 동일한 설정값(배치 100 / 타임아웃 3s / 틱 예산 45s / 보존 7일)
-        relayDuringOutage = new OutboxRelay(outboxRepository, failingKafka, mapper, 100, 3000L, 45_000L, 7,
-                java.time.Clock.systemDefaultZone(), new SimpleMeterRegistry());
+        failingPublisher = mock(OutboxPublisher.class);
+        when(failingPublisher.publish(any())).thenThrow(new RedisConnectionFailureException("redis down"));
+        // 실제 릴레이와 동일한 설정값(배치 100 / 틱 예산 45s / 보존 7일)
+        relayDuringOutage = new OutboxRelay(outboxRepository, failingPublisher, mapper, 100, 45_000L, 7,
+                Clock.systemDefaultZone(), new SimpleMeterRegistry());
     }
 
     /**
@@ -125,19 +92,19 @@ class OutboxDeliveryIntegrationTest {
     void 틱_예산을_넘기면_남은_건은_PENDING으로_남는다() {
         appendOutbox(9_100_001L);
 
-        OutboxRelay noBudget = new OutboxRelay(outboxRepository, failingKafka, mapper,
-                100, 3000L, 0L, 7, java.time.Clock.systemDefaultZone(), new SimpleMeterRegistry());
-        noBudget.publishPending();
+        OutboxRelay noBudget = new OutboxRelay(outboxRepository, failingPublisher, mapper,
+                100, 0L, 7, Clock.systemDefaultZone(), new SimpleMeterRegistry());
+        inTransaction(noBudget::publishPending);
 
         assertThat(outboxRepository.countByStatus(OutboxStatus.PENDING))
                 .as("예산이 끝났으면 손대지 않고 다음 틱에 넘긴다").isEqualTo(1);
-        verify(failingKafka, never()).send(anyString(), anyString(), any());
+        verify(failingPublisher, never()).publish(any());
     }
 
     @Test
-    void IMP011_브로커_장애중_이벤트_유실_before_after() {
-        // ── 브로커 장애 창(발행이 실패하는 구간) ─────────────────────
-        // before(naive): 실패를 삼키고 아무 기록도 남기지 않는다(구 브리지 동작 그대로)
+    void IMP011_발행_장애중_이벤트_유실_before_after() {
+        // ── 장애 창(발행이 실패하는 구간) ─────────────────────────
+        // before(naive): 실패를 삼키고 아무 기록도 남기지 않는다
         for (int i = 0; i < TRIALS; i++) {
             naivePublishSwallowing(OrderEvent.of("order.paid", NAIVE_BASE + i));
         }
@@ -146,12 +113,12 @@ class OutboxDeliveryIntegrationTest {
         for (int i = 0; i < TRIALS; i++) {
             appendOutbox(OUTBOX_BASE + i);
         }
-        relayDuringOutage.publishPending();
+        inTransaction(relayDuringOutage::publishPending);
         assertThat(outboxRepository.countByStatus(OutboxStatus.PENDING))
                 .as("장애 중에도 이벤트는 DB에 보존된다(유실 대신 재시도 대상)")
                 .isEqualTo(TRIALS);
 
-        // ── 브로커 복구 ────────────────────────────────────────────
+        // ── 복구 ──────────────────────────────────────────────────
         // naive는 재발행할 근거가 없어 아무 일도 일어나지 않는다. outbox만 릴레이가 재시도한다.
         relay.publishPending();
 
@@ -161,19 +128,23 @@ class OutboxDeliveryIntegrationTest {
         int lostBefore = TRIALS - deliveredIn(NAIVE_BASE);
         int lostAfter = TRIALS - deliveredIn(OUTBOX_BASE);
 
-        // 벤치마크(benchmarks/outbox-delivery-*.json)에 박제되는 수치를 테스트가 강제한다.
+        // 벤치마크(benchmarks/outbox-delivery-*.json — Kafka 시기 기록)와 같은 수치를 테스트가 강제한다.
         assertThat(lostBefore).as("before: 장애 중 발행분 전량 영구 유실").isEqualTo(TRIALS);
         assertThat(lostAfter).as("after: 복구 후 전량 재발행 → 유실 0").isZero();
         assertThat(outboxRepository.countByStatus(OutboxStatus.PUBLISHED)).isEqualTo(TRIALS);
     }
 
-    /** 구 OrderEventKafkaBridge 동작: 발행 실패를 로그만 남기고 삼킨다(복구 근거 없음 = 영구 유실). */
+    /** 커밋 후 직접 발행하며 실패를 삼키는 방식(복구 근거 없음 = 영구 유실). */
     private void naivePublishSwallowing(OrderEvent event) {
         try {
-            failingKafka.send(KafkaConfig.ORDER_EVENTS_TOPIC, String.valueOf(event.orderId()), event);
+            failingPublisher.publish(event);
         } catch (Exception ignored) {
             // 결제는 이미 커밋됐고 DB가 진실원: 알림 유실은 감수(구 설계)
         }
+    }
+
+    private void inTransaction(Runnable work) {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> work.run());
     }
 
     private void appendOutbox(long orderId) {

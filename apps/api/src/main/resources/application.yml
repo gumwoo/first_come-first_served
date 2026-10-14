@@ -274,11 +274,11 @@ seat:
 order:
   sweep-interval-ms: ${ORDER_SWEEP_INTERVAL:60000}  # 미완료 주문 만료 회수 주기(ms)
 
-# 트랜잭셔널 아웃박스(ADR-010). 릴레이가 PENDING을 Kafka로 발행하고 성공 후 PUBLISHED로 마킹한다.
+# 트랜잭셔널 아웃박스(ADR-010). 릴레이가 PENDING을 Redis 채널(sse:order)로 발행하고 호출 성공 후 PUBLISHED로 마킹한다(ADR-028).
 outbox:
   relay-interval-ms: ${OUTBOX_RELAY_INTERVAL:1000}  # 폴링 주기(발행 지연 상한)
   batch-size: ${OUTBOX_BATCH_SIZE:100}              # 한 틱 최대 발행 건수
-  send-timeout-ms: ${OUTBOX_SEND_TIMEOUT:3000}      # 발행 확인 대기 상한(한 건)
+  send-timeout-ms: ${OUTBOX_SEND_TIMEOUT:3000}      # 발행 대기 상한(한 건) = 발행 전용 Redis 연결의 명령 타임아웃(RedisOutboxPublisher). 연결이 없을 때는 연결 수립 ≤ 이 값 + 발행 ≤ 이 값(약 2배)
   # 한 틱의 시간 상한(ADR-022). ShedLock 임차(OutboxRelay의 lockAtMostFor=PT1M)보다 짧아야 한다.
   # 이 값이 없으면 상한이 batch-size × send-timeout(100 × 3초 = 300초)이라 임차를 넘긴다.
   # 넘기는 순간 다른 파드가 같은 PENDING을 집어 "한 인스턴스만 돈다"가 깨진다.

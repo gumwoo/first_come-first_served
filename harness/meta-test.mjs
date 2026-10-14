@@ -29,6 +29,7 @@ const cases = [
   { name: "be-field-injection",  script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-field-injection" } },
   { name: "be-tx-private",       script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-tx-private" } },
   { name: "be-self-injection",   script: "backend/check.mjs", expect: "자기 자신을 주입한다:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-self-injection" } },
+  { name: "be-outbox-swallowing-publish", script: "backend/check.mjs", expect: "아웃박스가 실패를 삼키는 발행 경로를 쓴다:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-outbox-swallowing-publish" } },
   { name: "be-outbox-lease",     script: "backend/check.mjs", expect: "아웃박스 틱이 임차보다 길 수 있다:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-outbox-lease" } },
   { name: "be-open-security",    script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-open-security" } },
   { name: "be-flyway-dup-version", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-flyway-dup-version" } },

@@ -109,7 +109,7 @@ tests:
               severity: warning
             exp_annotations:
               summary: "아웃박스 미발행 적체가 10분째 500건을 넘는다 (현재 600)"
-              description: "브로커 장애가 지속되고 있을 가능성이 높다. Kafka 상태와 릴레이 로그를 본다."
+              description: "발행 대상(Redis) 장애나 명령 시간 초과가 지속되고 있을 가능성이 높다. 릴레이 로그([outbox] 발행 실패)와 행의 attempts·lastError를 본다(ADR-028)."
               runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/improvements/IMP-011-outbox-delivery.md"
 
   # ── DLQ 적체: 임계 경계(> 10)와 지속 조건(10분) ─────────────────

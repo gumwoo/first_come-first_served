@@ -2,7 +2,7 @@ package com.flowticket.outbox.domain;
 
 /**
  * 아웃박스 발행 상태(ADR-010). contracts/enums.yaml OutboxStatus 와 일치.
- * PENDING=적재됨/미발행(릴레이 대상), PUBLISHED=Kafka 발행 성공(7일 보존 후 purge),
+ * PENDING=적재됨/미발행(릴레이 대상), PUBLISHED=Redis 발행 호출 성공(구독자·사용자 수신이 아님 — ADR-028, 7일 보존 후 purge),
  * DEAD=재시도로 성공할 수 없는 결정적 실패(격리, purge 대상 아님),
  * DISCARDED=운영자가 발행 포기를 판단한 행(격리 해제: 같은 aggregate의 후속이 다시 흐른다).
  *

@@ -36,7 +36,7 @@ RefundReason:
 DlqStatus:
   values: [PENDING, RETRYING, RETRIED, DISCARDED]
 
-# 아웃박스 발행 상태(ADR-010). PENDING=적재됨/미발행, PUBLISHED=Kafka 발행 성공(7일 후 purge).
+# 아웃박스 발행 상태(ADR-010). PENDING=적재됨/미발행, PUBLISHED=Redis 발행 호출 성공 — 구독자·사용자 수신 아님(ADR-028, 7일 후 purge).
 # 운영 화면(/admin/outbox)이 표시·필터에 쓰므로 FE 미러가 있다(예전 backend_only 면제를 걷었다 — ADR-028 P2a).
 OutboxStatus:
   values: [PENDING, PUBLISHED, DEAD, DISCARDED]

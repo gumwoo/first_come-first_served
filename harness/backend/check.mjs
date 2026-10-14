@@ -764,6 +764,33 @@ if (fs.existsSync(relayPath) && fs.existsSync(outboxYmlPath)) {
   }
 }
 
+// ---------- 23. 아웃박스 발행은 실패를 삼키거나 커밋 뒤로 미루는 경로를 쓰지 않는다 ----------
+//
+// 릴레이는 발행이 성공한 뒤에만 PUBLISHED로 마킹한다(publish-then-mark, ADR-010·028). 그런데 같은 채널(sse:order)로
+// 보내는 기존 경로 두 개가 이 순서를 조용히 깨뜨린다.
+//   - OrderSseRegistry.broadcast(): AfterCommit으로 커밋 뒤에 보낸다 → 릴레이 트랜잭션에서는 마킹이 먼저 커밋되고,
+//     커밋 뒤 실패는 로그로만 남는다(mark-then-publish = at-most-once).
+//   - SsePubSub.publish(): 예외를 삼킨다 → 실패해도 정상 반환해 PUBLISHED로 마킹된다.
+// 런타임에 드러나지 않는다: 평소에는 둘 다 잘 전달되고, Redis 장애 때만 이벤트가 사라진다.
+// 그래서 outbox 패키지가 이 둘에 기대지 못하게 막는다(봉투 타입 SsePubSub.Envelope은 써도 된다).
+{
+  const outboxFiles = javaFiles.filter((f) => f.split(path.sep).join("/").includes("/com/flowticket/outbox/"));
+  for (const file of outboxFiles) {
+    const rel = path.relative(REPO_ROOT, file).split(path.sep).join("/");
+    const code = stripComments(read(file));
+    const hits = [];
+    if (/\bAfterCommit\b/.test(code)) hits.push("AfterCommit");
+    if (/\.broadcast\s*\(/.test(code) || /\bOrderSseRegistry\s+\w+\s*[;,)=]/.test(code)) hits.push("OrderSseRegistry.broadcast");
+    if (/\bSsePubSub\s+\w+\s*[;,)=]/.test(code)) hits.push("SsePubSub 주입(publish는 예외를 삼킨다)");
+    if (hits.length) {
+      r.fail(
+        `아웃박스가 실패를 삼키는 발행 경로를 쓴다: ${rel}: ${hits.join(", ")}. ` +
+          "OutboxPublisher(실패를 던지는 발행)만 써야 publish-then-mark가 지켜진다(kafka-removal-design §2)"
+      );
+    }
+  }
+}
+
 /** PT#H#M#S 를 ms로. 해석 못 하면 null. */
 function isoDurationMs(text) {
   const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(text);

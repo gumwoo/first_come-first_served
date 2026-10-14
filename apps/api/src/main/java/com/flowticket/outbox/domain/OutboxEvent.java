@@ -14,10 +14,10 @@ import lombok.NoArgsConstructor;
 
 /**
  * 트랜잭셔널 아웃박스 행(ADR-010). 비즈니스 트랜잭션과 같은 tx에서 적재되어,
- * 결제가 롤백되면 이 행도 함께 사라진다(유령 이벤트 0). 폴링 릴레이가 PENDING을 Kafka로 발행하고
- * 성공 후 PUBLISHED로 마킹한다(publish-then-mark → at-least-once, 유실 0).
+ * 결제가 롤백되면 이 행도 함께 사라진다(유령 이벤트 0). 폴링 릴레이가 PENDING을 Redis 채널(sse:order)로 발행하고
+ * 호출 성공 후 PUBLISHED로 마킹한다(publish-then-mark → at-least-once — ADR-028).
  *
- * id(UUID)는 소비자 멱등 키로도 쓰인다(`dedup:order-event:{id}`).
+ * id(UUID)는 payload의 eventId와 같다(추적용). Kafka 소비자 멱등 키(`dedup:order-event:{id}`)로 쓰이던 자리다(ADR-028로 소비자 제거 예정).
  */
 @Entity
 @Table(name = "outbox_events")
@@ -76,7 +76,7 @@ public class OutboxEvent {
     }
 
     /**
-     * 발행 성공: 반드시 Kafka send 성공을 확인한 뒤 호출(publish-then-mark).
+     * 발행 성공: 반드시 발행 호출(OutboxPublisher)이 정상 반환한 뒤 호출(publish-then-mark).
      *
      * 시각은 호출자가 넣는다. publishedAt은 기록이 아니라 purge 판정 기준이고(보존기간 경과 여부),
      * 그 경계를 계산하는 OutboxRelay는 주입된 Clock을 본다(ADR-018).

@@ -1,7 +1,6 @@
 package com.flowticket.outbox.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.flowticket.global.config.KafkaConfig;
 import com.flowticket.order.event.OrderEvent;
 import com.flowticket.outbox.domain.OutboxEvent;
 import com.flowticket.outbox.domain.OutboxStatus;
@@ -19,15 +18,18 @@ import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 아웃박스 릴레이(ADR-010). PENDING 행을 오래된 순으로 Kafka에 발행하고, 발행 성공을 확인한 뒤
- * PUBLISHED로 마킹한다(publish-then-mark). 크래시로 마킹 전에 죽으면 다음 틱에 재발행되므로
- * at-least-once이고 유실이 0이다. 중복은 소비자 멱등(eventId)이 흡수한다.
+ * 아웃박스 릴레이(ADR-010). PENDING 행을 오래된 순으로 발행하고(OutboxPublisher — Redis 채널 sse:order, ADR-028),
+ * 발행 호출이 성공한 뒤에만 PUBLISHED로 마킹한다(publish-then-mark). 크래시로 마킹 전에 죽으면 다음 틱에 재발행되므로
+ * at-least-once다. 중복 수신은 프론트가 재조회 1회로 흡수한다(이벤트 payload를 읽지 않는다).
+ *
+ * PUBLISHED = "발행 호출이 성공했다"이지 구독자·사용자가 받았다는 뜻이 아니다(ADR-028 §6).
+ * 발행은 OrderSseRegistry.broadcast()로 하지 않는다. 그 메서드는 커밋 뒤로 미뤄(AfterCommit) 마킹이 발행보다 먼저 커밋되고,
+ * 실패를 삼킨다(SsePubSub.publish). 그러면 at-most-once가 된다(kafka-removal-design §2.1, 하네스 백엔드 규칙 23).
  *
  * CDC(Debezium) 대신 폴링을 쓴다: 정합성 보장은 동일하고 새 인프라가 0이라 이 규모에 맞는다.
  * 멀티 Pod에서는 ShedLock으로 한 인스턴스만 돌아 발행 순서·중복을 통제한다.
@@ -37,20 +39,20 @@ import org.springframework.transaction.annotation.Transactional;
 public class OutboxRelay {
 
     private final OutboxEventRepository repository;
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final OutboxPublisher publisher;
     /** 한 틱이 실제로 쓴 시간. 임차(lockAtMostFor)에 얼마나 다가가는지 본다. */
     private final Timer tickTimer;
-    /** 브로커 ACK 대기 시간. 틱이 길어지는 이유가 여기인지 가른다. */
+    /** 발행 확인 대기 시간(이름은 대시보드 연속성을 위해 유지). 틱이 길어지는 이유가 여기인지 가른다. */
     private final Timer ackTimer;
     /** 행이 생성되고 발행되기까지. 적체 개수로는 보이지 않는 지연을 본다. */
     private final Timer lagTimer;
     private final ObjectMapper mapper;
     private final int batchSize;
-    private final long sendTimeoutMs;
     /**
      * 한 틱이 쓸 수 있는 시간. ShedLock 임차(lockAtMostFor)보다 짧아야 한다.
      *
      * 이 값이 없으면 한 틱의 상한은 batch-size × send-timeout이다(기본값 기준 100 × 3초 = 300초).
+     * send-timeout은 발행기(RedisOutboxPublisher)의 명령 타임아웃이다.
      * 임차는 1분이라, 느리지만 성공하는 ACK가 쌓이면 임차가 먼저 끝나 다른 파드가 같은 PENDING을
      * 집는다. "한 인스턴스만 돈다"는 전제가 깨지는 지점이다(ADR-022).
      */
@@ -59,10 +61,9 @@ public class OutboxRelay {
 
     private final Clock clock;
 
-    public OutboxRelay(OutboxEventRepository repository, KafkaTemplate<String, Object> kafkaTemplate,
+    public OutboxRelay(OutboxEventRepository repository, OutboxPublisher publisher,
                        ObjectMapper mapper,
                        @Value("${outbox.batch-size:100}") int batchSize,
-                       @Value("${outbox.send-timeout-ms:3000}") long sendTimeoutMs,
                        @Value("${outbox.tick-budget-ms:45000}") long tickBudgetMs,
                        @Value("${outbox.retention-days:7}") int retentionDays, Clock clock,
                        MeterRegistry meterRegistry) {
@@ -71,16 +72,15 @@ public class OutboxRelay {
                 .description("아웃박스 릴레이 한 틱의 소요 시간")
                 .register(meterRegistry);
         this.ackTimer = Timer.builder("flowticket.outbox.publish.ack")
-                .description("브로커 ACK 대기 시간(한 건)")
+                .description("발행 확인 대기 시간(한 건)")
                 .register(meterRegistry);
         this.lagTimer = Timer.builder("flowticket.outbox.publish.lag")
                 .description("아웃박스 행 생성부터 발행까지의 지연")
                 .register(meterRegistry);
         this.repository = repository;
-        this.kafkaTemplate = kafkaTemplate;
+        this.publisher = publisher;
         this.mapper = mapper;
         this.batchSize = batchSize;
-        this.sendTimeoutMs = sendTimeoutMs;
         this.tickBudgetMs = tickBudgetMs;
         this.retentionDays = retentionDays;
     }
@@ -88,7 +88,7 @@ public class OutboxRelay {
     /**
      * 미발행분을 배치로 발행. 실패를 두 종류로 나눈다(TS-032).
      *
-     * 일시적 실패(브로커 다운 등)는 PENDING을 유지하고 남은 배치를 중단한다.
+     * 일시적 실패(Redis 장애·명령 시간 초과 등)는 PENDING을 유지하고 남은 배치를 중단한다.
      * 결정적 실패(payload 역직렬화 불가)는 그 행만 DEAD로 격리하고, 같은 aggregate의 후속은 보류한다.
      * 시도 횟수만으로는 DEAD로 보내지 않는다.
      */
@@ -168,19 +168,14 @@ public class OutboxRelay {
     private boolean send(OutboxEvent row, OrderEvent event) {
         long sendStartedAt = System.nanoTime();
         try {
-            // 파티션 키 = aggregateId(orderId) → 같은 주문 이벤트의 순서 보장(기존 발행 방식 계승).
-            kafkaTemplate.send(KafkaConfig.ORDER_EVENTS_TOPIC, String.valueOf(row.getAggregateId()), event)
-                    .get(sendTimeoutMs, TimeUnit.MILLISECONDS); // 브로커 확인 후에만 마킹
+            // 한 건씩 동기로 보낸다. 실패·시간 초과(발행기의 명령 타임아웃)는 예외로 돌아와 아래에서 PENDING으로 남는다.
+            // 같은 주문의 순서는 생성 시각 순 조회 + 동기 발행으로 지킨다(예전 Kafka 파티션 키의 역할).
+            publisher.publish(event);
             ackTimer.record(System.nanoTime() - sendStartedAt, TimeUnit.NANOSECONDS);
             LocalDateTime publishedAt = LocalDateTime.now(clock);
             lagTimer.record(Duration.between(row.getCreatedAt(), publishedAt));
             row.markPublished(publishedAt);
             return true;
-        } catch (InterruptedException e) {
-            ackTimer.record(System.nanoTime() - sendStartedAt, TimeUnit.NANOSECONDS);
-            Thread.currentThread().interrupt();
-            row.markAttemptFailed("interrupted");
-            return false;
         } catch (Exception e) {
             // 실패한 대기도 잰다. 틱이 길어진 이유가 타임아웃인지 여기서 드러난다.
             ackTimer.record(System.nanoTime() - sendStartedAt, TimeUnit.NANOSECONDS);

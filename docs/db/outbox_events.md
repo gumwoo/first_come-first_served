@@ -6,7 +6,7 @@
 
 ## 목적
 비즈니스 트랜잭션(결제 확정)과 **같은 트랜잭션**에서 도메인 이벤트를 적재한다. 폴링 릴레이가 이 행을
-Kafka로 발행하고 성공 후 `PUBLISHED`로 마킹한다(publish-then-mark). `AFTER_COMMIT` 직접 발행이 갖던
+Redis 채널 `sse:order`로 발행하고 호출이 성공한 뒤 `PUBLISHED`로 마킹한다(publish-then-mark). `PUBLISHED`는 발행 호출 성공이지 구독자·사용자 수신이 아니다([[ADR-028]] — 2026-10 Kafka에서 전환). `AFTER_COMMIT` 직접 발행이 갖던
 **"커밋 직후·발행 전 크래시 → 이벤트 영구 유실"** 구멍을 닫는 것이 목적.
 
 ## 컬럼
@@ -14,7 +14,7 @@ Kafka로 발행하고 성공 후 `PUBLISHED`로 마킹한다(publish-then-mark).
 |------|------|------|--------|------|------|
 | id | UUID | N | | PK | 이벤트 식별자 = 소비자 멱등 키(`dedup:order-event:{id}`) |
 | aggregate_type | VARCHAR(40) | N | | | 애그리거트 종류(현재 `order`) |
-| aggregate_id | BIGINT | N | | | orderId. Kafka 파티션 키 → 주문별 순서 보장 |
+| aggregate_id | BIGINT | N | | | orderId. 순서는 생성 시각 순 조회 + 동기 발행으로 지킨다(예전에는 Kafka 파티션 키) |
 | type | VARCHAR(60) | N | | | 이벤트 타입(현재 `order.paid`) |
 | payload | TEXT | N | | | 직렬화된 이벤트(JSON) |
 | status | VARCHAR(20) | N | 'PENDING' | | OutboxStatus(PENDING/PUBLISHED) |

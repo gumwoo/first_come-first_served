@@ -47,6 +47,7 @@
 
 ### 2.2 새 발행 메서드
 - `SsePubSub`에 **엄격 발행 메서드**를 추가한다(이름 예: `publishOrThrow`). 기존 `publish()`는 best-effort 호출부(좌석·주문 직접 알림)용으로 그대로 둔다.
+  - **구현(P2b-1)에서 바뀐 점:** 1순위(전용 연결의 명령 타임아웃)를 쓰면 발행에 전용 Lettuce 연결이 필요하다. 그래서 엄격 발행은 `SsePubSub`의 메서드가 아니라 별도 컴포넌트 `RedisOutboxPublisher`(`OutboxPublisher` 구현)로 뒀다. `SsePubSub`는 바꾸지 않고, 봉투 타입 `SsePubSub.Envelope`과 채널 `OrderSseRegistry.CHANNEL`만 같이 쓴다. 릴레이는 `OutboxPublisher` 인터페이스에만 기대므로 테스트에서 실패·지연을 넣기 쉽다.
   - 직렬화·Redis 오류를 **그대로 던진다**.
   - 봉투는 지금 소비자 경로가 만드는 것과 같다: 채널 `OrderSseRegistry.CHANNEL`(`sse:order`), `Envelope(key = String.valueOf(orderId), event = row.type ("order.paid"), data = {"orderId": orderId})`(`OrderEventConsumer.java:42`와 동일 모양). 프론트가 보는 SSE 프레임은 바뀌지 않는다.
 - `OutboxRelay.send()`는 `kafkaTemplate.send(...).get(sendTimeoutMs)` 자리를 엄격 발행으로 바꾸고, 성공한 뒤에만 `markPublished`한다. 실패 분기(`markAttemptFailed` → 배치 중단 → 다음 틱)는 그대로 쓴다. 결정적 실패(역직렬화 → DEAD)·aggregate 보류 로직도 그대로다.
@@ -238,7 +239,7 @@
 
 전체 진행 순서(사용자 결정 2026-10-14). 각 단계는 CI·하네스 → 독립 검토(G1 리뷰) PASS를 거쳐 다음으로 간다. (이 문서에서 "G1 리뷰"는 PR 독립 검토, "가용성 G1"은 노드 1대 장애 목표 — [operating-requirements.md](operating-requirements.md) — 를 뜻한다.)
 1. 랭킹 감쇠 중복 실행 재현·필요 시 수정(Kafka와 무관한 별도 PR — ShedLock `PT0S` 문제) — **완료**: CI 재현(0.64, 기대 0.8)·경과 시간 기반 감쇠로 수정([TS-051](../troubleshooting/TS-051-ranking-decay-repeated-per-pod.md))
-2. P1 → P2a → P2b(클러스터 불필요) — P1 완료(#409), P2a 진행 중
+2. P1 → P2a → P2b(클러스터 불필요) — P1 완료(#409), P2a 완료(#410). P2b는 둘로 나눈다: **P2b-1**(동작 변경 — 릴레이를 Redis 엄격 발행으로, 회귀 테스트·하네스 규칙 23) → **P2b-2**(삭제 — Kafka·DLQ 코드·계약·화면·설정·모니터링, 런타임 동작 변화 없음). 나누는 이유: 동작이 바뀌는 부분을 작게 따로 검증하기 위해서다. 둘 다 측정 세션 전에 끝나므로 순서 원칙은 같다.
 3. 자원 산정·측정 계획 문서(후보·계획만 — 최종 requests·Hikari 풀·HPA·노드 수는 B₁·B′ 반복·가용성 G1 시험을 거친 뒤 확정) + P3a + 저장소 P3 준비
 4. 측정 세션: N 게이트(§6.1) → Kafka 운영 삭제 게이트(§6.2) → B₁ → B′(반복 조정 가능) → 가용성 G1 시험(최종 B′ 후보) — §7.5
 5. 관찰 기간 뒤 저장소 P3 머지, 충분히 안정된 뒤 P4, 마지막 P5
@@ -250,7 +251,7 @@
 | **P1** | `useOrder` 탭 복귀·한정 재조회(§4) — Kafka와 독립 | 프론트 typecheck·lint·build, vitest, 하네스 | 결제·완료 E2E | revert | 사용자 확인(수치), G1 리뷰 PASS |
 | **P2a** | 아웃박스 기반 관리 필드 **추가**(대시보드·알림), V20, `/admin/outbox` 화면, 대시보드·알림 화면이 새 필드를 읽음. 기존 DLQ 필드·화면 유지 | 백엔드 CI(Testcontainers — 아직 Kafka 포함), 프론트 3종, 하네스(BE14·FE6) | `AdminAlertIntegrationTest`·`AdminOutboxIntegrationTest`, `e2e admin.spec.ts` | revert(V20은 추가 컬럼이라 남아도 무해) | G1 리뷰 PASS |
 | **N₀**(떠 있는 클러스터에서 전환할 때만) | 릴레이 발행 대상 설정(`outbox.relay-target`, 기본 `kafka`) + Redis 엄격 발행 경로 추가. Kafka 소비자·DLQ·설정은 **그대로**. 새 env 키(`OUTBOX_RELAY_TARGET`)는 `application.yml`과 configmap에 **같은 PR**로 넣는다(하네스 k8s 규칙 1) | 백엔드 CI(Kafka 컨테이너 포함), 하네스 | 대상별 통합 테스트(`kafka`: 기존 `OrderEventKafkaIntegrationTest` 그대로 통과 = 기본값에서 동작 불변 / `redis`: §2.3 표) | PR revert(기본값이 `kafka`라 배포만으로는 동작이 바뀌지 않는다) | 아래 (나) 2~3단계 |
-| **P2b = 릴리스 N** | 릴레이 → Redis 엄격 발행(떠 있는 클러스터에서 전환하면 앞에 N₀·설정 전환 단계 — 아래 (나)), 소비자·DLQ·Kafka 설정·의존성 제거, 계약·하네스·configmap·앱 지표 규칙 동반 제거, 테스트 교체(§5) | 백엔드 CI(Kafka 컨테이너 없이), 프론트 3종, 하네스 전체(+ 신규 규칙 메타테스트) | §2.3 표 전부, `SseAfterCommitIntegrationTest`, 결제 E2E(`order.paid` SSE 수신 → 완료 화면) | **P2b PR을 revert**해 이미지와 configmap(`KAFKA_*`)을 함께 되돌린다(ArgoCD 동기화). 이미지만 N-1로 바꾸면 안 된다 — api는 configmap을 `envFrom`으로 받으므로(`api-deployment.yaml:62-63`) `KAFKA_BOOTSTRAP_SERVERS` 없이 `localhost:9092` 기본값으로 떠서 Kafka 경로가 조용히 죽는다. **Kafka 인프라가 남아 있어야 가능**(그래서 운영 삭제(§6.2)를 N 게이트 뒤 별도 게이트로 둔다) | 아래 운영 게이트 |
+| **P2b = 릴리스 N**(P2b-1 + P2b-2) | 릴레이 → Redis 엄격 발행(떠 있는 클러스터에서 전환하면 앞에 N₀·설정 전환 단계 — 아래 (나)), 소비자·DLQ·Kafka 설정·의존성 제거, 계약·하네스·configmap·앱 지표 규칙 동반 제거, 테스트 교체(§5) | 백엔드 CI(Kafka 컨테이너 없이), 프론트 3종, 하네스 전체(+ 신규 규칙 메타테스트) | §2.3 표 전부, `SseAfterCommitIntegrationTest`, 결제 E2E(`order.paid` SSE 수신 → 완료 화면) | **P2b PR을 revert**해 이미지와 configmap(`KAFKA_*`)을 함께 되돌린다(ArgoCD 동기화). 이미지만 N-1로 바꾸면 안 된다 — api는 configmap을 `envFrom`으로 받으므로(`api-deployment.yaml:62-63`) `KAFKA_BOOTSTRAP_SERVERS` 없이 `localhost:9092` 기본값으로 떠서 Kafka 경로가 조용히 죽는다. **Kafka 인프라가 남아 있어야 가능**(그래서 운영 삭제(§6.2)를 N 게이트 뒤 별도 게이트로 둔다) | 아래 운영 게이트 |
 | **P3a**(세션 전) | `bring-up.sh` 스위치 `SKIP_KAFKA=1` — 건너뛰는 것: `kafka` 네임스페이스 생성(`:163`), Strimzi `helm --wait`(`:164-166`, 운영자만 기다린다), `kubectl apply -k k8s/kafka`(`:185`, 대기 없음), 그리고 **Kafka 모니터링 두 리소스**(`podmonitor-kafka.yaml`·`dashboard-kafka.yaml` — 지금은 `k8s/monitoring/kustomization.yaml`에 들어 있어 `:186`이 함께 적용한다. 별도 kustomization으로 분리해 Kafka 단계에서만 적용). **기술적 가드**: 운영 삭제 때 표식(ConfigMap `kafka-removed`, `kube-system`)을 남기고, 스위치 없이 bring-up하면 표식을 보고 Kafka 단계 직전에 멈춘다(재설치 의도면 `FORCE_KAFKA=1`). **가드는 같은 클러스터에서 다시 실행할 때만 동작한다** — 표식이 클러스터 안에 있어, 철거 뒤 새 클러스터에서는 사라진다. 새 클러스터는 `SKIP_KAFKA=1`(사람의 절차, `session.log` 기록)에 의존한다. 클러스터 밖 표식(로컬 gitignore 파일 등)은 P3a에서 검토한다. 기본값은 지금처럼 설치(세션 시작 시 N 게이트를 Kafka가 있는 상태에서 보기 위해) | 하네스, `bash -n` | 스위치·표식 없을 때 적용 리소스가 이전과 같음(분리한 Kafka 모니터링 포함) | revert | G1 리뷰 PASS·머지 |
 | 운영 게이트 ① N 게이트 | (세션) §6.1 | — | — | P2b revert(Kafka 인프라 있음) | §6.1 통과 |
 | 운영 게이트 ② **Kafka 운영 삭제** | (세션) §6.2 — 통과하면 떠 있는 클러스터에서 Strimzi·Kafka CR·PVC·EBS를 지우고 절차·결과를 기록 | — | — | **즉시 롤백 불가** — Kafka 재설치(§6.2의 명령 순서 — bring-up에는 Kafka 단계만 돌리는 기능이 없다) + P2b revert가 필요 | §6.2 통과·삭제 기록 |
@@ -415,9 +416,9 @@
 
 | 항목 | 확인 장소 | 시점 |
 |---|---|---|
-| `StringRedisTemplate.convertAndSend` 반환 타입(`Long` 수신자 수 여부) | 라이브러리 소스·CI 컴파일 | P2b |
-| Lettuce 명령 타임아웃 기본값(설정 미지정 → 60초 추론), 전용 팩토리 `commandTimeout` 시간 초과 뒤 연결 상태 | Spring Boot 3.3.5·Lettuce 소스(정적) + CI 테스트(설정된 타임아웃 단언, Redis 지연 주입). 로컬 gradle이 없어 테스트는 CI에서만 | P2b |
-| `@SchedulerLock`과 `@Transactional` 프록시 순서(락 해제와 커밋 중 무엇이 먼저인지) | 코드·CI 통합 테스트 — `SchedulerLockConfig` Javadoc의 "락은 트랜잭션 바깥에서 획득된다"는 주장을 확인 대상으로 삼는다(같은 Javadoc에 있던 "각 틱을 한 Pod만 실행"은 `PT0S`에서 보장되지 않아 TS-051에서 정정 — CI 재현: 같은 주기 두 번 실행 시 0.64, 기대 0.8). 필요하면 클러스터에서 재확인 | P2b 전(랭킹 감쇠 PR과 함께 볼 수 있음) |
+| `StringRedisTemplate.convertAndSend` 반환 타입 | **확인됨**: Spring Data Redis 3.3.5 API 문서 — `@Nullable Long convertAndSend(String destination, Object message)`, 받은 구독자 수(파이프라인·트랜잭션에서는 null) | P2b-1 |
+| Lettuce 명령 타임아웃 기본값, 전용 팩토리 `commandTimeout` 시간 초과 뒤 연결 상태 | **기본값 확인됨**: Spring Boot 3.3.5 `LettuceConnectionConfiguration`은 `spring.data.redis.timeout`이 null이면 `commandTimeout`을 설정하지 않고, `LettuceClientConfiguration` 기본값은 `RedisURI.DEFAULT_TIMEOUT` = 60초(Lettuce 6.3 소스). 시간 초과 뒤 연결 상태는 CI 테스트(`RedisOutboxPublisherTimeoutTest` — 별도 컨테이너 `CLIENT PAUSE`, 풀린 뒤 같은 발행기로 재발행)로 확인 | P2b-1 |
+| `@SchedulerLock`과 `@Transactional` 프록시 순서(락 해제와 커밋 중 무엇이 먼저인지) | 코드·CI 통합 테스트 — `SchedulerLockConfig` Javadoc의 "락은 트랜잭션 바깥에서 획득된다"는 주장을 확인 대상으로 삼는다(같은 Javadoc에 있던 "각 틱을 한 Pod만 실행"은 `PT0S`에서 보장되지 않아 TS-051에서 정정 — CI 재현: 같은 주기 두 번 실행 시 0.64, 기대 0.8). 필요하면 클러스터에서 재확인 | P2b-1 CI 테스트(`OutboxRelayLockIntegrationTest` — 락 획득·해제 시점의 트랜잭션 활성 여부를 기록) |
 | Strimzi가 만든 브로커·Entity Operator Pod의 실제 requests | 클러스터(기존 기록 없음) | 세션 §6.2 삭제 전 기록 |
 | t3.large(기본 프로파일) allocatable | 클러스터 또는 EKS 예약량 계산식 | 자원 산정 |
 | Hikari active·idle·pending 실측 | 부하를 건 클러스터 | 세션 B₁·B′ |

@@ -48,8 +48,9 @@ class RedisOutboxPublisherTimeoutTest {
             // 60초(Lettuce 기본값)가 아니라 설정한 상한 근처에서 돌아온다. 여유는 CI 지연을 감안한 값이다.
             assertThat(elapsedMs).as("발행 대기(ms)").isLessThan(2_000);
 
-            // 일시 정지가 풀리면 같은 발행기로 다시 나간다(연결이 망가지지 않는다).
-            await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+            // 일시 정지가 풀리면 같은 발행기로 다시 나간다(연결이 망가지지 않는다). 정지가 남아 있는 동안의 시간 초과는
+            // 기대한 실패라 무시하고 다시 시도한다(untilAsserted는 AssertionError만 재시도한다).
+            await().ignoreExceptions().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
                     assertThat(publisher.publish(OrderEvent.of("order.paid", 3L))).isNotNull());
         } finally {
             publisher.destroy();

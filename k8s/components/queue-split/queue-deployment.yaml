@@ -1,5 +1,8 @@
 # 대기열 전용 Deployment(ADR-027) — api와 같은 이미지·같은 컨테이너 사양. 대기열 두 경로만 받는다(flowticket-api-queue Service).
 # 컨테이너 사양은 k8s/base/api-deployment.yaml을 그대로 따른다 — 바꿀 때는 둘을 같이 바꾼다(하네스 k8s 규칙 ⑩-b가 파드 사양 전체가 같은지 본다).
+# 예외(⑩-b 허용 목록 — docs/deployment/resource-sizing-plan.md §3 P1·P3): 대기열만 DB_POOL_MAX env·requests.cpu·hostname
+# topologySpread를 다르게 둘 수 있다(DB_POOL_MAX는 api Deployment에 두지 않는다 — 규칙 17이 못 읽는다). requests.cpu를 다르게
+# 두면 대기열 파드만 고르는 hostname 분산(maxSkew 1·DoNotSchedule, selector에 app: flowticket-api-queue)이 함께 있어야 한다.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

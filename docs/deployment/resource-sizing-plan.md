@@ -59,13 +59,13 @@
 각 후보는 독립 변수 하나씩 바꾸는 것을 원칙으로 하고, 한 PR(→ CI·하네스 → G1 리뷰 → 머지 → ArgoCD 동기화·이미지/설정 확인)으로 적용한다. k8s만 바뀌는 조정은 이미지를 다시 빌드하지 않는다(`image.yml` 변경 판별에 `k8s/`가 없음 — [[ADR-025]]).
 | 후보 | 바꾸는 것 | 근거 | 먼저 필요한 측정·작업 | 제약 |
 |---|---|---|---|---|
-| **P1 대기열 풀 축소** | 대기열 Deployment에 `DB_POOL_MAX` env(예: 2~3) | DB 예산이 대기열 상한을 묶고 있다(§2.1) | B₁의 대기열 파드 Hikari active·pending 최댓값. **하네스 수정이 먼저다**: k8s 규칙 ⑩-b는 대기열 Deployment의 파드 사양 전체가 api와 같아야 통과시킨다(`harness/k8s/check.mjs` — 위반 fixture `k8s-queue-spec-drift`가 cpu만 바꾼 경우다). ⑩-b에 허용할 차이(대기열 `DB_POOL_MAX` env, P3의 `resources.requests.cpu`·분산 규칙)를 명시 목록으로 두고, 목록 밖 차이는 여전히 실패하는지 위반 fixture로 확인한다 | 규칙 17은 `queue-deployment.yaml` 원문의 `DB_POOL_MAX`를 읽는다 — env를 component 패치로 넣으면 ⑩-b는 피하지만 규칙 17이 풀을 5로 계산한다(실패 쪽으로 틀린다). 그래서 원문에 두고 ⑩-b를 고치는 쪽을 권한다 |
+| **P1 대기열 풀 축소** | 대기열 Deployment에 `DB_POOL_MAX` env(예: 2~3) | DB 예산이 대기열 상한을 묶고 있다(§2.1) | B₁의 대기열 파드 Hikari active·pending 최댓값. **하네스 준비됨**: k8s 규칙 ⑩-b(대기열 파드 사양 = api 파드 사양)에 허용 목록을 두었다 — 대기열 `DB_POOL_MAX` env(대기열 쪽만 — api Deployment에 두면 규칙 17이 읽지 못하므로 따로 실패, 위반 fixture `k8s-api-pool-env`), `resources.requests.cpu`, hostname `topologySpreadConstraints`만 비교에서 뺀다. 목록 밖 차이는 그대로 실패한다(위반 fixture `k8s-queue-spec-drift`(메모리 차이)·`k8s-queue-allowed-plus-drift`(허용 차이 + 종료 유예 차이)) | 규칙 17은 `queue-deployment.yaml` 원문의 `DB_POOL_MAX`를 읽는다 — env를 component 패치로 넣으면 ⑩-b는 피하지만 규칙 17이 풀을 5로 계산한다(실패 쪽으로 틀린다). 그래서 원문에 두고 ⑩-b를 고치는 쪽을 권한다 |
 | **P2 대기열 상한 조정** | 대기열 HPA `maxReplicas` | B₀에서 상한 6 도달·폭증 상태 조회 p95 259·523ms | P1(풀 — 상한을 올리면 DB 예산을 넘는다) **그리고** P3(requests 축소) 또는 노드 예산 변경. 1,100m에서는 api 3 + 대기열 6이 이미 노드 9대를 채운다(§2.2) — **1,100m에서 P2는 6을 넘길 수 없다** | 노드 그룹 최대 9(§2.2). 상한을 AZ당 4로 올리면 노드 12 × 2 vCPU + 발생기 12 vCPU = 36 > 쿼터 32(계산 — `loadtest.tfvars`의 쿼터 식, [[ADR-025]]) |
-| **P3 대기열 requests 축소 + 노드 단위 분산** | 대기열 `requests.cpu`(r), hostname 분산 규칙 | 노드당 2개 → 같은 노드 수에서 대기열 처리 자리 증가([[IMP-033]] §9) | B₁의 노드별 밖 요청·대기열 파드 CPU 사용(`app_cpu_by_pod`)·상태 조회 처리량. P1과 같은 ⑩-b 수정(허용 목록에 requests·분산 규칙) | §2.2 r 범위, §2.3 분산 규칙(topologySpread maxSkew 1), HPA 기준 변화 |
+| **P3 대기열 requests 축소 + 노드 단위 분산** | 대기열 `requests.cpu`(r), hostname 분산 규칙 | 노드당 2개 → 같은 노드 수에서 대기열 처리 자리 증가([[IMP-033]] §9) | B₁의 노드별 밖 요청·대기열 파드 CPU 사용(`app_cpu_by_pod`)·상태 조회 처리량. ⑩-b 허용 목록(준비됨 — requests·hostname 분산). 짝 조건도 하네스가 본다: 대기열 CPU 요청이 api와 다르면 대기열 파드만 고르는 hostname 분산(maxSkew 1·`DoNotSchedule`, selector가 대기열 파드 라벨의 부분집합이고 `app: flowticket-api-queue` 포함)이 있어야 한다(위반 fixture `k8s-queue-cpu-no-spread`(ScheduleAnyway)·`k8s-queue-spread-wrong-selector`(api 파드 selector)·`k8s-queue-spread-skew2`(maxSkew 2)) | §2.2 r 범위, §2.3 분산 규칙(topologySpread maxSkew 1), HPA 기준 변화 |
 | **P4 대기열 축소 정책** | 대기열 HPA `behavior.scaleDown`(안정화 창 등) | v1 b1r에서 폭증 시작 22초 뒤 대기열 파드가 3→2로 줄었다([[IMP-033]] §4 — 판정에 쓰지 않은 v1 run의 1회 관측, 축소가 폭증 지연의 주원인이라는 것은 추론) | — | 오픈이 아닌 시간의 비용과 맞바꿈 |
 | **P5 평시 2+2** | api HPA 하한 2·PDB 1, 대기열 2 | G1 출발 후보([operating-requirements.md](operating-requirements.md) §5) | B₁의 api 파드 예매 경로 CPU·지연(api 3개가 예매를 전부 받는다 — [[IMP-033]] §6) | §2.3 PDB, 남은 1개가 평시 부하를 감당하는지(G1). **적용 위치는 queue-split component 패치**로 한다 — base `api-hpa.yaml` 하한을 2로 바꾸면 `event-prescale.yaml`(하한 3)을 하네스 k8s 규칙 11이 "켜진 사전 확장"으로 보고 실패시키고, A′에도 영향이 간다 |
 | **P6 B용 사전 확장(설계만)** | 오픈 전 대기열 하한 상향(api는 고정) | L3(예정된 오픈 뒤 추가 폭증)와 평시 B 상시 + 사전 확장 결정 | 하네스 k8s 규칙 11을 component 기준으로 바꾸는 작업(+ 위반 fixture) | ADR-025 사전 확장과 동시에 켤 수 없다 |
-- 순서 제안(추론 — 의존 관계): P1 → P3 → P2(P1·P3 둘 다 필요), P4는 독립, P5는 마지막. P1·P3 전에 ⑩-b 하네스 수정 PR이 먼저다. P6은 B′ 측정 대상이 아니라 운영 정책 설계로 따로 진행한다.
+- 순서 제안(추론 — 의존 관계): P1 → P3 → P2(P1·P3 둘 다 필요), P4는 독립, P5는 마지막. P1·P3에 필요한 ⑩-b 하네스 수정은 준비됐다(허용 목록·짝 조건). P6은 B′ 측정 대상이 아니라 운영 정책 설계로 따로 진행한다.
 - **시도한 후보를 모두 기록한다**(가장 잘 나온 회차만 고르지 않는다 — [kafka-removal-design.md](kafka-removal-design.md) §7.5).
 
 ## 4. 측정 — 무엇을 기록하나
@@ -81,7 +81,7 @@ B₀([[IMP-033]] v2)과 같은 기록에 아래를 더한다. `export-prom.mjs`�
 
 ## 5. 세션 순서와 각 단계의 통과 조건
 [kafka-removal-design.md](kafka-removal-design.md) §6을 따른다. 아래는 그 순서에 이 문서의 기록을 붙인 것이다.
-1. **세션 전(저장소)**: P3a(`SKIP_KAFKA`·표식 가드) 머지, 이 문서·질의 추가 머지, 저장소 P3 준비(관찰 기간 뒤 머지), B₁ 사전 등록 초안(B₀ v2 사전 등록을 바탕으로 조건 차이만 바꾼다), B′ 후보에 필요한 하네스 수정(⑩-b 허용 목록 — §3 P1·P3, 위반 fixture 포함 — 이것은 세션 전에 머지해도 동작이 바뀌지 않는다), B′ 후보 PR 초안(머지하지 않음).
+1. **세션 전(저장소)**: P3a(`SKIP_KAFKA`·표식 가드) 머지, 이 문서·질의 추가 머지, 저장소 P3 준비(관찰 기간 뒤 머지), B₁ 사전 등록 초안(B₀ v2 사전 등록을 바탕으로 조건 차이만 바꾼다), B′ 후보에 필요한 하네스 수정(⑩-b 허용 목록·짝 조건 — §3 P1·P3, 위반 fixture 포함 — 세션 전에 머지해도 동작이 바뀌지 않는다; **준비됨**), B′ 후보 PR 초안(머지하지 않음).
 2. **bring-up(기본 — Kafka 설치)** → **N 게이트**(§6.1).
 3. **Kafka 운영 삭제 게이트**(§6.2) — 삭제 전 기록(Strimzi Pod 실제 requests, 노드별 requests 합, kafka PV·EBS), 삭제, 표식 생성·가드 확인, 삭제 후 기록(노드 수·노드별 requests — CA가 안정된 뒤).
 4. **B₁** — 기존 B 설정 그대로(§1 표), B₀ v2와 같은 부하 시나리오·워밍업·시작 조건(최소 파드 Ready·HPA 최소·CA `NoCandidates`·`NoActivity` 3분 유지)·판정 정의. 조건 차이(세션 날짜·시간대, AMI·배치, 시작 노드 수, 이미지 N, Kafka 없음, 발생기 위치)를 결과에 함께 적는다. **B₀ 대비 차이를 Kafka 제거의 효과로 쓰지 않는다**(기준선 (a)).
@@ -92,6 +92,8 @@ B₀([[IMP-033]] v2)과 같은 기록에 아래를 더한다. `export-prom.mjs`�
 - **한 세션 안에 끝난다고 전제하지 않는다.** 세션이 나뉘면 B′와의 같은 세션 비교를 위해 B₁을 다시 잴지 사전 등록 때 정한다(D5).
 
 ## 6. 세션 전에 정할 것(사용자 결정 — 권장안 포함)
+**결정(2026-10-14 23:31 KST — `date`로 찍은 시각, 사용자):** D1 = 2회, D2 = 최악 가정 유지, D3 = 권장안(① B₀ 최댓값 임시 기준 + ② B₁ 대비 악화 없음 + ③ 정합성·예매 오류 0 — 허용 폭과 "B₁이 ①을 넘을 때"의 처리는 B′ 사전 등록에서). D4는 권장안대로 B′ 결과를 본 뒤 G1 시험 전에 정한다. D5는 세션이 실제로 나뉠 때 정한다(권장안은 "다시 잰다").
+
 | # | 정할 것 | 권장안 | 이유 |
 |---|---|---|---|
 | D1 | B₁ 반복 횟수 | 2회 | B₀과 같은 횟수라 조건 차이 외의 비교 틀이 같다. 통계적 반복이 아니라는 한계는 B₀과 같다 |

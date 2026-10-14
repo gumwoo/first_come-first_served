@@ -100,7 +100,7 @@ export const QUERIES = {
     "* on (namespace, pod) group_left () (max by (namespace, pod) (kube_pod_status_phase{namespace=\"flowticket\", phase=\"Running\"}) == 1))",
   // Ready 노드 수 — EC2 기동 뒤 Ready 전 시간과 NotReady 구간은 빠지므로 청구 시간보다 약간 적다(IMP-032와 같은 정의).
   nodes_ready: "sum(kube_node_status_condition{condition=\"Ready\", status=\"true\"})",
-  // 노드 배치 계산(자원 산정 계획 §3 — 가용성 G1 시험 전 "노드 하나를 잃으면 남은 자리에 들어가나"). 모든 네임스페이스의 Running 파드
+  // 노드 배치 계산(자원 산정 계획 §2.2·§2.3 — 가용성 G1 시험 전 "노드 하나를 잃으면 남은 자리에 들어가나"). 모든 네임스페이스의 Running 파드
   // 요청을 노드별로 더한다(flowticket 밖 몫 — DaemonSet·모니터링·운영자 — 을 함께 보기 위해). 노드별 allocatable과 나란히 본다.
   node_cpu_requests:
     "sum by (node) (kube_pod_container_resource_requests{resource=\"cpu\"} " +

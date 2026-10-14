@@ -33,22 +33,24 @@
 | 대기열 풀 3, 대기열 상한 q | 20 + (q+1)×3 | q = 11이면 56 | 대기열 상한 최대 11 |
 | 대기열 풀 2, 대기열 상한 q | 20 + (q+1)×2 | q = 17이면 56 | 대기열 상한 최대 17 |
 - **결론(계산):** 지금 B는 예산에 붙어 있다. 풀 5를 유지한 채로는 대기열 상한을 하나도 늘릴 수 없다. 대기열 상한을 늘리려면 **대기열 풀을 줄이는 것이 먼저**다([[IMP-033]] §9 후보).
-- 대기열 풀을 줄여도 되는지는 **대기열 파드의 Hikari active·pending을 재야 안다**(미측정 — [operating-requirements.md](operating-requirements.md) §4). 근거 후보(사실): 진입 경로의 DB 커넥션 획득은 진입 요청당 0.012~0.021(판매 상태 캐시 TTL 1초, [[IMP-033]] §8 — 세션 조회, 원시 응답 미보존). 상태 조회 경로는 DB를 쓰지 않는다고 본다(추론 — B₁에서 Hikari active로 확인). 대기열 파드에서도 스케줄러(아웃박스 릴레이 등)가 돌며 DB를 쓴다(사실: 같은 이미지이고 스케줄러는 `flowticket.scheduling.enabled`(기본 true) 하나로 켜지는데 대기열 Deployment는 이 값을 덮어쓰지 않는다 — [workload-responsibilities.md](workload-responsibilities.md)).
-- api 풀(5)은 이 계획에서 줄이지 않는다 — 예매 경로가 DB를 쓰고, 1,800 rps 파드당 active 5·pending 116(초기 구성, [[TS-034]])의 기록이 있다.
+- 대기열 풀을 줄여도 되는지는 **대기열 파드의 Hikari active·pending을 재야 안다**(미측정 — [operating-requirements.md](operating-requirements.md) §4). 근거 후보(사실): 진입 경로의 DB 커넥션 획득은 진입 요청당 0.012~0.021(판매 상태 캐시 TTL 1초, [[IMP-033]] §8 — v1의 세 run(A′ 2·B 1), 스케줄러 사용 포함, 세션 조회·원시 응답 미보존). 이 값은 **획득 횟수의 비율**이지 동시에 쥔 커넥션 수(active)가 아니다 — 풀 크기 판단에는 active·pending이 필요하다. 상태 조회 경로는 DB를 쓰지 않는다고 본다(추론 — B₁에서 Hikari active로 확인). 대기열 파드에서도 스케줄러(아웃박스 릴레이 등)가 돌며 DB를 쓴다(사실: 같은 이미지이고 스케줄러는 `flowticket.scheduling.enabled`(기본 true) 하나로 켜지는데 대기열 Deployment는 이 값을 덮어쓰지 않는다 — [workload-responsibilities.md](workload-responsibilities.md)).
+- api 풀(5)은 이 계획에서 줄이지 않는다 — 예매 경로가 DB를 쓰고, 1,800 rps 파드당 active 5·pending 116(초기 구성, [[TS-034]])의 기록이 있다(그 구간은 노드 CPU 83%로 오염됐고, TS-034도 "풀이 병목"이라는 해석을 정황이지 확정이 아니라고 적었다).
 
 ### 2.2 노드 자리(CPU requests 기준)
 - api·대기열 1,100m는 노드당 하나만 들어간다(2 × 1,100 > 1,930 — 계산). 그래서 api 계열 파드 수 = 최소 노드 수다.
 | 구성 | api 계열 파드(계산) | CPU requests 하한 노드 수(계산) | 노드 그룹 최대 9 대비(계산) |
 |---|---|---|---|
+| 평시 A′(통합 — api 3, 대기열 Deployment 없음) | 3 | 3 | 남는 자리 6 |
 | 현재 B 평시(api 3 + 대기열 2) | 5 | 5 | 남는 자리 4 |
 | 현재 B 대기열 상한(api 3 + 대기열 6) | 9 | 9 | 0 — 이 상태에서 롤링 surge(+1,100m)는 들어갈 노드가 없다([[ADR-025]] 결과·대가와 같은 구조) |
 | 2+2 출발 후보(api 2 + 대기열 2) | 4 | 4 | 남는 자리 5 |
-- 하한은 실제 대수가 아니다. web 2개(300m)와 flowticket 밖 요청이 api 옆 남은 자리(1,930 − 1,100 − 밖 요청)에 들어가지 못하면 노드가 더 붙는다. B₀은 5·6대에서 안정됐다([[IMP-033]] 실측).
-- **대기열 requests를 줄여 노드당 2개를 넣으려면(계산):** `2 × r + 밖 요청 ≤ 1,930`. 밖 요청이 Kafka 제거 전 값(410~750m)이면 r ≤ 590~760m. Kafka 제거 뒤 밖 요청은 미확인이라 **r의 후보는 B₁에서 노드별 요청을 잰 뒤 정한다**.
+- 하한은 실제 대수가 아니다. web 2개(300m)와 flowticket 밖 요청이 api 옆 남은 자리(1,930 − 1,100 − 밖 요청)에 들어가지 못하면 노드가 더 붙는다. B₀은 5·6대, 같은 세션의 A′는 4대에서 안정됐다([[IMP-033]] 실측 — Kafka 있음).
+- [operating-requirements.md](operating-requirements.md) §5(평시 운영 방식)는 "평시 A′"와 "평시 B 2+2"의 노드 수를 함께 계산해 차이가 크면 B 상시 결정을 다시 검토하라고 했다. 하한(계산)은 A′ 3대·B 2+2 4대다. 실제 대수는 Kafka 제거 뒤 밖 요청을 알아야 낼 수 있어 B₁의 노드별 기록으로 계산하고, 비교와 재검토 여부는 확정판에서 적는다.
+- **대기열 requests를 줄여 노드당 2개를 넣으려면(계산):** `2 × r + 밖 요청 ≤ 1,930`. 밖 요청이 Kafka 제거 전 A′ 평시 노드 값(410~750m)이면 r ≤ 590~760m, 사전 확장으로 새로 붙은 노드처럼 밖 요청이 약 180m(계산 — [[ADR-025]] 보충)이면 r ≤ 875m로, 노드마다 다르다. Kafka 제거 뒤 밖 요청은 미확인이라 **r의 후보는 B₁에서 노드별 요청을 잰 뒤 정한다**.
 - requests를 줄이면 HPA 기준도 바뀐다 — CPU 60% 목표는 requests 기준이라 r이 작아지면 같은 부하에서 더 일찍, 더 많이 확장한다. 그 파드 수가 §2.1 DB 예산과 §2.2 노드 상한 안에 들어야 한다.
 
 ### 2.3 가용성 G1 — 노드 1대가 갑자기 사라져도 핵심 경로가 계속 도는가
-- 지금은 **1,100m라서** api 계열 파드가 서로 다른 노드에 놓인다(자원 때문에 생긴 성질이지 규칙이 아니다). requests를 줄이면 **같은 Deployment의 파드 둘이 한 노드에 놓일 수 있고, 그 노드를 잃으면 둘 다 사라진다** — 대기열 2개가 한 노드에 있으면 새 진입이 멈춘다(G1 위반). 그래서 requests를 줄이는 후보는 **노드 단위 분산 규칙(hostname `topologySpreadConstraints` 또는 anti-affinity)과 한 쌍**이다([[ADR-026]] B1, 별도 브랜치 `perf/api-node-spread`의 결정과 연결).
+- 지금은 **1,100m라서** api 계열 파드가 서로 다른 노드에 놓인다(자원 때문에 생긴 성질이지 규칙이 아니다). requests를 줄이면 **같은 Deployment의 파드 둘이 한 노드에 놓일 수 있고, 그 노드를 잃으면 둘 다 사라진다** — 대기열 2개가 한 노드에 있으면 새 진입이 멈춘다(G1 위반). 그래서 requests를 줄이는 후보는 **노드 단위 분산 규칙과 한 쌍**이다. 규칙은 hostname `topologySpreadConstraints`(maxSkew 1)로 둔다 — 같은 Deployment 파드가 노드마다 고르게 퍼지되 한 노드에 둘 이상도 허용한다. required anti-affinity는 한 노드에 둘을 아예 막아 P3의 목표(노드당 2개)와 맞지 않는다. [[ADR-026]] B1은 "노드당 하나"를 명시하는 안이라 목표가 다르다(B1은 requests와 배치를 떼어 내는 것, P3은 노드당 자리를 늘리는 것). maxSkew 계산에서 대기열 파드가 0개인 노드(api만 있는 노드 등)가 도메인으로 세어지면 노드당 2개가 기대만큼 생기지 않을 수 있다(추론, 미확인 — §7).
 - PDB: api `minAvailable 2`는 api 2개 구성에서 드레인을 막는다(비자발적 장애에는 PDB가 작동하지 않지만, 노드 작업·CA 축소가 막힌다). 2+2 후보는 api PDB를 1로(또는 `maxUnavailable 1`) 함께 바꾼다([operating-requirements.md](operating-requirements.md) §5 단서).
 - **시험 전 계산(사전 등록에 넣는다):** 최종 B′ 후보의 실제 배치(`kubectl get pod -o wide`)와 노드별 남은 자리(`node_allocatable` − `node_cpu_requests`·`node_memory_requests`, §4)로, 노드마다 "이 노드를 잃으면 그 위의 파드가 남은 노드에 들어가는가"를 표로 만든다. 들어가지 않으면 CA 증설(실측 110초, [[IMP-021]]) + 파드 기동·Ready + 워밍업이 끝날 때까지 남은 복제본만으로 버텨야 한다 — 그 시간 동안 Deployment마다 Ready 1개 이상이 남는지가 G1의 최소 조건이다. 남지 않으면 시험 전에 후보를 고친다.
 
@@ -56,13 +58,13 @@
 각 후보는 독립 변수 하나씩 바꾸는 것을 원칙으로 하고, 한 PR(→ CI·하네스 → G1 리뷰 → 머지 → ArgoCD 동기화·이미지/설정 확인)으로 적용한다. k8s만 바뀌는 조정은 이미지를 다시 빌드하지 않는다(`image.yml` 변경 판별에 `k8s/`가 없음 — [[ADR-025]]).
 | 후보 | 바꾸는 것 | 근거 | 먼저 필요한 측정·작업 | 제약 |
 |---|---|---|---|---|
-| **P1 대기열 풀 축소** | 대기열 Deployment에 `DB_POOL_MAX` env(예: 2~3) | DB 예산이 대기열 상한을 묶고 있다(§2.1) | B₁의 대기열 파드 Hikari active·pending 최댓값 | 하네스 규칙 17은 이미 대기열 `DB_POOL_MAX`를 읽는다(`check.mjs` B 분기) |
-| **P2 대기열 상한 조정** | 대기열 HPA `maxReplicas` | B₀에서 상한 6 도달·폭증 상태 조회 p95 259·523ms | P1(풀) — 상한을 올리면 DB 예산을 넘는다 | 노드 그룹 최대 9(§2.2), vCPU 쿼터 32(발생기 3 × 4 포함 — [[ADR-025]]) |
-| **P3 대기열 requests 축소 + 노드 단위 분산** | 대기열 `requests.cpu`(r), hostname 분산 규칙 | 노드당 2개 → 같은 노드 수에서 대기열 처리 자리 증가([[IMP-033]] §9) | B₁의 노드별 밖 요청·대기열 파드 CPU 사용(`app_cpu_by_pod`)·상태 조회 처리량 | §2.2 r 범위, §2.3 분산 규칙, HPA 기준 변화 |
-| **P4 대기열 축소 정책** | 대기열 HPA `behavior.scaleDown`(안정화 창 등) | b1r에서 폭증 직전 축소(3→2)가 폭증과 겹쳤다([[IMP-033]] §4 — 1회 관측, 원인 귀속은 추론) | — | 오픈이 아닌 시간의 비용과 맞바꿈 |
-| **P5 평시 2+2** | api HPA 하한 2·PDB 1, 대기열 2 | G1 출발 후보([operating-requirements.md](operating-requirements.md) §5) | B₁의 api 파드 예매 경로 CPU·지연(api 3개가 예매를 전부 받는다 — [[IMP-033]] §6) | §2.3 PDB, 남은 1개가 평시 부하를 감당하는지(G1) |
+| **P1 대기열 풀 축소** | 대기열 Deployment에 `DB_POOL_MAX` env(예: 2~3) | DB 예산이 대기열 상한을 묶고 있다(§2.1) | B₁의 대기열 파드 Hikari active·pending 최댓값. **하네스 수정이 먼저다**: k8s 규칙 ⑩-b는 대기열 Deployment의 파드 사양 전체가 api와 같아야 통과시킨다(`harness/k8s/check.mjs` — 위반 fixture `k8s-queue-spec-drift`가 cpu만 바꾼 경우다). ⑩-b에 허용할 차이(대기열 `DB_POOL_MAX` env, P3의 `resources.requests.cpu`·분산 규칙)를 명시 목록으로 두고, 목록 밖 차이는 여전히 실패하는지 위반 fixture로 확인한다 | 규칙 17은 `queue-deployment.yaml` 원문의 `DB_POOL_MAX`를 읽는다 — env를 component 패치로 넣으면 ⑩-b는 피하지만 규칙 17이 풀을 5로 계산한다(실패 쪽으로 틀린다). 그래서 원문에 두고 ⑩-b를 고치는 쪽을 권한다 |
+| **P2 대기열 상한 조정** | 대기열 HPA `maxReplicas` | B₀에서 상한 6 도달·폭증 상태 조회 p95 259·523ms | P1(풀 — 상한을 올리면 DB 예산을 넘는다) **그리고** P3(requests 축소) 또는 노드 예산 변경. 1,100m에서는 api 3 + 대기열 6이 이미 노드 9대를 채운다(§2.2) — **1,100m에서 P2는 6을 넘길 수 없다** | 노드 그룹 최대 9(§2.2). 상한을 AZ당 4로 올리면 노드 12 × 2 vCPU + 발생기 12 vCPU = 36 > 쿼터 32(계산 — `loadtest.tfvars`의 쿼터 식, [[ADR-025]]) |
+| **P3 대기열 requests 축소 + 노드 단위 분산** | 대기열 `requests.cpu`(r), hostname 분산 규칙 | 노드당 2개 → 같은 노드 수에서 대기열 처리 자리 증가([[IMP-033]] §9) | B₁의 노드별 밖 요청·대기열 파드 CPU 사용(`app_cpu_by_pod`)·상태 조회 처리량. P1과 같은 ⑩-b 수정(허용 목록에 requests·분산 규칙) | §2.2 r 범위, §2.3 분산 규칙(topologySpread maxSkew 1), HPA 기준 변화 |
+| **P4 대기열 축소 정책** | 대기열 HPA `behavior.scaleDown`(안정화 창 등) | v1 b1r에서 폭증 시작 22초 뒤 대기열 파드가 3→2로 줄었다([[IMP-033]] §4 — 판정에 쓰지 않은 v1 run의 1회 관측, 축소가 폭증 지연의 주원인이라는 것은 추론) | — | 오픈이 아닌 시간의 비용과 맞바꿈 |
+| **P5 평시 2+2** | api HPA 하한 2·PDB 1, 대기열 2 | G1 출발 후보([operating-requirements.md](operating-requirements.md) §5) | B₁의 api 파드 예매 경로 CPU·지연(api 3개가 예매를 전부 받는다 — [[IMP-033]] §6) | §2.3 PDB, 남은 1개가 평시 부하를 감당하는지(G1). **적용 위치는 queue-split component 패치**로 한다 — base `api-hpa.yaml` 하한을 2로 바꾸면 `event-prescale.yaml`(하한 3)을 하네스 k8s 규칙 11이 "켜진 사전 확장"으로 보고 실패시키고, A′에도 영향이 간다 |
 | **P6 B용 사전 확장(설계만)** | 오픈 전 대기열 하한 상향(api는 고정) | L3(예정된 오픈 뒤 추가 폭증)와 평시 B 상시 + 사전 확장 결정 | 하네스 k8s 규칙 11을 component 기준으로 바꾸는 작업(+ 위반 fixture) | ADR-025 사전 확장과 동시에 켤 수 없다 |
-- 순서 제안(추론 — 효과가 큰 쪽과 의존 관계): P1 → P2 → (P3 또는 P4) → P5. P6은 B′ 측정 대상이 아니라 운영 정책 설계로 따로 진행한다.
+- 순서 제안(추론 — 의존 관계): P1 → P3 → P2(P1·P3 둘 다 필요), P4는 독립, P5는 마지막. P1·P3 전에 ⑩-b 하네스 수정 PR이 먼저다. P6은 B′ 측정 대상이 아니라 운영 정책 설계로 따로 진행한다.
 - **시도한 후보를 모두 기록한다**(가장 잘 나온 회차만 고르지 않는다 — [kafka-removal-design.md](kafka-removal-design.md) §7.5).
 
 ## 4. 측정 — 무엇을 기록하나
@@ -78,7 +80,7 @@ B₀([[IMP-033]] v2)과 같은 기록에 아래를 더한다. `export-prom.mjs`�
 
 ## 5. 세션 순서와 각 단계의 통과 조건
 [kafka-removal-design.md](kafka-removal-design.md) §6을 따른다. 아래는 그 순서에 이 문서의 기록을 붙인 것이다.
-1. **세션 전(저장소)**: P3a(`SKIP_KAFKA`·표식 가드) 머지, 이 문서·질의 추가 머지, B₁ 사전 등록 초안(B₀ v2 사전 등록을 바탕으로 조건 차이만 바꾼다), B′ 후보 PR 초안(머지하지 않음).
+1. **세션 전(저장소)**: P3a(`SKIP_KAFKA`·표식 가드) 머지, 이 문서·질의 추가 머지, 저장소 P3 준비(관찰 기간 뒤 머지), B₁ 사전 등록 초안(B₀ v2 사전 등록을 바탕으로 조건 차이만 바꾼다), B′ 후보에 필요한 하네스 수정(⑩-b 허용 목록 — §3 P1·P3, 위반 fixture 포함 — 이것은 세션 전에 머지해도 동작이 바뀌지 않는다), B′ 후보 PR 초안(머지하지 않음).
 2. **bring-up(기본 — Kafka 설치)** → **N 게이트**(§6.1).
 3. **Kafka 운영 삭제 게이트**(§6.2) — 삭제 전 기록(Strimzi Pod 실제 requests, 노드별 requests 합, kafka PV·EBS), 삭제, 표식 생성·가드 확인, 삭제 후 기록(노드 수·노드별 requests — CA가 안정된 뒤).
 4. **B₁** — 기존 B 설정 그대로(§1 표), B₀ v2와 같은 부하 시나리오·워밍업·시작 조건(최소 파드 Ready·HPA 최소·CA `NoCandidates`·`NoActivity` 3분 유지)·판정 정의. 조건 차이(세션 날짜·시간대, AMI·배치, 시작 노드 수, 이미지 N, Kafka 없음, 발생기 위치)를 결과에 함께 적는다. **B₀ 대비 차이를 Kafka 제거의 효과로 쓰지 않는다**(기준선 (a)).
@@ -93,7 +95,7 @@ B₀([[IMP-033]] v2)과 같은 기록에 아래를 더한다. `export-prom.mjs`�
 |---|---|---|---|
 | D1 | B₁ 반복 횟수 | 2회 | B₀과 같은 횟수라 조건 차이 외의 비교 틀이 같다. 통계적 반복이 아니라는 한계는 B₀과 같다 |
 | D2 | 폭증 부하 모델 | 지금의 `retryAfterMs` 무시 최악 가정(고정 도착률)을 유지, 지시를 따르는 폴링은 이번에 넣지 않는다 | B₀·B₁·B′의 비교 틀을 유지한다. 폴링 모델은 별도 과제(운영 요구사항 §5 "미정") |
-| D3 | B′ 1차 판정식 | 예매 p95 ②(hold·주문·결제) ≤ B₀ 최댓값(hold 272·주문 260·결제 224ms), 폭증 상태 조회 p95 < 523ms, 정합성 위반 0·예매 오류 0, DB 예산 안(하네스) — 노드-시간은 2차 관찰 | [operating-requirements.md](operating-requirements.md) §5 지연 목표("B 실측을 임시 기준") — 어느 값을 쓸지는 그 문서가 사전 등록으로 미뤘다 |
+| D3 | B′ 1차 판정식 | ① 임시 기준: 예매 p95 ②(hold·주문·결제) ≤ B₀ 최댓값(hold 272·주문 260·결제 224ms), 폭증 상태 조회 p95 < 523ms ② **B₁ 대비 악화 없음**: 같은 지표에서 B′ ≤ B₁(같은 세션) 최댓값 × (1 + 허용 폭) — 허용 폭은 B₁의 두 run 차이를 보고 사전 등록에서 정한다 ③ 정합성 위반 0·예매 오류 0, DB 예산 안(하네스). 노드-시간은 2차 관찰. **B₁ 자체가 ①을 넘으면** ①을 그대로 둘지 B₁을 기준으로 바꿀지 B′ 사전 등록에서 정하고, 그 사실을 결과에 적는다 | [operating-requirements.md](operating-requirements.md) §5 지연 목표("B 실측을 임시 기준") — 어느 값을 쓸지는 그 문서가 사전 등록으로 미뤘다. ②는 B′의 목적이 B₁ 대비 자원 최적화이기 때문이다([kafka-removal-design.md](kafka-removal-design.md) §7.5) |
 | D4 | 가용성 G1 허용 기준 | 장애 동안 Deployment마다 Ready ≥ 1 유지(최소 조건) + 오류율·지연·복구 시간 상한은 B′ 결과를 본 뒤 G1 시험 전에 정한다. 장애 대상은 api 파드가 있는 노드 1회·대기열 파드가 있는 노드 1회(관측) | 운영 요구사항 §5가 "장애 직후 허용할 오류율·지연·복구 시간은 따로 정한다"고 했다. 10만/10초 처리량 유지를 가정하지 않는다 |
 | D5 | 세션이 나뉠 때 B₁ 재측정 | 다시 잰다(1회 이상) | B′는 같은 세션 비교가 원칙이다([kafka-removal-design.md](kafka-removal-design.md) §7.5) |
 - 장애 주입 방법(후보): 노드의 EC2 인스턴스 종료(`aws ec2 terminate-instances`) — 비자발적 장애에 가장 가깝다. ASG가 대체 노드를 띄우고 CA도 반응한다 — 둘의 동작을 함께 기록한다. 드레인(`kubectl drain`)은 자발적 중단이라 G1 시험이 아니다.
@@ -106,5 +108,7 @@ B₀([[IMP-033]] v2)과 같은 기록에 아래를 더한다. `export-prom.mjs`�
 | 대기열 파드의 Hikari active·pending(풀 축소 가능 여부) | B₁ |
 | 예매 경로 CPU-ms/req(분리 뒤 api 1,100m 재산정 근거) | B₁ |
 | `jvm_compilation_time_ms_total` 존재 여부 | 세션 첫 run 뒤 |
+| hostname topologySpread(maxSkew 1)에서 대기열 파드가 0개인 노드가 도메인으로 세어지는지, 그래서 노드당 2개가 실제로 생기는지(P3) | P3 적용 run의 배치 기록(`app_pod_nodes`) |
+| 평시 A′와 평시 B 2+2의 실제 노드 수 비교(운영 요구사항 §5 재검토 조건) | B₁의 노드별 기록으로 계산 → 확정판 |
 | 운영 프로파일(t3.large, max 2/AZ)에서의 배치·allocatable — 측정은 m6i.large로만 한다 | 확정판에서(위 3 AZ 재평가와 함께). t3.large allocatable은 [kafka-removal-design.md](kafka-removal-design.md) §8의 미확인 항목 |
 | 3 AZ·NAT·RDS Multi-AZ 재평가 | [kafka-removal-design.md](kafka-removal-design.md) §7.4가 자원 산정으로 넘긴 과제다. 비용과 가용성(G1·G2) 결과가 있어야 판단할 수 있어 이 계획(측정 전)에서는 다루지 않고, B′·가용성 G1 결과 뒤 이 문서의 확정판에서 다룬다 |

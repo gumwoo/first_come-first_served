@@ -70,9 +70,17 @@ export const QUERIES = {
   http_5xx_rate: "sum(rate(http_server_requests_seconds_count{status=~\"5..\"}[1m]))",
   // 진단 신호(§3.2)
   hikari_pending: "max by (pod) (hikaricp_connections_pending)",
+  // 풀 크기 재산정 근거(운영 요구사항 §4 — api·대기열의 active·idle·total, 자원 산정 계획 §4). pending만으로는 "얼마나 남았나"를 모른다.
+  hikari_active: "max by (pod) (hikaricp_connections_active)",
+  hikari_idle: "max by (pod) (hikaricp_connections_idle)",
+  hikari_total: "max by (pod) (hikaricp_connections)",
   tomcat_connections: "sum by (pod) (tomcat_connections_current_connections)",
   tomcat_threads_busy: "sum by (pod) (tomcat_threads_busy_threads)",
   jvm_heap_used: "sum by (pod) (jvm_memory_used_bytes{area=\"heap\"})",
+  // 새 파드 워밍업 확인(IMP-033 v2 사전 등록이 보려다 못 본 값 — 지표 이름은 Micrometer JvmCompilationMetrics 기준, 세션에서 존재 확인)
+  jvm_compilation_ms: "max by (pod) (jvm_compilation_time_ms_total)",
+  // 메모리 requests 재산정 근거 — 힙만이 아니라 컨테이너 전체(OOM 판단 기준과 같은 값)
+  app_memory_working_set_by_pod: "max by (pod) (container_memory_working_set_bytes{namespace=\"flowticket\",container!=\"\"})",
   jvm_gc_pause_rate: "sum by (pod) (rate(jvm_gc_pause_seconds_sum[1m]))",
   open_files: "max by (pod) (process_files_open_files)",
   app_cpu_by_pod: "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"flowticket\",container!=\"\"}[1m]))",
@@ -92,6 +100,15 @@ export const QUERIES = {
     "* on (namespace, pod) group_left () (max by (namespace, pod) (kube_pod_status_phase{namespace=\"flowticket\", phase=\"Running\"}) == 1))",
   // Ready 노드 수 — EC2 기동 뒤 Ready 전 시간과 NotReady 구간은 빠지므로 청구 시간보다 약간 적다(IMP-032와 같은 정의).
   nodes_ready: "sum(kube_node_status_condition{condition=\"Ready\", status=\"true\"})",
+  // 노드 배치 계산(자원 산정 계획 §3 — 가용성 G1 시험 전 "노드 하나를 잃으면 남은 자리에 들어가나"). 모든 네임스페이스의 Running 파드
+  // 요청을 노드별로 더한다(flowticket 밖 몫 — DaemonSet·모니터링·운영자 — 을 함께 보기 위해). 노드별 allocatable과 나란히 본다.
+  node_cpu_requests:
+    "sum by (node) (kube_pod_container_resource_requests{resource=\"cpu\"} " +
+    "* on (namespace, pod) group_left () (max by (namespace, pod) (kube_pod_status_phase{phase=\"Running\"}) == 1))",
+  node_memory_requests:
+    "sum by (node) (kube_pod_container_resource_requests{resource=\"memory\"} " +
+    "* on (namespace, pod) group_left () (max by (namespace, pod) (kube_pod_status_phase{phase=\"Running\"}) == 1))",
+  node_allocatable: "max by (node, resource) (kube_node_status_allocatable{resource=~\"cpu|memory\"})",
   // 아웃박스(ADR-022)
   outbox_oldest_pending_age: "max(flowticket_outbox_oldest_pending_age_seconds)",
   // 구독자 0으로 나간 발행(ADR-028) — 파드별 원시 카운터. increase()는 새 파드의 첫 샘플 이전 증가를 놓쳐서 쓰지 않는다

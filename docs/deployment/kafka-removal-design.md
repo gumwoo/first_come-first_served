@@ -25,7 +25,7 @@
 | ③ 전송 계층 → 소비자 | 소비자 그룹이 오프셋으로 이어 읽는다. 소비자 파드가 죽어도 메시지는 브로커에 남는다. 예외 시 300ms × 2 재시도 → `order-events.DLT` → `dlq_messages` | 없음. 각 파드의 구독 연결(`SseRedisConfig`)이 받는다. 그 순간 구독 연결이 끊겨 있던 파드는 **못 받고 끝** |
 | ④ 소비자 → 파드 간 팬아웃 | `OrderEventConsumer` → `broadcast()` → `SsePubSub.publish()`. Redis 실패는 **삼키고 소비 성공 처리**(`SsePubSub.java:32-38`) → 그 이벤트는 사라지고 DLQ에도 안 간다(추론 — 리스너에 트랜잭션이 없어 `AfterCommit`이 즉시 실행, 예외가 리스너까지 안 올라감) | ②와 같은 홉이 된다. Redis 실패는 **릴레이가 받아 PENDING 유지 → 다음 틱 재시도**(§2) |
 | ⑤ 파드 → 브라우저(SSE) | `deliverLocal` — 전송 실패면 emitter 제거, 재전송 없음 | **그대로** |
-| ⑥ 브라우저 복구 | `onopen`·마운트 때 재조회, 폴링 없음(`useOrder.ts:64-76`) | 그대로 + §4 보완 후보 |
+| ⑥ 브라우저 복구 | `onopen`·마운트 때 재조회. P1 이전에는 폴링 없음 | 그대로 + P1 보완(§4): PENDING 5초·만료까지, 탭 복귀 1회 |
 
 ### 1.2 PUBLISHED의 새 의미 (정책)
 - **`PUBLISHED` = "릴레이가 Redis에 `PUBLISH`를 시도했고 그 호출이 오류 없이 끝났다".** 구독자 수(0 포함), 파드의 로컬 전달, 브라우저 수신을 뜻하지 않는다.
@@ -100,7 +100,7 @@
 - **비대칭(사실, 지금도 있음):** 아웃박스를 지나는 것은 `order.paid`뿐이다. `payment.vbank.deposited`(`PaymentService.java:329·364`), `order.cancelled`·`order.refunded`(`RefundService.java:217-218`, `RefundConverger.java:108-109`)는 `broadcast()`로 직접 나간다 — 크래시·Redis 실패 시 유실, 기록 없음.
   - 이 비대칭은 Kafka 제거와 무관하게 이미 있고, 제거가 바꾸지 않는다. 직접 알림 쪽은 "놓쳐도 재조회가 메운다"는 `AfterCommit` 주석의 전제로 운영돼 왔다.
   - 전부 아웃박스로 옮길지(결제·환불 경로에 DB 쓰기 추가), 그대로 둘지는 **별도 결정**으로 남긴다.
-  - §4의 프론트 보완이 덮는 직접 알림은 `payment.vbank.deposited`뿐이다(`VBANK_WAITING`에서 탭 복귀 재조회). `order.cancelled`·`order.refunded`는 `useOrder`가 **구독하지 않는다**(`useOrder.ts:64-66` — `order.paid`·`payment.vbank.deposited`·`order.failed`만). 이 두 알림의 유실은 §4와 무관하다.
+  - §4의 프론트 보완이 덮는 직접 알림은 `payment.vbank.deposited`뿐이다(`VBANK_WAITING`에서 탭 복귀 재조회). `order.cancelled`·`order.refunded`는 `useOrder`가 **구독하지 않는다**(`useOrder`의 `addEventListener`는 `order.paid`·`payment.vbank.deposited`·`order.failed`만). 이 두 알림의 유실은 §4와 무관하다.
 
 ## 4. 프론트 — SSE는 붙어 있는데 이벤트를 놓친 경우
 - **현상(사실):** `useOrder.ts`는 마운트·`onopen`·이벤트 3종(`order.paid`·`payment.vbank.deposited`·`order.failed`) 때만 재조회한다. 폴링이 없다. SSE가 끊기지 않은 채 이벤트 하나가 빠지면(§1.1 ③·④·⑤ — 파드 구독 연결 순간 단절, `deliverLocal` 전송 실패 등) 화면은 사용자가 새로고침하거나 재연결이 일어날 때까지 이전 상태에 머문다. **지금 Kafka 경로에도 있는 문제**라 제거와 별개의 동반 보완(P1)으로 다룬다.
@@ -113,7 +113,15 @@
   | **B. 한정 재조회(권장, A와 함께)** | 상태가 `PENDING`일 때만 일정 간격 재조회를 **상한 시간 안에서** 돌리고, 종료 상태가 되면 멈춘다. `VBANK_WAITING`은 입금까지 길 수 있어 A만 적용 | 서버 조회 증가. 간격·상한은 구현 PR에서 정하고, 폭증 시 부하를 계산으로 보인다(대기열을 통과한 사용자만 결제 화면에 오므로 동시 결제 화면 수 × 간격 역수) |
   | C. 상시 폴링 | 상태와 무관하게 주기 조회 | SSE를 둔 이유가 약해진다 |
 - **권장: A + B.** 이유: 유실이 어느 구간에서 나든(Kafka 유무 무관) 사용자 화면을 서버 진실로 되돌리는 마지막 장치가 프론트에 하나 있어야 하고, 범위를 진행 중 상태로 좁히면 비용이 상한으로 묶인다. 최종 채택 여부·수치는 P1 PR에서 사용자 확인을 받는다.
+- **결정(사용자 2026-10-14): A + B, 5초 간격·주문 만료까지** — P1에서 구현(`useOrder.ts`).
+  - PENDING: 탭이 보이는 동안 5초마다, `expiresAt`까지 재조회한다. 탭이 숨으면 멈춘다.
+  - PENDING·VBANK_WAITING: `visibilitychange`(visible)·`focus` 때 1회 재조회한다. 둘이 연달아 오면 1초 안에서 한 번으로 묶는다.
+  - 종료 상태가 되면 아무것도 하지 않는다.
+  - 부하 추정(예측, 상한 아님): 동시 PENDING 주문이 정원(100) 수준이면 공연당 약 20 req/s. 입장 슬롯은 선점·주문으로 반환되지 않아(`admit-ttl` 300초 또는 `leave`로만), 주문 만료(선점 시각 + `hold-ttl` 300초)와 입장창이 겹치는 것만으로 약 2배가 될 수 있다. 1인 다중 홀드(최대 4주문 — `SeatService` 1인 4매, 주문은 홀드 단위), leave 후 재입장, 다중 창은 더 늘릴 수 있으나 이 추정에 넣지 않았다(모두 코드 경로에서 끌어낸 추론). 주기 재조회는 주문 하나에 만료까지 약 60회이고, 탭 복귀 재조회는 이와 별도다.
+  - 응답이 5초보다 느리면 앞선 요청이 끝날 때까지 다음 주기 재조회를 내지 않는다. 매 틱 새로 내면 순번 가드가 앞선 응답을 모두 버린다(G1 리뷰 재현).
+  - 효과 범위: 결제 화면은 PAID일 때만 다음 화면으로 넘어간다(`pay/page.tsx`). 재조회로 FAILED·EXPIRED를 받아도 화면 이동은 없다(기존 동작).
 - **테스트(P1):** vitest — ① `PENDING`에서 간격마다 재조회, 상한 도달 시 중단 ② `PAID`·`FAILED` 등 종료 상태가 되면 타이머 해제 ③ 탭 복귀 시 1회 재조회, 종료 상태면 없음 ④ 언마운트 시 타이머 정리 ⑤ 기존 순번 가드(`latest`)로 늦게 온 `PENDING` 응답이 `PAID`를 덮지 않음. 하네스 프론트 규칙 7(EventSource면 `onopen`/폴링)은 그대로 만족.
+  - 구현된 테스트(`tests/useOrder.refetch.test.ts`, 15개): 위 ①~⑤에 더해 느린 응답(6초)에도 PAID 반영(진행 중이면 틱 건너뜀), 주기 재조회 실패 뒤 다음 틱 재시도, 숨은 탭 마운트, 만료 뒤 복귀 1회, focus 1초 dedup, PENDING→VBANK_WAITING 주기 멈춤, 토큰 없음.
 
 ## 5. 의존성 목록 — 영역별로 무엇을 하나
 "제거"·"교체"·"유지"·"문구"로 나눈다. **유지**로 적은 것은 지우지 않는다. 각 줄의 PR은 §6 참조.
@@ -230,7 +238,7 @@
 
 전체 진행 순서(사용자 결정 2026-10-14). 각 단계는 CI·하네스 → 독립 검토(G1 리뷰) PASS를 거쳐 다음으로 간다. (이 문서에서 "G1 리뷰"는 PR 독립 검토, "가용성 G1"은 노드 1대 장애 목표 — [operating-requirements.md](operating-requirements.md) — 를 뜻한다.)
 1. 랭킹 감쇠 중복 실행 재현·필요 시 수정(Kafka와 무관한 별도 PR — ShedLock `PT0S` 문제) — **완료**: CI 재현(0.64, 기대 0.8)·경과 시간 기반 감쇠로 수정([TS-051](../troubleshooting/TS-051-ranking-decay-repeated-per-pod.md))
-2. P1 → P2a → P2b(클러스터 불필요)
+2. P1 → P2a → P2b(클러스터 불필요) — P1 진행 중(§4 결정)
 3. 자원 산정·측정 계획 문서(후보·계획만 — 최종 requests·Hikari 풀·HPA·노드 수는 B₁·B′ 반복·가용성 G1 시험을 거친 뒤 확정) + P3a + 저장소 P3 준비
 4. 측정 세션: N 게이트(§6.1) → Kafka 운영 삭제 게이트(§6.2) → B₁ → B′(반복 조정 가능) → 가용성 G1 시험(최종 B′ 후보) — §7.5
 5. 관찰 기간 뒤 저장소 P3 머지, 충분히 안정된 뒤 P4, 마지막 P5

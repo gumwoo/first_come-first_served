@@ -25,6 +25,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 |---|---|---|
 | 대기열 진입 10만 명 / 10초 + 자동 확장 | 판정 3회 모두 진입 요청 100,000건 정상 처리, 정원 초과·정합성 위반 0. 같은 실행에서 폴링이 몰리자 Pod 3→9·Node 6→9로 확장했다가 다시 축소 | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) |
 | 자동 확장 비용 효과 | 같은 판정 run의 실측 노드 곡선을 시간으로 적분해, 노드 9 고정 대비 노드-시간 11~13% 절감(계산). 오픈 1회·평시 4대를 가정한 하루 환산 약 54%(m6i.large 서울 $0.118/h 기준 하루 약 $13.7). 남은 초과의 절반 이상이 폭증 뒤 CA 축소 대기(약 11분)임을 확인 | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) |
+| 대기열 분리 비교 (같은 Pod 예산 9) | 폴링 폭증(7,000/s) 중 예매 p95: 통합 구조 1.6~2.6초 vs 대기열 전용 Deployment 184~272ms(각 2회, 오류·정합성 위반 0). 사전 등록 판정 "분리 쪽 개선"(운영 관점, 각 2회 — 분리만의 효과는 떼어 내지 않음). 대가로 대기열 상태 조회 p95 13~18 → 259~523ms, 노드 비용 +15~28%(계산) — 운영 기본값은 통합 유지, 대기열 쪽 개선 뒤 전환 결정 | [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) · [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md) |
 | 입장자 동시 예매 | 입장자 100명이 동시에 좌석 선점·주문·결제(경합·더블클릭·결제 실패 후 재시도·1인 한도 포함), 판정 3회 정합성 위반 0 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) |
 | 무중단 배포 | 롤링 배포 중 5xx → 0 (`preStop` 25s) | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md) |
 | 장애 주입 | RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구, 노드 오토스케일로 Pending 파드 수용 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |
@@ -90,6 +91,23 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 부하 도구가 "보냈다"고 기록한 요청 수는 서버 도착의 증거가 아닙니다. 그래서 ALB access log에 찍힌 **서버 도착 시각**으로 10초 창 안의 진입을 셌습니다.
 
 같은 실행 안에서 공연 오픈 전 Git PR로 Pod를 미리 늘리고, 오픈 직후 HPA·Cluster Autoscaler에 넘긴 뒤, 대기자 폴링이 몰리자 다시 Pod와 Node가 늘었다가 줄어드는 흐름까지 이어서 확인했습니다. 세 번 반복해 세 번 모두 진입 100,000건 정상 처리, 정원 초과·정합성 위반 0이었습니다([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)).
+
+### 대기열 분리 — 결과가 갈렸을 때 결론보다 측정 절차를 먼저 고쳤다
+
+폴링이 몰리면 대기열과 예매가 같은 Pod에서 함께 늘어나 같은 스레드를 나눠 씁니다. 코드를 서비스로 쪼개기 전에, 같은 이미지로 대기열 전용 Deployment만 두고(overlay `components:` 한 줄 — 대기열 Service의 대상을 바꾼다) 같은 Pod 예산 9에서 통합 구조와 비교했습니다.
+
+첫 측정에서는 같은 통합 구조인데 결과가 정반대로 갈렸습니다. 원시 지표로 나눠 보니 아키텍처가 아니라 **측정 절차**의 차이였습니다 — 한 run은 예매 경로가 처음 실행되는 순간에(JIT·커넥션 대기) 기준 구간이 걸렸고, 다른 run은 폭증 시작이 늦어져 예매 시점이 어긋났습니다. 판정 지표(폭증 중 ÷ 폭증 전 예매 p95)와 2배 기준은 그대로 두고, 절차(시작 Pod 워밍업, 폭증 대비 예매 시점, 각 구조의 안정 상태에서 시작)를 고쳐 **다시 사전 등록한 뒤** 구조별 2회씩 재측정했습니다 — 2회 반복에 맞춰 가장 보수적인 쌍으로 비교했습니다.
+폭증 중 새로 뜬 Pod는 일부러 데우지 않았습니다(통합 구조의 실제 동작이라 남김). 이 선택은 분리 쪽에 유리하게 기운다는 점을 사전 등록에 밝혀 두었습니다.
+
+| 지표 (구조별 2회) | 통합 | 대기열 전용 Deployment |
+|---|---|---|
+| 폭증 중 예매 p95 (선점·주문·결제) | 1.6~2.6초 | 184~272ms |
+| 폭증 중 대기열 상태 조회 p95 | 13~18ms | 259~523ms |
+| 노드 비용(계산, run 25분) | $0.32 | $0.37~0.41 |
+
+통합 구조에서는 폭증으로 새로 생성된 Pod가 예매 요청의 약 61%를 받았고, 그 Pod들의 서버 처리 시간이 기존 Pod보다 길었습니다(실측 — 세션 중 Prometheus 조회, 원시 응답은 미보존). 분리 구조는 예매 Pod 수가 고정이라 이 경로가 없습니다.
+대신 폭증 중 대기열 Pod가 HPA 상한(6)에 닿은 채 상태 조회가 느려졌습니다 — 상한이 원인인지는 아직 검증하지 않았습니다. 노드는 한가할 때도 1~2대 더 들었습니다(대기열 최소 Pod 2개 몫).
+그래서 결론은 "분리 쪽 개선(운영 관점, 각 2회)"으로 한정하고, **운영 기본값 전환은 대기열 쪽 비용을 개선한 뒤 결정**하기로 했습니다([IMP-033](docs/improvements/IMP-033-queue-split-ab.md)).
 
 ### 롤링 배포 중 502 — 흔한 처방이 원인이 아니었다
 
@@ -184,6 +202,7 @@ k8s/                   Kubernetes base, overlay, Kafka, monitoring, Argo CD
 | 설계 결정과 대안 | [docs/decisions](docs/decisions/_index.md) |
 | 측정 기반 개선 기록 | [docs/improvements](docs/improvements/_index.md) |
 | 10만 명 부하 검증 | [100K 계획서](docs/testing/loadtest-100k-plan.md), [IMP-029](docs/improvements/IMP-029-final-100k-10s-queue.md)~[IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) |
+| 대기열 분리 비교 | [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md), [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) |
 | 장애 분석과 재발 방지 | [docs/troubleshooting](docs/troubleshooting/_index.md) |
 | 배포·E2E·성능 검증 | [docs/deployment](docs/deployment/_index.md), [docs/testing](docs/testing/e2e-rules.md) |
 

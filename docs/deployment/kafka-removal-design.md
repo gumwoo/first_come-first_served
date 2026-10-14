@@ -48,7 +48,7 @@
 ### 2.2 새 발행 메서드
 - `SsePubSub`에 **엄격 발행 메서드**를 추가한다(이름 예: `publishOrThrow`). 기존 `publish()`는 best-effort 호출부(좌석·주문 직접 알림)용으로 그대로 둔다.
   - **구현(P2b-1)에서 바뀐 점:** 1순위(전용 연결의 명령 타임아웃)를 쓰면 발행에 전용 Lettuce 연결이 필요하다. 그래서 엄격 발행은 `SsePubSub`의 메서드가 아니라 별도 컴포넌트 `RedisOutboxPublisher`(`OutboxPublisher` 구현)로 뒀다. `SsePubSub`는 바꾸지 않고, 봉투 타입 `SsePubSub.Envelope`과 채널 `OrderSseRegistry.CHANNEL`만 같이 쓴다. 릴레이는 `OutboxPublisher` 인터페이스에만 기대므로 테스트에서 실패·지연을 넣기 쉽다.
-  - 연결이 아직 없을 때(기동 직후·재연결)는 명령 타임아웃이 아니라 연결 수립 대기가 먼저다(Lettuce `SocketOptions` 기본 10초). 그래서 연결 타임아웃도 `send-timeout-ms`로 묶었다. 연결이 없는 상태의 한 건 최악은 이 값의 약 2배(연결 + handshake)다(추론 — G1 리뷰 지적, 측정하지 않았다).
+  - 연결이 아직 없을 때(기동 직후·재연결)는 연결 수립이 먼저다. Lettuce는 채널 등록 시점부터 handshake 타이머(RedisURI timeout = 명령 타임아웃 T)를 걸어 TCP 연결·TLS·HELLO까지 묶는다. 그래서 한 건 최악은 "연결 수립 ≤ T + PUBLISH ≤ T" ≈ 2T다(lettuce-core 6.3 바이트코드에서 끌어낸 추론 — 측정하지 않았고, DNS 해석이 타이머 안에 드는지는 미확인). 연결 타임아웃(`SocketOptions`)도 T로 둔 것은 TCP 단계의 중복 방어다(1차 G1 리뷰가 "기본 10초"라고 짚은 근거는 2차 리뷰에서 정정됨).
   - 필수 필드(type·orderId)가 빠진 payload는 역직렬화 단계에서 결정적 실패(DEAD)로 거른다. Jackson이 레코드의 빠진 값을 null로 채워 통과시키면 발행 단계 예외가 일시적 실패로 분류돼 그 행에서 배치가 매 틱 멈춘다(G1 리뷰 지적).
   - 직렬화·Redis 오류를 **그대로 던진다**.
   - 봉투는 지금 소비자 경로가 만드는 것과 같다: 채널 `OrderSseRegistry.CHANNEL`(`sse:order`), `Envelope(key = String.valueOf(orderId), event = row.type ("order.paid"), data = {"orderId": orderId})`(`OrderEventConsumer.java:42`와 동일 모양). 프론트가 보는 SSE 프레임은 바뀌지 않는다.

@@ -7,6 +7,7 @@ import com.flowticket.order.event.OrderEvent;
 import com.flowticket.order.sse.OrderSseRegistry;
 import io.lettuce.core.ClientOptions;
 import io.lettuce.core.SocketOptions;
+import io.lettuce.core.TimeoutOptions;
 import io.lettuce.core.resource.ClientResources;
 import java.time.Duration;
 import java.util.Map;
@@ -32,9 +33,11 @@ import org.springframework.stereotype.Component;
  * 팩토리를 Spring 빈으로 올리지 않는다. RedisConnectionFactory가 둘이 되면 자동 구성이 물러나거나 타입 주입이
  * 모호해진다(kafka-removal-design §2.2). 연결 설정은 기본 팩토리와 같은 프로퍼티(RedisProperties)에서 읽는다.
  *
- * 연결이 아직 없을 때(기동 직후·재연결)는 명령 타임아웃이 아니라 연결 수립 대기가 먼저다. 그래서 연결 타임아웃도 같은 값으로
- * 묶는다(Lettuce 기본 10초). 연결 수립 뒤 handshake도 같은 값으로 묶이므로, 연결이 없는 상태의 한 건 최악은 이 값의
- * 약 2배다(추론 — 측정하지 않았다). 기본값(3초)이면 틱 예산 45초 + 6초 < 임차 60초.
+ * 연결이 아직 없을 때(기동 직후·재연결)는 연결 수립이 먼저다. Lettuce는 채널 등록 시점부터 handshake 타이머(RedisURI timeout
+ * = 이 명령 타임아웃)를 걸어 TCP 연결·TLS·HELLO까지 한 번에 묶는다. 그래서 연결이 없는 상태의 한 건 최악은
+ * "연결 수립 ≤ T, 그다음 PUBLISH ≤ T"로 약 2T다(lettuce-core 6.3 바이트코드에서 끌어낸 추론 — 측정하지 않았고,
+ * DNS 해석이 이 타이머 안에 드는지는 확인하지 못했다). 기본값(3초)이면 틱 예산 45초 + 6초 < 임차 60초.
+ * 연결 타임아웃(SocketOptions)도 같은 값으로 둔다 — TCP 단계에 상한을 하나 더 거는 중복 방어다.
  *
  * 시간 초과 뒤에도 서버가 명령을 늦게 처리해 실제로는 발행됐을 수 있다. 그 행은 PENDING으로 남아 다음 틱에
  * 한 번 더 나간다 — 중복은 프론트의 재조회 1회로 끝난다(ADR-028 §6).
@@ -59,6 +62,8 @@ public class RedisOutboxPublisher implements OutboxPublisher, DisposableBean {
                 .commandTimeout(timeout)
                 .clientOptions(ClientOptions.builder()
                         .socketOptions(SocketOptions.builder().connectTimeout(timeout).build())
+                        // Spring Data Redis 기본 ClientOptions와 맞춘다(명령 타임아웃을 Lettuce 쪽에서도 건다).
+                        .timeoutOptions(TimeoutOptions.enabled())
                         .build());
         if (properties.getSsl().isEnabled()) {
             client.useSsl(); // ElastiCache는 전송 중 암호화를 켠다(application.yml REDIS_SSL_ENABLED)

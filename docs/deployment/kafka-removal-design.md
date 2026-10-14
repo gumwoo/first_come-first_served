@@ -229,7 +229,7 @@
 원칙: **새 경로가 CI와 운영 게이트로 확인되기 전에는 Kafka 인프라를 지우지 않는다.** 앱 전환(P2b)이 Kafka 인프라를 쓰지 않게 된 뒤에도, 롤백 경로(N-1)가 Kafka를 필요로 하므로 운영 삭제는 별도 게이트(§6.2)를 통과한 뒤에 하고, 저장소 P3는 관찰 기간(§6.3) 뒤에 머지한다.
 
 전체 진행 순서(사용자 결정 2026-10-14). 각 단계는 CI·하네스 → 독립 검토(G1 리뷰) PASS를 거쳐 다음으로 간다. (이 문서에서 "G1 리뷰"는 PR 독립 검토, "가용성 G1"은 노드 1대 장애 목표 — [operating-requirements.md](operating-requirements.md) — 를 뜻한다.)
-1. 랭킹 감쇠 중복 실행 재현·필요 시 수정(Kafka와 무관한 별도 PR — ShedLock `PT0S` 문제)
+1. 랭킹 감쇠 중복 실행 재현·필요 시 수정(Kafka와 무관한 별도 PR — ShedLock `PT0S` 문제) — **완료**: CI 재현(0.64, 기대 0.8)·경과 시간 기반 감쇠로 수정([TS-051](../troubleshooting/TS-051-ranking-decay-repeated-per-pod.md))
 2. P1 → P2a → P2b(클러스터 불필요)
 3. 자원 산정·측정 계획 문서(후보·계획만 — 최종 requests·Hikari 풀·HPA·노드 수는 B₁·B′ 반복·가용성 G1 시험을 거친 뒤 확정) + P3a + 저장소 P3 준비
 4. 측정 세션: N 게이트(§6.1) → Kafka 운영 삭제 게이트(§6.2) → B₁ → B′(반복 조정 가능) → 가용성 G1 시험(최종 B′ 후보) — §7.5
@@ -282,7 +282,7 @@
 - 결제 E2E에서 `order.paid` SSE를 수신하고, 그 아웃박스 행이 `PUBLISHED`가 된다.
 - 아웃박스 PENDING 0·`oldest_pending.age` 정상·DEAD 증가 없음.
 - 발행 실패가 계속되지 않는다 — 로그 `[outbox] 발행 실패`와 아웃박스 행의 `attempts`·`lastError`로 본다(`flowticket.outbox.publish.ack`는 성공·실패를 모두 기록해 이것만으로는 실패를 가를 수 없다 — `OutboxRelay.java:174·180·186`).
-- **재시도 경로**: 실패 → PENDING 유지 → 다음 틱 재발행은 **CI에서 검증**한다(§2.3 — bean 릴레이 + 테스트용 `LockProvider` + 실패 목, 또는 `TransactionTemplate`으로 감싼 프록시 없는 릴레이. 대기 상한은 전용 팩토리를 별도 Redis 컨테이너에 연결). 클러스터에서 Redis 장애를 강제로 넣는 시험은 하지 않는다 — ShedLock 락 획득이 같은 Redis(기본 커넥션 팩토리, `SchedulerLockConfig.java:20-21`)에 의존해 대부분 발행 전에 틱이 건너뛰어진다(추론. 락을 잡은 뒤 끊기면 발행 실패 경로를 탈 수는 있다). readiness(`readinessState, db, redis`)는 트래픽을 끊을 뿐 릴레이를 멈추지 않는다. 그래서 클러스터에서는 **재시도 경로가 미검증**으로 남고, 관찰된 `attempts > 1` 행이 있으면 결국 `PUBLISHED`가 되었는지만 기록한다.
+- **재시도 경로**: 실패 → PENDING 유지 → 다음 틱 재발행은 **CI에서 검증**한다(§2.3 — bean 릴레이 + 테스트용 `LockProvider` + 실패 목, 또는 `TransactionTemplate`으로 감싼 프록시 없는 릴레이. 대기 상한은 전용 팩토리를 별도 Redis 컨테이너에 연결). 클러스터에서 Redis 장애를 강제로 넣는 시험은 하지 않는다 — ShedLock 락 획득이 같은 Redis(기본 커넥션 팩토리, `SchedulerLockConfig`의 `lockProvider` 빈)에 의존해 대부분 발행 전에 틱이 건너뛰어진다(추론. 락을 잡은 뒤 끊기면 발행 실패 경로를 탈 수는 있다). readiness(`readinessState, db, redis`)는 트래픽을 끊을 뿐 릴레이를 멈추지 않는다. 그래서 클러스터에서는 **재시도 경로가 미검증**으로 남고, 관찰된 `attempts > 1` 행이 있으면 결국 `PUBLISHED`가 되었는지만 기록한다.
 - 롤백 조건(N → 이전, **P2b PR revert**):
   - 아웃박스 PENDING이 줄지 않는다(`FlowticketOutboxBacklog`).
   - 릴레이 발행 실패 로그가 계속된다.
@@ -409,7 +409,7 @@
 |---|---|---|
 | `StringRedisTemplate.convertAndSend` 반환 타입(`Long` 수신자 수 여부) | 라이브러리 소스·CI 컴파일 | P2b |
 | Lettuce 명령 타임아웃 기본값(설정 미지정 → 60초 추론), 전용 팩토리 `commandTimeout` 시간 초과 뒤 연결 상태 | Spring Boot 3.3.5·Lettuce 소스(정적) + CI 테스트(설정된 타임아웃 단언, Redis 지연 주입). 로컬 gradle이 없어 테스트는 CI에서만 | P2b |
-| `@SchedulerLock`과 `@Transactional` 프록시 순서(락 해제와 커밋 중 무엇이 먼저인지) | 코드·CI 통합 테스트 — `SchedulerLockConfig.java:13` Javadoc의 "락은 트랜잭션 바깥에서 획득된다"는 주장을 확인 대상으로 삼는다(같은 Javadoc의 "각 틱을 한 Pod만 실행"은 `PT0S`에서 보장되지 않는다 — 랭킹 감쇠 PR #408에서 CI로 재현: 같은 주기 두 번 실행 시 0.64, 기대 0.8). 필요하면 클러스터에서 재확인 | P2b 전(랭킹 감쇠 PR과 함께 볼 수 있음) |
+| `@SchedulerLock`과 `@Transactional` 프록시 순서(락 해제와 커밋 중 무엇이 먼저인지) | 코드·CI 통합 테스트 — `SchedulerLockConfig` Javadoc의 "락은 트랜잭션 바깥에서 획득된다"는 주장을 확인 대상으로 삼는다(같은 Javadoc에 있던 "각 틱을 한 Pod만 실행"은 `PT0S`에서 보장되지 않아 TS-051에서 정정 — CI 재현: 같은 주기 두 번 실행 시 0.64, 기대 0.8). 필요하면 클러스터에서 재확인 | P2b 전(랭킹 감쇠 PR과 함께 볼 수 있음) |
 | Strimzi가 만든 브로커·Entity Operator Pod의 실제 requests | 클러스터(기존 기록 없음) | 세션 §6.2 삭제 전 기록 |
 | t3.large(기본 프로파일) allocatable | 클러스터 또는 EKS 예약량 계산식 | 자원 산정 |
 | Hikari active·idle·pending 실측 | 부하를 건 클러스터 | 세션 B₁·B′ |

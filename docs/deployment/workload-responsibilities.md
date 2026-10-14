@@ -22,7 +22,7 @@
 | 주문 만료 `OrderExpiryService` | 60초 | order-expiry-sweep(50초) | 결제 제한시각이 지난 미완료 주문을 EXPIRED로(상태 조건 bulk UPDATE). 좌석·hold 복구는 좌석 만료 sweep 몫. DB | 예 | 미결제 주문 만료 지연 |
 | 결제 대사 `PaymentReconciliationService` | 10분 | payment-reconcile(5분) | 미아 승인 정산(승인됐는데 주문에 반영 안 된 결제를 외부 PG로 조회·취소). DB·외부 PG | 예(멱등) | 결제 불일치 복구 지연 |
 | 환불 대사 `RefundReconciliationService` | 10분 | refund-reconcile(5분) | 환불 불일치 복구. DB·외부 | 예(멱등) | 환불 불일치 복구 지연 |
-| 랭킹 감쇠 `RankingService` | 5분 | ranking-decay(4분) | 실시간 랭킹 ZSET 점수에 감쇠율을 곱함(`ZUNIONSTORE` weight). Redis | **아니오** — 곱셈이라 한 주기에 두 번 돌면 두 번 감쇠(과감쇠). 위 반복 실행이 실제로 일어나는지는 미측정 — 별도 확인 대상 | 순위 갱신 지연 |
+| 랭킹 감쇠 `RankingService` | 5분 | ranking-decay(4분) | 실시간 랭킹 ZSET 점수에 흐른 시간만큼 감쇠율을 곱함(`0.8^(경과/5분)`, Lua로 마지막 감쇠 시각과 함께 원자 갱신). Redis | **예**(2026-10-14 수정 — [TS-051](../troubleshooting/TS-051-ranking-decay-repeated-per-pod.md)). 이전에는 곱셈이라 한 주기에 두 번 돌면 두 번 감쇠했다 — CI 재현에서 두 번 실행 시 0.64(기대 0.8) | 순위 갱신 지연 |
 | KOPIS 동기화 `KopisSyncScheduler` | 매일 04:00 | `kopis-sync`(10분) — `KopisSyncService.sync()`에 걸림(수동 admin API와 같은 문) | 외부 공연 데이터 동기화. DB·외부 API | 예(락을 못 잡으면 건너뜀) | 공연 데이터 갱신 지연 |
 
 Kafka 리스너(같은 이미지라 모든 파드에서 시작):

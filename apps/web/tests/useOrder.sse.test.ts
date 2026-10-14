@@ -1,4 +1,4 @@
-import { renderHook } from "@testing-library/react";
+import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeEventSource, installFakeEventSource } from "./fakeEventSource";
 
@@ -30,6 +30,8 @@ describe("useOrder SSE 티켓", () => {
   });
 
   afterEach(() => {
+    // vitest globals가 꺼져 있어 자동 정리가 돌지 않는다. useOrder가 PENDING 재조회 타이머를 갖게 되면서 남은 훅이 다음 테스트로 새지 않게 직접 정리한다.
+    cleanup();
     vi.useRealTimers();
   });
 

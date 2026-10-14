@@ -140,6 +140,73 @@ describe("useOrder 진행 중 상태 재조회", () => {
     expect(getOrder).not.toHaveBeenCalled();
   });
 
+  it("응답이 주기보다 느려도 앞선 요청이 끝나기 전에는 새로 내지 않아, 결국 반영된다", async () => {
+    getOrder.mockResolvedValue(order("PENDING"));
+    const view = await mount();
+    // 이후 모든 응답이 6초 걸리고 서버 상태는 PAID다. 매 틱 새 요청을 내면 순번 가드가 앞선 응답을 모두 버린다.
+    getOrder.mockImplementation(() => new Promise((r) => setTimeout(() => r(order("PAID")), 6_000)));
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await act(async () => {}); // 반영된 상태를 렌더에 흘려보낸다
+    expect(view.result.current.order?.status).toBe("PAID");
+    expect(getOrder.mock.calls.length).toBeLessThanOrEqual(2); // 5초 틱 1회(+그 응답 전 틱은 건너뜀)
+  });
+
+  it("숨은 탭으로 마운트되면 돌지 않다가, 보이면 재조회하고 주기를 시작한다", async () => {
+    visibility = "hidden";
+    getOrder.mockResolvedValue(order("PENDING"));
+    await mount();
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(getOrder).not.toHaveBeenCalled();
+
+    act(() => setVisibility("visible"));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(getOrder).toHaveBeenCalledTimes(2); // 복귀 1 + 주기 1
+  });
+
+  it("만료 뒤 탭 복귀는 1회 재조회하지만 주기는 다시 돌지 않는다", async () => {
+    getOrder.mockResolvedValue(order("PENDING", 3_000));
+    await mount();
+    await vi.advanceTimersByTimeAsync(10_000); // 만료 지남, 주기 멈춤
+    getOrder.mockClear();
+
+    act(() => setVisibility("visible"));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(getOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("복귀 재조회는 1초 안의 중복만 묶고, 그 뒤의 focus는 다시 재조회한다", async () => {
+    getOrder.mockResolvedValue(order("VBANK_WAITING"));
+    await mount();
+
+    act(() => window.dispatchEvent(new Event("focus")));
+    await vi.advanceTimersByTimeAsync(1_500);
+    act(() => window.dispatchEvent(new Event("focus")));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getOrder).toHaveBeenCalledTimes(2);
+  });
+
+  it("PENDING에서 VBANK_WAITING으로 바뀌면 주기 재조회를 멈춘다", async () => {
+    getOrder.mockResolvedValue(order("PENDING"));
+    await mount();
+    getOrder.mockResolvedValue(order("VBANK_WAITING"));
+
+    await vi.advanceTimersByTimeAsync(5_000); // 이 재조회가 VBANK_WAITING을 받는다
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(getOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("토큰이 없으면 재조회하지 않는다", async () => {
+    getOrder.mockResolvedValue(order("PENDING"));
+    renderHook(() => useOrder(1, null));
+    await vi.advanceTimersByTimeAsync(0);
+    getOrder.mockClear();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(getOrder).not.toHaveBeenCalled();
+  });
+
   it("늦게 도착한 PENDING 응답이 나중에 받은 PAID를 덮지 않는다", async () => {
     getOrder.mockResolvedValue(order("PENDING"));
     const view = await mount();

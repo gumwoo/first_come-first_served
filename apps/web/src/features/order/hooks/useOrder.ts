@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as orderApi from "@/features/order/api/order";
+import type { OrderStatus } from "@/types/contracts";
 
 /** 티켓 만료로 브라우저가 재연결을 포기한 뒤 다시 붙기까지의 대기. */
 const SSE_RETRY_DELAY_MS = 2000;
@@ -9,12 +10,17 @@ const SSE_RETRY_DELAY_MS = 2000;
 /**
  * PENDING 동안의 재조회 간격. SSE가 붙어 있어도 이벤트 하나가 빠질 수 있다(파드의 Redis 구독 연결 순간 단절,
  * 전송 실패 — kafka-removal-design §4). 종료 이벤트라 다시 오지 않으므로, 진행 중 상태에서만 서버 상태로 되맞춘다.
- * 정원 100명 × 5초 간격이면 공연당 최대 약 20 req/s(계산), 주문 하나에 만료(약 5분)까지 최대 약 60회.
+ * 부하 추정(예측, 상한 아님): 동시 PENDING 주문이 정원(100) 수준이면 공연당 약 20 req/s. 입장창과 선점 만료가 겹치면
+ * 동시 PENDING이 약 2배까지 갈 수 있다(입장 슬롯은 선점·주문으로 반환되지 않음). 탭 복귀 재조회는 별도다.
  */
 const PENDING_POLL_MS = 5000;
 
+/** 주문 만료 시각을 읽지 못할 때 주기 재조회를 이어갈 최대 시간(방어용 — expires_at은 NOT NULL이라 정상 경로가 아니다). */
+const FALLBACK_POLL_WINDOW_MS = 10 * 60 * 1000;
+
 /** 탭으로 돌아왔을 때 재조회할 진행 중 상태. VBANK_WAITING은 입금까지 길 수 있어 주기 재조회 없이 복귀 때만. */
-const REFRESH_ON_RETURN = new Set(["PENDING", "VBANK_WAITING"]);
+const REFRESH_ON_RETURN: ReadonlySet<OrderStatus> = new Set<OrderStatus>(["PENDING", "VBANK_WAITING"]);
+const POLLING_STATUS: OrderStatus = "PENDING";
 
 /** visibilitychange와 focus가 연달아 오면 한 번만 재조회한다. */
 const RETURN_REFRESH_DEDUP_MS = 1000;
@@ -25,6 +31,8 @@ export function useOrder(orderId: number, token: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const latest = useRef(0);
+  /** 진행 중인 refresh 수. 주기 재조회는 이게 0일 때만 새 요청을 낸다(아래 효과). */
+  const inFlight = useRef(0);
 
   // refresh()는 여러 곳에서 겹쳐 호출된다. 마운트, onopen, 이벤트 3종, 그리고 반환값을
   // 받은 화면. 먼저 보낸 요청이 먼저 도착한다는 보장이 없으므로(첫 요청은 커넥션을 새로
@@ -33,6 +41,7 @@ export function useOrder(orderId: number, token: string | null) {
   // 이벤트라 다시 오지 않으므로 화면이 영영 고착된다.
   const refresh = useCallback(async () => {
     const seq = ++latest.current;
+    inFlight.current++;
     try {
       const next = await orderApi.getOrder(orderId, token);
       if (seq !== latest.current) return;
@@ -42,6 +51,7 @@ export function useOrder(orderId: number, token: string | null) {
       if (seq !== latest.current) return;
       setError(true);
     } finally {
+      inFlight.current--;
       if (seq === latest.current) setLoading(false);
     }
   }, [orderId, token]);
@@ -112,14 +122,18 @@ export function useOrder(orderId: number, token: string | null) {
   }, [orderId, token, refresh]);
 
   // 진행 중 상태의 보완 재조회. SSE를 대신하지 않는다 — 알림이 빠졌을 때 화면이 이전 상태에 멈추지 않게 하는 마지막 장치다.
-  // - PENDING: 탭이 보이는 동안 5초마다, 주문 만료 시각까지.
+  // - PENDING: 탭이 보이는 동안 5초마다, 주문 만료 시각까지(클라이언트 시계 기준 — 결제 화면 카운트다운과 같다).
   // - PENDING·VBANK_WAITING: 탭으로 돌아오면 1회.
   // - 그 밖의 상태(PAID·FAILED·EXPIRED 등 종료)가 되면 아무것도 하지 않는다(상태가 바뀌면 이 효과가 정리된다).
-  const status = order?.status;
+  // - 토큰이 없으면 하지 않는다(SSE 효과와 같은 이유 — 보내봐야 401이고 silent refresh만 유발한다).
+  // 주기 재조회는 진행 중인 요청이 있으면 그 틱을 건너뛴다. 응답이 주기보다 느릴 때 매 틱 새 요청을 내면, 순번 가드가
+  // 앞선 응답을 모두 버려 SSE로 시작한 재조회까지 반영되지 않는다(G1 리뷰 재현).
+  const status = order?.status as OrderStatus | undefined;
   const expiresAt = order?.expiresAt;
   useEffect(() => {
-    if (!status || !REFRESH_ON_RETURN.has(status)) return;
-    const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : NaN;
+    if (!token || !status || !REFRESH_ON_RETURN.has(status)) return;
+    const parsed = expiresAt ? new Date(expiresAt).getTime() : NaN;
+    const expiresAtMs = Number.isFinite(parsed) ? parsed : Date.now() + FALLBACK_POLL_WINDOW_MS;
     let timer: ReturnType<typeof setInterval> | null = null;
     let lastReturnRefresh = 0;
 
@@ -127,14 +141,15 @@ export function useOrder(orderId: number, token: string | null) {
       if (timer) clearInterval(timer);
       timer = null;
     };
-    const expired = () => Number.isFinite(expiresAtMs) && Date.now() >= expiresAtMs;
+    const expired = () => Date.now() >= expiresAtMs;
     const start = () => {
-      if (status !== "PENDING" || timer || document.visibilityState === "hidden" || expired()) return;
+      if (status !== POLLING_STATUS || timer || document.visibilityState === "hidden" || expired()) return;
       timer = setInterval(() => {
         if (expired()) {
           stop();
           return;
         }
+        if (inFlight.current > 0) return; // 앞선 요청(주기·SSE·복귀)이 아직 진행 중
         refresh();
       }, PENDING_POLL_MS);
     };
@@ -159,7 +174,7 @@ export function useOrder(orderId: number, token: string | null) {
       document.removeEventListener("visibilitychange", onReturn);
       window.removeEventListener("focus", onReturn);
     };
-  }, [status, expiresAt, refresh]);
+  }, [token, status, expiresAt, refresh]);
 
   return { order, loading, error, refresh };
 }

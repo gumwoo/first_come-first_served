@@ -44,8 +44,9 @@ public class RankingService {
     //
     // 시각은 Java Clock으로 받는다(테스트에서 시계를 돌리기 위해).
     // - 기록이 없으면(첫 실행·키 유실) 한 주기만큼 감쇠한다(기존 동작).
-    // - 지금이 마지막 감쇠보다 조금 과거로 보이면(파드 사이 시계 어긋남) 아무것도 하지 않는다.
-    // - 기록이 한 주기보다 더 미래면 시계가 앞선 파드가 남긴 값으로 보고, 감쇠 없이 지금으로 다시 쓴다(감쇠가 멈추지 않게).
+    // - 지금이 마지막 감쇠보다 과거로 보이면(파드 사이 시계 어긋남) 아무것도 하지 않고 기록도 그대로 둔다.
+    //   기록을 지금으로 다시 쓰면, 시계가 앞선 파드와 정상 파드가 번갈아 기록을 당겨 실행마다 과감쇠한다(G1 리뷰 계산).
+    //   대가: 시계가 앞선 파드가 기록을 남기고 사라지면 그 차이만큼 감쇠가 멈춘다(NTP 동기 환경이면 작다 — TS-051 한계).
     // - 경과는 MAX_DECAY_PERIODS 주기까지만 인정한다(긴 공백 뒤 첫 실행에서 랭킹이 통째로 사라지지 않게).
     // KEYS: hot, decayedAt / ARGV: nowMs, periodMs, factor, minScore, maxPeriods. 반환: 1=감쇠함, 0=건너뜀.
     private static final String DECAY_LUA = """
@@ -55,10 +56,6 @@ public class RankingService {
             local elapsed = period
             if last then
               elapsed = now - last
-            end
-            if elapsed < -period then
-              redis.call('SET', KEYS[2], ARGV[1])
-              return 0
             end
             if elapsed <= 0 then
               return 0

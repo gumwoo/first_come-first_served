@@ -154,14 +154,15 @@ class RankingIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    void 한_주기보다_미래인_기록은_감쇠_없이_지금으로_다시_쓴다() {
-        // 시계가 앞선 파드가 미래 시각을 남기면 다른 파드들이 감쇠를 건너뛴다. 한 주기 넘게 앞서면 기록을 바로잡는다.
+    void 미래_기록이면_건너뛰고_기록을_유지한다() {
+        // 시계가 앞선 파드가 남긴 기록을 다른 파드가 지금으로 당기면, 두 파드가 번갈아 과감쇠한다. 그래서 건너뛰기만 한다.
         ranking.recordView(idA, "1.1.1.1"); // hot=1.0
         ranking.decay(); // ×0.8, 기록 = t0
-        decayAfter(Duration.ofMinutes(-10)); // 기록이 10분 미래 → 지금(t0-10분)으로 다시 씀, 감쇠 없음
+        decayAfter(Duration.ofMinutes(-10)); // 지금 = t0-10분: 기록이 미래 → 건너뜀
+        decayAfter(PERIOD); // 지금 = t0-5분: 여전히 미래 → 건너뜀(기록을 당겼다면 여기서 감쇠했을 것)
         assertThat(hot(idA)).isCloseTo(0.8, within(1e-9));
 
-        decayAfter(PERIOD); // 다시 쓴 기록 기준 한 주기
+        decayAfter(Duration.ofMinutes(10)); // 지금 = t0+5분: 원래 기록 t0 기준 한 주기
         assertThat(hot(idA)).isCloseTo(0.64, within(1e-9));
     }
 

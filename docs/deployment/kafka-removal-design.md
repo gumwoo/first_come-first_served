@@ -282,7 +282,7 @@
 - 결제 E2E에서 `order.paid` SSE를 수신하고, 그 아웃박스 행이 `PUBLISHED`가 된다.
 - 아웃박스 PENDING 0·`oldest_pending.age` 정상·DEAD 증가 없음.
 - 발행 실패가 계속되지 않는다 — 로그 `[outbox] 발행 실패`와 아웃박스 행의 `attempts`·`lastError`로 본다(`flowticket.outbox.publish.ack`는 성공·실패를 모두 기록해 이것만으로는 실패를 가를 수 없다 — `OutboxRelay.java:174·180·186`).
-- **재시도 경로**: 실패 → PENDING 유지 → 다음 틱 재발행은 **CI에서 검증**한다(§2.3 — bean 릴레이 + 테스트용 `LockProvider` + 실패 목, 또는 `TransactionTemplate`으로 감싼 프록시 없는 릴레이. 대기 상한은 전용 팩토리를 별도 Redis 컨테이너에 연결). 클러스터에서 Redis 장애를 강제로 넣는 시험은 하지 않는다 — ShedLock 락 획득이 같은 Redis(기본 커넥션 팩토리, `SchedulerLockConfig.java:20-21`)에 의존해 대부분 발행 전에 틱이 건너뛰어진다(추론. 락을 잡은 뒤 끊기면 발행 실패 경로를 탈 수는 있다). readiness(`readinessState, db, redis`)는 트래픽을 끊을 뿐 릴레이를 멈추지 않는다. 그래서 클러스터에서는 **재시도 경로가 미검증**으로 남고, 관찰된 `attempts > 1` 행이 있으면 결국 `PUBLISHED`가 되었는지만 기록한다.
+- **재시도 경로**: 실패 → PENDING 유지 → 다음 틱 재발행은 **CI에서 검증**한다(§2.3 — bean 릴레이 + 테스트용 `LockProvider` + 실패 목, 또는 `TransactionTemplate`으로 감싼 프록시 없는 릴레이. 대기 상한은 전용 팩토리를 별도 Redis 컨테이너에 연결). 클러스터에서 Redis 장애를 강제로 넣는 시험은 하지 않는다 — ShedLock 락 획득이 같은 Redis(기본 커넥션 팩토리, `SchedulerLockConfig`의 `lockProvider` 빈)에 의존해 대부분 발행 전에 틱이 건너뛰어진다(추론. 락을 잡은 뒤 끊기면 발행 실패 경로를 탈 수는 있다). readiness(`readinessState, db, redis`)는 트래픽을 끊을 뿐 릴레이를 멈추지 않는다. 그래서 클러스터에서는 **재시도 경로가 미검증**으로 남고, 관찰된 `attempts > 1` 행이 있으면 결국 `PUBLISHED`가 되었는지만 기록한다.
 - 롤백 조건(N → 이전, **P2b PR revert**):
   - 아웃박스 PENDING이 줄지 않는다(`FlowticketOutboxBacklog`).
   - 릴레이 발행 실패 로그가 계속된다.

@@ -6,7 +6,7 @@
 - 우선순위: **S08 아웃박스(정합성)를 먼저** 끝낸 뒤 이 배포로. 배포는 "코드 선반영 완료"라 실증만 하고 동결.
 - 후속: S10 부하테스트·모니터링은 이 배포 위에서 실측.
 
-## 문서 7종 (상세)
+## 문서 8종 (상세)
 | 문서 | 내용 |
 |------|------|
 | [aws-eks-deploy-plan.md](aws-eks-deploy-plan.md) | EKS + Strimzi 멀티브로커 배포 단계(Phase 1~8)·역할분담·DoD |
@@ -16,6 +16,7 @@
 | [portfolio-framing-and-decisions.md](portfolio-framing-and-decisions.md) | 납득 원칙·최종 스코프·**MSA 고려·기각**·면접 서사 |
 | [operating-requirements.md](operating-requirements.md) | **운영 요구사항(2026-10-14 결정 — G1(G2 후속)·평시 B 상시 + 사전 확장, 2+2 출발 후보·L1+L3·B 실측 임시 기준, 폭증 모델 미정)** — 가용성(노드·AZ 장애)·지연·부하 범위·RTO/RPO·평시/오픈 정책. 검증한 것과 안 한 것을 구분 |
 | [workload-responsibilities.md](workload-responsibilities.md) | **워크로드 역할과 장애 책임(분석)** — 같은 이미지의 api·대기열에서 도는 스케줄러·Kafka 리스너, 락·멱등, 역할이 사라질 때 멈추는 것과 인계 |
+| [kafka-removal-design.md](kafka-removal-design.md) | **Kafka 제거 설계(구현 전, [[ADR-028]])** — 전달 보장 변화(PUBLISHED = Redis 발행 호출 성공), 실패를 삼키지 않는 릴레이 발행, 아웃박스 유지 근거·직접 발행 비교, 프론트 이벤트 유실 보완, 영역별 의존성 목록, PR 순서·운영 게이트·롤백, 노드·EBS 계산 |
 
 ## 멀티팟 준비 체크리스트
 

@@ -56,7 +56,7 @@
     - 그러면 시간 초과는 Lettuce가 명령 단위로 판정해 예외를 던지고, 호출 스레드는 그 자리에서 돌아온다(추론 — Lettuce 동작). 시간 초과된 명령도 서버가 응답할 때까지 그 연결의 프로토콜 대기열에 남을 수 있지만, 릴레이 스레드나 실행기에 작업이 쌓이지는 않는다.
     - 서버가 명령을 늦게 처리해 실제로는 발행됐을 수 있다. 이 경우 다음 틱에 다시 나가 중복이 된다(허용).
     - **전용 팩토리는 Spring bean으로 등록하지 않는다.** Spring Boot 3.3.5(`build.gradle.kts:3`)의 Redis 자동 구성은 `RedisConnectionFactory`가 없을 때만 기본 팩토리를 만들고, `StringRedisTemplate`은 후보가 하나일 때만 만든다(라이브러리 동작 — 추론). 두 번째 팩토리나 템플릿을 bean으로 올리면 기본 팩토리가 물러나거나, 타입으로 주입받는 `SchedulerLockConfig`·`SseRedisConfig`·`SsePubSub`가 모호해진다. 그래서 릴레이 쪽 컴포넌트 안에서 팩토리를 직접 만들고 `afterPropertiesSet()`·`destroy()`로 수명을 관리한다. 대안은 기본 팩토리를 직접 정의해 `@Primary`로 두는 것인데, 그러면 자동 구성을 대체해야 하므로(설정 바인딩·TLS를 손으로 옮김) 쓰지 않는다.
-    - 이렇게 하면 대기열 Lua·ShedLock·SSE 구독이 쓰는 기본 커넥션 팩토리의 타임아웃은 바뀌지 않는다. 대신 연결이 하나 늘고, 호스트·포트·TLS(`REDIS_SSL_ENABLED`) 설정을 기본 팩토리와 같은 프로퍼티에서 읽게 해야 한다.
+    - 이렇게 하면 대기열 Lua·ShedLock·SSE 구독이 쓰는 기본 커넥션 팩토리의 타임아웃은 바뀌지 않는다. 대신 연결이 하나 늘고, 호스트·포트·TLS(`REDIS_SSL_ENABLED`) 설정을 기본 팩토리와 같은 프로퍼티에서 읽게 해야 한다. 테스트에서 전용 팩토리만 다른 Redis 컨테이너로 돌릴 수 있게(§2.3 대기 상한), 연결 설정은 생성자로 주입받는다(운영에서는 같은 프로퍼티 값을 넘긴다).
     - 구현 PR에서 확인할 것(추론 단계): 시간 초과 뒤 연결 상태, 그리고 커넥션 공유(`shareNativeConnection`) 여부에 따라 다른 명령이 같은 연결에서 밀리지 않는지.
   - **2순위(1순위가 안 될 때만) — 별도 실행기.** `Future.get(sendTimeoutMs)`가 시간 초과로 돌아와도 **Redis 명령은 계속 진행된다**(`cancel(true)`도 Lettuce 동기 호출을 멈춘다는 보장이 없다 — 추론). 그래서 다음 제한을 모두 둔다.
     - 스레드 1개
@@ -238,9 +238,9 @@
 
 | PR | 내용 | CI·검증 | 회귀 확인 | 롤백 | 다음으로 가는 조건 |
 |---|---|---|---|---|---|
-| **P0**(#406) | ADR-028 Accepted + 이 문서 | `npm run harness:check` — 백엔드 규칙 15는 Java·SQL 주석의 ADR/TS/IMP **번호**가 실제 문서를 가리키는지 검사한다. P2b 코드 주석이 [[ADR-028]]을 인용하려면 ADR-028이 먼저 있어야 하므로 P0가 앞선다 | — | revert | G1 PASS·머지 |
-| **P1** | `useOrder` 탭 복귀·한정 재조회(§4) — Kafka와 독립 | 프론트 typecheck·lint·build, vitest, 하네스 | 결제·완료 E2E | revert | 사용자 확인(수치), G1 PASS |
-| **P2a** | 아웃박스 기반 관리 필드 **추가**(대시보드·알림), V20, `/admin/outbox` 화면, 대시보드·알림 화면이 새 필드를 읽음. 기존 DLQ 필드·화면 유지 | 백엔드 CI(Testcontainers — 아직 Kafka 포함), 프론트 3종, 하네스(BE14·FE6) | `AdminAlertIntegrationTest`·`AdminOutboxIntegrationTest`, `e2e admin.spec.ts` | revert(V20은 추가 컬럼이라 남아도 무해) | G1 PASS |
+| **P0**(#406) | ADR-028 Accepted + 이 문서 | `npm run harness:check` — 백엔드 규칙 15는 Java·SQL 주석의 ADR/TS/IMP **번호**가 실제 문서를 가리키는지 검사한다. P2b 코드 주석이 [[ADR-028]]을 인용하려면 ADR-028이 먼저 있어야 하므로 P0가 앞선다 | — | revert | G1 리뷰 PASS·머지 |
+| **P1** | `useOrder` 탭 복귀·한정 재조회(§4) — Kafka와 독립 | 프론트 typecheck·lint·build, vitest, 하네스 | 결제·완료 E2E | revert | 사용자 확인(수치), G1 리뷰 PASS |
+| **P2a** | 아웃박스 기반 관리 필드 **추가**(대시보드·알림), V20, `/admin/outbox` 화면, 대시보드·알림 화면이 새 필드를 읽음. 기존 DLQ 필드·화면 유지 | 백엔드 CI(Testcontainers — 아직 Kafka 포함), 프론트 3종, 하네스(BE14·FE6) | `AdminAlertIntegrationTest`·`AdminOutboxIntegrationTest`, `e2e admin.spec.ts` | revert(V20은 추가 컬럼이라 남아도 무해) | G1 리뷰 PASS |
 | **N₀**(떠 있는 클러스터에서 전환할 때만) | 릴레이 발행 대상 설정(`outbox.relay-target`, 기본 `kafka`) + Redis 엄격 발행 경로 추가. Kafka 소비자·DLQ·설정은 **그대로**. 새 env 키(`OUTBOX_RELAY_TARGET`)는 `application.yml`과 configmap에 **같은 PR**로 넣는다(하네스 k8s 규칙 1) | 백엔드 CI(Kafka 컨테이너 포함), 하네스 | 대상별 통합 테스트(`kafka`: 기존 `OrderEventKafkaIntegrationTest` 그대로 통과 = 기본값에서 동작 불변 / `redis`: §2.3 표) | PR revert(기본값이 `kafka`라 배포만으로는 동작이 바뀌지 않는다) | 아래 (나) 2~3단계 |
 | **P2b = 릴리스 N** | 릴레이 → Redis 엄격 발행(떠 있는 클러스터에서 전환하면 앞에 N₀·설정 전환 단계 — 아래 (나)), 소비자·DLQ·Kafka 설정·의존성 제거, 계약·하네스·configmap·앱 지표 규칙 동반 제거, 테스트 교체(§5) | 백엔드 CI(Kafka 컨테이너 없이), 프론트 3종, 하네스 전체(+ 신규 규칙 메타테스트) | §2.3 표 전부, `SseAfterCommitIntegrationTest`, 결제 E2E(`order.paid` SSE 수신 → 완료 화면) | **P2b PR을 revert**해 이미지와 configmap(`KAFKA_*`)을 함께 되돌린다(ArgoCD 동기화). 이미지만 N-1로 바꾸면 안 된다 — api는 configmap을 `envFrom`으로 받으므로(`api-deployment.yaml:62-63`) `KAFKA_BOOTSTRAP_SERVERS` 없이 `localhost:9092` 기본값으로 떠서 Kafka 경로가 조용히 죽는다. **Kafka 인프라가 남아 있어야 가능**(그래서 운영 삭제(§6.2)를 N 게이트 뒤 별도 게이트로 둔다) | 아래 운영 게이트 |
 | **P3a**(세션 전) | `bring-up.sh` 스위치 `SKIP_KAFKA=1` — 건너뛰는 것: `kafka` 네임스페이스 생성(`:163`), Strimzi `helm --wait`(`:164-166`, 운영자만 기다린다), `kubectl apply -k k8s/kafka`(`:185`, 대기 없음), 그리고 **Kafka 모니터링 두 리소스**(`podmonitor-kafka.yaml`·`dashboard-kafka.yaml` — 지금은 `k8s/monitoring/kustomization.yaml`에 들어 있어 `:186`이 함께 적용한다. 별도 kustomization으로 분리해 Kafka 단계에서만 적용). **기술적 가드**: 운영 삭제 때 표식(ConfigMap `kafka-removed`, `kube-system`)을 남기고, 스위치 없이 bring-up하면 표식을 보고 Kafka 단계 직전에 멈춘다(재설치 의도면 `FORCE_KAFKA=1`). **가드는 같은 클러스터에서 다시 실행할 때만 동작한다** — 표식이 클러스터 안에 있어, 철거 뒤 새 클러스터에서는 사라진다. 새 클러스터는 `SKIP_KAFKA=1`(사람의 절차, `session.log` 기록)에 의존한다. 클러스터 밖 표식(로컬 gitignore 파일 등)은 P3a에서 검토한다. 기본값은 지금처럼 설치(세션 시작 시 N 게이트를 Kafka가 있는 상태에서 보기 위해) | 하네스, `bash -n` | 스위치·표식 없을 때 적용 리소스가 이전과 같음(분리한 Kafka 모니터링 포함) | revert | G1 리뷰 PASS·머지 |
@@ -282,7 +282,7 @@
 - 결제 E2E에서 `order.paid` SSE를 수신하고, 그 아웃박스 행이 `PUBLISHED`가 된다.
 - 아웃박스 PENDING 0·`oldest_pending.age` 정상·DEAD 증가 없음.
 - 발행 실패가 계속되지 않는다 — 로그 `[outbox] 발행 실패`와 아웃박스 행의 `attempts`·`lastError`로 본다(`flowticket.outbox.publish.ack`는 성공·실패를 모두 기록해 이것만으로는 실패를 가를 수 없다 — `OutboxRelay.java:174·180·186`).
-- **재시도 경로**: 실패 → PENDING 유지 → 다음 틱 재발행은 **CI에서 검증**한다(§2.3 — 프록시 없는 릴레이 + 실패·지연 목, 또는 전용 팩토리 앞 지연). 클러스터에서 Redis 장애를 강제로 넣는 시험은 하지 않는다 — ShedLock 락 획득이 같은 Redis(기본 커넥션 팩토리, `SchedulerLockConfig.java:20-21`)에 의존해 대부분 발행 전에 틱이 건너뛰어진다(추론. 락을 잡은 뒤 끊기면 발행 실패 경로를 탈 수는 있다). readiness(`readinessState, db, redis`)는 트래픽을 끊을 뿐 릴레이를 멈추지 않는다. 그래서 클러스터에서는 **재시도 경로가 미검증**으로 남고, 관찰된 `attempts > 1` 행이 있으면 결국 `PUBLISHED`가 되었는지만 기록한다.
+- **재시도 경로**: 실패 → PENDING 유지 → 다음 틱 재발행은 **CI에서 검증**한다(§2.3 — bean 릴레이 + 테스트용 `LockProvider` + 실패 목, 또는 `TransactionTemplate`으로 감싼 프록시 없는 릴레이. 대기 상한은 전용 팩토리를 별도 Redis 컨테이너에 연결). 클러스터에서 Redis 장애를 강제로 넣는 시험은 하지 않는다 — ShedLock 락 획득이 같은 Redis(기본 커넥션 팩토리, `SchedulerLockConfig.java:20-21`)에 의존해 대부분 발행 전에 틱이 건너뛰어진다(추론. 락을 잡은 뒤 끊기면 발행 실패 경로를 탈 수는 있다). readiness(`readinessState, db, redis`)는 트래픽을 끊을 뿐 릴레이를 멈추지 않는다. 그래서 클러스터에서는 **재시도 경로가 미검증**으로 남고, 관찰된 `attempts > 1` 행이 있으면 결국 `PUBLISHED`가 되었는지만 기록한다.
 - 롤백 조건(N → 이전, **P2b PR revert**):
   - 아웃박스 PENDING이 줄지 않는다(`FlowticketOutboxBacklog`).
   - 릴레이 발행 실패 로그가 계속된다.

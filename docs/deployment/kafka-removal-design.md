@@ -246,7 +246,7 @@
 3. 자원 산정·측정 계획 문서(후보·계획만 — 최종 requests·Hikari 풀·HPA·노드 수는 B₁·B′ 반복·가용성 G1 시험을 거친 뒤 확정) + P3a + 저장소 P3 준비 — **완료**: P3a(#413 — `SKIP_KAFKA`·운영 삭제 표식 가드), 자원 산정·측정 계획(#414 — [resource-sizing-plan.md](resource-sizing-plan.md), 세션 전 사용자 결정 D1~D5 남음), 저장소 P3(#415 — **draft, 관찰 기간(§6.3) 뒤 머지**)
 4. 측정 세션: N 게이트(§6.1) → Kafka 운영 삭제 게이트(§6.2) → B₁ → B′(반복 조정 가능) → 가용성 G1 시험(최종 B′ 후보) — §7.5
 5. 관찰 기간 뒤 저장소 P3 머지, 충분히 안정된 뒤 P4, 마지막 P5
-   - P5에서 함께 정리할 것(P3 리뷰에서 찾음): `docs/troubleshooting/_index.md`의 TS-038 "tear-down.sh 6/7단계"(P3 뒤 5/6단계), 이 문서 §6.2의 `tear-down.sh`·`bring-up.sh` 줄 번호(P3 뒤 밀린다 — §6.2는 P3 머지 전에 끝나는 절차라 그때까지는 맞다), `terraform-design.md`·`aws-eks-deploy-plan.md`의 bring-up 순서(Kafka 단계)
+   - P5에서 함께 정리할 것(P3 리뷰에서 찾음): `docs/troubleshooting/_index.md`의 TS-038 "tear-down.sh 6/7단계"(P3 뒤 5/6단계), 이 문서의 스크립트 줄 번호 — §6.2의 `tear-down.sh`(`:110-111`·`:118-119`·`:125`·`:128-152`), §5.6 주의 문단과 §6 P3a 행의 `bring-up.sh`(`:224-227`·`:250`·`:252`)(P3 뒤 밀린다 — 측정 세션은 P3 머지 전이라 그때까지는 맞다), `terraform-design.md`·`aws-eks-deploy-plan.md`의 bring-up 순서(Kafka 단계)
 
 
 | PR | 내용 | CI·검증 | 회귀 확인 | 롤백 | 다음으로 가는 조건 |

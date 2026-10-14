@@ -303,7 +303,8 @@ Kafka가 쓰는 EKS 기본 `gp2`의 실제 바인딩 모드는 **확인하지 �
 3. platform          VPC → 엔드포인트 → EKS → 노드그룹 → 애드온 → RDS → ElastiCache
 4. 부트스트랩 Helm    LB Controller → Cluster Autoscaler → Strimzi Operator
                      → kube-prometheus-stack → ArgoCD  (모두 차트 버전 고정)
-5. kubectl/kustomize Kafka CR(k8s/kafka) → 관측 리소스(k8s/monitoring) → ArgoCD Application
+5. kubectl/kustomize Kafka CR(k8s/kafka) → Kafka 관측(k8s/monitoring/kafka) → 관측 리소스(k8s/monitoring) → ArgoCD Application
+                     (Strimzi·Kafka CR·Kafka 관측은 SKIP_KAFKA=1이면 생략 — kafka-removal-design.md P3a)
 6. ArgoCD            k8s/overlays/demo-local → k8s/base — 앱(api/web)·HPA·PDB·Ingress만
 7. 검증              Ingress ALB 생성 확인 → HTTPS → /actuator/health/readiness
 8. ALB 알람          bash scripts/alb-alarms.sh apply   (demo-alarms — ALB가 생긴 뒤에만 가능, Slack 중계 Lambda 포함, ALARM_EMAIL=... 로 이메일 구독)

@@ -1,4 +1,4 @@
-# 위반: 대기열 전용 Deployment가 api Deployment와 파드 사양이 다르다(requests.cpu 500m vs 1100m) — A'/B 비교에 분리 말고 다른 차이가 섞인다.
+# 위반: 대기열 전용 Deployment가 api Deployment와 파드 사양이 다르다(requests.memory 1024Mi vs 1536Mi — 허용 목록 밖) — A'/B 비교에 분리 말고 다른 차이가 섞인다.
 # 대기열 전용 Deployment(ADR-027) — api와 같은 이미지·같은 컨테이너 사양. 대기열 두 경로만 받는다(flowticket-api-queue Service).
 # 컨테이너 사양은 k8s/base/api-deployment.yaml을 그대로 따른다 — 바꿀 때는 둘을 같이 바꾼다(하네스 규칙 ⑦·⑩이 둘 다 본다).
 apiVersion: apps/v1
@@ -116,7 +116,7 @@ spec:
             # (10,000/s ÷ 9) × 여유 1.2 ≈ 1.10코어 → 1100m(계산값). 이전 300m는 노드 3대 예산에 맞춘 값이라 HPA 60% 기준선이 처리 용량과
             # 동떨어졌고, 노드에 api가 여럿 들어가 CA가 동작할 조건(Pending)이 생기지 않았다. 1100m면 m6i.large(allocatable 1,930m)에 api가
             # 하나만 들어간다 — api 확장이 곧 노드 확장이고, HPA 60%(목표 660m)가 진입 처리 용량 근처에서 반응한다.
-            requests: { cpu: "500m", memory: "1536Mi" }
+            requests: { cpu: "1100m", memory: "1024Mi" }
             limits: { memory: "2Gi" }
 
           securityContext:

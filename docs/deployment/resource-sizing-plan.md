@@ -59,9 +59,9 @@
 각 후보는 독립 변수 하나씩 바꾸는 것을 원칙으로 하고, 한 PR(→ CI·하네스 → G1 리뷰 → 머지 → ArgoCD 동기화·이미지/설정 확인)으로 적용한다. k8s만 바뀌는 조정은 이미지를 다시 빌드하지 않는다(`image.yml` 변경 판별에 `k8s/`가 없음 — [[ADR-025]]).
 | 후보 | 바꾸는 것 | 근거 | 먼저 필요한 측정·작업 | 제약 |
 |---|---|---|---|---|
-| **P1 대기열 풀 축소** | 대기열 Deployment에 `DB_POOL_MAX` env(예: 2~3) | DB 예산이 대기열 상한을 묶고 있다(§2.1) | B₁의 대기열 파드 Hikari active·pending 최댓값. **하네스 준비됨**: k8s 규칙 ⑩-b(대기열 파드 사양 = api 파드 사양)에 허용 목록을 두었다 — 대기열 `DB_POOL_MAX` env, `resources.requests.cpu`, hostname `topologySpreadConstraints`만 비교에서 뺀다. 목록 밖 차이는 그대로 실패한다(위반 fixture `k8s-queue-spec-drift`(메모리 차이)·`k8s-queue-allowed-plus-drift`(허용 차이 + 종료 유예 차이)) | 규칙 17은 `queue-deployment.yaml` 원문의 `DB_POOL_MAX`를 읽는다 — env를 component 패치로 넣으면 ⑩-b는 피하지만 규칙 17이 풀을 5로 계산한다(실패 쪽으로 틀린다). 그래서 원문에 두고 ⑩-b를 고치는 쪽을 권한다 |
+| **P1 대기열 풀 축소** | 대기열 Deployment에 `DB_POOL_MAX` env(예: 2~3) | DB 예산이 대기열 상한을 묶고 있다(§2.1) | B₁의 대기열 파드 Hikari active·pending 최댓값. **하네스 준비됨**: k8s 규칙 ⑩-b(대기열 파드 사양 = api 파드 사양)에 허용 목록을 두었다 — 대기열 `DB_POOL_MAX` env(대기열 쪽만 — api Deployment에 두면 규칙 17이 읽지 못하므로 따로 실패, 위반 fixture `k8s-api-pool-env`), `resources.requests.cpu`, hostname `topologySpreadConstraints`만 비교에서 뺀다. 목록 밖 차이는 그대로 실패한다(위반 fixture `k8s-queue-spec-drift`(메모리 차이)·`k8s-queue-allowed-plus-drift`(허용 차이 + 종료 유예 차이)) | 규칙 17은 `queue-deployment.yaml` 원문의 `DB_POOL_MAX`를 읽는다 — env를 component 패치로 넣으면 ⑩-b는 피하지만 규칙 17이 풀을 5로 계산한다(실패 쪽으로 틀린다). 그래서 원문에 두고 ⑩-b를 고치는 쪽을 권한다 |
 | **P2 대기열 상한 조정** | 대기열 HPA `maxReplicas` | B₀에서 상한 6 도달·폭증 상태 조회 p95 259·523ms | P1(풀 — 상한을 올리면 DB 예산을 넘는다) **그리고** P3(requests 축소) 또는 노드 예산 변경. 1,100m에서는 api 3 + 대기열 6이 이미 노드 9대를 채운다(§2.2) — **1,100m에서 P2는 6을 넘길 수 없다** | 노드 그룹 최대 9(§2.2). 상한을 AZ당 4로 올리면 노드 12 × 2 vCPU + 발생기 12 vCPU = 36 > 쿼터 32(계산 — `loadtest.tfvars`의 쿼터 식, [[ADR-025]]) |
-| **P3 대기열 requests 축소 + 노드 단위 분산** | 대기열 `requests.cpu`(r), hostname 분산 규칙 | 노드당 2개 → 같은 노드 수에서 대기열 처리 자리 증가([[IMP-033]] §9) | B₁의 노드별 밖 요청·대기열 파드 CPU 사용(`app_cpu_by_pod`)·상태 조회 처리량. ⑩-b 허용 목록(준비됨 — requests·hostname 분산). 짝 조건도 하네스가 본다: 대기열 CPU 요청이 api와 다르면 hostname 분산 `DoNotSchedule`이 있어야 한다(위반 fixture `k8s-queue-cpu-no-spread`) | §2.2 r 범위, §2.3 분산 규칙(topologySpread maxSkew 1), HPA 기준 변화 |
+| **P3 대기열 requests 축소 + 노드 단위 분산** | 대기열 `requests.cpu`(r), hostname 분산 규칙 | 노드당 2개 → 같은 노드 수에서 대기열 처리 자리 증가([[IMP-033]] §9) | B₁의 노드별 밖 요청·대기열 파드 CPU 사용(`app_cpu_by_pod`)·상태 조회 처리량. ⑩-b 허용 목록(준비됨 — requests·hostname 분산). 짝 조건도 하네스가 본다: 대기열 CPU 요청이 api와 다르면 대기열 파드만 고르는 hostname 분산(maxSkew 1·`DoNotSchedule`, selector가 대기열 파드 라벨의 부분집합이고 `app: flowticket-api-queue` 포함)이 있어야 한다(위반 fixture `k8s-queue-cpu-no-spread`(ScheduleAnyway)·`k8s-queue-spread-wrong-selector`(api 파드 selector)·`k8s-queue-spread-skew2`(maxSkew 2)) | §2.2 r 범위, §2.3 분산 규칙(topologySpread maxSkew 1), HPA 기준 변화 |
 | **P4 대기열 축소 정책** | 대기열 HPA `behavior.scaleDown`(안정화 창 등) | v1 b1r에서 폭증 시작 22초 뒤 대기열 파드가 3→2로 줄었다([[IMP-033]] §4 — 판정에 쓰지 않은 v1 run의 1회 관측, 축소가 폭증 지연의 주원인이라는 것은 추론) | — | 오픈이 아닌 시간의 비용과 맞바꿈 |
 | **P5 평시 2+2** | api HPA 하한 2·PDB 1, 대기열 2 | G1 출발 후보([operating-requirements.md](operating-requirements.md) §5) | B₁의 api 파드 예매 경로 CPU·지연(api 3개가 예매를 전부 받는다 — [[IMP-033]] §6) | §2.3 PDB, 남은 1개가 평시 부하를 감당하는지(G1). **적용 위치는 queue-split component 패치**로 한다 — base `api-hpa.yaml` 하한을 2로 바꾸면 `event-prescale.yaml`(하한 3)을 하네스 k8s 규칙 11이 "켜진 사전 확장"으로 보고 실패시키고, A′에도 영향이 간다 |
 | **P6 B용 사전 확장(설계만)** | 오픈 전 대기열 하한 상향(api는 고정) | L3(예정된 오픈 뒤 추가 폭증)와 평시 B 상시 + 사전 확장 결정 | 하네스 k8s 규칙 11을 component 기준으로 바꾸는 작업(+ 위반 fixture) | ADR-025 사전 확장과 동시에 켤 수 없다 |
@@ -92,7 +92,7 @@ B₀([[IMP-033]] v2)과 같은 기록에 아래를 더한다. `export-prom.mjs`�
 - **한 세션 안에 끝난다고 전제하지 않는다.** 세션이 나뉘면 B′와의 같은 세션 비교를 위해 B₁을 다시 잴지 사전 등록 때 정한다(D5).
 
 ## 6. 세션 전에 정할 것(사용자 결정 — 권장안 포함)
-**결정(2026-10-14 23:31 KST, 사용자):** D1 = 2회, D2 = 최악 가정 유지, D3 = 권장안(① B₀ 최댓값 임시 기준 + ② B₁ 대비 악화 없음 + ③ 정합성·예매 오류 0 — 허용 폭과 "B₁이 ①을 넘을 때"의 처리는 B′ 사전 등록에서). D4는 권장안대로 B′ 결과를 본 뒤 G1 시험 전에, D5는 세션이 실제로 나뉠 때 정한다.
+**결정(2026-10-14 23:31 KST — `date`로 찍은 시각, 사용자):** D1 = 2회, D2 = 최악 가정 유지, D3 = 권장안(① B₀ 최댓값 임시 기준 + ② B₁ 대비 악화 없음 + ③ 정합성·예매 오류 0 — 허용 폭과 "B₁이 ①을 넘을 때"의 처리는 B′ 사전 등록에서). D4는 권장안대로 B′ 결과를 본 뒤 G1 시험 전에 정한다. D5는 세션이 실제로 나뉠 때 정한다(권장안은 "다시 잰다").
 
 | # | 정할 것 | 권장안 | 이유 |
 |---|---|---|---|

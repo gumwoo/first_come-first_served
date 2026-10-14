@@ -1,6 +1,6 @@
 # 위반: 대기열 CPU 요청(550m)을 api(1100m)와 다르게 두었는데 hostname 분산이 ScheduleAnyway(선호)라 대기열 파드 둘이 한 노드에 놓일 수 있다 — 노드 1대 장애에 함께 사라진다(규칙 ⑩-b 짝 조건, resource-sizing-plan.md §2.3).
 # 대기열 전용 Deployment(ADR-027) — api와 같은 이미지·같은 컨테이너 사양. 대기열 두 경로만 받는다(flowticket-api-queue Service).
-# 컨테이너 사양은 k8s/base/api-deployment.yaml을 그대로 따른다 — 바꿀 때는 둘을 같이 바꾼다(하네스 규칙 ⑦·⑩이 둘 다 본다).
+# 컨테이너 사양은 k8s/base/api-deployment.yaml을 그대로 따른다 — 바꿀 때는 둘을 같이 바꾼다(하네스 k8s 규칙 ⑩-b가 파드 사양을 비교한다 — 허용 목록 밖 차이는 실패).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

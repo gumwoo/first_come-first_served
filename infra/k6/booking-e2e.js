@@ -22,10 +22,10 @@ import { sleep } from "k6";
 import exec from "k6/execution";
 import encoding from "k6/encoding";
 import crypto from "k6/crypto";
+import { SharedArray } from "k6/data";
 
 const BASE = __ENV.K6_BASE_URL || "http://localhost:8080";
 const EVENT_ID = __ENV.EVENT_ID;
-const USERS = JSON.parse(open(__ENV.USERS || "./tokens.json"));
 const USER_OFFSET = Number(__ENV.USER_OFFSET || 0);
 const ENTRY_LEAD_SECONDS = Number(__ENV.ENTRY_LEAD_SECONDS || 20);
 const START_AT = __ENV.START_AT ? Date.parse(__ENV.START_AT) : NaN;
@@ -38,7 +38,13 @@ const N = ROLES.reduce((s, [, n]) => s + n, 0);
 if (!EVENT_ID) throw new Error("EVENT_ID가 필요하다");
 if (!Number.isFinite(START_AT)) throw new Error(`START_AT(UTC ISO)이 필요하다: ${__ENV.START_AT}`);
 if (!(ENTRY_LEAD_SECONDS >= 5)) throw new Error(`ENTRY_LEAD_SECONDS는 5 이상이다: ${__ENV.ENTRY_LEAD_SECONDS}`);
-if (USERS.length < USER_OFFSET + N) throw new Error(`토큰이 ${USERS.length}개다 — USER_OFFSET ${USER_OFFSET} + ${N}명이 필요하다`);
+// open()은 init 컨텍스트에서 VU마다 실행된다. 10만 명분 토큰 파일(약 24.5MB)을 VU 100개가 각자 파싱하면 같은 발생기의
+// 진입 k6와 함께 메모리가 바닥났다(측정 세션 20261014-ab — 발생기 thrashing·SSM 끊김). SharedArray로 한 번만 읽고 쓰는 N명만 남긴다.
+const USERS = new SharedArray("users", () => {
+  const all = JSON.parse(open(__ENV.USERS || "./tokens.json"));
+  if (all.length < USER_OFFSET + N) throw new Error(`토큰이 ${all.length}개다 — USER_OFFSET ${USER_OFFSET} + ${N}명이 필요하다`);
+  return all.slice(USER_OFFSET, USER_OFFSET + N);
+});
 if (START_AT - Date.now() > 3600 * 1000) throw new Error("START_AT이 1시간보다 멀다");
 // maxDuration은 시나리오 시작부터 센다 — T0까지 기다리는 시간 + 예매(여유 300초)로 잡아 VU가 T0 전에 끊기지 않게 한다.
 const MAX_SECONDS = Math.ceil(Math.max(0, START_AT - Date.now()) / 1000) + 300;
@@ -112,7 +118,7 @@ function dataOf(res) {
 export default function (data) {
   const vu = exec.vu.idInTest; // 1..N
   const me = data.plan[vu - 1];
-  const user = USERS[USER_OFFSET + vu - 1];
+  const user = USERS[vu - 1];
   const auth = { "Content-Type": "application/json", Authorization: `Bearer ${user.t}` };
   const steps = [];
   const rec = { vu, userId: userIdOf(user.t), role: me.role, seatIds: me.seatIds, extraSeatId: me.extraSeatId ?? null,

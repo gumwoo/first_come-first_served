@@ -50,9 +50,10 @@
 - requests를 줄이면 HPA 기준도 바뀐다 — CPU 60% 목표는 requests 기준이라 r이 작아지면 같은 부하에서 더 일찍, 더 많이 확장한다. 그 파드 수가 §2.1 DB 예산과 §2.2 노드 상한 안에 들어야 한다.
 
 ### 2.3 가용성 G1 — 노드 1대가 갑자기 사라져도 핵심 경로가 계속 도는가
-- 지금은 **1,100m라서** api 계열 파드가 서로 다른 노드에 놓인다(자원 때문에 생긴 성질이지 규칙이 아니다). requests를 줄이면 **같은 Deployment의 파드 둘이 한 노드에 놓일 수 있고, 그 노드를 잃으면 둘 다 사라진다** — 대기열 2개가 한 노드에 있으면 새 진입이 멈춘다(G1 위반). 그래서 requests를 줄이는 후보는 **노드 단위 분산 규칙과 한 쌍**이다. 규칙은 hostname `topologySpreadConstraints`(maxSkew 1)로 둔다 — 같은 Deployment 파드가 노드마다 고르게 퍼지되 한 노드에 둘 이상도 허용한다. required anti-affinity는 한 노드에 둘을 아예 막아 P3의 목표(노드당 2개)와 맞지 않는다. [[ADR-026]] B1은 "노드당 하나"를 명시하는 안이라 목표가 다르다(B1은 requests와 배치를 떼어 내는 것, P3은 노드당 자리를 늘리는 것). maxSkew 계산에서 대기열 파드가 0개인 노드(api만 있는 노드 등)가 도메인으로 세어지면 노드당 2개가 기대만큼 생기지 않을 수 있다(추론, 미확인 — §7).
+- 지금은 **1,100m라서** api 계열 파드가 서로 다른 노드에 놓인다(자원 때문에 생긴 성질이지 규칙이 아니다). requests를 줄이면 **같은 Deployment의 파드 둘이 한 노드에 놓일 수 있고, 그 노드를 잃으면 둘 다 사라진다** — 대기열 2개가 한 노드에 있으면 새 진입이 멈춘다(G1 위반). 그래서 requests를 줄이는 후보는 **노드 단위 분산 규칙과 한 쌍**이다. 규칙은 hostname `topologySpreadConstraints`(maxSkew 1, **`whenUnsatisfiable: DoNotSchedule`**)로 둔다 — 같은 Deployment 파드가 노드마다 고르게 퍼지되 한 노드에 둘 이상도 허용한다. `ScheduleAnyway`(지금 zone 분산의 방식)는 선호일 뿐이라 대기열 둘이 한 노드에 놓이는 것을 막지 못한다. required anti-affinity는 한 노드에 둘을 아예 막아 P3의 목표(노드당 2개)와 맞지 않는다.
+  - **한계 — 축소 뒤에는 분산이 보장되지 않는다.** topologySpread는 스케줄 시점에만 적용되고, HPA가 파드를 줄일 때 다시 맞추지 않는다(Kubernetes 문서의 알려진 한계 — 이 클러스터에서 재현하지 않음). 예: 노드 3대에 2·2·2로 퍼진 대기열이 평시 2개로 줄면 남은 둘이 같은 노드에 있을 수 있고, 그 노드를 잃으면 새 진입이 멈춘다(G1 위반). required anti-affinity는 처음부터 한 노드에 하나라 축소 뒤에도 분리가 유지된다 — 즉 "노드당 2개(P3의 자리 이득)"와 "축소 뒤에도 분리 보장(G1)"은 맞바꾸는 관계다. 축소 뒤 재배치(descheduler 등)는 새 의존성이라 후보로만 적는다. 그래서 P3를 채택하려면 아래 시험 전 계산에 **폭증 뒤 최소 파드 수로 줄어든 상태의 배치**를 넣어 확인한다. [[ADR-026]] B1은 "노드당 하나"를 명시하는 안이라 목표가 다르다(B1은 requests와 배치를 떼어 내는 것, P3은 노드당 자리를 늘리는 것). maxSkew 계산에서 대기열 파드가 0개인 노드(api만 있는 노드 등)가 도메인으로 세어지면 노드당 2개가 기대만큼 생기지 않을 수 있다(추론, 미확인 — §7).
 - PDB: api `minAvailable 2`는 api 2개 구성에서 드레인을 막는다(비자발적 장애에는 PDB가 작동하지 않지만, 노드 작업·CA 축소가 막힌다). 2+2 후보는 api PDB를 1로(또는 `maxUnavailable 1`) 함께 바꾼다([operating-requirements.md](operating-requirements.md) §5 단서).
-- **시험 전 계산(사전 등록에 넣는다):** 최종 B′ 후보의 실제 배치(`kubectl get pod -o wide`)와 노드별 남은 자리(`node_allocatable` − `node_cpu_requests`·`node_memory_requests`, §4)로, 노드마다 "이 노드를 잃으면 그 위의 파드가 남은 노드에 들어가는가"를 표로 만든다. 들어가지 않으면 CA 증설(실측 110초, [[IMP-021]]) + 파드 기동·Ready + 워밍업이 끝날 때까지 남은 복제본만으로 버텨야 한다 — 그 시간 동안 Deployment마다 Ready 1개 이상이 남는지가 G1의 최소 조건이다. 남지 않으면 시험 전에 후보를 고친다.
+- **시험 전 계산(사전 등록에 넣는다):** 최종 B′ 후보의 실제 배치(`kubectl get pod -o wide`)와 노드별 남은 자리(`node_allocatable` − `node_cpu_requests`·`node_memory_requests`, §4)로, 노드마다 "이 노드를 잃으면 그 위의 파드가 남은 노드에 들어가는가"를 표로 만든다. 배치는 두 번 본다 — 시험 시작 상태와, **폭증 뒤 HPA가 최소 파드 수로 줄인 상태**(분산 규칙이 축소 뒤를 보장하지 않으므로 — 위 한계). 들어가지 않으면 CA 증설(실측 110초, [[IMP-021]]) + 파드 기동·Ready + 워밍업이 끝날 때까지 남은 복제본만으로 버텨야 한다 — 그 시간 동안 Deployment마다 Ready 1개 이상이 남는지가 G1의 최소 조건이다. 남지 않으면 시험 전에 후보를 고친다.
 
 ## 3. B′ 후보 — 무엇을 바꿔 보나(수치는 B₁ 뒤 사전 등록 때)
 각 후보는 독립 변수 하나씩 바꾸는 것을 원칙으로 하고, 한 PR(→ CI·하네스 → G1 리뷰 → 머지 → ArgoCD 동기화·이미지/설정 확인)으로 적용한다. k8s만 바뀌는 조정은 이미지를 다시 빌드하지 않는다(`image.yml` 변경 판별에 `k8s/`가 없음 — [[ADR-025]]).
@@ -108,7 +109,8 @@ B₀([[IMP-033]] v2)과 같은 기록에 아래를 더한다. `export-prom.mjs`�
 | 대기열 파드의 Hikari active·pending(풀 축소 가능 여부) | B₁ |
 | 예매 경로 CPU-ms/req(분리 뒤 api 1,100m 재산정 근거) | B₁ |
 | `jvm_compilation_time_ms_total` 존재 여부 | 세션 첫 run 뒤 |
-| hostname topologySpread(maxSkew 1)에서 대기열 파드가 0개인 노드가 도메인으로 세어지는지, 그래서 노드당 2개가 실제로 생기는지(P3) | P3 적용 run의 배치 기록(`app_pod_nodes`) |
+| hostname topologySpread(maxSkew 1·`DoNotSchedule`)에서 대기열 파드가 0개인 노드가 도메인으로 세어지는지, 그래서 노드당 2개가 실제로 생기는지(P3) | P3 적용 run의 배치 기록(`app_pod_nodes`) |
+| 축소 뒤 같은 Deployment 파드가 한 노드에 모이는지(P3 + topologySpread의 G1 위험) | P3 적용 run에서 폭증 뒤 최소 파드 수로 줄어든 시점의 배치(`app_pod_nodes`) |
 | 평시 A′와 평시 B 2+2의 실제 노드 수 비교(운영 요구사항 §5 재검토 조건) | B₁의 노드별 기록으로 계산 → 확정판 |
 | 운영 프로파일(t3.large, max 2/AZ)에서의 배치·allocatable — 측정은 m6i.large로만 한다 | 확정판에서(위 3 AZ 재평가와 함께). t3.large allocatable은 [kafka-removal-design.md](kafka-removal-design.md) §8의 미확인 항목 |
 | 3 AZ·NAT·RDS Multi-AZ 재평가 | [kafka-removal-design.md](kafka-removal-design.md) §7.4가 자원 산정으로 넘긴 과제다. 비용과 가용성(G1·G2) 결과가 있어야 판단할 수 있어 이 계획(측정 전)에서는 다루지 않고, B′·가용성 G1 결과 뒤 이 문서의 확정판에서 다룬다 |

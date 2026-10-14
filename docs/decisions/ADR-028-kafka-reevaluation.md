@@ -26,7 +26,7 @@
 | 항목 | 지금 |
 |---|---|
 | 브로커 | 3개, KRaft, **controller와 broker를 한 프로세스가 겸함**(`roles: [controller, broker]`) — 공식 문서가 중요한 프로덕션에 권하는 역할 분리 구성은 아니다 |
-| 자원 | 브로커 파드에 **CPU·메모리 requests·limits가 없다**(`KafkaNodePool`·`Kafka.spec.kafka`에 `resources` 없음) — 스케줄러가 몫을 잡지 않는다. 노드 메모리 압박 시 먼저 퇴거될 수 있다(LimitRange가 없다는 데서 나온 추론, 클러스터 QoS 미관찰) |
+| 자원 | 브로커에 **CPU·메모리 requests·limits를 적지 않았다**(`KafkaNodePool`·`Kafka.spec.kafka`에 `resources` 없음 — 매니페스트 기준. Strimzi가 실제로 만든 Pod의 값은 미확인) — 그대로라면 스케줄러가 몫을 잡지 않는다. 노드 메모리 압박 시 먼저 퇴거될 수 있다(LimitRange가 없다는 데서 나온 추론, 클러스터 QoS 미관찰) |
 | 스토리지 | PVC 10Gi × 3(gp2 EBS), AZ 종속 |
 | 배치 | 가용 영역 분산 `DoNotSchedule` — AZ별 노드 그룹·최소 노드가 필요한 이유 중 하나([[ADR-012]]) |
 | 운영 절차 | Strimzi 운영자 설치, bring-up·철거 단계, PVC 정리, 테스트의 Testcontainers Kafka |
@@ -43,7 +43,7 @@
 | 안 | 내용 | 장점 | 대가 |
 |---|---|---|---|
 | A. 유지 | 지금 그대로, 한계를 문서에 명시 | 변경 없음, Kafka 운영 실험이 코드에 남음 | 위 운영 비용. "알림 하나에 브로커 3대?"라는 질문에 제품 근거로 답하기 어렵다(예상 — 추측) |
-| **B. 제거 — 아웃박스 → Redis Pub/Sub(제안)** | 릴레이가 Kafka 대신 Redis Pub/Sub으로 발행(SSE 팬아웃 채널), 소비자·DLQ·Strimzi 제거 | 구성 요소 축소(브로커 3·EBS 3·운영자), 아웃박스로 "이벤트 발생" 내구성은 유지, 프론트·SSE 계약 변화 0 | Kafka 실험이 코드에서 사라짐(기록은 남김), 재생(replay)·다중 소비자 능력 상실 — 지금은 쓰지 않음 |
+| **B. 제거 — 아웃박스 → Redis Pub/Sub(채택)** | 릴레이가 Kafka 대신 Redis Pub/Sub으로 발행(SSE 팬아웃 채널), 소비자·DLQ·Strimzi 제거 | 구성 요소 축소(브로커 3·EBS 3·운영자), 아웃박스로 "이벤트 발생" 내구성은 유지, 프론트·SSE 계약 변화 0 | Kafka 실험이 코드에서 사라짐(기록은 남김), 재생(replay)·다중 소비자 능력 상실 — 지금은 쓰지 않음 |
 | C. 아웃박스 → SQS | 관리형 큐로 비동기 작업 | 재시도·DLQ 관리형 | AWS 의존, 지금 요구에는 역시 과함 |
 | D. MSK | 관리형 Kafka | 브로커 운영 부담 감소 | 비용, 필요성 문제는 그대로 |
 | E. Redis Streams | 이미 쓰는 Redis로 보존·소비자 그룹·재생 | 새 구성 요소 없이 Kafka 기능 일부 | 지금은 재생·다중 소비자 요구가 없어 Pub/Sub보다 복잡 — **다시 도입할 조건이 생기면 Kafka보다 먼저 볼 후보** |
@@ -60,13 +60,16 @@
 - 남기는 것: [[ADR-008]]·[[ADR-010]]·[[IMP-016]] 등 Kafka 문서는 지우지 않고 "ADR-028로 대체됨"을 표시해 **운영 실험의 기록**으로 둔다.
 
 ## 7. 제거 단계(개요 — 확정 순서·게이트·롤백은 [kafka-removal-design.md](../deployment/kafka-removal-design.md) §6)
-1. 앱·테스트: 릴레이 발행 대상 교체, 소비자·DLQ 제거, 테스트 교체(CI Testcontainers), 계약(`contracts/events.yaml`의 `dlq_suffix` 등)·하네스 규칙 정리.
-2. k8s·인프라: Strimzi·Kafka 매니페스트, Kafka 모니터링(`dashboard-kafka.yaml`, `podmonitor-kafka.yaml`, `prometheusrule-flowticket.yaml`의 DLQ 적체·ConsumerLag, `harness/alerts/rule-tests.yml`), `configmap`의 `KAFKA_*`, bring-up·철거 단계, 관련 하네스 규칙·fixture. EBS CSI는 Prometheus PVC(gp2 20Gi)가 쓰므로 **유지**한다(terraform 주석의 "Kafka 브로커 PVC" 설명만 정리).
-3. 문서: ADR-008·010 상태, README·HARNESS·배포 문서, 장애 시험 스크립트.
+1. 문서(이 ADR·설계 문서) → 프론트 재조회 보완(Kafka와 독립) → 관리 화면을 아웃박스 기준으로 **추가**(V20, 기존 DLQ 유지).
+2. **앱 전환 = 릴리스 N:** 릴레이 발행 대상 교체, 소비자·DLQ 제거, 테스트 교체, 계약·하네스 규칙과 함께 `configmap`의 `KAFKA_*`(하네스 k8s 규칙 1 — 앱이 읽지 않는 env 금지)·앱 지표 기반 알림(`prometheusrule`의 DLQ 적체·ConsumerLag, `harness/alerts/rule-tests.yml`)도 **같은 PR**에서 제거. 떠 있는 클러스터에서 전환하면 그 앞에 "발행 대상 설정 전환 → Kafka 배출 확인" 단계를 둔다(ShedLock은 발행 경로 하나를 보장하지 않는다).
+3. 운영 게이트 뒤 **인프라 제거:** Strimzi·Kafka 매니페스트, Kafka 브로커 모니터링(`dashboard-kafka.yaml`, `podmonitor-kafka.yaml`), bring-up·철거 단계, compose, 장애 시험. EBS CSI는 Prometheus PVC(gp2 20Gi)가 쓰므로 **유지**(terraform 주석만 정리).
+4. N+1에서 `dlq_messages` 테이블·`dlq_pending_threshold` 컬럼 `DROP`(Expand-Contract, allow 주석), 마지막으로 문서 정리(ADR-008·010 상태, README·HARNESS·배포 문서).
 - 각 단계는 PR → G1 → CI. 실제 클러스터 동작은 다음 측정 세션에서 확인.
 
 ## 8. 영향
-- 평시 노드 하한의 이유 하나(Kafka 브로커 AZ 분산 `DoNotSchedule`)가 사라진다. 다만 AZ별 노드 그룹의 근거(EBS의 AZ 종속)는 Prometheus PVC에도 그대로 남는다 — 노드 그룹 구성은 api·대기열 파드의 가용성 목표(G1: 노드 1대 장애, G2: AZ 장애는 후속)와 Prometheus 배치로 다시 판단한다(RDS·Redis는 관리형이라 노드와 무관). 노드 수는 자원 산정에서 계산.
+- 평시 노드 하한의 이유 하나(Kafka 브로커 AZ 분산 `DoNotSchedule`)가 사라진다. 다만 AZ별 노드 그룹의 근거(EBS의 AZ 종속)는 Prometheus PVC에도 그대로 남는다 — 노드 그룹 구성은 api·대기열 파드의 가용성 목표(G1: 노드 1대 장애, G2: AZ 장애는 후속)와 Prometheus 배치로 다시 판단한다(RDS·Redis는 관리형이라 노드와 무관). 노드 수는 자원 산정에서 계산한다 — CPU requests 하한(A' 3·현재 B 5·B 2+2 후보 4)은 Kafka 제거만으로 낮아지지 않는다(설계 문서 §7).
+- 3 AZ·AZ별 NAT·RDS Multi-AZ는 이번에 **유지**하지만, 3 AZ의 주된 근거(브로커 장애 도메인 분리)가 사라지므로 최종 운영 정책에서 비용과 가용성(G1은 노드 장애라 3 AZ가 필수 조건이 아님, G2가 AZ 장애)으로 다시 평가한다.
+- 기존 B 성능 실측(IMP-033)은 Kafka가 있던 환경이다. 다음 측정은 "Kafka 제거만"과 "자원 최적화"를 나눠 잰다(설계 문서 §7.5).
 - [[ADR-012]] "2 AZ + 브로커 3개" 대안의 서술을 고친다: 2 AZ면 한 **AZ**에 브로커 2개가 몰린다(같은 노드라는 뜻은 아니다) — 그 AZ가 죽으면 ISR 1개로 쓰기 중단.
 
 ## 9. 확인하지 못한 것

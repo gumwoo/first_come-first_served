@@ -63,6 +63,18 @@ export function DlqStatusPill({ status }: { status: string }) {
   return <StatusDot tone={s.tone}>{s.label}</StatusDot>;
 }
 
+const OUTBOX_STATUS: Record<string, { label: string; tone: Tone }> = {
+  PENDING: { label: "미발행", tone: "warning" },
+  PUBLISHED: { label: "발행됨", tone: "success" },
+  DEAD: { label: "격리", tone: "danger" },
+  DISCARDED: { label: "폐기됨", tone: "muted" },
+};
+
+export function OutboxStatusPill({ status }: { status: string }) {
+  const s = OUTBOX_STATUS[status] ?? { label: status, tone: "muted" as Tone };
+  return <StatusDot tone={s.tone}>{s.label}</StatusDot>;
+}
+
 const EVENT_STATUS: Record<string, { label: string; tone: Tone }> = {
   DRAFT: { label: "초안", tone: "muted" },
   SCHEDULED: { label: "예정", tone: "info" },

@@ -22,6 +22,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * 운영 알림: 임계치 조회(시드 기본값)·수정, 잘못된 값 400.
@@ -32,11 +33,14 @@ class AdminAlertIntegrationTest extends IntegrationTestSupport {
     @Autowired TestRestTemplate rest;
     @Autowired UserRepository userRepository;
     @Autowired JwtProvider jwtProvider;
+    @Autowired JdbcTemplate jdbc;
 
     String adminToken;
 
     @BeforeEach
     void setup() {
+        // alert_settings는 시드 테이블이라 공통 초기화(TRUNCATE)에서 빠진다. 테스트끼리 임계치가 새지 않게 기본값으로 되돌린다.
+        jdbc.update("UPDATE alert_settings SET dlq_pending_threshold = 1, outbox_dead_threshold = 1 WHERE id = 1");
         rest.getRestTemplate().setRequestFactory(new JdkClientHttpRequestFactory());
         userRepository.deleteAll();
         adminToken = jwtProvider.createAccessToken(userRepository.save(User.builder()
@@ -54,6 +58,45 @@ class AdminAlertIntegrationTest extends IntegrationTestSupport {
         assertThat(data.get("dlqPendingThreshold").asInt()).isEqualTo(1); // V13 시드
         assertThat(data.get("dlqPending").asLong()).isEqualTo(0L);        // DLQ 비어있음
         assertThat(data.get("breached").asBoolean()).isFalse();           // 0 >= 1 아님
+        assertThat(data.get("outboxDeadThreshold").asInt()).isEqualTo(1); // V20 기본값
+        assertThat(data.get("outboxDead").asLong()).isEqualTo(0L);
+        assertThat(data.get("outboxBreached").asBoolean()).isFalse();
+    }
+
+    @Test
+    void 아웃박스_격리_임계치만_보내면_DLQ_임계치는_그대로다() {
+        // 롤링 배포 중 새 화면은 outboxDeadThreshold만 보낼 수 있다. 빠진 DLQ 값이 0으로 덮이면 안 된다.
+        ResponseEntity<JsonNode> res = rest.exchange(
+                "/admin/alerts", HttpMethod.PUT, auth(Map.of("outboxDeadThreshold", 3)), JsonNode.class);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode data = res.getBody().get("data");
+        assertThat(data.get("outboxDeadThreshold").asInt()).isEqualTo(3);
+        assertThat(data.get("dlqPendingThreshold").asInt()).isEqualTo(1); // 시드값 유지
+    }
+
+    @Test
+    void DLQ_임계치만_보내면_아웃박스_임계치는_그대로다() {
+        // 구 화면(롤링 배포 중)의 요청 모양.
+        ResponseEntity<JsonNode> res = rest.exchange(
+                "/admin/alerts", HttpMethod.PUT, auth(Map.of("dlqPendingThreshold", 7)), JsonNode.class);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody().get("data").get("outboxDeadThreshold").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    void 임계치를_하나도_보내지_않으면_400() {
+        ResponseEntity<String> res = rest.exchange(
+                "/admin/alerts", HttpMethod.PUT, auth(Map.of()), String.class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void 음수_아웃박스_임계치는_400() {
+        ResponseEntity<String> res = rest.exchange(
+                "/admin/alerts", HttpMethod.PUT, auth(Map.of("outboxDeadThreshold", -1)), String.class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test

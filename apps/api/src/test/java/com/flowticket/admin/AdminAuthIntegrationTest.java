@@ -60,6 +60,9 @@ class AdminAuthIntegrationTest extends IntegrationTestSupport {
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(res.getBody().get("data").has("totalEvents")).isTrue();
         assertThat(res.getBody().get("data").get("kafkaConnected").asBoolean()).isFalse();
+        // Kafka 제거 뒤 쓰일 아웃박스 지표(ADR-028). 이 테스트는 아웃박스 행을 만들지 않는다.
+        assertThat(res.getBody().get("data").get("outboxPending").asLong()).isZero();
+        assertThat(res.getBody().get("data").get("outboxDead").asLong()).isZero();
     }
 
     // --- helpers ---

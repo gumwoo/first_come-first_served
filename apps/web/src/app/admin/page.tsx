@@ -12,7 +12,7 @@ export default function AdminDashboardPage() {
   const alerts = useAlerts();
   const orders = useAdminOrders("all", 0, 6);
 
-  const kafka = dash.data?.kafkaConnected;
+  const pending = dash.data?.outboxPending;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
@@ -21,17 +21,17 @@ export default function AdminDashboardPage() {
         desc="공연·주문 현황과 운영 상태를 확인합니다."
         actions={
           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className={`h-1.5 w-1.5 rounded-full ${kafka ? "bg-emerald-500" : "bg-muted-foreground/60"}`} />
-            {kafka === undefined ? "Kafka …" : kafka ? "Kafka 연결" : "Kafka 미연결"}
+            <span className={`h-1.5 w-1.5 rounded-full ${pending === 0 ? "bg-emerald-500" : "bg-amber-500"}`} />
+            {pending === undefined ? "아웃박스 …" : pending === 0 ? "미발행 없음" : `미발행 ${pending.toLocaleString()}건`}
           </span>
         }
       />
 
       {/* 임계치 초과 경고 */}
-      {alerts.data?.breached && (
+      {alerts.data?.outboxBreached && (
         <div className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-400">
-          DLQ 적체 {alerts.data.dlqPending}건이 임계치({alerts.data.dlqPendingThreshold})를 넘었습니다.{" "}
-          <Link href="/admin/dlq" className="font-medium underline">실패 메시지 확인</Link>
+          격리된 아웃박스 이벤트 {alerts.data.outboxDead}건이 임계치({alerts.data.outboxDeadThreshold})를 넘었습니다.{" "}
+          <Link href="/admin/outbox" className="font-medium underline">아웃박스 확인</Link>
         </div>
       )}
 
@@ -45,7 +45,7 @@ export default function AdminDashboardPage() {
           <StatCell label="총 공연" value={dash.data.totalEvents.toLocaleString()} />
           <StatCell label="결제 완료 주문" value={dash.data.paidOrders.toLocaleString()} />
           <StatCell label="누적 매출" value={won(dash.data.revenue)} />
-          <StatCell label="DLQ 적체" value={dash.data.dlqPending.toLocaleString()} warn={dash.data.dlqPending > 0} />
+          <StatCell label="아웃박스 격리" value={dash.data.outboxDead.toLocaleString()} warn={dash.data.outboxDead > 0} />
         </div>
       ) : null}
 

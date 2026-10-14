@@ -189,14 +189,28 @@ resource "aws_eks_node_group" "this" {
 # 다만 IAM 정책이나 IRSA가 필요 없어 아래 for_each 목록에 넣는 것으로 충분하다
 # (EBS CSI를 별도 리소스로 뺀 이유가 IRSA였다).
 #
-# addon_version을 지정하지 않으므로 생성 시점의 Kubernetes 버전에 맞는 기본 호환 버전이
+# 버전(null)을 지정하지 않은 add-on은 생성 시점의 Kubernetes 버전에 맞는 기본 호환 버전이
 # 선택된다. 클러스터 버전을 올려도 기존 add-on이 자동으로 올라가지는 않으므로,
 # 갱신이 필요하면 별도로 수행해야 한다.
-resource "aws_eks_addon" "this" {
-  for_each = toset(["vpc-cni", "coredns", "kube-proxy", "metrics-server"])
+#
+# metrics-server는 고정한다(TS-050). 기본 버전이 v0.9.0-eksbuild.12로 바뀐 뒤 그 APIService가 OpenAPI v2에
+# 깨진 정의를 넣어 protobuf 형식 /openapi/v2가 503이 됐고, helm 설치 검증과 ArgoCD 동기화가 모두 멈췄다.
+# 올릴 때는 새 클러스터에서 protobuf /openapi/v2가 200인지 먼저 확인한다(TS-050 확인 명령).
+locals {
+  eks_addon_versions = {
+    "vpc-cni"        = null
+    "coredns"        = null
+    "kube-proxy"     = null
+    "metrics-server" = "v0.9.0-eksbuild.11"
+  }
+}
 
-  cluster_name = aws_eks_cluster.this.name
-  addon_name   = each.key
+resource "aws_eks_addon" "this" {
+  for_each = local.eks_addon_versions
+
+  cluster_name  = aws_eks_cluster.this.name
+  addon_name    = each.key
+  addon_version = each.value
 
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"

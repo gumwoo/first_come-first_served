@@ -55,7 +55,7 @@
   - **1순위 — Redis 클라이언트 명령 자체에 제한 시간을 건다.** 릴레이 발행 전용 커넥션 팩토리(`LettuceConnectionFactory`)와 템플릿을 따로 두고, 그 클라이언트 설정의 `commandTimeout`을 `send-timeout-ms`로 맞춘다.
     - 그러면 시간 초과는 Lettuce가 명령 단위로 판정해 예외를 던지고, 호출 스레드는 그 자리에서 돌아온다(추론 — Lettuce 동작). 시간 초과된 명령도 서버가 응답할 때까지 그 연결의 프로토콜 대기열에 남을 수 있지만, 릴레이 스레드나 실행기에 작업이 쌓이지는 않는다.
     - 서버가 명령을 늦게 처리해 실제로는 발행됐을 수 있다. 이 경우 다음 틱에 다시 나가 중복이 된다(허용).
-    - **전용 팩토리는 Spring bean으로 등록하지 않는다.** Spring Boot 3.3.5(`build.gradle.kts:3`)의 Redis 자동 구성은 `RedisConnectionFactory`가 없을 때만 기본 팩토리를 만들고, `StringRedisTemplate`은 후보가 하나일 때만 만든다(라이브러리 동작 — 추론). 두 번째 팩토리나 템플릿을 bean으로 올리면 기본 팩토리가 물러나거나, 타입으로 주입받는 `SchedulerLockConfig`·`SseRedisConfig`·`SsePubSub`가 모호해진다. 그래서 릴레이 쪽 컴포넌트 안에서 팩토리를 직접 만들고 `afterPropertiesSet()`·`destroy()`로 수명을 관리한다. 대안은 기본 팩토리를 명시적으로 `@Primary`로 두는 것인데, 자동 구성을 대신 쓰게 되므로 쓰지 않는다.
+    - **전용 팩토리는 Spring bean으로 등록하지 않는다.** Spring Boot 3.3.5(`build.gradle.kts:3`)의 Redis 자동 구성은 `RedisConnectionFactory`가 없을 때만 기본 팩토리를 만들고, `StringRedisTemplate`은 후보가 하나일 때만 만든다(라이브러리 동작 — 추론). 두 번째 팩토리나 템플릿을 bean으로 올리면 기본 팩토리가 물러나거나, 타입으로 주입받는 `SchedulerLockConfig`·`SseRedisConfig`·`SsePubSub`가 모호해진다. 그래서 릴레이 쪽 컴포넌트 안에서 팩토리를 직접 만들고 `afterPropertiesSet()`·`destroy()`로 수명을 관리한다. 대안은 기본 팩토리를 직접 정의해 `@Primary`로 두는 것인데, 그러면 자동 구성을 대체해야 하므로(설정 바인딩·TLS를 손으로 옮김) 쓰지 않는다.
     - 이렇게 하면 대기열 Lua·ShedLock·SSE 구독이 쓰는 기본 커넥션 팩토리의 타임아웃은 바뀌지 않는다. 대신 연결이 하나 늘고, 호스트·포트·TLS(`REDIS_SSL_ENABLED`) 설정을 기본 팩토리와 같은 프로퍼티에서 읽게 해야 한다.
     - 구현 PR에서 확인할 것(추론 단계): 시간 초과 뒤 연결 상태, 그리고 커넥션 공유(`shareNativeConnection`) 여부에 따라 다른 명령이 같은 연결에서 밀리지 않는지.
   - **2순위(1순위가 안 될 때만) — 별도 실행기.** `Future.get(sendTimeoutMs)`가 시간 초과로 돌아와도 **Redis 명령은 계속 진행된다**(`cancel(true)`도 Lettuce 동기 호출을 멈춘다는 보장이 없다 — 추론). 그래서 다음 제한을 모두 둔다.
@@ -134,6 +134,7 @@
 | `outbox/domain/OutboxStatus`(`:5` "PUBLISHED=Kafka 발행 성공"), `outbox/domain/OutboxEvent`(`:17`, `:79` "반드시 Kafka send 성공을 확인한 뒤"), `outbox/dto/OutboxEventSummary`(`:11`), `outbox/service/AdminOutboxService`(`:44`) | 주석을 §1.2의 새 의미("Redis 발행 호출 성공")로 — **PUBLISHED 의미가 코드 주석에 남는 곳**이라 빠뜨리면 안 된다 | P2b |
 | `build.gradle.kts` | `spring-kafka`·`spring-kafka-test`·`testcontainers:kafka` 제거 | P2b |
 | `application.yml` | `spring.kafka`·`kafka.topic`·`dlq` 블록 제거. `outbox.*` 유지(주석 "Kafka" → "Redis"). readiness 그룹은 이미 Kafka 미포함(`readinessState, db, redis`) — 변경 없음 | P2b |
+| (나) 경로였다면 N₀가 더한 설정 — `outbox.relay-target`(`application.yml`) | P2b에서 제거(아래 §5.6의 configmap 키·annotation과 **같은 PR** — 하네스 k8s 규칙 1) | P2b |
 
 ### 5.2 프론트·E2E
 | 대상 | 처리 | PR |
@@ -189,6 +190,7 @@
 | 대상 | 처리 | PR |
 |---|---|---|
 | `k8s/base/configmap.yaml` `KAFKA_*` 3개 | 제거 — **`application.yml`과 같은 PR**(하네스 k8s 규칙 1: env는 앱이 읽어야 한다) | P2b |
+| (나) 경로였다면 configmap `OUTBOX_RELAY_TARGET`, Pod 템플릿 annotation `flowticket.io/relay-target`(api: `k8s/base`, 대기열: `k8s/components/queue-split`) | P2b에서 제거 | P2b |
 | `k8s/monitoring/prometheusrule-flowticket.yaml` | `FlowticketDlqBacklog`·`FlowticketConsumerLag` 제거(앱 지표가 P2b에서 사라짐). `FlowticketOutboxBacklog` 설명 "브로커 장애·Kafka 상태" → "Redis 장애·릴레이 로그" | P2b |
 | `k8s/monitoring/dashboard-flowticket.yaml` Kafka 행(소비자 lag·리스너·리밸런스) | 제거, 아웃박스 발행 지연 패널로 대체 여부는 구현 시 판단 | P2b |
 | `k8s/kafka/`(`kafka.yaml`·`kafka-metrics-configmap.yaml`·`kustomization.yaml`) | 제거 | P3 |
@@ -258,7 +260,7 @@
 - **미소비 메시지:** "lag 0 확인"과 "마지막 N-1 Pod 종료" 사이에 N-1 릴레이가 Kafka로 더 보내면, 그 메시지는 소비자 없이 남아 유실된다. 그래서 **Kafka로 보내는 주체가 하나도 없는 상태**에서 lag 0을 확인해야 한다.
 - 절차(이렇게 하면 릴리스가 하나 늘어난다).
   1. **N₀ — 경로를 고를 수 있는 코드.** 릴레이 발행 대상을 설정(`outbox.relay-target: kafka|redis`, 기본 `kafka`)으로 고르게 하고, Kafka 소비자·DLQ는 **그대로 둔다**. 배포가 끝나도 동작은 지금과 같다.
-  2. **전환 — 설정을 `redis`로 + 재시작.** configmap `flowticket-api-config`는 `configMapGenerator`가 아닌 일반 리소스라(`k8s/base/kustomization.yaml:7`) 값만 바꿔서는 롤아웃이 일어나지 않고, 떠 있는 Pod는 `envFrom`으로 받은 예전 값을 계속 쓴다. 그래서 **같은 PR에서 api·대기열 Deployment의 Pod 템플릿 annotation(예: `flowticket.io/relay-target: redis`)도 바꿔** 롤아웃을 일으킨다(Git 경유라 ArgoCD selfHeal과 충돌하지 않는다). 결제가 적은 시간에 머지한다. 롤링 중 Kafka로 나간 메시지는 **모든 Pod에 아직 있는 소비자**가 계속 읽는다. 그래서 마지막 Pod가 바뀌어도 소비자가 사라지지 않는다.
+  2. **전환 — 설정을 `redis`로 + 재시작.** configmap `flowticket-api-config`는 `configMapGenerator`가 아닌 일반 리소스라(`k8s/base/kustomization.yaml:7`) 값만 바꿔서는 롤아웃이 일어나지 않고, 떠 있는 Pod는 `envFrom`으로 받은 예전 값을 계속 쓴다. 그래서 **같은 PR에서 api Deployment(`k8s/base`)와, `queue-split` component를 켠 경우 대기열 Deployment(component 쪽 패치)의 Pod 템플릿 annotation(예: `flowticket.io/relay-target: redis`)도 바꿔** 롤아웃을 일으킨다(Git 경유라 ArgoCD selfHeal과 충돌하지 않는다). 결제가 적은 시간에 머지한다. 롤링 중 Kafka로 나간 메시지는 **모든 Pod에 아직 있는 소비자**가 계속 읽는다. 그래서 마지막 Pod가 바뀌어도 소비자가 사라지지 않는다.
   3. **배출 게이트(명시적)** — 다음을 모두 확인한다.
      - 모든 Pod의 설정이 `redis`다. 릴레이 로그·지표의 발행 대상으로 확인한다.
      - Kafka `order-events`의 최신 오프셋(Exporter `kafka_topic_partition_current_offset{topic="order-events"}`)이 일정 시간 증가하지 않는다. 보내는 주체가 없다는 뜻이다.
@@ -347,7 +349,7 @@
 | 단계 | 구성 | 목적 |
 |---|---|---|
 | B₀(기록) | IMP-033 B, Kafka 있음 | 역사적 기준선(다시 재지 않음) |
-| B₁ | Kafka 제거 후 B, **나머지 조건 동일**(requests 1,100m·api 3·대기열 2~6·노드 프로파일 m6i.large·AZ당 상한 3·같은 시작 노드 조건·v2 워밍업 절차·같은 부하 시나리오·같은 사전 등록 판정식) | Kafka 제거 자체의 영향 |
+| B₁ | Kafka 제거 후 B, **나머지 조건 동일**(requests 1,100m·api 3·대기열 2~6·노드 프로파일 m6i.large·AZ당 상한 3·시작 노드 수 기록(IMP-033에서도 B는 배치에 따라 5·6대로 통제되지 않았다 — 다르면 결과에 표기)·v2 워밍업 절차·같은 부하 시나리오·같은 사전 등록 판정식) | Kafka 제거 자체의 영향 |
 | B′ | B₁에서 requests·HPA·DB 풀만 변경 | 자원 최적화의 효과 |
 
 - B₀과 B₁은 세션이 달라서 Kafka 외 조건(노드 배치·시간대·AMI 등)도 달라진다.

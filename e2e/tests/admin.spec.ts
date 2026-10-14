@@ -3,10 +3,10 @@ import { loginAsAdmin, seedAdmittedUser } from "../helpers/seed";
 
 /**
  * 운영 콘솔 E2E: 권한 경계(가장 중요) + 사이드바 콘솔 스모크.
- * 성공: 관리자는 사이드바로 대시보드·주문·DLQ·알림·공연에 접근하고 등록·설정을 한다.
+ * 성공: 관리자는 사이드바로 대시보드·주문·아웃박스·DLQ·알림·공연에 접근하고 등록·설정을 한다.
  * 실패: 비관리자/미로그인은 접근 거부.
  * 관리자 계정은 백엔드가 ADMIN_EMAIL/ADMIN_PASSWORD로 부트스트랩(CI env 주입).
- * 주의: E2E CI 잡엔 Kafka 브로커가 없어 Kafka는 '미연결', DLQ는 빈 상태다. DLQ 재처리 로직은
+ * 주의: E2E CI 잡엔 Kafka 브로커가 없어 DLQ는 빈 상태다(대시보드는 Kafka 연결 대신 아웃박스 미발행 수를 보인다). DLQ 재처리 로직은
  *      백엔드 DlqIntegrationTest가 커버한다(브라우저로 실패 메시지 생성은 비실용적).
  */
 
@@ -24,6 +24,11 @@ test("관리자는 사이드바로 콘솔 섹션을 이동한다", async ({ page
   await page.getByRole("link", { name: "주문 조회" }).click();
   await expect(page).toHaveURL(/\/admin\/orders$/);
   await expect(page.getByRole("heading", { name: "주문 조회" })).toBeVisible();
+
+  await page.getByRole("link", { name: "아웃박스", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/outbox$/);
+  await expect(page.getByRole("heading", { name: "아웃박스" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "격리" })).toBeVisible(); // 기본 필터
 
   await page.getByRole("link", { name: "DLQ" }).click();
   await expect(page).toHaveURL(/\/admin\/dlq$/);
@@ -46,7 +51,7 @@ test("관리자는 공연을 등록한다", async ({ page }) => {
   await expect(page.getByText(title)).toBeVisible();
 });
 
-test("관리자는 DLQ 경고 임계치를 변경한다", async ({ page }) => {
+test("관리자는 아웃박스 격리 경고 임계치를 변경한다", async ({ page }) => {
   await loginAsAdmin(page);
   await page.goto("/admin/alerts");
 

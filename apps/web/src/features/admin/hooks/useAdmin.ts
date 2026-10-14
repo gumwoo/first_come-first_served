@@ -84,6 +84,32 @@ export function useDlqAction() {
   });
 }
 
+/** 아웃박스 행 목록(상태 필터 + 페이징). */
+export function useAdminOutbox(status: string, page: number, size = 10) {
+  const token = useAuthStore((s) => s.accessToken);
+  const isAdmin = useIsAdmin();
+  return useQuery({
+    queryKey: adminKeys.outboxList(status, page, size),
+    queryFn: () => adminApi.getOutbox({ status, page, size }, token),
+    enabled: !!token && isAdmin,
+  });
+}
+
+/** 아웃박스 재발행 대상으로 되돌리기(DEAD → PENDING)/폐기(성공 시 목록·대시보드·알림 무효화). */
+export function useOutboxAction() {
+  const token = useAuthStore((s) => s.accessToken);
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "requeue" | "discard" }) =>
+      action === "requeue" ? adminApi.requeueOutbox(id, token) : adminApi.discardOutbox(id, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminKeys.outbox() });
+      qc.invalidateQueries({ queryKey: adminKeys.dashboard() });
+      qc.invalidateQueries({ queryKey: adminKeys.alerts() });
+    },
+  });
+}
+
 /** 운영 알림 임계치 + 현재 적체/초과 여부. */
 export function useAlerts() {
   const token = useAuthStore((s) => s.accessToken);
@@ -100,7 +126,8 @@ export function useUpdateAlert() {
   const token = useAuthStore((s) => s.accessToken);
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (dlqPendingThreshold: number) => adminApi.updateAlerts(dlqPendingThreshold, token),
+    mutationFn: (body: { dlqPendingThreshold?: number; outboxDeadThreshold?: number }) =>
+      adminApi.updateAlerts(body, token),
     onSuccess: () => qc.invalidateQueries({ queryKey: adminKeys.alerts() }),
   });
 }

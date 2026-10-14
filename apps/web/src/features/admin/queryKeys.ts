@@ -23,5 +23,9 @@ export const adminKeys = {
   dlqList: (status: string, page: number, size: number) =>
     [...adminKeys.dlq(), { status, page, size }] as const,
 
+  outbox: () => [...adminKeys.all, "outbox"] as const,
+  outboxList: (status: string, page: number, size: number) =>
+    [...adminKeys.outbox(), { status, page, size }] as const,
+
   alerts: () => [...adminKeys.all, "alerts"] as const,
 };

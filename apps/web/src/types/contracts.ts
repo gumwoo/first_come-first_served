@@ -51,6 +51,10 @@ export type RefundReason = (typeof RefundReason)[number];
 export const DlqStatus = ["PENDING", "RETRYING", "RETRIED", "DISCARDED"] as const;
 export type DlqStatus = (typeof DlqStatus)[number];
 
+/** 아웃박스 발행 상태. 운영 화면(/admin/outbox)이 상태 필터·표시에 쓴다. */
+export const OutboxStatus = ["PENDING", "PUBLISHED", "DEAD", "DISCARDED"] as const;
+export type OutboxStatus = (typeof OutboxStatus)[number];
+
 export const UserRole = ["ROLE_USER", "ROLE_ADMIN", "ROLE_DEV"] as const;
 export type UserRole = (typeof UserRole)[number];
 

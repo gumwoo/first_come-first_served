@@ -7,6 +7,8 @@ import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.kafka.KafkaHealthService;
 import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.repository.OrderRepository;
+import com.flowticket.outbox.domain.OutboxStatus;
+import com.flowticket.outbox.repository.OutboxEventRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,13 +20,16 @@ public class AdminDashboardService {
     private final OrderRepository orderRepository;
     private final KafkaHealthService kafkaHealth;
     private final DlqMessageRepository dlqRepository;
+    private final OutboxEventRepository outboxRepository;
 
     public AdminDashboardService(EventRepository eventRepository, OrderRepository orderRepository,
-                                 KafkaHealthService kafkaHealth, DlqMessageRepository dlqRepository) {
+                                 KafkaHealthService kafkaHealth, DlqMessageRepository dlqRepository,
+                                 OutboxEventRepository outboxRepository) {
         this.eventRepository = eventRepository;
         this.orderRepository = orderRepository;
         this.kafkaHealth = kafkaHealth;
         this.dlqRepository = dlqRepository;
+        this.outboxRepository = outboxRepository;
     }
 
     @Transactional(readOnly = true)
@@ -34,6 +39,8 @@ public class AdminDashboardService {
                 orderRepository.countByStatus(OrderStatus.PAID),
                 orderRepository.sumPaidRevenue(),
                 kafkaHealth.isConnected(),           // 4a: 실 연결 상태
-                dlqRepository.countByStatus(DlqStatus.PENDING)); // 4c: 미처리 적체
+                dlqRepository.countByStatus(DlqStatus.PENDING), // 4c: 미처리 적체
+                outboxRepository.countByStatus(OutboxStatus.PENDING),
+                outboxRepository.countByStatus(OutboxStatus.DEAD));
     }
 }

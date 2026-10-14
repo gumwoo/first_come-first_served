@@ -53,9 +53,10 @@
 - **대기 상한:** `spring.data.redis.timeout`이 설정돼 있지 않다(사실, `application.yml`). 그러면 Lettuce 명령 타임아웃 기본값(60초 — 라이브러리 기본값에서 나온 추론)을 따른다. 한 건이 60초를 물면 `tick-budget(45s) + send-timeout(3s) ≤ 임차(60s)`([[ADR-022]], 하네스 백엔드 규칙 22) 관계가 실제로는 깨진다.
   - 목표: 한 건의 발행 대기를 **`outbox.send-timeout-ms`(3초) 안으로 묶고**, 대기 중인 작업이 **쌓이지 않게** 한다. 중복 발행은 허용한다(§1.2). 쌓이는 구조는 허용하지 않는다.
   - **1순위 — Redis 클라이언트 명령 자체에 제한 시간을 건다.** 릴레이 발행 전용 커넥션 팩토리(`LettuceConnectionFactory`)와 템플릿을 따로 두고, 그 클라이언트 설정의 `commandTimeout`을 `send-timeout-ms`로 맞춘다.
-    - 그러면 시간 초과는 Lettuce가 명령 단위로 판정해 예외를 던지고, 호출 스레드는 그 자리에서 돌아온다. 릴레이 스레드 밖에 남는 작업이 없다.
+    - 그러면 시간 초과는 Lettuce가 명령 단위로 판정해 예외를 던지고, 호출 스레드는 그 자리에서 돌아온다(추론 — Lettuce 동작). 시간 초과된 명령도 서버가 응답할 때까지 그 연결의 프로토콜 대기열에 남을 수 있지만, 릴레이 스레드나 실행기에 작업이 쌓이지는 않는다.
     - 서버가 명령을 늦게 처리해 실제로는 발행됐을 수 있다. 이 경우 다음 틱에 다시 나가 중복이 된다(허용).
-    - 별도 팩토리이므로 대기열 Lua·ShedLock·SSE 구독이 쓰는 기본 커넥션 팩토리의 타임아웃은 바꾸지 않는다. 대신 연결이 하나 늘고 TLS 설정(`REDIS_SSL_ENABLED`)을 같이 물려받게 해야 한다.
+    - **전용 팩토리는 Spring bean으로 등록하지 않는다.** Spring Boot 3.3.5(`build.gradle.kts:3`)의 Redis 자동 구성은 `RedisConnectionFactory`가 없을 때만 기본 팩토리를 만들고, `StringRedisTemplate`은 후보가 하나일 때만 만든다(라이브러리 동작 — 추론). 두 번째 팩토리나 템플릿을 bean으로 올리면 기본 팩토리가 물러나거나, 타입으로 주입받는 `SchedulerLockConfig`·`SseRedisConfig`·`SsePubSub`가 모호해진다. 그래서 릴레이 쪽 컴포넌트 안에서 팩토리를 직접 만들고 `afterPropertiesSet()`·`destroy()`로 수명을 관리한다. 대안은 기본 팩토리를 명시적으로 `@Primary`로 두는 것인데, 자동 구성을 대신 쓰게 되므로 쓰지 않는다.
+    - 이렇게 하면 대기열 Lua·ShedLock·SSE 구독이 쓰는 기본 커넥션 팩토리의 타임아웃은 바뀌지 않는다. 대신 연결이 하나 늘고, 호스트·포트·TLS(`REDIS_SSL_ENABLED`) 설정을 기본 팩토리와 같은 프로퍼티에서 읽게 해야 한다.
     - 구현 PR에서 확인할 것(추론 단계): 시간 초과 뒤 연결 상태, 그리고 커넥션 공유(`shareNativeConnection`) 여부에 따라 다른 명령이 같은 연결에서 밀리지 않는지.
   - **2순위(1순위가 안 될 때만) — 별도 실행기.** `Future.get(sendTimeoutMs)`가 시간 초과로 돌아와도 **Redis 명령은 계속 진행된다**(`cancel(true)`도 Lettuce 동기 호출을 멈춘다는 보장이 없다 — 추론). 그래서 다음 제한을 모두 둔다.
     - 스레드 1개
@@ -75,6 +76,7 @@
 | 발행 → 마킹 순서 | 발행이 실패하도록 만든 상태(엄격 발행 목 또는 Redis 컨테이너 정지)에서 행이 **PENDING 유지**·`attempts` 증가·`lastError` 기록, 배치 나머지 미발행 |
 | 대기 상한 | Redis 응답을 지연시킨 상태(예: Toxiproxy 또는 `CLIENT PAUSE`)에서 발행이 `send-timeout-ms` 안에 예외로 돌아오고 행은 PENDING — 틱이 임차를 넘지 않음 |
 | 지연 뒤 복구 | 지연이 풀린 뒤 같은 행이 두 번 발행될 수 있음을 허용하되, 릴레이 스레드 밖에 남은 작업이 없음(2순위 실행기를 쓰면 실행기 활성·대기 작업 수 0~1 상한) |
+| 기본 팩토리 불변 | 컨텍스트의 `RedisConnectionFactory`·`StringRedisTemplate` bean이 각각 하나이고, 기본 팩토리의 명령 타임아웃이 전환 전과 같음 |
 | 복구 | Redis 복구 뒤 다음 틱에 발행·마킹 |
 | 결정적 실패 | payload 손상 행은 DEAD, 같은 aggregate 후속은 보류(기존 `OutboxPoisonEventIntegrationTest`를 Kafka 없이) |
 | `broadcast()` 미사용 | `OutboxRelay`가 `OrderSseRegistry`에 의존하지 않음(생성자 의존성). `AfterCommit`은 정적 유틸이라 생성자로 막을 수 없으므로 **하네스 grep 규칙**으로 막는다(§5.4 신규 규칙 후보) |
@@ -176,7 +178,7 @@
 | `order/event/OrderEventKafkaIntegrationTest` | 제거 → `OutboxRedisDeliveryIntegrationTest`(§2.3)로 대체 |
 | `outbox/OutboxDeliveryIntegrationTest`·`OutboxPoisonEventIntegrationTest`·`AdminOutboxIntegrationTest` | 각 테스트가 띄우는 Kafka 컨테이너·소비 검증 → Redis 구독 검증 |
 | `support/IntegrationTestSupport` | 컨테이너는 없다. `spring.kafka.*` 속성(`:35-47` — 자동 생성 끄기·연결 불가 주소)과 "Kafka 없음" 주석 제거 |
-| `support/TestContainers` | Kafka 관련 내용 없음(Postgres·Redis만) — 변경 없음 |
+| `support/TestContainers` | 컨테이너는 Postgres·Redis만. 주석(`:10` "비-Kafka 통합테스트가 공유", `:15` "Kafka 테스트는 공유하지 않는다")만 갱신 |
 | `dlq/DlqIntegrationTest`, `global/kafka/*Test` 3개 | 제거 |
 | `global/common/PaginationValidationTest` | DLQ 목록 → 아웃박스 목록으로 |
 | `admin/AdminAuthIntegrationTest`·`alert/AdminAlertIntegrationTest`·`global/metrics/OperationalMetricsTest` | DLQ 의존 제거, 새 필드 검증 |
@@ -207,7 +209,7 @@
 | `infra/docker-compose.yml`·`docker-compose.prod.yml` | `kafka` 서비스·앱의 `KAFKA_*` env 제거 | P3 |
 | `infra/k6/README.md`(`:10` compose kafka, `:22` 예정 `failure-dlq.js`), `AGENTS.md`(`:15` 스택, `:29`·`:78` compose kafka) | 문구 — 예정 시나리오는 삭제 | P3 |
 | `infra/terraform/.../modules/eks/main.tf` | **EBS CSI 애드온 유지**(Prometheus PVC gp2 20Gi가 쓴다 — `kube-prometheus-stack.values.yaml:93-100`). 주석 `:224` "Kafka 브로커 PVC"와 `:3-5`(AZ별 노드 그룹의 이유 = Kafka 브로커 EBS)를 갱신 — **AZ별 노드 그룹은 유지**한다. EBS가 AZ에 묶이는 성질은 Prometheus PVC에도 그대로라 근거가 사라지지 않는다 | P3 |
-| `infra/terraform/.../environments/demo/variables.tf`(3 AZ 설명), `modules/vpc/variables.tf` 주석, `demo/main.tf` destroy 순서 주석 | **3 AZ·NAT·RDS Multi-AZ 유지**. 근거 문구에서 Kafka를 빼고, 남은 근거는 운영 요구(G1, G2 후속)·Prometheus 배치로 다시 쓴다. 노드 그룹 구성 재판단은 자원 산정 문서에서 | P3 |
+| `infra/terraform/.../environments/demo/variables.tf`(3 AZ 설명), `modules/vpc/variables.tf` 주석, `demo/main.tf` destroy 순서 주석 | **3 AZ·NAT·RDS Multi-AZ 유지**. 근거 문구에서 Kafka를 빼고 "§7.4 재평가 전까지 변경 범위를 줄이려고 유지"로 적는다(G1은 노드 장애라 3 AZ의 근거가 되지 않는다 — §7.4) | P3 |
 | `infra/terraform/platform/README.md` | Strimzi·Kafka CR 단계 정리 | P5 |
 
 ### 5.8 문서
@@ -228,6 +230,7 @@
 | **P0**(#406) | ADR-028 Accepted + 이 문서 | `npm run harness:check` — 백엔드 규칙 15는 Java·SQL 주석의 ADR/TS/IMP **번호**가 실제 문서를 가리키는지 검사한다. P2b 코드 주석이 [[ADR-028]]을 인용하려면 ADR-028이 먼저 있어야 하므로 P0가 앞선다 | — | revert | G1 PASS·머지 |
 | **P1** | `useOrder` 탭 복귀·한정 재조회(§4) — Kafka와 독립 | 프론트 typecheck·lint·build, vitest, 하네스 | 결제·완료 E2E | revert | 사용자 확인(수치), G1 PASS |
 | **P2a** | 아웃박스 기반 관리 필드 **추가**(대시보드·알림), V20, `/admin/outbox` 화면, 대시보드·알림 화면이 새 필드를 읽음. 기존 DLQ 필드·화면 유지 | 백엔드 CI(Testcontainers — 아직 Kafka 포함), 프론트 3종, 하네스(BE14·FE6) | `AdminAlertIntegrationTest`·`AdminOutboxIntegrationTest`, `e2e admin.spec.ts` | revert(V20은 추가 컬럼이라 남아도 무해) | G1 PASS |
+| **N₀**(떠 있는 클러스터에서 전환할 때만) | 릴레이 발행 대상 설정(`outbox.relay-target`, 기본 `kafka`) + Redis 엄격 발행 경로 추가. Kafka 소비자·DLQ·설정은 **그대로**. 새 env 키(`OUTBOX_RELAY_TARGET`)는 `application.yml`과 configmap에 **같은 PR**로 넣는다(하네스 k8s 규칙 1) | 백엔드 CI(Kafka 컨테이너 포함), 하네스 | 대상별 통합 테스트(`kafka`: 기존 `OrderEventKafkaIntegrationTest` 그대로 통과 = 기본값에서 동작 불변 / `redis`: §2.3 표) | PR revert(기본값이 `kafka`라 배포만으로는 동작이 바뀌지 않는다) | 아래 (나) 2~3단계 |
 | **P2b = 릴리스 N** | 릴레이 → Redis 엄격 발행(떠 있는 클러스터에서 전환하면 앞에 N₀·설정 전환 단계 — 아래 (나)), 소비자·DLQ·Kafka 설정·의존성 제거, 계약·하네스·configmap·앱 지표 규칙 동반 제거, 테스트 교체(§5) | 백엔드 CI(Kafka 컨테이너 없이), 프론트 3종, 하네스 전체(+ 신규 규칙 메타테스트) | §2.3 표 전부, `SseAfterCommitIntegrationTest`, 결제 E2E(`order.paid` SSE 수신 → 완료 화면) | **P2b PR을 revert**해 이미지와 configmap(`KAFKA_*`)을 함께 되돌린다(ArgoCD 동기화). 이미지만 N-1로 바꾸면 안 된다 — api는 configmap을 `envFrom`으로 받으므로(`api-deployment.yaml:62-63`) `KAFKA_BOOTSTRAP_SERVERS` 없이 `localhost:9092` 기본값으로 떠서 Kafka 경로가 조용히 죽는다. **Kafka 인프라가 남아 있어야 가능**(그래서 P3를 뒤로) | 아래 운영 게이트 |
 | 운영 게이트 | — | — | — | — | 아래 목록 |
 | **P3** | `k8s/kafka`·Kafka 모니터링·bring-up/tear-down Strimzi 단계·compose·장애 시험·Terraform/k8s 주석 + (떠 있는 클러스터가 있으면) Strimzi·Kafka CR·PVC 삭제 | 하네스(k8s 규칙), `terraform validate`(문법), `terraform plan`이 변경 없음(주석만 바뀌었는지 — 클러스터를 올릴 때 확인) | 다음 bring-up에서 Kafka 없이 전 단계 통과, 결제 E2E | `k8s/kafka` 복원 + bring-up Strimzi 단계 재실행(토픽은 비어 시작) | P3 머지 후 N이 계속 안정 |
@@ -255,10 +258,10 @@
 - **미소비 메시지:** "lag 0 확인"과 "마지막 N-1 Pod 종료" 사이에 N-1 릴레이가 Kafka로 더 보내면, 그 메시지는 소비자 없이 남아 유실된다. 그래서 **Kafka로 보내는 주체가 하나도 없는 상태**에서 lag 0을 확인해야 한다.
 - 절차(이렇게 하면 릴리스가 하나 늘어난다).
   1. **N₀ — 경로를 고를 수 있는 코드.** 릴레이 발행 대상을 설정(`outbox.relay-target: kafka|redis`, 기본 `kafka`)으로 고르게 하고, Kafka 소비자·DLQ는 **그대로 둔다**. 배포가 끝나도 동작은 지금과 같다.
-  2. **전환 — 설정만 `redis`로.** 결제가 적은 시간에 configmap을 바꾼다. 롤링 중 Kafka로 나간 메시지는 **모든 Pod에 아직 있는 소비자**가 계속 읽는다. 그래서 마지막 Pod가 바뀌어도 소비자가 사라지지 않는다.
+  2. **전환 — 설정을 `redis`로 + 재시작.** configmap `flowticket-api-config`는 `configMapGenerator`가 아닌 일반 리소스라(`k8s/base/kustomization.yaml:7`) 값만 바꿔서는 롤아웃이 일어나지 않고, 떠 있는 Pod는 `envFrom`으로 받은 예전 값을 계속 쓴다. 그래서 **같은 PR에서 api·대기열 Deployment의 Pod 템플릿 annotation(예: `flowticket.io/relay-target: redis`)도 바꿔** 롤아웃을 일으킨다(Git 경유라 ArgoCD selfHeal과 충돌하지 않는다). 결제가 적은 시간에 머지한다. 롤링 중 Kafka로 나간 메시지는 **모든 Pod에 아직 있는 소비자**가 계속 읽는다. 그래서 마지막 Pod가 바뀌어도 소비자가 사라지지 않는다.
   3. **배출 게이트(명시적)** — 다음을 모두 확인한다.
      - 모든 Pod의 설정이 `redis`다. 릴레이 로그·지표의 발행 대상으로 확인한다.
-     - Kafka `order-events`의 최신 오프셋이 일정 시간 증가하지 않는다. 보내는 주체가 없다는 뜻이다.
+     - Kafka `order-events`의 최신 오프셋(Exporter `kafka_topic_partition_current_offset{topic="order-events"}`)이 일정 시간 증가하지 않는다. 보내는 주체가 없다는 뜻이다.
      - 그 상태에서 소비자 lag이 0이다(`kafka_consumergroup_lag`, group `flowticket` — Exporter 지표).
      - `order-events.DLT` 신규 0, `dlq_messages` PENDING 0. 남은 것은 기존 `/admin/dlq`로 처리한다.
   4. **N — Kafka 코드 제거(P2b).** 이 시점에는 Kafka로 들어오는 메시지가 없으므로 소비자를 지워도 잃을 것이 없다.
@@ -276,7 +279,7 @@
 - 릴레이 발행 실패 로그가 계속된다.
 - 결제 E2E에서 `order.paid`를 받지 못한다.
 - Redis 지연으로 틱 예산 경고가 반복된다.
-- (나)의 N₀ 단계에서는 설정을 `kafka`로 되돌리면 된다(코드 롤백 불필요).
+- (나)의 설정 전환 단계에서는 그 PR을 revert한다(configmap 값과 Pod 템플릿 annotation이 함께 돌아가 롤아웃이 일어난다 — 코드 롤백 불필요).
 
 ## 7. 자원 — 줄어드는 것과 줄지 않는 것 (계산·사실 구분)
 이 절은 **하한 계산**이다. 실제로 모든 Pod가 배치되는지를 보인 것이 아니고, 필요한 노드 수를 확정하지 않는다. 실제 필요 노드 수는 자원 산정에서 전체 자원과 배치 제약을 반영해 다시 낸다.
@@ -305,7 +308,7 @@
 | B 2+2 후보(api 2 + 대기열 2 — [operating-requirements.md](operating-requirements.md) 출발 후보, api HPA 하한·PDB 변경이 필요) | 4 | 4대 | 아니오 |
 
 - **결론(계산):** 현재 CPU requests만을 기준으로 하면 A'는 최소 3대, 현재 B는 최소 5대, B 2+2는 최소 4대가 필요하다. Kafka 제거만으로 이 하한은 낮아지지 않는다.
-- **하한이 실제 대수는 아니다.** [[ADR-025]]의 노드별 기록을 보면 A'에서도 4대가 될 수 있다.
+- **하한이 실제 대수는 아니다.** IMP-033 v2에서 A'는 시작 노드 4대, B는 5·6대였다(실측 — IMP-033 표 "시작 노드"). [[ADR-025]]의 노드별 기록도 A'가 4대가 될 수 있음을 보인다.
   - 기록: A' 평시에 노드별 flowticket 밖 CPU 요청이 410·600·750m(세션 20261007-e2e, 저장소 밖 실측)였다.
   - 그러면 api를 놓고 남는 자리는 420·230·80m이고, web 300m 두 개 중 하나가 4번째 노드로 가서 **4대가 될 수 있다**(계산).
   - 이 값에는 kafka 네임스페이스 Pod(운영자·exporter 등)가 들어 있었을 것으로 본다(추론 — 네임스페이스 기준상 flowticket 밖). 어느 노드에 있었는지는 기록에 없다.
@@ -337,14 +340,14 @@
 - 최종 운영 정책에서 **비용과 가용성(G1·G2)으로 다시 평가한다** — 자원 산정 문서의 과제로 넘긴다.
 
 ### 7.5 다음 성능 비교 — 기준선이 바뀐다
-- IMP-033의 B 예매 p95는 **Kafka가 떠 있던 환경**의 실측이다. hold는 194 → 272ms, 결제는 178 → 184ms였다(① 폭증 전 → ② 폭증 중).
+- IMP-033의 B 예매 p95는 **Kafka가 떠 있던 환경**의 실측이다. B는 v2에서 두 번 쟀다(① 폭증 전 → ② 폭증 중): v2-b1은 hold 212 → 256ms·주문 180 → 260ms·결제 195 → 224ms, v2-b2는 hold 194 → 272ms·주문 188 → 211ms·결제 178 → 184ms. 한 회 값이 B의 대표값이 아니다(두 회 관측, 통계적 반복 아님 — IMP-033).
 - Kafka를 빼면 Pod 구성과 노드 안 CPU·메모리 경합이 달라질 수 있다. 이어서 requests·HPA·DB 풀까지 바꾼 뒤 예매가 빨라지면, 어느 변경 때문인지 가를 수 없다.
 - 그래서 다음 측정은 단계를 나눈다.
 
 | 단계 | 구성 | 목적 |
 |---|---|---|
 | B₀(기록) | IMP-033 B, Kafka 있음 | 역사적 기준선(다시 재지 않음) |
-| B₁ | Kafka 제거 후 B, **나머지 조건 동일**(requests 1,100m·api 3·대기열 2~6·같은 부하 시나리오·같은 사전 등록 판정식) | Kafka 제거 자체의 영향 |
+| B₁ | Kafka 제거 후 B, **나머지 조건 동일**(requests 1,100m·api 3·대기열 2~6·노드 프로파일 m6i.large·AZ당 상한 3·같은 시작 노드 조건·v2 워밍업 절차·같은 부하 시나리오·같은 사전 등록 판정식) | Kafka 제거 자체의 영향 |
 | B′ | B₁에서 requests·HPA·DB 풀만 변경 | 자원 최적화의 효과 |
 
 - B₀과 B₁은 세션이 달라서 Kafka 외 조건(노드 배치·시간대·AMI 등)도 달라진다.

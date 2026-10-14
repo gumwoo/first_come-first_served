@@ -1,6 +1,7 @@
 package com.flowticket.event.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import com.flowticket.support.IntegrationTestSupport;
 
@@ -86,6 +87,19 @@ class RankingIntegrationTest extends IntegrationTestSupport {
         assertThat(ranking.topHot(10)).doesNotContain(idA);
         // 누적은 그대로 남음
         assertThat(ranking.topTotal(10)).contains(idA);
+    }
+
+    @Test
+    void 같은_주기에_감쇠가_두번_실행돼도_한번만_줄어든다() {
+        // 파드마다 5분 주기로 decay()가 돈다. 락(ranking-decay)은 lockAtLeastFor=PT0S라 실행이 끝나는 즉시 풀리고,
+        // 같은 주기 안에 다른 파드의 틱이 오면 락을 다시 잡아 한 번 더 감쇠한다. 같은 빈을 연달아 부르는 것이 그 상황이다
+        // (락 이름이 같으므로 다른 파드의 실행과 구별되지 않는다).
+        ranking.recordView(idA, "1.1.1.1"); // hot=1.0
+        ranking.decay(); // 파드 1의 틱
+        ranking.decay(); // 같은 주기 안 파드 2의 틱
+
+        Double hot = redisTemplate.opsForZSet().score(RankingService.HOT, String.valueOf(idA));
+        assertThat(hot).isCloseTo(0.8, within(1e-9)); // 한 주기 = ×0.8 한 번
     }
 
     @Test

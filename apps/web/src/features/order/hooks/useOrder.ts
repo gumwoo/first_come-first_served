@@ -6,6 +6,19 @@ import * as orderApi from "@/features/order/api/order";
 /** 티켓 만료로 브라우저가 재연결을 포기한 뒤 다시 붙기까지의 대기. */
 const SSE_RETRY_DELAY_MS = 2000;
 
+/**
+ * PENDING 동안의 재조회 간격. SSE가 붙어 있어도 이벤트 하나가 빠질 수 있다(파드의 Redis 구독 연결 순간 단절,
+ * 전송 실패 — kafka-removal-design §4). 종료 이벤트라 다시 오지 않으므로, 진행 중 상태에서만 서버 상태로 되맞춘다.
+ * 정원 100명 × 5초 간격이면 공연당 최대 약 20 req/s(계산), 주문 하나에 만료(약 5분)까지 최대 약 60회.
+ */
+const PENDING_POLL_MS = 5000;
+
+/** 탭으로 돌아왔을 때 재조회할 진행 중 상태. VBANK_WAITING은 입금까지 길 수 있어 주기 재조회 없이 복귀 때만. */
+const REFRESH_ON_RETURN = new Set(["PENDING", "VBANK_WAITING"]);
+
+/** visibilitychange와 focus가 연달아 오면 한 번만 재조회한다. */
+const RETURN_REFRESH_DEDUP_MS = 1000;
+
 /** 주문 조회 + SSE(order.paid / payment.vbank.deposited / order.failed 시 재조회). */
 export function useOrder(orderId: number, token: string | null) {
   const [order, setOrder] = useState<orderApi.Order | null>(null);
@@ -97,6 +110,56 @@ export function useOrder(orderId: number, token: string | null) {
       es?.close();
     };
   }, [orderId, token, refresh]);
+
+  // 진행 중 상태의 보완 재조회. SSE를 대신하지 않는다 — 알림이 빠졌을 때 화면이 이전 상태에 멈추지 않게 하는 마지막 장치다.
+  // - PENDING: 탭이 보이는 동안 5초마다, 주문 만료 시각까지.
+  // - PENDING·VBANK_WAITING: 탭으로 돌아오면 1회.
+  // - 그 밖의 상태(PAID·FAILED·EXPIRED 등 종료)가 되면 아무것도 하지 않는다(상태가 바뀌면 이 효과가 정리된다).
+  const status = order?.status;
+  const expiresAt = order?.expiresAt;
+  useEffect(() => {
+    if (!status || !REFRESH_ON_RETURN.has(status)) return;
+    const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : NaN;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let lastReturnRefresh = 0;
+
+    const stop = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+    const expired = () => Number.isFinite(expiresAtMs) && Date.now() >= expiresAtMs;
+    const start = () => {
+      if (status !== "PENDING" || timer || document.visibilityState === "hidden" || expired()) return;
+      timer = setInterval(() => {
+        if (expired()) {
+          stop();
+          return;
+        }
+        refresh();
+      }, PENDING_POLL_MS);
+    };
+    const onReturn = () => {
+      if (document.visibilityState === "hidden") {
+        stop();
+        return;
+      }
+      const now = Date.now();
+      if (now - lastReturnRefresh >= RETURN_REFRESH_DEDUP_MS) {
+        lastReturnRefresh = now;
+        refresh();
+      }
+      start();
+    };
+
+    start();
+    document.addEventListener("visibilitychange", onReturn);
+    window.addEventListener("focus", onReturn);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onReturn);
+      window.removeEventListener("focus", onReturn);
+    };
+  }, [status, expiresAt, refresh]);
 
   return { order, loading, error, refresh };
 }

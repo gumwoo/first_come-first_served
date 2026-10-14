@@ -1,6 +1,6 @@
 # Kafka 제거 설계 — 아웃박스 → Redis Pub/Sub 전환, 의존성 목록, 단계별 PR·게이트·롤백
 
-- 상태: **설계(구현 전)** — 2026-10-14 20:57 KST 작성. 결정은 [[ADR-028]](2026-10-14 20:39 KST 사용자 결정 — B. Kafka 제거)
+- 상태: **설계(구현 전)** — 2026-10-14 20:57 KST 작성, 21:34 KST 측정·삭제 순서 정정(사용자 결정: 기준선 (a) 세션 차이 수용). 결정은 [[ADR-028]](2026-10-14 20:39 KST 사용자 결정 — B. Kafka 제거)
 - 관련: [[ADR-008]](Kafka 백본 + DLQ — 대체 대상), [[ADR-010]](아웃박스 — 유지), [[ADR-012]](3 AZ), [[ADR-022]](릴레이 임차), [[TS-023]](다중 Pod SSE),
   [zero-downtime-deployment.md](zero-downtime-deployment.md) §8(Expand-Contract), [operating-requirements.md](operating-requirements.md), [workload-responsibilities.md](workload-responsibilities.md)
 - 표기: **사실** = 코드·설정·명령 출력으로 확인한 것. **추론** = 코드에서 끌어냈지만 실행으로 확인하지 않은 것. **계산** = 설정값으로 계산한 것(실측 아님).
@@ -11,9 +11,9 @@
 - 대가: `PUBLISHED`의 의미가 "Kafka 로그에 복제·저장됨"에서 "**Redis에 발행 호출이 성공함**"으로 약해진다. 구독자·브라우저 수신은 지금도, 앞으로도 보장하지 않는다(§1).
 - 함정 두 개를 설계로 막는다: 기존 `OrderSseRegistry.broadcast()`는 커밋 뒤로 발행을 미뤄 **마킹이 발행보다 먼저** 일어나고, `SsePubSub.publish()`는 **예외를 삼킨다**. 릴레이는 둘 다 쓰지 않고 실패를 던지는 별도 발행 메서드를 쓴다(§2).
 - 순서: 문서(P0) → 프론트 보완(P1, 독립) → 관리 화면 확장(P2a, 추가만) → **앱 전환 = 릴리스 N(P2b)** → 운영 게이트 → 인프라 제거(P3) → `DROP`(P4 = N+1) → 문서 정리(P5). **새 경로가 검증되기 전에는 Kafka 인프라를 지우지 않는다**(§6).
-- 운영 중 전환은 ShedLock이 발행 경로 하나를 보장한다고 가정하지 않는다. 클러스터가 없을 때 전환하는 것을 권장하고, 떠 있는 클러스터라면 발행 대상을 설정으로 먼저 바꾼 뒤 Kafka 배출을 확인하고 코드를 지운다(§6).
+- 운영 중 전환은 ShedLock이 발행 경로 하나를 보장한다고 가정하지 않는다. 클러스터가 없을 때 전환한다(채택 — (가)). 떠 있는 클러스터라면 발행 대상을 설정으로 먼저 바꾼 뒤 Kafka 배출을 확인하고 코드를 지운다(§6).
 - 노드: CPU requests만 보면 하한은 A' 3대·현재 B 5대·B 2+2 후보 4대이고, **Kafka 제거만으로 이 하한은 낮아지지 않는다**. 실제 필요 노드 수는 메모리·DaemonSet·배치 제약을 반영해 다시 산정한다(§7). 확실히 줄어드는 것은 구성 요소·운영 절차·EBS 30GiB다.
-- 다음 B 측정은 "Kafka 제거만"과 "자원 최적화"를 나눠 잰다. 기존 B 실측은 Kafka가 있던 환경이다(§7.5).
+- 다음 B 측정은 "Kafka 제거 후 기존 설정(B₁)"과 "자원 최적화(B′)"를 나눠 잰다. 기준선은 **(a) 세션 차이를 받아들인다**(사용자 결정 2026-10-14) — 기존 B(B₀)와 B₁의 차이를 Kafka 제거만의 효과로 쓰지 않는다. B₁은 Kafka **인프라까지 운영 삭제한 뒤** 잰다(§6.2·§7.5).
 
 ## 1. 이벤트 전달 보장 — 무엇이 바뀌고 무엇이 그대로인가
 
@@ -225,7 +225,15 @@
 | A'/B 실험 기록(IMP-033·ADR-027, 저장소 밖 세션 원자료 `artifacts/loadtest/20261014-ab/`) | **건드리지 않는다** |
 
 ## 6. 변경 순서 — PR별 CI·회귀·게이트·롤백
-원칙: **새 경로가 CI와 운영 게이트로 확인되기 전에는 Kafka 인프라를 지우지 않는다.** 앱 전환(P2b)이 Kafka 인프라를 쓰지 않게 된 뒤에도, 롤백 경로(N-1)가 Kafka를 필요로 하므로 P3는 N이 안정된 뒤에 한다.
+원칙: **새 경로가 CI와 운영 게이트로 확인되기 전에는 Kafka 인프라를 지우지 않는다.** 앱 전환(P2b)이 Kafka 인프라를 쓰지 않게 된 뒤에도, 롤백 경로(N-1)가 Kafka를 필요로 하므로 운영 삭제는 별도 게이트(§6.2)를 통과한 뒤에 하고, 저장소 P3는 관찰 기간(§6.3) 뒤에 머지한다.
+
+전체 진행 순서(사용자 결정 2026-10-14). 각 단계는 CI·하네스·G1을 통과한 뒤 다음으로 간다.
+1. 랭킹 감쇠 중복 실행 재현·필요 시 수정(Kafka와 무관한 별도 PR — ShedLock `PT0S` 문제)
+2. P1 → P2a → P2b(클러스터 불필요)
+3. 자원 산정·측정 계획 문서(후보·계획만, 최종 requests·Hikari 풀·HPA·노드 수는 B₁ 뒤 확정) + P3a + 저장소 P3 준비
+4. 측정 세션: N 게이트(§6.1) → Kafka 운영 삭제 게이트(§6.2) → B₁ → B′(반복 조정 가능) → G1(최종 B′ 후보) — §7.5
+5. 관찰 기간 뒤 저장소 P3 머지, 충분히 안정된 뒤 P4, 마지막 P5
+
 
 | PR | 내용 | CI·검증 | 회귀 확인 | 롤백 | 다음으로 가는 조건 |
 |---|---|---|---|---|---|
@@ -234,20 +242,19 @@
 | **P2a** | 아웃박스 기반 관리 필드 **추가**(대시보드·알림), V20, `/admin/outbox` 화면, 대시보드·알림 화면이 새 필드를 읽음. 기존 DLQ 필드·화면 유지 | 백엔드 CI(Testcontainers — 아직 Kafka 포함), 프론트 3종, 하네스(BE14·FE6) | `AdminAlertIntegrationTest`·`AdminOutboxIntegrationTest`, `e2e admin.spec.ts` | revert(V20은 추가 컬럼이라 남아도 무해) | G1 PASS |
 | **N₀**(떠 있는 클러스터에서 전환할 때만) | 릴레이 발행 대상 설정(`outbox.relay-target`, 기본 `kafka`) + Redis 엄격 발행 경로 추가. Kafka 소비자·DLQ·설정은 **그대로**. 새 env 키(`OUTBOX_RELAY_TARGET`)는 `application.yml`과 configmap에 **같은 PR**로 넣는다(하네스 k8s 규칙 1) | 백엔드 CI(Kafka 컨테이너 포함), 하네스 | 대상별 통합 테스트(`kafka`: 기존 `OrderEventKafkaIntegrationTest` 그대로 통과 = 기본값에서 동작 불변 / `redis`: §2.3 표) | PR revert(기본값이 `kafka`라 배포만으로는 동작이 바뀌지 않는다) | 아래 (나) 2~3단계 |
 | **P2b = 릴리스 N** | 릴레이 → Redis 엄격 발행(떠 있는 클러스터에서 전환하면 앞에 N₀·설정 전환 단계 — 아래 (나)), 소비자·DLQ·Kafka 설정·의존성 제거, 계약·하네스·configmap·앱 지표 규칙 동반 제거, 테스트 교체(§5) | 백엔드 CI(Kafka 컨테이너 없이), 프론트 3종, 하네스 전체(+ 신규 규칙 메타테스트) | §2.3 표 전부, `SseAfterCommitIntegrationTest`, 결제 E2E(`order.paid` SSE 수신 → 완료 화면) | **P2b PR을 revert**해 이미지와 configmap(`KAFKA_*`)을 함께 되돌린다(ArgoCD 동기화). 이미지만 N-1로 바꾸면 안 된다 — api는 configmap을 `envFrom`으로 받으므로(`api-deployment.yaml:62-63`) `KAFKA_BOOTSTRAP_SERVERS` 없이 `localhost:9092` 기본값으로 떠서 Kafka 경로가 조용히 죽는다. **Kafka 인프라가 남아 있어야 가능**(그래서 P3를 뒤로) | 아래 운영 게이트 |
-| 운영 게이트 | — | — | — | — | 아래 목록 |
-| **P3** | `k8s/kafka`·Kafka 모니터링·bring-up/tear-down Strimzi 단계·compose·장애 시험·Terraform/k8s 주석 + (떠 있는 클러스터가 있으면) Strimzi·Kafka CR·PVC 삭제 | 하네스(k8s 규칙), `terraform validate`(문법), `terraform plan`이 변경 없음(주석만 바뀌었는지 — 클러스터를 올릴 때 확인) | 다음 bring-up에서 Kafka 없이 전 단계 통과, 결제 E2E | `k8s/kafka` 복원 + bring-up Strimzi 단계 재실행(토픽은 비어 시작) | P3 머지 후 N이 계속 안정 |
-| **P4 = N+1** | V21 `DROP TABLE dlq_messages`·`DROP COLUMN dlq_pending_threshold`(+ allow 주석), `docs/db` 표기 | 백엔드 CI(Flyway 적용·`validate` 통과), 하네스 BE14(사유 있는 allow) | 관리 화면·알림 API | **N-1로 롤백 불가**. N으로는 가능 | — |
+| **P3a**(세션 전) | `bring-up.sh`에 Kafka 단계 건너뛰기 스위치(`SKIP_KAFKA=1` — Strimzi 차트·`k8s/kafka` 적용·Kafka 대기 생략). 기본값은 지금처럼 설치(세션 시작 시 N 게이트를 Kafka가 있는 상태에서 보기 위해). 그 밖의 단계는 불변 | 하네스, `bash -n` | 스위치 미지정 시 단계 출력이 이전과 같음 | revert | G1 PASS·머지 |
+| 운영 게이트 ① N 게이트 | (세션) §6.1 | — | — | P2b revert(Kafka 인프라 있음) | §6.1 통과 |
+| 운영 게이트 ② **Kafka 운영 삭제** | (세션) §6.2 — 통과하면 떠 있는 클러스터에서 Strimzi·Kafka CR·PVC·EBS를 지우고 절차·결과를 기록 | — | — | **즉시 롤백 불가** — Kafka 재설치(bring-up의 Kafka 단계) + P2b revert가 필요(§6.2) | §6.2 통과·삭제 기록 |
+| **P3**(저장소) | `k8s/kafka`·Kafka 모니터링·bring-up/tear-down Strimzi 단계(P3a 스위치 포함)·compose·장애 시험·Terraform/k8s 주석 삭제. **세션 전에 준비하고, 관찰 기간 뒤 머지**한다 | 하네스(k8s 규칙), `terraform validate`(문법), `terraform plan`이 변경 없음(주석만 바뀌었는지 — 클러스터를 올릴 때 확인) | 다음 bring-up에서 Kafka 없이 전 단계 통과, 결제 E2E | revert(이후 bring-up이 다시 Kafka를 설치) | 관찰 기간(§6.3) 동안 N 안정 |
+| **P4 = N+1**(충분히 안정된 뒤) | V21 `DROP TABLE dlq_messages`·`DROP COLUMN dlq_pending_threshold`(+ allow 주석), `docs/db` 표기 | 백엔드 CI(Flyway 적용·`validate` 통과), 하네스 BE14(사유 있는 allow) | 관리 화면·알림 API | **N-1로 롤백 불가**. N으로는 가능 | — |
 | **P5** | 문서 정리(§5.8), Terraform README, 남은 fixture 문구 | 하네스 docs | — | revert | — |
 
-**운영 게이트(P2b 배포 ↔ P3 사이).** 지금은 클러스터가 내려가 있다(2026-10-14 철거 — IMP-033 머리, 잔여 리소스 0은 저장소 밖 세션 기록 `session.log`). 그래서 경우가 둘이다.
+**운영 게이트(P2b 배포 ↔ P3 사이).** 지금은 클러스터가 내려가 있다(2026-10-14 철거 — IMP-033 머리, 잔여 리소스 0은 저장소 밖 세션 기록 `session.log`). 전환 방식은 두 가지인데, 기준선 (a)를 택했으므로 **(가)로 진행한다**(사용자 결정 2026-10-14). (나)는 떠 있는 클러스터에서 전환해야 할 경우를 위한 기록으로 남긴다.
 
-**(가) 권장 — 클러스터가 없는 동안 전환한다.**
+**(가) 채택 — 클러스터가 없는 동안 전환한다.**
 - P2b를 클러스터가 내려가 있을 때 머지하면, 다음 bring-up이 N을 처음부터 올린다. Kafka 경로와 Redis 경로가 **공존하는 구간이 없다**. 그래서 아래 (나)의 문제(이중 발행 경로·미소비 메시지)가 생기지 않는다.
-- 게이트는 다음을 확인하는 것이다.
-  - bring-up 뒤 결제 E2E에서 `order.paid` SSE를 수신한다.
-  - 아웃박스 행이 `PUBLISHED`가 된다.
-  - PENDING이 0이다.
-- P3 전까지 bring-up은 Kafka를 계속 띄우지만 N은 쓰지 않는다(`KAFKA_*` env도 없음). 롤백(P2b revert)할 때 그 Kafka를 다시 쓴다.
+- 세션 시작 시 bring-up은 Kafka를 계속 띄우지만(P3 머지 전) N은 쓰지 않는다(`KAFKA_*` env도 없음). 롤백(P2b revert)할 때 그 Kafka를 다시 쓴다.
+- 세션 순서는 §6.1 → §6.2 → §7.5(B₁ → B′ → G1)다.
 
 **(나) 떠 있는 클러스터에서 전환해야 할 때 — 발행 주체 전환을 단계로 나눈다.**
 - **ShedLock은 발행 경로의 단일성을 보장하지 않는다.**
@@ -269,19 +276,50 @@
   4. **N — Kafka 코드 제거(P2b).** 이 시점에는 Kafka로 들어오는 메시지가 없으므로 소비자를 지워도 잃을 것이 없다.
 - 대안(권장하지 않음): 단계 없이 N을 바로 롤링하고, 결제가 적은 시간 + 직전 lag 0으로 유실을 줄인다. lag 확인과 마지막 Pod 종료 사이의 유실을 **막지 못한다**.
 
-**배포 후, P3 전에 확인할 것(두 경우 공통)**
-- 모든 api·대기열 Pod 이미지가 N
-- 아웃박스 PENDING 0·`oldest_pending.age` 정상
-- DEAD 증가 없음
-- 결제 E2E에서 `order.paid` SSE 수신
-- (나)의 경우: 위 배출 게이트
+### 6.1 운영 게이트 ① — N 게이트(세션, Kafka 인프라는 아직 있음)
+- 모든 api·대기열 Pod 이미지가 N이고, 이전 ReplicaSet의 Pod가 0개다(`kubectl get rs`에서 이전 리비전 `READY 0`). (가)는 처음부터 N이라 해당 Pod가 없어야 정상이다.
+- 결제 E2E에서 `order.paid` SSE를 수신하고, 그 아웃박스 행이 `PUBLISHED`가 된다.
+- 아웃박스 PENDING 0·`oldest_pending.age` 정상·DEAD 증가 없음.
+- 릴레이 지표(`flowticket.outbox.publish.ack`·`.lag`)와 로그에 발행 실패가 계속되지 않는다.
+- **재시도 경로**: 실패 → PENDING 유지 → 다음 틱 재발행은 **CI에서 검증**한다(§2.3, Testcontainers Redis 정지·지연). 클러스터에서 Redis 장애를 강제로 넣는 시험은 하지 않는다 — ShedLock 락과 readiness도 같은 Redis에 의존해, Redis를 막으면 릴레이가 발행 단계 전에 멈춘다(추론). 그래서 클러스터에서는 **재시도 경로가 미검증**으로 남고, 관찰된 `attempts > 1` 행이 있으면 결국 `PUBLISHED`가 되었는지만 기록한다.
+- 롤백 조건(N → 이전, **P2b PR revert**):
+  - 아웃박스 PENDING이 줄지 않는다(`FlowticketOutboxBacklog`).
+  - 릴레이 발행 실패 로그가 계속된다.
+  - 결제 E2E에서 `order.paid`를 받지 못한다.
+  - Redis 지연으로 틱 예산 경고가 반복된다.
+  - (나)의 설정 전환 단계에서는 그 PR을 revert한다(configmap 값과 Pod 템플릿 annotation이 함께 돌아가 롤아웃이 일어난다 — 코드 롤백 불필요).
 
-**롤백 조건(N → 이전, P2b revert):**
-- 아웃박스 PENDING이 줄지 않는다(`FlowticketOutboxBacklog`).
-- 릴레이 발행 실패 로그가 계속된다.
-- 결제 E2E에서 `order.paid`를 받지 못한다.
-- Redis 지연으로 틱 예산 경고가 반복된다.
-- (나)의 설정 전환 단계에서는 그 PR을 revert한다(configmap 값과 Pod 템플릿 annotation이 함께 돌아가 롤아웃이 일어난다 — 코드 롤백 불필요).
+### 6.2 운영 게이트 ② — Kafka 운영 삭제(세션, 별도 게이트)
+삭제 뒤에는 기존 코드로 **즉시 롤백할 수 없다**(N-1은 Kafka가 있어야 동작). 그래서 N 게이트와 따로 판정한다.
+- **삭제 직전 확인**(모두 충족해야 진행):
+  1. §6.1 N 게이트 통과(Redis 발행·아웃박스 상태·결제 E2E). 재시도는 CI 검증 결과를 인용한다.
+  2. 구버전 Pod 0개(§6.1 첫 항목 재확인).
+  3. Kafka 잔여 0:
+     - `order-events` 소비자 lag 0(`kafka_consumergroup_lag`, group `flowticket`)
+     - 최신 오프셋이 증가하지 않음(`kafka_topic_partition_current_offset{topic="order-events"}`)
+     - `order-events.DLT` 메시지 0, `dlq_messages` PENDING 0
+     - (가)에서는 N이 Kafka에 쓰지 않으므로 모두 0이어야 정상이다. 0이 아니면 원인부터 본다.
+  4. 롤백 경로 확인: 저장소에 Kafka 매니페스트와 bring-up Kafka 단계가 아직 있다(P3 미머지). 재설치 절차(아래)를 기록해 둔다.
+- **삭제 전 기록**(§7.1·§8의 미확인 항목을 여기서 해소):
+  - kafka 네임스페이스 Pod별 실제 `resources`(`kubectl get pod -n kafka -o jsonpath='{..resources}'`)와 노드 배치(`-o wide`)
+  - 노드별 requests 합(`kubectl describe node`의 Allocated resources)
+  - PVC·PV·EBS 볼륨 ID
+- **삭제 절차**(순서대로, 명령과 출력은 `session.log`):
+  1. `kubectl delete kafka --all -n kafka`, `kubectl delete kafkanodepool --all -n kafka`(`tear-down.sh:110-111`과 같은 명령)
+  2. `helm uninstall strimzi -n kafka`
+  3. `kubectl delete pvc --all -n kafka`, 그다음 `available` 상태로 남은 EBS가 있는지 확인(`tear-down.sh:125-144`와 같은 확인)
+  4. Kafka PodMonitor·대시보드(`podmonitor-kafka.yaml`·`dashboard-kafka.yaml`)만 `kubectl delete -f`로 지운다. 나머지 모니터링은 유지한다.
+  5. `kafka` 네임스페이스 삭제. Strimzi CRD를 남겼는지 지웠는지 기록한다.
+- **삭제 후 기록:** 노드 수·노드별 requests 합(CA가 노드를 줄이는지 포함), 결제 E2E 재확인, 아웃박스 상태.
+- **삭제 뒤 롤백**(필요할 때): `SKIP_KAFKA` 없이 bring-up의 Kafka 단계(Strimzi 설치 → `k8s/kafka` 적용 → 브로커 Ready)를 다시 실행한 뒤 P2b revert. 토픽은 빈 상태로 시작한다. 소요 시간은 측정한 적이 없다.
+
+### 6.3 운영 삭제와 Git이 다른 기간 — 관찰 기간
+- 운영 삭제 뒤부터 저장소 P3 머지 전까지는 **클러스터에는 Kafka가 없고 Git(bring-up)에는 있다**.
+  - Kafka는 ArgoCD 추적 밖이라 자동 동기화로 되살아나지는 않는다(사실 — §5.6 주의).
+  - 그러나 이 기간에 bring-up을 다시 돌리면 Kafka가 다시 생긴다. 그래서 이 기간의 bring-up 재실행은 **반드시 `SKIP_KAFKA=1`**(P3a)로 하고, 실행 명령을 `session.log`에 남긴다.
+- 관찰 기간에 확인할 것: B₁·B′·G1 측정 중 아웃박스 PENDING·DEAD·발행 지연, 결제 E2E의 `order.paid` 수신.
+- 관찰 기간이 끝나는 조건: 측정 세션 동안 위 항목에 이상이 없고, 이후 bring-up을 한 번 `SKIP_KAFKA=1`로 새로 올려도 전 단계가 통과한다. 그다음 저장소 P3를 머지한다.
+- P4(DB `DROP`)는 P3 머지 뒤, N-1로 돌아갈 일이 없다고 판단될 때 한다(파괴적 DDL — N-1 롤백이 영구히 불가능해진다).
 
 ## 7. 자원 — 줄어드는 것과 줄지 않는 것 (계산·사실 구분)
 이 절은 **하한 계산**이다. 실제로 모든 Pod가 배치되는지를 보인 것이 아니고, 필요한 노드 수를 확정하지 않는다. 실제 필요 노드 수는 자원 산정에서 전체 자원과 배치 제약을 반영해 다시 낸다.
@@ -349,18 +387,30 @@
 | 단계 | 구성 | 목적 |
 |---|---|---|
 | B₀(기록) | IMP-033 B, Kafka 있음 | 역사적 기준선(다시 재지 않음) |
-| B₁ | Kafka 제거 후 B, **나머지 조건 동일**(requests 1,100m·api 3·대기열 2~6·노드 프로파일 m6i.large·AZ당 상한 3·시작 노드 수 기록(IMP-033에서도 B는 배치에 따라 5·6대로 통제되지 않았다 — 다르면 결과에 표기)·v2 워밍업 절차·같은 부하 시나리오·같은 사전 등록 판정식) | Kafka 제거 자체의 영향 |
-| B′ | B₁에서 requests·HPA·DB 풀만 변경 | 자원 최적화의 효과 |
+| B₁ | **Kafka 인프라를 운영 삭제한 뒤**(§6.2) 기존 B 설정 그대로(requests 1,100m·api 3·대기열 2~6·노드 프로파일 m6i.large·AZ당 상한 3·v2 워밍업 절차·같은 부하 시나리오·같은 사전 등록 판정식). 시작 노드 수는 기록한다(IMP-033에서도 B는 배치에 따라 5·6대로 통제되지 않았다 — 다르면 결과에 표기) | Kafka 없는 새 기준선 |
+| B′ | B₁에서 requests·HPA·DB 풀만 변경 | 자원 최적화의 효과(B₁ 대비 — 같은 세션) |
 
-- B₀과 B₁은 세션이 달라서 Kafka 외 조건(노드 배치·시간대·AMI 등)도 달라진다.
-  - 가능하면 같은 세션에서 Kafka가 있는 N-1로 B를 한 번 재고, 전환 뒤 B₁을 잰다. Kafka 유무 말고는 같게 만들기 위해서다. 이 경우 (가) 대신 (나)의 단계 전환이 필요하다.
-  - 어렵다면 B₀ 대비 차이를 "세션 차 포함"으로 표기한다.
+- **기준선 (a) — 세션 차이를 받아들인다**(사용자 결정 2026-10-14). 목적은 Kafka 제거의 성능 효과를 입증하는 것이 아니라, Kafka 없이 정합성·알림 전달이 유지되는지 확인하고 그 위에서 자원을 최적화하는 것이다.
+  - B₀과 B₁의 차이를 **Kafka 제거만의 효과로 쓰지 않는다**. 세션이 달라 Kafka 외 조건도 달라진다.
+  - B₁ 결과에는 B₀ 대비 달라진 조건을 함께 적는다: 세션 날짜·시간대, 노드 AMI와 노드별 Pod 배치, 시작 노드 수, 이미지 태그(앱 코드 변경 포함 — N), Kafka 유무, 부하 발생기 위치.
+- **B′는 반복 조정을 허용한다.**
+  - 목표(예매 p95·정합성 위반 0·노드 수)와 판정식은 B′ 전에 사전 등록한다.
+  - 못 미치면 requests·HPA·DB 풀을 다시 조정하고 재측정한다. 매 조정은 PR → CI·하네스 → G1 → 머지 → ArgoCD 동기화·이미지/설정 확인을 거친다. k8s만 바뀌는 조정은 이미지를 다시 빌드하지 않는다.
+  - **시도한 B′ 후보를 모두 기록한다**(가장 잘 나온 회차만 고르지 않는다).
+- **G1(노드 1대 비자발적 장애)은 최종 B′ 후보에서 검증한다.** 시험 전에 그 후보의 실제 Pod 배치(`-o wide`)와 노드별 남은 용량을 확인하고, 노드 하나를 잃었을 때 남은 노드에 api·대기열·web이 다시 들어갈 자리가 있는지 계산으로 먼저 본다. 자리가 없으면 G1 전에 후보를 고친다.
+- **한 세션 안에 모두 끝난다고 전제하지 않는다.** 사전 준비(P3a, B′ 매니페스트·하네스 수정안, 사전 등록 초안)를 끝내고 들어가되, 결과에 따라 세션을 나눈다. 세션이 바뀌면 B′와 같은 세션 비교를 위해 B₁을 다시 잴지 사전 등록 때 정한다.
 - 판정식과 반복 횟수는 측정 전에 사전 등록한다(IMP-033 방식).
 
-## 8. 확인하지 못한 것 (구현 PR·다음 세션에서 확인)
-- `StringRedisTemplate.convertAndSend` 반환 타입(`Long` 수신자 수 여부) — 지표 설계에 영향.
-- Lettuce 명령 타임아웃 실제 값(설정 미지정 → 기본값 추론). 전용 커넥션 팩토리에 `commandTimeout`을 걸었을 때 시간 초과 뒤 연결 상태도 확인해야 한다(§2.2).
-- `@SchedulerLock`과 `@Transactional` 프록시 순서. 락 해제와 커밋 중 무엇이 먼저인지 확인해야 한다(§6 (나)).
-- Strimzi가 만든 브로커·Entity Operator Pod의 실제 requests(§7.1).
-- t3.large(기본 프로파일) allocatable — §7.2는 m6i.large 기록값만 썼다.
-- 구독 연결 순간 단절로 SSE가 연결된 채 이벤트를 놓치는 빈도 — 측정 없음. §4 권장의 근거는 "가능하다"는 구조이지 빈도가 아니다.
+## 8. 확인하지 못한 것 — 어디서 확인하나
+클러스터를 띄워야만 풀 수 있는 항목을 줄이기 위해 확인 장소를 나눈다.
+
+| 항목 | 확인 장소 | 시점 |
+|---|---|---|
+| `StringRedisTemplate.convertAndSend` 반환 타입(`Long` 수신자 수 여부) | 라이브러리 소스·CI 컴파일 | P2b |
+| Lettuce 명령 타임아웃 기본값(설정 미지정 → 60초 추론), 전용 팩토리 `commandTimeout` 시간 초과 뒤 연결 상태 | Spring Boot 3.3.5·Lettuce 소스(정적) + CI 테스트(설정된 타임아웃 단언, Redis 지연 주입). 로컬 gradle이 없어 테스트는 CI에서만 | P2b |
+| `@SchedulerLock`과 `@Transactional` 프록시 순서(락 해제와 커밋 중 무엇이 먼저인지) | 코드·CI 통합 테스트. 필요하면 클러스터에서 재확인 | P2b 전(랭킹 감쇠 PR과 함께 볼 수 있음) |
+| Strimzi가 만든 브로커·Entity Operator Pod의 실제 requests | 클러스터(기존 기록 없음) | 세션 §6.2 삭제 전 기록 |
+| t3.large(기본 프로파일) allocatable | 클러스터 또는 EKS 예약량 계산식 | 자원 산정 |
+| Hikari active·idle·pending 실측 | 부하를 건 클러스터 | 세션 B₁·B′ |
+| G1 노드 강제 장애 | 클러스터 | 세션, 최종 B′ 후보 |
+| 구독 연결 순간 단절로 SSE가 연결된 채 이벤트를 놓치는 빈도 | 측정 계획 없음 — §4 권장의 근거는 "가능하다"는 구조이지 빈도가 아니다 | — |

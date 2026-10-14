@@ -19,7 +19,7 @@ metadata:
 data:
   flowticket.json: |
     {
-      "title": "FlowTicket: API / Kafka / 런타임",
+      "title": "FlowTicket: API / 아웃박스 / 런타임",
       "uid": "flowticket-api",
       "timezone": "browser",
       "refresh": "30s",
@@ -101,45 +101,45 @@ data:
           ]
         },
         {
-          "type": "row", "title": "Kafka: TS-020이 보이게 하는 자리",
+          "type": "row", "title": "아웃박스: 알림 이벤트(order.paid) 발행",
           "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 }
         },
         {
-          "type": "timeseries", "title": "Consumer lag (파티션별)",
-          "description": "독성 메시지로 컨슈머가 무한 재시도에 빠지면 파드는 Running·readiness UP인데 이 선만 올라간다. TS-020을 kubectl top으로 우연히 발견했던 자리다.",
+          "type": "timeseries", "title": "아웃박스 미발행·격리 (상태별)",
+          "description": "PENDING이 줄지 않으면 발행 대상(Redis) 장애·시간 초과, DEAD가 생기면 재시도로 풀리지 않는 행이다(/admin/outbox). Kafka 제거(ADR-028) 뒤 실패는 소비자가 아니라 이 행에 남는다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
           "gridPos": { "h": 9, "w": 12, "x": 0, "y": 17 },
           "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
           "targets": [
             {
-              "expr": "max by(topic, partition) (kafka_consumer_fetch_manager_records_lag{job=\"flowticket-api\"})",
-              "legendFormat": "{{topic}} p{{partition}}", "refId": "A"
+              "expr": "max by(status) (flowticket_outbox_events{job=\"flowticket-api\", status=~\"PENDING|DEAD\"})",
+              "legendFormat": "{{status}}", "refId": "A"
             }
           ]
         },
         {
-          "type": "timeseries", "title": "리스너 처리율 (result별)",
-          "description": "failure 선이 서면 재시도 소진 → DLT 경로가 도는 중이다.",
+          "type": "timeseries", "title": "미발행 최장 대기",
+          "description": "개수와 달리 릴레이가 뒤처지는지를 본다(ADR-022). 100건이 1초 만에 빠지는 것과 3건이 10분째 남은 것은 개수로 구분되지 않는다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
           "gridPos": { "h": 9, "w": 6, "x": 12, "y": 17 },
-          "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
-          "targets": [
-            {
-              "expr": "sum by(result) (rate(spring_kafka_listener_seconds_count{job=\"flowticket-api\"}[5m]))",
-              "legendFormat": "{{result}}", "refId": "A"
-            }
-          ]
-        },
-        {
-          "type": "timeseries", "title": "마지막 리밸런스 이후 경과",
-          "description": "값이 자꾸 0으로 떨어지면 리밸런스가 반복되는 것: 컨슈머가 안정적으로 붙어 있지 못한 상태다.",
-          "datasource": { "type": "prometheus", "uid": "${DS}" },
-          "gridPos": { "h": 9, "w": 6, "x": 18, "y": 17 },
           "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
           "targets": [
             {
-              "expr": "max(kafka_consumer_coordinator_last_rebalance_seconds_ago{job=\"flowticket-api\"})",
-              "legendFormat": "경과", "refId": "A"
+              "expr": "max(flowticket_outbox_oldest_pending_age_seconds{job=\"flowticket-api\"})",
+              "legendFormat": "최장 대기", "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "timeseries", "title": "구독자 0으로 나간 발행",
+          "description": "발행 호출은 성공했지만 받은 구독자가 없었다(실패 아님 — ADR-028 §6). 서면 모든 파드의 Redis 구독이 끊긴 순간이다.",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 9, "w": 6, "x": 18, "y": 17 },
+          "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "sum(rate(flowticket_outbox_publish_no_receivers_total{job=\"flowticket-api\"}[5m]))",
+              "legendFormat": "구독자 0", "refId": "A"
             }
           ]
         },

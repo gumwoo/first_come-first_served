@@ -72,7 +72,7 @@ class SseAfterCommitIntegrationTest extends IntegrationTestSupport {
     void 트랜잭션이_없으면_그_자리에서_나간다() {
         SeatSseRegistry registry = localRegistry();
 
-        // 스케줄러 밖 호출·Kafka 소비처럼 트랜잭션이 없는 경로가 실제로 있다(OrderEventConsumer).
+        // 스케줄러 밖 호출처럼 트랜잭션이 없는 경로가 실제로 있다(OrderEventConsumer).
         registry.broadcast(9L, "seat.hold.expired", Map.of("seatIds", List.of(3L)));
 
         verify(registry).deliverLocal(eq(9L), eq("seat.hold.expired"), any());

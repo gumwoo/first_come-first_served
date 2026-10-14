@@ -27,6 +27,6 @@ public class AdminAlertController {
 
     @PutMapping("/admin/alerts")
     public ApiResponse<AlertSettingsResponse> update(@Valid @RequestBody UpdateAlertRequest request) {
-        return ApiResponse.ok(adminAlertService.update(request.dlqPendingThreshold(), request.outboxDeadThreshold()));
+        return ApiResponse.ok(adminAlertService.update(request.outboxDeadThreshold()));
     }
 }

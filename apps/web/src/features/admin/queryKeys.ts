@@ -19,10 +19,6 @@ export const adminKeys = {
   events: () => [...adminKeys.all, "events"] as const,
   eventList: (page: number, size: number) => [...adminKeys.events(), { page, size }] as const,
 
-  dlq: () => [...adminKeys.all, "dlq"] as const,
-  dlqList: (status: string, page: number, size: number) =>
-    [...adminKeys.dlq(), { status, page, size }] as const,
-
   outbox: () => [...adminKeys.all, "outbox"] as const,
   outboxList: (status: string, page: number, size: number) =>
     [...adminKeys.outbox(), { status, page, size }] as const,

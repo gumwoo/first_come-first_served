@@ -45,7 +45,7 @@ status: `todo | doing | done | blocked`
 
 ### S07 운영
 - [dashboard.md](operator/dashboard.md) · [orders.md](operator/orders.md) · [events.md](operator/events.md)
-- [event-detail.md](operator/event-detail.md) · [dlq.md](operator/dlq.md) · [alerts.md](operator/alerts.md)
+- [event-detail.md](operator/event-detail.md) · [dlq.md](operator/dlq.md)(삭제됨 → outbox) · [alerts.md](operator/alerts.md)
 
 ### S08 아웃박스 + 정산(정합성 보강)
 - 사용자 화면 없음(백엔드 트랙). 운영 화면 [outbox.md](operator/outbox.md)는 Kafka 제거 P2a(ADR-028)에서 추가. 1단계 아웃박스(at-least-once 발행 + 소비자 멱등) / 2단계 PG 정산·보상. 설계: [ADR-010](../decisions/ADR-010-transactional-outbox.md). 실측은 IMP-011 + 통합테스트.

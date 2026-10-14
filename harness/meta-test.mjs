@@ -67,12 +67,12 @@ const cases = [
   { name: "k8s-mgmt-in-configmap", script: "k8s/check.mjs", expect: "관리 포트를 ConfigMap에 두었다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-mgmt-in-configmap" } },
   { name: "fe-missing-enum",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-enum" } },
   { name: "fe-bad-dep",          script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-bad-dep" } },
-  { name: "fe-layer-breach",     script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },
-  { name: "fe-dead-api",         script: "frontend/check.mjs", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-dead-api" } },
+  { name: "fe-layer-breach",     script: "frontend/check.mjs", expect: "FE 계층 위반:", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-layer-breach" } },
+  { name: "fe-dead-api",         script: "frontend/check.mjs", expect: "미사용 API 함수(死코드):", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-dead-api" } },
   { name: "fe-sse-no-resync",    script: "frontend/check.mjs", expect: "SSE 복구 경로 없음:", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-sse-no-resync" } },
   { name: "fe-literal-query-key", script: "frontend/check.mjs", expect: "쿼리 키 리터럴:", env: { HARNESS_WEB_DIR: "harness/fixtures/violations/fe-literal-query-key" } },
   // 2) 필수 이벤트 구독 누락 (계약/웹 둘 다 override해 단독 격리)
-  { name: "fe-missing-required-event", script: "frontend/check.mjs", env: {
+  { name: "fe-missing-required-event", script: "frontend/check.mjs", expect: "필수 이벤트 구독 누락:", env: {
     HARNESS_CONTRACTS_DIR: "harness/fixtures/violations/fe-missing-required-event",
     HARNESS_WEB_DIR: "harness/fixtures/violations/fe-missing-required-event/web" } },
   // docs: 문서가 저장소의 현재 상태를 반대로 설명하는 두 경로(둘 다 코드는 멀쩡해 CI가 통과한다)

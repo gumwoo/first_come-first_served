@@ -3,6 +3,7 @@
 - 슬라이스: `S07` (Phase 4c)
 - 마이그레이션(단일 진실원): `V12__dlq_messages.sql`
 - 도메인 규칙: Kafka DLQ, [[ADR-006]] 계열(비동기 이벤트 백본)
+- **상태(2026-10-15): 앱에서 사용 중단** — Kafka 제거([[ADR-028]]) 릴리스 N(P2b-2)에서 엔티티·화면·API를 지웠다. 테이블은 N-1 Pod가 롤링 중 아직 매핑하므로 남겨 두고, N+1(P4)에서 `DROP`한다(`docs/deployment/kafka-removal-design.md` §5.3). 아래는 당시 설계 기록이다.
 
 ## 목적
 컨슈머 재시도가 소진되어 Dead Letter Topic(`order-events.DLT`)으로 넘어온 실패 메시지를

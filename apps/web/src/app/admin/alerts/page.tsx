@@ -24,9 +24,8 @@ export default function AdminAlertsPage() {
 
   const save = () => {
     const n = Number(value);
-    // DLQ 임계치도 함께 보낸다: 롤링 배포 중 구 API는 빠진 값을 0으로 덮어쓴다(admin.ts updateAlerts).
-    if (Number.isFinite(n) && n >= 0 && alerts.data && supported) {
-      update.mutate({ outboxDeadThreshold: n, dlqPendingThreshold: alerts.data.dlqPendingThreshold });
+    if (Number.isFinite(n) && n >= 0 && supported) {
+      update.mutate({ outboxDeadThreshold: n });
     }
   };
   return (

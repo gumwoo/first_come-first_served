@@ -7,13 +7,10 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * 비-Kafka 통합테스트가 공유하는 컨테이너(싱글톤).
+ * 통합테스트가 공유하는 컨테이너(싱글톤).
  *
  * @Container는 클래스마다 컨테이너를 띄우고 내리므로, static 초기화로 기동해 JVM 수명 동안 공유한다
  * (정리는 Testcontainers Ryuk). 데이터 격리는 테스트별 초기화로 지킨다.
- *
- * Kafka 테스트는 공유하지 않는다. 다른 클래스가 남긴 메시지를 새 컨슈머 그룹이 earliest부터 다시
- * 소비해 실패 원인이 불투명해지므로, 각자 브로커를 띄운다.
  */
 public final class TestContainers {
 

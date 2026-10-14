@@ -11,7 +11,7 @@ import jakarta.validation.constraints.Min;
  * 숨기지 않기 위해).
  *
  * 필드가 Integer인 것은 생성자 바인딩이 값이 없으면 null을 넘기기 때문이다.
- * size 상한은 대량 행·TEXT payload를 한 요청에서 직렬화하지 않게 막는다(운영 DLQ·아웃박스 목록).
+ * size 상한은 대량 행·TEXT payload를 한 요청에서 직렬화하지 않게 막는다(운영 아웃박스 목록).
  */
 public record PageQuery(
         @Min(value = 0, message = "0 이상이어야 합니다.") Integer page,

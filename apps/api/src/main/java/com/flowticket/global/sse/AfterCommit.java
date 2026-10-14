@@ -13,7 +13,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 반드시 도달해야 하는 이벤트(order.paid)는 아웃박스로 보낸다(ADR-010). 좌석맵·주문상태 갱신 알림은
  * 놓쳐도 폴링·재조회가 메우므로(ADR-008, TS-012) 좌석 선점 경로에 DB 쓰기를 더하지 않는다.
  *
- * 트랜잭션이 없으면(스케줄러 밖 호출·Kafka 소비 등) 바로 실행한다.
+ * 트랜잭션이 없으면(스케줄러 밖 호출 등) 바로 실행한다.
  */
 @Slf4j
 public final class AfterCommit {

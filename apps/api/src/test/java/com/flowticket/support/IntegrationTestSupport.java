@@ -5,7 +5,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * DB·Redis를 쓰는 통합테스트의 공통 베이스(Kafka 없음).
+ * DB·Redis를 쓰는 통합테스트의 공통 베이스.
  *
  * 컨테이너만 공유해서는 절반만 빨라진다. Spring 컨텍스트 캐시 키에는
  * @DynamicPropertySource 메서드 집합이 들어가므로, 클래스마다 자기 메서드를 선언하면
@@ -32,19 +32,12 @@ import org.springframework.test.context.TestPropertySource;
         // 없어 컨텍스트가 뜨는 순간 첫 실행이 즉시 발사되고, 그 UPDATE(RowExclusive)가 다른 테스트의
         // TRUNCATE(ACCESS EXCLUSIVE)와 데드락을 만든다.
         "flowticket.scheduling.enabled=false",
-        // 토픽 자동 생성을 끈다. 이 그룹은 브로커가 없어 KafkaAdmin이 약 40초 재시도한 뒤 포기한다(IMP-019).
-        // 리스너 auto-startup으로는 안 된다. 멈추는 주체가 admin 클라이언트다.
-        // Kafka를 실제로 쓰는 테스트는 이 베이스를 상속하지 않는다.
-        "spring.kafka.admin.auto-create=false",
 })
 public abstract class IntegrationTestSupport {
 
     @DynamicPropertySource
     static void integrationProperties(DynamicPropertyRegistry registry) {
         TestContainers.datasource(registry);
-        // 브로커를 쓰지 않는 테스트: 연결 불가 주소를 명시해 로컬에 떠 있는 Kafka에 얹히지 않게 한다.
-        // (missing-topics-fatal=false + max.block.ms 바운드라 기동은 정상)
-        registry.add("spring.kafka.bootstrap-servers", () -> "localhost:59092");
     }
 
     @org.springframework.beans.factory.annotation.Autowired

@@ -1,4 +1,5 @@
-# Kafka 이벤트 계약: BE 발행 목록 ↔ FE 구독 목록 diff.
+# SSE 이벤트 계약: BE 발행 목록 ↔ FE 구독 목록 diff. 파드 간 전달은 Redis Pub/Sub 채널(sse:*)이고,
+# order.paid만 아웃박스를 거친다(ADR-010·028). Kafka는 ADR-028로 제거했다.
 # 이벤트명 규약: <aggregate>.<past-tense>  (예: order.paid)
 
 topics:
@@ -53,6 +54,3 @@ implemented:
   - seat.hold.expired
   - order.paid
   - payment.vbank.deposited
-
-# DLQ 토픽 명명규약 (재처리 센터에서 사용)
-dlq_suffix: ".DLT"

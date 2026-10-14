@@ -18,11 +18,6 @@ data:
   # 전부 실패하고, readiness에 redis가 있어 Pod가 영원히 Ready가 되지 않는다.
   REDIS_SSL_ENABLED: "true"
 
-  # ── Kafka(Strimzi, in-cluster) ────────────────────────────────
-  KAFKA_BOOTSTRAP_SERVERS: "flowticket-kafka-bootstrap.kafka.svc:9092"
-  KAFKA_TOPIC_PARTITIONS: "6"
-  KAFKA_TOPIC_REPLICAS: "3"
-
   # ── 종료 유예 ─────────────────────────────────────────────────
   # 애플리케이션이 진행 중 요청을 마칠 시간. terminationGracePeriodSeconds보다 작아야
   # 한다. 크면 앱이 끝나기 전에 SIGKILL이 온다(무중단 배포가 깨지는 흔한 지점).

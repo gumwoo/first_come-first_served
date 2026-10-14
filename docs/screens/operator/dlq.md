@@ -1,7 +1,7 @@
 # O-DLQ · DLQ 재처리 센터
 
 - ref: `assets/screens/운영자_DLQ 재처리 센터.png`
-- route: `/admin/dlq`
+- route: `/admin/dlq`(**삭제됨** — Kafka 제거 [[ADR-028]] P2b-2, 2026-10-15. 대체: [outbox.md](outbox.md))
 - slice: S07
 
 ## 목적

@@ -11,10 +11,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.flowticket.dlq.controller.AdminDlqController;
-import com.flowticket.dlq.service.AdminDlqService;
 import com.flowticket.global.error.ErrorCode;
 import com.flowticket.global.error.GlobalExceptionHandler;
+import com.flowticket.outbox.controller.AdminOutboxController;
+import com.flowticket.outbox.service.AdminOutboxService;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -36,23 +36,23 @@ import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
  * standalone MockMvc는 Boot 자동설정을 타지 않아 Accept가 없으면 클래스패스
  * 순서대로 XML로 협상한다(운영은 JSON이 기본). 그래서 요청마다 명시한다.
  *
- * 대표로 AdminDlqController를 쓴다. 6개 엔드포인트가 모두 같은 PageQuery를
- * 받으므로 바인딩·검증 경로는 동일하다.
+ * 대표로 AdminOutboxController를 쓴다. 페이징 엔드포인트가 모두 같은 PageQuery를
+ * 받으므로 바인딩·검증 경로는 동일하다(예전 대표였던 DLQ 컨트롤러는 Kafka 제거로 없어졌다 — ADR-028).
  */
 class PaginationValidationTest {
 
-    private AdminDlqService service;
+    private AdminOutboxService service;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
-        service = mock(AdminDlqService.class);
+        service = mock(AdminOutboxService.class);
         when(service.list(any(), anyInt(), anyInt()))
                 .thenReturn(new PageResponse<>(List.of(), 0, 20, 0));
 
         var validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
-        mvc = MockMvcBuilders.standaloneSetup(new AdminDlqController(service))
+        mvc = MockMvcBuilders.standaloneSetup(new AdminOutboxController(service))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(validator)
                 .build();
@@ -82,7 +82,7 @@ class PaginationValidationTest {
     @Test
     @DisplayName("음수 page는 500이 아니라 400")
     void 음수_page는_400() throws Exception {
-        mvc.perform(get("/admin/dlq").param("page", "-1").accept(MediaType.APPLICATION_JSON))
+        mvc.perform(get("/admin/outbox").param("page", "-1").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(ErrorCode.VALIDATION_ERROR.name()))
                 .andExpect(jsonPath("$.error.message").value(org.hamcrest.Matchers.containsString("page")));
@@ -91,7 +91,7 @@ class PaginationValidationTest {
     @Test
     @DisplayName("상한을 넘는 size는 400: 무제한 조회를 경계에서 막는다")
     void 과도한_size는_400() throws Exception {
-        mvc.perform(get("/admin/dlq").param("size", "1000000").accept(MediaType.APPLICATION_JSON))
+        mvc.perform(get("/admin/outbox").param("size", "1000000").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.message").value(org.hamcrest.Matchers.containsString("size")));
     }
@@ -99,14 +99,14 @@ class PaginationValidationTest {
     @Test
     @DisplayName("size=0도 막는다. PageRequest가 거부하는 값이다")
     void size_0은_400() throws Exception {
-        mvc.perform(get("/admin/dlq").param("size", "0").accept(MediaType.APPLICATION_JSON))
+        mvc.perform(get("/admin/outbox").param("size", "0").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     @DisplayName("정상 범위는 그대로 통과하고 서비스에 값이 전달된다")
     void 정상_범위는_통과한다() throws Exception {
-        mvc.perform(get("/admin/dlq").param("page", "2").param("size", "50").accept(MediaType.APPLICATION_JSON))
+        mvc.perform(get("/admin/outbox").param("page", "2").param("size", "50").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
 
         verify(service).list(null, 2, 50);
@@ -115,7 +115,7 @@ class PaginationValidationTest {
     @Test
     @DisplayName("파라미터를 생략하면 기본값이 쓰인다. 기존 호출자의 계약이 바뀌지 않는다")
     void 생략시_기본값() throws Exception {
-        mvc.perform(get("/admin/dlq").accept(MediaType.APPLICATION_JSON))
+        mvc.perform(get("/admin/outbox").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
 
         verify(service).list(null, PageQuery.DEFAULT_PAGE, PageQuery.DEFAULT_SIZE);

@@ -17,7 +17,7 @@ import lombok.NoArgsConstructor;
  * 결제가 롤백되면 이 행도 함께 사라진다(유령 이벤트 0). 폴링 릴레이가 PENDING을 Redis 채널(sse:order)로 발행하고
  * 호출 성공 후 PUBLISHED로 마킹한다(publish-then-mark → at-least-once — ADR-028).
  *
- * id(UUID)는 payload의 eventId와 같다(추적용). Kafka 소비자 멱등 키(`dedup:order-event:{id}`)로 쓰이던 자리다(ADR-028로 소비자 제거 예정).
+ * id(UUID)는 payload의 eventId와 같다(추적용). Kafka 시기에는 소비자 멱등 키(`dedup:order-event:{id}`)였다(ADR-028로 소비자 제거).
  */
 @Entity
 @Table(name = "outbox_events")

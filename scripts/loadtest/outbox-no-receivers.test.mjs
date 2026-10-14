@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { noReceiverIncrease, restartedPods } from "./outbox-no-receivers.mjs";
+import { isMalformed, noReceiverIncrease, restartedPods } from "./outbox-no-receivers.mjs";
 
 // 구간: since=1000, until=2000(+30초 꼬리 → 2030까지 본다)
 const S = 1000;
@@ -66,8 +66,21 @@ test("구간 이전의 재시작은 재시작으로 보지 않는다", () => {
   assert.deepEqual([...restartedPods(restarts, S, U)], []);
 });
 
-test("values가 배열이 아닌 시계열은 점 없음으로 다룬다(예외로 죽지 않는다)", () => {
+test("values가 배열이 아닌 시계열은 형식 오류로 모은다(통과로 세지 않는다, 예외로 죽지 않는다)", () => {
   const r = noReceiverIncrease([{ metric: { pod: "a" }, values: "broken" }], S, U);
   assert.equal(r.increase, 0);
   assert.deepEqual(r.perPod, []);
+  assert.deepEqual(r.malformed, ["a"]);
+});
+
+test("숫자로 읽히지 않는 점이 있는 시계열도 형식 오류다", () => {
+  const r = noReceiverIncrease([{ metric: { pod: "a" }, values: [[900, "0"], [1500, "x"]] }, series("b", [[900, 0], [1500, 0]])], S, U);
+  assert.deepEqual(r.malformed, ["a"]);
+  assert.deepEqual(r.perPod.map((p) => p.pod), ["b"]);
+});
+
+test("정상 시계열은 형식 오류가 아니다", () => {
+  assert.equal(isMalformed(series("a", [[900, 0], [1500, 1]])), false);
+  assert.equal(isMalformed({ metric: { pod: "a" }, values: [] }), false);
+  assert.equal(isMalformed({ metric: { pod: "a" } }), true);
 });

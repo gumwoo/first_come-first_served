@@ -63,8 +63,6 @@ test("주문 SSE: 결제 직후 order.paid가 웹 서버를 거쳐 도착한다"
       ).json()
     ).data.ticket as string;
 
-  await expectNotCompressed(`${baseURL}/api/sse/orders/${orderId}?ticket=${encodeURIComponent(await ticket())}`);
-
   await page.goto("/");
   await openEventSource(page, `/api/sse/orders/${orderId}?ticket=${encodeURIComponent(await ticket())}`, ["order.paid"]);
   // open은 응답 헤더만 와도 불린다(수정 전에도 통과했다) — 결제를 연결 뒤에 보내기 위한 대기일 뿐 판별 단언이 아니다.
@@ -77,14 +75,14 @@ test("주문 SSE: 결제 직후 order.paid가 웹 서버를 거쳐 도착한다"
   expect((await pay.json()).data.orderStatus).toBe("PAID");
 
   await expect.poll(() => received(page, "order.paid"), { timeout: 10_000 }).toBe(true);
+  // 원인 고정: 이벤트 단언 뒤에 둬서, 수정 전에는 증상(미수신)으로 먼저 실패하게 한다.
+  await expectNotCompressed(`${baseURL}/api/sse/orders/${orderId}?ticket=${encodeURIComponent(await ticket())}`);
 });
 
 test("좌석 SSE: 선점 직후 seat.held가 웹 서버를 거쳐 도착한다", async ({ page, baseURL }) => {
   const { eventId, queueToken, accessToken } = await seedAdmittedUser(page);
   const map = (await (await page.request.get(`/api/events/${eventId}/seats`)).json()).data;
   const seat = firstSelectable(map);
-
-  await expectNotCompressed(`${baseURL}/api/sse/events/${eventId}/seats`);
 
   await page.goto("/");
   await openEventSource(page, `/api/sse/events/${eventId}/seats`, ["seat.held"]);
@@ -99,4 +97,5 @@ test("좌석 SSE: 선점 직후 seat.held가 웹 서버를 거쳐 도착한다",
   await expect.poll(() => received(page, "seat.held"), { timeout: 10_000 }).toBe(true);
   const ev = (await sseLog(page)).find((e) => e.type === "seat.held")!;
   expect(ev.data).toContain(String(seat.id));
+  await expectNotCompressed(`${baseURL}/api/sse/events/${eventId}/seats`);
 });

@@ -4,7 +4,11 @@
 # 사용:
 #   terraform -chdir=infra/terraform/platform/environments/demo apply -var-file=loadtest.tfvars
 #
-# ⚠️ 이 프로파일은 기본값보다 비싸다. 측정이 끝나면 반드시 destroy 한다(scripts/tear-down.sh).
+# ⚠️ 이 프로파일은 기본값보다 비싸다. 측정이 끝난 뒤 철거(scripts/tear-down.sh)는 필수 운영 절차지만, **실행 시점은 사용자의
+#    명시적 승인으로 정한다** — 이 문장을 근거로 사람·자동화·에이전트가 철거를 바로 실행하지 않는다.
+#    비용·시간 상한에 닿으면 부하 발생과 추가 작업을 멈추고 재승인을 요청한다. 클러스터와 유료 리소스는 승인 없이
+#    삭제하거나 축소하지 않는다. 세션 최대 시간은 실험 수행 시간의 상한이지 AWS 과금이 끝나는 시각이 아니다
+#    (docs/deployment/resource-sizing-plan.md §5.1).
 
 # t3는 버스터블이라 지속 부하에서 CPU 크레딧이 결과에 개입한다. TS-034가 knee 재측정에
 # 실패한 뒤 남긴 조건이고, ADR-012 §5가 이미 "부하테스트는 비버스터블"이라고 적어 두었다.

@@ -1,6 +1,8 @@
 package com.flowticket.seat.controller;
 
+import com.flowticket.global.sse.SseHeaders;
 import com.flowticket.seat.sse.SeatSseRegistry;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,7 +21,8 @@ public class SeatSseController {
     }
 
     @GetMapping(value = "/sse/events/{id}/seats", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(@PathVariable Long id) {
+    public SseEmitter stream(@PathVariable Long id, HttpServletResponse response) {
+        SseHeaders.preventProxyBuffering(response); // Next 압축이 프레임을 버퍼링하지 않게(TS-052)
         return registry.subscribe(id);
     }
 }

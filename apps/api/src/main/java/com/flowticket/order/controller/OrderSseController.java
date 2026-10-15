@@ -1,7 +1,9 @@
 package com.flowticket.order.controller;
 
+import com.flowticket.global.sse.SseHeaders;
 import com.flowticket.order.service.OrderSseTicketService;
 import com.flowticket.order.sse.OrderSseRegistry;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,8 +29,10 @@ public class OrderSseController {
     }
 
     @GetMapping(value = "/sse/orders/{id}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(@PathVariable Long id, @RequestParam(required = false) String ticket) {
+    public SseEmitter stream(@PathVariable Long id, @RequestParam(required = false) String ticket,
+                             HttpServletResponse response) {
         ticketService.verify(ticket, id);
+        SseHeaders.preventProxyBuffering(response); // Next 압축이 프레임을 버퍼링하지 않게(TS-052)
         return registry.subscribe(id);
     }
 }

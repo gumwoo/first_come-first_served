@@ -51,6 +51,7 @@
 
 ## 검증
 - 수정 후 CI run 38704367491(0c7d0a0): 백엔드 전체(통합 테스트 포함) `BUILD SUCCESSFUL`, E2E 27개 전부 통과 — `sse-through-web.spec.ts` 주문 1.8s·좌석 0.99s(테스트 소요 시간, 이벤트 지연이 아님).
+- 헤더 값을 `no-cache, no-store, no-transform`으로 바꾼 뒤 CI run 38706357072(79c31f9): 백엔드 전체 `BUILD SUCCESSFUL`(통합 테스트에 `no-store` 단언 추가), E2E 27개 전부 통과.
 - `SseResponseHeaderIntegrationTest`(CI): 실제 HTTP 응답(필터 체인 전부 통과)에서 두 엔드포인트의 `Cache-Control`에 `no-transform`이 있고, 초기 프레임 `:open`이 흘러나온다.
 - `e2e/tests/sse-through-web.spec.ts`(CI, `next start` = 압축 켜짐):
   - Next를 거친 응답에 `content-encoding`이 없고 `Cache-Control`에 `no-transform`이 있다.

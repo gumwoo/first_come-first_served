@@ -63,6 +63,12 @@ spec:
             # 하네스 k8s 규칙 ⑩이 이 값(8080이 아닌 숫자)과 probe 위치를 강제한다.
             - name: MANAGEMENT_SERVER_PORT
               value: "8081"
+            # 대기열 풀 축소(B′ P1 — docs/deployment/resource-sizing-plan.md §2.1·§3). 대기열 경로는 DB를 거의 쓰지 않는다:
+            # B₁ 두 run(측정 세션 20261015-nok)의 대기열 파드 Hikari active 최댓값 3·pending 0(15초 간격 순간값 — 같은 run에서
+            # 100명 동시 예매 중에도 api 파드 active가 내내 0으로 찍혔을 만큼 짧은 순간을 놓친다).
+            # 5 → 3이면 DB 예산 (3+1)×5 + (6+1)×3 = 41 ≤ 56(계산, 하네스 규칙 17) — 대기열 상한을 늘릴 자리(P2)가 생긴다.
+            - name: DB_POOL_MAX
+              value: "3"
           envFrom:
             - configMapRef: { name: flowticket-api-config }
             - secretRef: { name: flowticket-api-secrets } # 클러스터 밖에서 생성(k8s/README.md)

@@ -43,12 +43,13 @@
 ## 해결
 - 두 SSE 엔드포인트(`/sse/orders/{id}`, `/sse/events/{id}/seats`) 응답에 `Cache-Control: no-cache, no-transform`을 단다(`global/sse/SseHeaders`).
   - `no-transform`: 프록시가 본문을 바꾸지(압축하지) 말라는 표준 지시어(RFC 9111 §5.2.2.6). Next의 압축 미들웨어가 이를 보고 비켜 간다.
-  - Spring Security의 캐시 헤더 작성기는 응답에 `Cache-Control`이 이미 있으면 덮어쓰지 않는다(추론 — 통합 테스트로 실제 응답 헤더를 확인한다).
+  - Spring Security의 캐시 헤더 작성기는 응답에 `Cache-Control`이 이미 있으면 덮어쓰지 않는다. 수정 후 통합 테스트가 필터 체인을 거친 실제 응답에서 `no-transform`을 확인했다(아래 검증).
 - 고르지 않은 대안:
   - `next.config.mjs`의 `compress: false`: 사이트 전체(HTML·JS) 압축이 꺼진다. 영향 범위가 SSE보다 훨씬 넓다.
   - SSE 전용 프록시 경로(Next를 거치지 않는 ALB 경로 규칙): 경로 규칙·인증서·CORS·하네스 k8s 규칙을 함께 바꿔야 한다. A가 실패할 때 검토할 순서로 남겼다.
 
 ## 검증
+- 수정 후 CI run 38704367491(0c7d0a0): 백엔드 전체(통합 테스트 포함) `BUILD SUCCESSFUL`, E2E 27개 전부 통과 — `sse-through-web.spec.ts` 주문 1.8s·좌석 0.99s(테스트 소요 시간, 이벤트 지연이 아님).
 - `SseResponseHeaderIntegrationTest`(CI): 실제 HTTP 응답(필터 체인 전부 통과)에서 두 엔드포인트의 `Cache-Control`에 `no-transform`이 있고, 초기 프레임 `:open`이 흘러나온다.
 - `e2e/tests/sse-through-web.spec.ts`(CI, `next start` = 압축 켜짐):
   - Next를 거친 응답에 `content-encoding`이 없고 `Cache-Control`에 `no-transform`이 있다.

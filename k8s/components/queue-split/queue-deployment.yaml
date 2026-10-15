@@ -37,14 +37,6 @@ spec:
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels: { app: flowticket-api-queue }
-        # 노드 단위 분산(B′ P3 — docs/deployment/resource-sizing-plan.md §2.3). 아래 requests를 줄여 한 노드에 대기열이 둘 들어갈 수 있게 되면,
-        # 그 노드 하나를 잃을 때 대기열이 통째로 빠질 수 있다(가용성 G1). 노드마다 고르게 퍼지게 강제한다 — DoNotSchedule이라
-        # 선호가 아니라 조건이다. 한계: 스케줄 시점에만 적용되고 HPA 축소 뒤에는 다시 맞추지 않는다(계획 §2.3 — G1 시험 전 계산에 넣는다).
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: DoNotSchedule
-          labelSelector:
-            matchLabels: { app: flowticket-api-queue }
 
       containers:
         - name: api
@@ -132,10 +124,7 @@ spec:
             # (10,000/s ÷ 9) × 여유 1.2 ≈ 1.10코어 → 1100m(계산값). 이전 300m는 노드 3대 예산에 맞춘 값이라 HPA 60% 기준선이 처리 용량과
             # 동떨어졌고, 노드에 api가 여럿 들어가 CA가 동작할 조건(Pending)이 생기지 않았다. 1100m면 m6i.large(allocatable 1,930m)에 api가
             # 하나만 들어간다 — api 확장이 곧 노드 확장이고, HPA 60%(목표 660m)가 진입 처리 용량 근처에서 반응한다.
-            # 대기열 cpu(B′ P3): 1100m → 650m. 노드(allocatable 1,930m)에 대기열 둘이 들어가는 상한은 그 노드의 앱 밖 요청에 따라
-            # (1,930 − 580)/2 = 675m ~ (1,930 − 180)/2 = 875m(계산 — B₁ 측정 세션 20261015-nok의 노드별 밖 요청 180~580m, 실측).
-            # 가장 큰 밖 요청 기준 675m에서 25m 여유. HPA 60% 목표가 requests 기준이라 같은 부하에서 더 일찍 확장한다(계산).
-            requests: { cpu: "650m", memory: "1536Mi" }
+            requests: { cpu: "1100m", memory: "1536Mi" }
             limits: { memory: "2Gi" }
 
           securityContext:

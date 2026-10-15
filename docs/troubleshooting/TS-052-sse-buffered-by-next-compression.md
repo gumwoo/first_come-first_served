@@ -2,7 +2,7 @@
 
 - 날짜: 2026-10-15
 - 영역: 프론트 서버(Next)·백엔드(SSE 응답 헤더)
-- 결과: **원인 확인 → 수정**(SSE 응답에 `Cache-Control: no-cache, no-store, no-transform`) — 실제 사이트 재검증 대기(배포 뒤 측정 세션)
+- 결과: **원인 확인 → 수정**(SSE 응답에 `Cache-Control: no-cache, no-store, no-transform`) — 실제 사이트 재검증 통과(2026-10-15, 측정 세션 `20261015-nok`)
 - 관련: [kafka-removal-design.md](../deployment/kafka-removal-design.md) §6(Kafka 없는 세션의 운영 검증), ADR-015(SSE 재연결·재조회), TS-012(초기 프레임)
 
 ## 증상
@@ -56,7 +56,12 @@
 - `e2e/tests/sse-through-web.spec.ts`(CI, `next start` = 압축 켜짐):
   - Next를 거친 응답에 `content-encoding`이 없고 `Cache-Control`에 `no-transform`이 있다.
   - 테스트가 직접 연 EventSource가 결제 직후 `order.paid`를, 선점 직후 `seat.held`를 받는다(화면 전이가 아니라 이벤트 수신을 단언).
-- 실제 사이트 재검증(배포 뒤, 측정 세션): 응답 헤더, 사이트 경유 `order.paid` 도착 시간, 좌석 SSE·새로고침·재연결·파드 간 팬아웃 회귀. 결과는 세션 기록과 이 문서에 덧붙인다.
+- **실제 사이트 재검증(배포 뒤 — 이미지 0d66bd8, 측정 세션 `20261015-nok`, 실측):**
+  - 사이트 응답 `Cache-Control: no-cache, no-store, no-transform`, `content-encoding` 없음.
+  - 같은 주문에 사이트 경유 1개 + api 파드 3개 직접 연결(port-forward)을 동시에 열고 결제 → 네 연결 모두 결제 305~314ms 뒤 `order.paid` 수신(파드 간 팬아웃 포함).
+  - 브라우저 EventSource: 사이트 경유 `seat.held` 123ms, 앱 훅 `order.paid` 299ms. 회귀: SSE 차단 중 입금 → 해제 뒤 재연결 1.9초 완료, 새로고침 0.2초 완료.
+  - 세션 끝(노드 장애 시험 뒤 새 파드 포함)에 다시 확인: 네 연결 모두 결제 132~133ms 뒤 수신, 아웃박스 1,308행 전부 PUBLISHED.
+  - 결과 원본: 레포 밖 `artifacts/loadtest/20261015-nok/ops-sse-result.json`·`ops-result-postfix.json`·`ops-sse-final.json`.
 
 ## 재발 방지
 - E2E가 화면 전이가 아니라 **이벤트 수신 자체**를 Next 경유로 단언한다. 기존 두 엔드포인트에서 헤더가 빠지면 E2E와 통합 테스트가 잡는다.

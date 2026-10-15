@@ -2,7 +2,7 @@
 #
 # 노드그룹을 AZ마다 분리하는 이유는 EBS다(ADR-012 §3).
 # 서브넷 3개를 가진 노드그룹 하나로 두면, 노드가 죽었을 때 ASG가 다른 AZ에 대체 노드를
-# 띄울 수 있고 그러면 Kafka 브로커의 EBS가 붙지 못해 영구 Pending이 된다.
+# 띄울 수 있고 그러면 PVC를 쓰는 파드(지금은 Prometheus — 예전엔 Kafka 브로커도)의 EBS가 붙지 못해 영구 Pending이 된다.
 # AZ별 노드그룹이면 대체 노드가 항상 같은 AZ에 뜬다.
 
 data "aws_partition" "current" {}
@@ -221,7 +221,7 @@ resource "aws_eks_addon" "this" {
   depends_on = [aws_eks_node_group.this]
 }
 
-# EBS CSI는 IRSA가 필요해 따로 둔다. Kafka 브로커의 PVC가 이 드라이버로 만들어진다.
+# EBS CSI는 IRSA가 필요해 따로 둔다. Prometheus의 PVC(gp2 20Gi — kube-prometheus-stack.values.yaml)가 이 드라이버로 만들어진다.
 resource "aws_eks_addon" "ebs_csi" {
   cluster_name             = aws_eks_cluster.this.name
   addon_name               = "aws-ebs-csi-driver"

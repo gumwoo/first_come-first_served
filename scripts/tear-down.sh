@@ -21,7 +21,7 @@ export AWS_DEFAULT_REGION="$REGION"
 CLUSTER="flowticket"
 AUDIT_ONLY=0
 [ "${1:-}" = "--audit-only" ] && AUDIT_ONLY=1
-# 3단계에서 채집한 "이 클러스터가 소유한" EBS 볼륨 ID. 4단계는 이 목록만 지운다.
+# 2단계에서 채집한 "이 클러스터가 소유한" EBS 볼륨 ID. 3단계는 이 목록만 지운다.
 OWNED_VOLS="$(mktemp)"
 trap 'rm -f "$OWNED_VOLS"' EXIT
 
@@ -88,7 +88,7 @@ echo "==> 0a ALB 알람 스택 삭제"
 # 파드·대상 그룹이 사라지는 순간 '정상 대상 0' 알람이 울린다. 변수만 넘기면 되므로 ALB가 이미 없어도 지워진다.
 bash "$HERE/alb-alarms.sh" destroy || { echo "알람 스택 삭제 실패 — 계속 진행하고 잔여 점검에서 다시 본다" >&2; }
 
-echo "==> 0/7 ArgoCD Application 삭제"
+echo "==> 0/6 ArgoCD Application 삭제"
 # 먼저 지우지 않으면 아래에서 지운 워크로드를 ArgoCD가 되살린다(selfHeal).
 if have_cluster; then
   kubectl delete application flowticket -n argocd --timeout=180s 2>/dev/null || true
@@ -97,7 +97,7 @@ else
 fi
 
 if have_cluster; then
-  echo "==> 1/7 Ingress 삭제 → ALB 제거"
+  echo "==> 1/6 Ingress 삭제 → ALB 제거"
   # ALB는 Terraform이 모르는 리소스라, 남으면 VPC 삭제가 막힌다.
   kubectl delete ingress --all -A --timeout=180s 2>/dev/null || true
   for i in $(seq 1 40); do
@@ -106,11 +106,7 @@ if have_cluster; then
     sleep 15
   done
 
-  echo "==> 2/7 Kafka CR 삭제 (StatefulSet PVC는 자동 삭제되지 않는다)"
-  kubectl delete kafka --all -n kafka --timeout=180s 2>/dev/null || true
-  kubectl delete kafkanodepool --all -n kafka --timeout=120s 2>/dev/null || true
-
-  echo "==> 3/7 볼륨 ID 채집 → PVC 삭제"
+  echo "==> 2/6 볼륨 ID 채집 → PVC 삭제"
   # 삭제 대상을 여기서 확정한다. 태그로 고르면 추측이 된다. EBS 볼륨은 Terraform이
   # 아니라 EBS CSI 드라이버가 만들어 `Project=flowticket` 공통 태그가 붙지 않고,
   # `kubernetes.io/created-for/pvc/name`만으로 고르면 같은 계정의 다른 클러스터 볼륨까지
@@ -125,8 +121,8 @@ if have_cluster; then
   kubectl delete pvc --all -A --timeout=180s 2>/dev/null || true
 fi
 
-echo "==> 4/7 고아 EBS 볼륨 정리"
-# 3단계에서 채집한 ID만 지운다. 목록이 없으면(클러스터에 이미 접근 불가) 지우지 않고
+echo "==> 3/6 고아 EBS 볼륨 정리"
+# 2단계에서 채집한 ID만 지운다. 목록이 없으면(클러스터에 이미 접근 불가) 지우지 않고
 # 후보만 보고한다. 파괴 자동화는 소유를 증명하지 못하면 멈추는 편이 낫다.
 if [ ! -s "$OWNED_VOLS" ]; then
   echo "    소유 볼륨 목록이 없다(클러스터 접근 불가). 자동 삭제하지 않는다."
@@ -156,7 +152,7 @@ fi
 # 왜 destroy 전이 아닌가: 이것들은 EKS·VPC CNI가 만들고, EKS 클러스터가 살아 있는 동안에는
 # 지울 수 없다(사용 중). destroy가 클러스터를 지우다 서브넷에서 막히는 그 순간에야 고아가 된다.
 #
-# 소유 증명은 Project=flowticket 태그가 붙은 VPC 안에 있는가로 한다. 4단계 EBS와 같은
+# 소유 증명은 Project=flowticket 태그가 붙은 VPC 안에 있는가로 한다. 3단계 EBS와 같은
 # 원칙이다. 소유를 증명하지 못하면 지우지 않는다.
 clean_untracked() {
   local vpc="" addr vpcs count
@@ -246,7 +242,7 @@ clean_untracked() {
   return 0
 }
 
-echo "==> 5/7 terraform destroy"
+echo "==> 4/6 terraform destroy"
 DESTROY_RC=0
 # state 조회가 실패한 것(backend 미초기화, 자격증명 만료)을 "state가 비어 있다"로 읽으면 철거를 건너뛴 채
 # 성공처럼 끝난다. 예약 철거(scripts/loadtest/scheduled-teardown.sh)가 조용히 아무것도 안 하게 되는 경로다.
@@ -266,7 +262,7 @@ else
   echo "    terraform 종료 코드: $DESTROY_RC"
 fi
 
-echo "==> 6/7 terraform이 모르는 VPC 잔여 정리"
+echo "==> 5/6 terraform이 모르는 VPC 잔여 정리"
 # destroy가 서브넷에서 막히는 경우:
 #   DependencyViolation: The subnet '...' has dependencies and cannot be deleted.
 # 원인은 terraform 밖에서 만들어진 둘이다.
@@ -285,7 +281,7 @@ fi
 [ "$DESTROY_RC" -ne 0 ] && {
   echo "destroy가 실패했다. 위 오류를 보고 잔여를 직접 정리하라" >&2; audit; exit 1; }
 
-echo "==> 7/7"
+echo "==> 6/6"
 if audit; then
   echo
   echo "완료. 잔여 없음."

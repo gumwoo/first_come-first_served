@@ -12,7 +12,7 @@
 - groupId: `com.flowticket`
 - Spring Web / Security / Data JPA + **QueryDSL 5.x (jakarta)**
 - 인증: **JWT(Access/Refresh) + OAuth2 소셜(카카오·네이버)**
-- PostgreSQL 16 / Flyway / Redis 7.4(Lettuce) / Kafka(KRaft) + DLQ
+- PostgreSQL 16 / Flyway / Redis 7.4(Lettuce) — 이벤트 전달은 트랜잭셔널 아웃박스 → Redis Pub/Sub(Kafka는 ADR-028로 제거)
 - 테스트: JUnit5 + Testcontainers 1.20.x
 
 ### 프론트 (`apps/web`)
@@ -26,7 +26,7 @@
 - 좌석·가격·재고 등 거래용 필드는 우리가 직접 채운다 (KOPIS엔 없음)
 
 ### 인프라
-- Docker Compose v2 (postgres, redis, kafka, api) / k6 (부하테스트)
+- Docker Compose v2 (postgres, redis, api) / k6 (부하테스트)
 
 ---
 
@@ -75,7 +75,7 @@ npm run harness:frontend # 프론트 계약/계층 검사
 pnpm dev / pnpm build / pnpm typecheck / pnpm lint   # apps/web
 
 # infra
-docker compose up -d     # postgres/redis/kafka 기동
+docker compose up -d     # postgres/redis 기동
 k6 run infra/k6/<scenario>.js
 ```
 

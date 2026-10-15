@@ -230,10 +230,9 @@ if [ "$SKIP_DOWN" -eq 0 ]; then
     sleep 20
   done
   echo "    축소 시작: ${DOWN_AT:-관찰 못 함(${DOWN_WAIT}s 내)}"
-  # 축소가 상태 저장 워크로드를 건드렸는지: IMP-016·017의 전제가 여기서 바뀐다.
+  # 축소가 워크로드를 건드렸는지: IMP-017의 전제가 여기서 바뀐다.
   {
-    echo "# 축소 후 Kafka / PDB 상태"
-    kubectl -n kafka get pods --no-headers 2>/dev/null || true
+    echo "# 축소 후 PDB 상태"
     echo "--- PDB"
     kubectl get pdb -A --no-headers 2>/dev/null || true
   } | tee "$WORK/scale-down.txt"

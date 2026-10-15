@@ -32,19 +32,6 @@ services:
       timeout: 3s
       retries: 20
 
-  kafka:
-    image: apache/kafka:3.8.0
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      # 컨테이너 네트워크 안에서는 서비스명으로 접속한다(localhost가 아니라).
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-
   api:
     build:
       context: ..
@@ -59,10 +46,6 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-flowticket}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      # 단일 브로커라 1/1 유지(운영 Strimzi에서 6/3으로 올린다).
-      KAFKA_TOPIC_PARTITIONS: 1
-      KAFKA_TOPIC_REPLICAS: 1
       # 비밀은 셸/.env에서 주입. JWT_SECRET은 없으면 기동 실패하므로 검증용 기본값을 둔다.
       JWT_SECRET: ${JWT_SECRET:-local-prod-verify-secret-0123456789-0123456789}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
@@ -76,8 +59,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      kafka:
-        condition: service_started
 
   web:
     build:

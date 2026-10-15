@@ -291,6 +291,11 @@ for (const apiDeployDoc of apiDeployDocs) {
 }
 // ⑩-b 대기열 전용 Deployment(components/queue-split)는 api Deployment의 사본이다(ADR-027). 이름·app 라벨 말고 파드 사양이
 // 어긋나면(resources·env·probe 수치 등) A'/B 비교가 "분리" 말고 다른 차이까지 섞는다. 이름을 맞춘 뒤 파드 사양 전체를 비교한다.
+// 허용 차이(명시 목록 — docs/deployment/resource-sizing-plan.md §3 P1·P3): 대기열 쪽 자원 조정 후보만 뺀다.
+//   - 컨테이너 env `DB_POOL_MAX`(대기열 풀 축소 — 규칙 17이 queue-deployment.yaml 원문에서 읽어 DB 예산에 넣는다)
+//   - 컨테이너 `resources.requests.cpu`(대기열 requests 축소)
+//   - `topologySpreadConstraints` 중 topologyKey가 kubernetes.io/hostname인 항목(노드 단위 분산 — 위 requests 축소와 한 쌍)
+// 이 밖의 차이(메모리·limits·다른 env·probe·zone 분산·종료 유예 등)는 그대로 실패한다.
 {
   const byName = Object.fromEntries(apiDeployDocs.map(({ doc, file }) => [doc.metadata.name, { doc, file }]));
   const api = byName["flowticket-api"];
@@ -302,9 +307,75 @@ for (const apiDeployDoc of apiDeployDocs) {
         : v && typeof v === "object"
           ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))
           : v;
-    const norm = (spec) => JSON.stringify(canon(spec ?? {})).replaceAll("flowticket-api-queue", "flowticket-api");
-    const a = norm(api.doc.spec?.template?.spec);
-    const b = norm(q.doc.spec?.template?.spec);
+    const HOSTNAME = "kubernetes.io/hostname";
+    // DB_POOL_MAX는 대기열 쪽에서만 걷는다. api Deployment에 두면 규칙 17(backend)이 그 값을 읽지 않아(api 풀은 application.yml
+    // 기본값에서만 읽는다) DB 예산 초과가 조용히 통과한다 — 그래서 api 쪽은 그대로 남겨 불일치로 잡고, 아래에서 따로 알린다.
+    // requests.cpu·hostname 분산은 양쪽에서 걷는다(api 쪽 값이 바뀌어도 비교가 깨지지 않게 — 차이는 짝 조건이 본다).
+    const stripAllowed = (spec, { queue }) => {
+      const s = structuredClone(spec ?? {});
+      for (const c of s.containers ?? []) {
+        if (queue && Array.isArray(c.env)) {
+          c.env = c.env.filter((e) => e?.name !== "DB_POOL_MAX");
+          if (c.env.length === 0) delete c.env;
+        }
+        if (c.resources?.requests) {
+          delete c.resources.requests.cpu;
+          if (Object.keys(c.resources.requests).length === 0) delete c.resources.requests;
+          if (Object.keys(c.resources).length === 0) delete c.resources;
+        }
+      }
+      if (Array.isArray(s.topologySpreadConstraints)) {
+        s.topologySpreadConstraints = s.topologySpreadConstraints.filter((t) => t?.topologyKey !== HOSTNAME);
+        if (s.topologySpreadConstraints.length === 0) delete s.topologySpreadConstraints;
+      }
+      return s;
+    };
+    const norm = (spec, opt) => JSON.stringify(canon(stripAllowed(spec, opt))).replaceAll("flowticket-api-queue", "flowticket-api");
+    const a = norm(api.doc.spec?.template?.spec, { queue: false });
+    const b = norm(q.doc.spec?.template?.spec, { queue: true });
+    if ((api.doc.spec?.template?.spec?.containers ?? []).some((c) => (c?.env ?? []).some((e) => e?.name === "DB_POOL_MAX"))) {
+      r.fail(
+        `api Deployment에 DB_POOL_MAX env가 있다: ${path.relative(REPO_ROOT, api.file)}. api 풀은 application.yml 기본값으로 둔다 — ` +
+          `backend 규칙 17이 api 풀을 거기서만 읽어, 매니페스트에서 바꾸면 DB 커넥션 예산 검사가 그 값을 보지 못한다(TS-021). ` +
+          `DB_POOL_MAX를 다르게 둘 수 있는 것은 대기열 Deployment뿐이다(⑩-b 허용 목록)`
+      );
+    }
+    // 짝 조건(자원 산정 계획 §2.3): 대기열 CPU 요청을 api와 다르게 두면 같은 Deployment 파드 둘이 한 노드에 놓일 수 있다 —
+    // 그 노드를 잃으면 둘 다 사라져 가용성 G1(노드 1대 장애)을 깬다. 그래서 대기열 파드만 고르는 hostname 분산
+    // (maxSkew 1·DoNotSchedule)을 요구한다. ScheduleAnyway는 선호일 뿐이고, maxSkew 2 이상은 한 노드에 둘을 허용하며,
+    // selector가 대기열 파드를 고르지 않거나 api 파드까지 고르면 skew 계산이 대기열 배치를 보지 못한다.
+    // 축소 뒤 분산은 이 규칙으로도 보장되지 않는다(계획 §2.3 한계).
+    const milli = (v) => {
+      const s = String(v ?? "").trim();
+      if (s === "") return "";
+      const n = s.endsWith("m") ? Number(s.slice(0, -1)) : Number(s) * 1000;
+      return Number.isFinite(n) ? Math.round(n) : s; // 읽지 못하면 원문 그대로 비교(다르면 짝 조건이 걸리는 쪽)
+    };
+    const cpuOf = (spec) => (spec?.containers ?? []).map((c) => milli(c?.resources?.requests?.cpu));
+    if (JSON.stringify(cpuOf(api.doc.spec?.template?.spec)) !== JSON.stringify(cpuOf(q.doc.spec?.template?.spec))) {
+      const qLabels = q.doc.spec?.template?.metadata?.labels ?? {};
+      const selectsQueueOnly = (sel) => {
+        const ml = sel?.matchLabels;
+        if (!ml || typeof ml !== "object" || sel?.matchExpressions?.length) return false; // matchExpressions는 해석하지 않는다(보수적)
+        const entries = Object.entries(ml);
+        return (
+          entries.length > 0 &&
+          ml.app === "flowticket-api-queue" &&
+          entries.every(([k, v]) => qLabels[k] === v)
+        );
+      };
+      const spreadOk = (q.doc.spec?.template?.spec?.topologySpreadConstraints ?? []).some(
+        (t) => t?.topologyKey === HOSTNAME && t?.whenUnsatisfiable === "DoNotSchedule" && t?.maxSkew === 1 && selectsQueueOnly(t?.labelSelector)
+      );
+      if (!spreadOk) {
+        r.fail(
+          `대기열 CPU 요청을 api와 다르게 두었는데 노드 단위 분산이 없다: ${path.relative(REPO_ROOT, q.file)}. ` +
+            `topologySpreadConstraints에 topologyKey ${HOSTNAME}·whenUnsatisfiable DoNotSchedule·maxSkew 1, ` +
+            `labelSelector.matchLabels가 대기열 파드 라벨의 부분집합이고 app: flowticket-api-queue를 포함하는 항목을 둔다 — ` +
+            `없으면 대기열 파드 둘이 한 노드에 놓여 노드 1대 장애에 함께 사라진다(resource-sizing-plan.md §2.3)`
+        );
+      }
+    }
     if (a !== b) {
       let i = 0;
       while (i < a.length && a[i] === b[i]) i++;

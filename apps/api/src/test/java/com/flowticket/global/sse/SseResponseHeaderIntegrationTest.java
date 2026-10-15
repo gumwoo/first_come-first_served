@@ -61,6 +61,8 @@ class SseResponseHeaderIntegrationTest extends IntegrationTestSupport {
             // 여러 줄로 오면 수신 측(Node)은 쉼표로 합쳐 본다 — 합친 값에 지시어가 있어야 한다.
             String cacheControl = String.join(", ", res.headers().allValues("Cache-Control"));
             assertThat(cacheControl).contains("no-transform");
+            // 컨트롤러가 먼저 달면 Security 캐시 헤더가 빠지므로, 저장 금지가 유지되는지도 본다.
+            assertThat(cacheControl).contains("no-store");
 
             // 초기 프레임까지 실제로 흘러나오는지(응답이 커밋된 뒤의 헤더를 본 것인지) 확인한다.
             byte[] head = body.readNBytes(":open".length());

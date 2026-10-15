@@ -2,7 +2,7 @@
 
 - 날짜: 2026-10-15
 - 영역: 프론트 서버(Next)·백엔드(SSE 응답 헤더)
-- 결과: **원인 확인 → 수정**(SSE 응답에 `Cache-Control: no-cache, no-transform`)
+- 결과: **원인 확인 → 수정**(SSE 응답에 `Cache-Control: no-cache, no-store, no-transform`) — 실제 사이트 재검증 대기(배포 뒤 측정 세션)
 - 관련: [kafka-removal-design.md](../deployment/kafka-removal-design.md) §6(Kafka 없는 세션의 운영 검증), ADR-015(SSE 재연결·재조회), TS-012(초기 프레임)
 
 ## 증상
@@ -14,15 +14,15 @@
   - 파드별 publish 1회, `no_receivers` 0, 구독 메시지 파싱 실패 로그 없음.
 
 ## 재현
-- 같은 주문에 SSE를 세 경로로 동시에 열고 결제했다(세션 전용 진단, 저장소 밖 `artifacts/loadtest/20261015-nok/sse-diag*.json`).
+- 진단을 두 번 했다. 매번 한 주문에 SSE를 두 경로로 동시에 열고 결제했다 — A+B는 주문 4, A+C는 주문 5(세션 전용 진단, 저장소 밖 `artifacts/loadtest/20261015-nok/sse-diag.json`·`sse-diag-identity.json`). 시각은 각 진단의 첫 연결 직전 기준이다.
 
   | 경로 | `content-encoding` | 결제 뒤 `event:order.paid` (실측) |
   |---|---|---|
-  | A. 사이트 경유(ALB → Next rewrite → api), gzip 수락 | `gzip` | **12초 동안 0바이트**(`:open`도 안 옴) |
-  | B. api 직접(`kubectl port-forward` → api Service) | 없음 | `:open` 즉시, 결제 0.35초 뒤 도착 |
-  | C. 사이트 경유, `Accept-Encoding: identity` | 없음 | `:open` +0.6초, 결제 0.63초 뒤 도착 |
+  | A. 사이트 경유(ALB → Next rewrite → api), gzip 수락 — 두 진단 모두 | `gzip` | **약 12초 동안 0바이트**(`:open`도 안 옴, 두 번 모두) |
+  | B. api 직접(`kubectl port-forward` → api Service), 주문 4 | 없음 | `:open` +0.48초, 결제 0.35초 뒤 도착 |
+  | C. 사이트 경유, `Accept-Encoding: identity`, 주문 5 | 없음 | `:open` +0.64초, 결제 0.63초 뒤 도착 |
 
-- A와 C는 경로가 같고 압축 수락 여부만 다르다. 그래서 원인을 "Next 앞단의 응답 압축"으로 좁혔다.
+- A와 C는 같은 진단(주문 5)에서 경로가 같고 압축 수락 여부만 다르다. 그래서 원인을 "Next 앞단의 응답 압축"으로 좁혔다.
 - 수정 전 코드에서의 자동 재현(PR #420, 테스트를 수정보다 먼저 올림):
   - run 38702913681(7fba737): `SseResponseHeaderIntegrationTest` 2개 실패(348개 중 이 둘만, `no-transform` 없음). E2E 2개는 헤더 단언에서 실패 — 받은 값 `no-cache, no-store, max-age=0, must-revalidate`.
   - E2E가 증상보다 원인(헤더)에서 먼저 멈췄으므로, 이벤트 수신을 먼저 단언하도록 순서를 바꿔 다시 돌렸다.
@@ -41,7 +41,8 @@
 - api의 SSE 응답에는 `no-transform`이 없었다. Spring Security 기본 캐시 헤더 `no-cache, no-store, max-age=0, must-revalidate`만 붙어 Next를 거쳐 나갔다(사실 — 수정 전 CI의 E2E가 Next 경유 응답에서 이 값을 받았다, run 38702913681).
 
 ## 해결
-- 두 SSE 엔드포인트(`/sse/orders/{id}`, `/sse/events/{id}/seats`) 응답에 `Cache-Control: no-cache, no-transform`을 단다(`global/sse/SseHeaders`).
+- 두 SSE 엔드포인트(`/sse/orders/{id}`, `/sse/events/{id}/seats`) 응답에 `Cache-Control: no-cache, no-store, no-transform`을 단다(`global/sse/SseHeaders`).
+  - `no-cache, no-store`는 수정 전 Security 기본값에서 가져와 유지한다. 컨트롤러가 `Cache-Control`을 먼저 달면 Security가 자기 캐시 헤더(`Pragma`·`Expires` 포함)를 쓰지 않으므로, 저장 금지를 여기서 다시 명시한다.
   - `no-transform`: 프록시가 본문을 바꾸지(압축하지) 말라는 표준 지시어(RFC 9111 §5.2.2.6). Next의 압축 미들웨어가 이를 보고 비켜 간다.
   - Spring Security의 캐시 헤더 작성기는 응답에 `Cache-Control`이 이미 있으면 덮어쓰지 않는다. 수정 후 통합 테스트가 필터 체인을 거친 실제 응답에서 `no-transform`을 확인했다(아래 검증).
 - 고르지 않은 대안:
@@ -57,5 +58,5 @@
 - 실제 사이트 재검증(배포 뒤, 측정 세션): 응답 헤더, 사이트 경유 `order.paid` 도착 시간, 좌석 SSE·새로고침·재연결·파드 간 팬아웃 회귀. 결과는 세션 기록과 이 문서에 덧붙인다.
 
 ## 재발 방지
-- E2E가 화면 전이가 아니라 **이벤트 수신 자체**를 Next 경유로 단언한다. 압축을 다시 켜는 변경(헤더 제거, 새 SSE 엔드포인트에 헤더 누락)은 이 테스트가 잡는다.
-- 새 SSE 엔드포인트는 `SseHeaders.preventProxyBuffering`을 함께 호출한다. 하네스 규칙으로 강제할지는 정하지 않았다 — 후속 검토(SSE 엔드포인트가 둘뿐이고 E2E가 두 경로를 모두 덮는다).
+- E2E가 화면 전이가 아니라 **이벤트 수신 자체**를 Next 경유로 단언한다. 기존 두 엔드포인트에서 헤더가 빠지면 E2E와 통합 테스트가 잡는다.
+- **새 SSE 엔드포인트의 헤더 누락은 잡지 못한다** — 두 테스트 모두 고정된 두 URL만 연다. 새 엔드포인트는 `SseHeaders.preventProxyBuffering`을 함께 호출해야 하며, 하네스 규칙으로 강제할지는 정하지 않았다(후속 검토).

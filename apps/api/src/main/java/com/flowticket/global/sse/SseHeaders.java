@@ -14,8 +14,11 @@ import org.springframework.http.HttpHeaders;
  */
 public final class SseHeaders {
 
-    /** no-cache: 중간 캐시가 스트림을 저장하지 않게, no-transform: 프록시가 본문을 바꾸지(압축하지) 않게. */
-    public static final String CACHE_CONTROL = "no-cache, no-transform";
+    /**
+     * no-transform: 프록시가 본문을 바꾸지(압축하지) 않게. no-cache, no-store: 수정 전 Security 기본값에서 가져와 유지한다 —
+     * 여기서 Cache-Control을 먼저 달면 Security가 자기 캐시 헤더를 쓰지 않으므로 저장 금지를 직접 명시한다.
+     */
+    public static final String CACHE_CONTROL = "no-cache, no-store, no-transform";
 
     private SseHeaders() {
     }

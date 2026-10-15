@@ -6,10 +6,10 @@
 - 관련: [kafka-removal-design.md](../deployment/kafka-removal-design.md) §6(Kafka 없는 세션의 운영 검증), ADR-015(SSE 재연결·재조회), TS-012(초기 프레임)
 
 ## 증상
-- Kafka 제거 뒤 운영 검증에서 발견했다(측정 세션 `20261015-nok`, 2026-10-15). **Kafka 제거로 생긴 결함이 아니다.** 아래 근본 원인은 알림 경로(Kafka든 Redis든)와 무관하게 Next 앞단에서 생기며, 이 검증이 처음으로 "브라우저가 이벤트 자체를 받았는가"를 실제 사이트에서 단언했기 때문에 드러났다.
+- Kafka 제거 뒤 운영 검증에서 발견했다(측정 세션 `20261015-nok`, 2026-10-15). **Kafka 제거로 생긴 결함이 아니다.** 아래 근본 원인은 알림 경로(Kafka든 Redis든)와 무관하게 Next 앞단에서 생긴다. 이 검증은 "브라우저가 이벤트 자체를 받았는가"를 실제 사이트에서 단언했고, 그래서 드러났다고 본다(추론 — 이전 세션에서 사이트 경유 이벤트 수신을 단언한 적이 없다는 기록을 따로 확인하지는 않았다).
 - 운영 검증 시험 1(카드 결제 → 브라우저 EventSource가 `order.paid`를 받는가)이 실패했다: 15초 동안 `order.paid` 미수신.
   - 같은 묶음의 시험 2(SSE 차단 중 입금 → 재연결로 완료)·시험 3(SSE 차단 중 결제 → 새로고침으로 완료)은 통과했다. 둘 다 이벤트가 아니라 재조회로 화면을 따라잡는 경로다.
-- 서버 쪽은 정상이었다(같은 시험의 관측):
+- 서버 쪽은 정상이었다(시험 1~3 묶음 뒤의 관측, 원본 psql 출력은 보존하지 않았고 세션 기록의 요약이다):
   - 아웃박스 3행 모두 `PUBLISHED`, 생성→발행 0.14~0.5초.
   - 파드별 publish 1회, `no_receivers` 0, 구독 메시지 파싱 실패 로그 없음.
 
@@ -18,7 +18,7 @@
 
   | 경로 | `content-encoding` | 결제 뒤 `event:order.paid` (실측) |
   |---|---|---|
-  | A. 사이트 경유(ALB → Next rewrite → api), gzip 수락 — 두 진단 모두 | `gzip` | **약 12초 동안 0바이트**(`:open`도 안 옴, 두 번 모두) |
+  | A. 사이트 경유(ALB → Next rewrite → api), gzip 수락 — 두 진단 모두 | `gzip` | **약 12초 동안 받은 청크 0개**(`:open`도 안 옴, 두 번 모두. 클라이언트가 gzip을 풀어 읽으므로 네트워크 바이트 수는 재지 않았다) |
   | B. api 직접(`kubectl port-forward` → api Service), 주문 4 | 없음 | `:open` +0.48초, 결제 0.35초 뒤 도착 |
   | C. 사이트 경유, `Accept-Encoding: identity`, 주문 5 | 없음 | `:open` +0.64초, 결제 0.63초 뒤 도착 |
 
@@ -44,7 +44,7 @@
 - 두 SSE 엔드포인트(`/sse/orders/{id}`, `/sse/events/{id}/seats`) 응답에 `Cache-Control: no-cache, no-store, no-transform`을 단다(`global/sse/SseHeaders`).
   - `no-cache, no-store`는 수정 전 Security 기본값에서 가져와 유지한다. 컨트롤러가 `Cache-Control`을 먼저 달면 Security가 자기 캐시 헤더(`Pragma`·`Expires` 포함)를 쓰지 않으므로, 저장 금지를 여기서 다시 명시한다.
   - `no-transform`: 프록시가 본문을 바꾸지(압축하지) 말라는 표준 지시어(RFC 9111 §5.2.2.6). Next의 압축 미들웨어가 이를 보고 비켜 간다.
-  - Spring Security의 캐시 헤더 작성기는 응답에 `Cache-Control`이 이미 있으면 덮어쓰지 않는다. 수정 후 통합 테스트가 필터 체인을 거친 실제 응답에서 `no-transform`을 확인했다(아래 검증).
+  - Spring Security의 캐시 헤더 작성기는 응답에 `Cache-Control`이 이미 있으면 쓰지 않는다(추론 — 알려진 구현). 통합 테스트가 확인한 것은 필터 체인을 거친 실제 응답에 `no-transform`·`no-store`가 남는다는 것까지다.
 - 고르지 않은 대안:
   - `next.config.mjs`의 `compress: false`: 사이트 전체(HTML·JS) 압축이 꺼진다. 영향 범위가 SSE보다 훨씬 넓다.
   - SSE 전용 프록시 경로(Next를 거치지 않는 ALB 경로 규칙): 경로 규칙·인증서·CORS·하네스 k8s 규칙을 함께 바꿔야 한다. A가 실패할 때 검토할 순서로 남겼다.

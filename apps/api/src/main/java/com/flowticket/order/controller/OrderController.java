@@ -1,6 +1,7 @@
 package com.flowticket.order.controller;
 
 import com.flowticket.global.common.ApiResponse;
+import com.flowticket.global.metrics.BookingDbOp;
 import com.flowticket.order.dto.CreateOrderRequest;
 import com.flowticket.order.dto.OrderResponse;
 import com.flowticket.order.dto.SseTicketResponse;
@@ -26,6 +27,7 @@ public class OrderController {
         this.sseTicketService = sseTicketService;
     }
 
+    @BookingDbOp("order")
     @PostMapping("/orders")
     public ApiResponse<OrderResponse> create(@AuthenticationPrincipal Long userId,
                                              @Valid @RequestBody CreateOrderRequest request) {

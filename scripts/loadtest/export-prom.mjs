@@ -74,6 +74,19 @@ export const QUERIES = {
   hikari_active: "max by (pod) (hikaricp_connections_active)",
   hikari_idle: "max by (pod) (hikaricp_connections_idle)",
   hikari_total: "max by (pod) (hikaricp_connections)",
+  // 예매 세션 DB 계측(BookingDbSessionListener — IMP-034 §6의 AZ 배치 추론 검증). op = hold·release·order·pay·confirm.
+  // 고정 버킷(SLO)이라 백분위는 버킷 경계 해상도까지만 정확하다(application.yml slo).
+  booking_db_held_p95_by_op: "histogram_quantile(0.95, sum by (le, op) (rate(flowticket_booking_db_held_seconds_bucket[1m])))",
+  booking_db_acquire_p95_by_op: "histogram_quantile(0.95, sum by (le, op) (rate(flowticket_booking_db_acquire_seconds_bucket[1m])))",
+  booking_db_execute_p95_by_op: "histogram_quantile(0.95, sum by (le, op) (rate(flowticket_booking_db_execute_seconds_bucket[1m])))",
+  booking_db_statements_mean_by_op:
+    "sum by (op) (rate(flowticket_booking_db_statements_sum[1m])) / sum by (op) (rate(flowticket_booking_db_statements_count[1m]))",
+  // 파드별 평균 — app_pod_nodes(파드 → 노드)로 노드를 찾고, 노드 이름의 IP가 속한 앱 서브넷(10.0.32/64/96.0/19 = 2a/2b/2c)으로
+  // AZ를 정해 "RDS 주 AZ의 파드가 빠른가"를 가른다.
+  booking_db_held_mean_by_pod:
+    "sum by (pod, op) (rate(flowticket_booking_db_held_seconds_sum[1m])) / sum by (pod, op) (rate(flowticket_booking_db_held_seconds_count[1m]))",
+  booking_db_execute_mean_by_pod:
+    "sum by (pod, op) (rate(flowticket_booking_db_execute_seconds_sum[1m])) / sum by (pod, op) (rate(flowticket_booking_db_execute_seconds_count[1m]))",
   tomcat_connections: "sum by (pod) (tomcat_connections_current_connections)",
   tomcat_threads_busy: "sum by (pod) (tomcat_threads_busy_threads)",
   jvm_heap_used: "sum by (pod) (jvm_memory_used_bytes{area=\"heap\"})",

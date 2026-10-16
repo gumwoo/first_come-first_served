@@ -16,6 +16,9 @@ final class WarmupLoop {
     record Result(long requests, long failures, long elapsedMs) {
     }
 
+    /** 실패 뒤 다음 시도까지 쉬는 시간. */
+    static final long FAILURE_PAUSE_MS = 100;
+
     private final BooleanSupplier call;
     private final long durationNanos;
     private final int threads;
@@ -42,12 +45,18 @@ final class WarmupLoop {
             pool.submit(() -> {
                 while (clock.getAsLong() < deadline && !Thread.currentThread().isInterrupted()) {
                     requests.incrementAndGet();
+                    boolean ok;
                     try {
-                        if (!call.getAsBoolean()) {
-                            failures.incrementAndGet();
-                        }
+                        ok = call.getAsBoolean();
                     } catch (RuntimeException e) {
+                        ok = false;
+                    }
+                    if (!ok) {
                         failures.incrementAndGet();
+                        // 즉시 실패(연결 거부·500)를 쉬지 않고 반복하면 오류 로그만 수천 줄 쌓인다. 잠깐 쉰다.
+                        if (!pause(FAILURE_PAUSE_MS)) {
+                            return;
+                        }
                     }
                 }
             });
@@ -63,5 +72,16 @@ final class WarmupLoop {
             Thread.currentThread().interrupt();
         }
         return new Result(requests.get(), failures.get(), TimeUnit.NANOSECONDS.toMillis(clock.getAsLong() - start));
+    }
+
+    /** 인터럽트되면 false — 호출한 스레드는 바로 끝낸다. */
+    private static boolean pause(long millis) {
+        try {
+            Thread.sleep(millis);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 }

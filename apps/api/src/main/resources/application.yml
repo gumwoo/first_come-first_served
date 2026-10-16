@@ -172,6 +172,14 @@ management:
         # (부트 3.3 ServiceLevelObjectiveBoundary — #432 G1이 재현).
         flowticket.booking.db.statements: 1.0,2.0,3.0,4.0,5.0,6.0,8.0,10.0,13.0,16.0,20.0
 
+# 새 파드 워밍업(A′ 개선안 — StartupWarmup). 기본 꺼짐: 효과는 A′(켬) vs B′ 같은 조건 재비교로 판정한다.
+# 켜면 새 파드가 duration만큼 늦게 Ready가 된다(그동안 공개 조회를 루프백으로 반복). 20초는 IMP-033 v1에서 본
+# JIT 7~9초/파드에 여유를 둔 시작값이다(측정으로 정한 값이 아니다).
+warmup:
+  enabled: ${WARMUP_ENABLED:false}
+  duration-ms: ${WARMUP_DURATION_MS:20000}
+  threads: ${WARMUP_THREADS:2}
+
 # 외부 연동 / 시크릿은 환경변수로만 주입 (application-local.yml은 gitignore)
 # KOPIS OPEN API 이용 제한 (공식)
 #   - 목록 조회 날짜 범위: 요청당 최대 31일

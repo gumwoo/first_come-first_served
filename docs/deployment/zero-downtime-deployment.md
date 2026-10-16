@@ -171,7 +171,7 @@ graceful shutdown은 "**진행 중 요청이 끝날 때까지** 기다린다"인
 **Kafka는 [[ADR-028]]로 제거됐다.** 이 절은 원래 Kafka 컨슈머의 종료·리밸런싱 경계를 다뤘다(제거 전 내용은 Git 이력).
 지금 경로는 아웃박스 → 릴레이 → Redis Pub/Sub(`sse:order`) → SSE다.
 
-- **발행**: 릴레이는 발행 호출이 성공한 뒤에만 `PUBLISHED`로 마킹한다(publish-then-mark, `OutboxRelay`). 파드가 마킹 전에 종료되면 다음 틱에 다시 발행한다 — at-least-once.
+- **발행**: 릴레이는 발행 호출이 성공한 뒤에만 `PUBLISHED`로 마킹한다(publish-then-mark, `OutboxRelay`). 파드가 마킹 전에 종료되면 그 행은 PENDING으로 남아 이후 틱에서 다시 발행된다 — at-least-once. 갑자기 죽은 경우에는 ShedLock 임차(최대 1분)가 끝난 뒤 다른 파드가 이어받는다(추론, 실측 안 함).
 - **수신**: Redis Pub/Sub은 메시지를 저장하지 않는다. 종료되는 파드에 붙어 있던 SSE 연결, 구독이 끊긴 순간의 메시지는 받지 못한다. 프론트는 재연결 뒤 `onopen`에서 현재 상태를 다시 읽어 복구한다(§1 SSE 복원력, `kafka-removal-design.md` §4).
 - **중복**: 멱등 키는 없다. 재발행으로 생긴 중복은 프론트의 재조회 1회가 흡수한다(이벤트 payload를 읽지 않는다).
 

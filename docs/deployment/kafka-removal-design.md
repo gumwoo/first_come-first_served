@@ -1,6 +1,6 @@
 # Kafka 제거 설계 — 아웃박스 → Redis Pub/Sub 전환, 의존성 목록, 단계별 PR·게이트·롤백
 
-- 상태: **P1~P3 머지 완료**(#409·#410·#411·#412·#413·#415), **남은 것 P4(V21 `DROP`)·P5(문서 정리)**. 처음 상태는 설계(구현 전) — 2026-10-14 20:57 KST 작성, 21:34 KST 측정·삭제 순서 정정(사용자 결정: 기준선 (a) 세션 차이 수용). 결정은 [[ADR-028]](2026-10-14 20:39 KST 사용자 결정 — B. Kafka 제거)
+- 상태: **P1~P3 머지 완료**(#409·#410·#411·#412·#413·#415), P5(문서 정리) #427, **남은 것 P4(V21 `DROP`)**. 처음 상태는 설계(구현 전) — 2026-10-14 20:57 KST 작성, 21:34 KST 측정·삭제 순서 정정(사용자 결정: 기준선 (a) 세션 차이 수용). 결정은 [[ADR-028]](2026-10-14 20:39 KST 사용자 결정 — B. Kafka 제거)
 - 관련: [[ADR-008]](Kafka 백본 + DLQ — 대체 대상), [[ADR-010]](아웃박스 — 유지), [[ADR-012]](3 AZ), [[ADR-022]](릴레이 임차), [[TS-023]](다중 Pod SSE),
   [zero-downtime-deployment.md](zero-downtime-deployment.md) §8(Expand-Contract), [operating-requirements.md](operating-requirements.md), [workload-responsibilities.md](workload-responsibilities.md)
 - 읽는 법: §5.6·§6 P3a·§6.2의 스크립트 줄 번호와 `SKIP_KAFKA` 스위치 서술은 **P3(#415) 머지 전 스크립트 기준**이다. P3에서 Kafka 단계와 스위치가 삭제됐다.

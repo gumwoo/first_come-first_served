@@ -16,7 +16,7 @@ status: `todo | doing | done | blocked`
 | S07 | 운영(대시보드/내역/이벤트/DLQ/알림) | S05 | done | 관리자 인증(ADR-007)·대시보드·주문 조회·공연 CRUD·Kafka 이벤트 백본+DLQ(ADR-008 — Kafka·DLQ는 ADR-028로 제거, 아웃박스 화면으로 대체)·알림 임계치·admin E2E. 계약 100% 충족 |
 | S08 | 정합성 보강 — 아웃박스(1단계) + PG 정산·보상(2단계) | S07 | done | **우선순위 1**. 설계 [ADR-010](../decisions/ADR-010-transactional-outbox.md). **1단계 아웃박스**: `order.paid`가 AFTER_COMMIT best-effort라 "커밋 직후·발행 전 크래시" 시 유실 가능(ADR-008·TS-011 §한계) → 같은 tx에 이벤트 적재→폴링 릴레이(ShedLock) 발행→Redis SETNX 소비자 멱등. 발행은 **at-least-once**이고 중복은 소비자가 흡수한다(exactly-once가 아니다). 유실 **10→0**([IMP-011](../improvements/IMP-011-outbox-delivery.md), PR #138·#139·#140). **2단계 정산**([ADR-011](../decisions/ADR-011-payment-reconciliation.md)): PG 승인 후 크래시로 롤백돼 DB에 흔적이 없는 미아 승인(아웃박스로 못 닫는 클래스)을 주문 기준 후보→PG 조회→취소(void)로 회수. 감사 테이블은 범위 밖(로그). |
 | S09 | 배포·운영 준비(컨테이너화·EKS·Strimzi·멀티팟·ArgoCD) | S07 | **done (DoD 9/9)** | (구 S08) 멀티팟 준비 **코드 선반영 완료**(①SSE Redis pub/sub 팬아웃·②ShedLock·③PG 보상·④정확한 알림). 2026-08-10 기준 **컨테이너화·ECR/CI·Terraform(EKS)·Strimzi 멀티브로커·ArgoCD(GitOps, 자동 동기화)·관측(Prometheus/Grafana + Kafka)·①② cross-Pod 실증·브로커 페일오버까지 완료**([[TS-022]], [[TS-023]]). **DoD 9개 전부 충족**(2026-08-11). 마지막 항목인 정량 부하는 k6를 클러스터 밖에서 돌려 측정 환경 문제를 피했고, capacity knee 600~650 rps와 포화 징후(노드 CPU·Hikari pending 동시)까지 특정했다. External Secrets도 완료(#213). 남은 부하 시나리오(좌석 경합·대기열 스파이크·Stress·Soak)는 S10이다. 상세: [docs/deployment/](../deployment/_index.md) |
-| S10 | 부하테스트·모니터링 | S09 | todo | 배포 위 k6 실측·HPA 수평확장·브로커 페일오버·Consumer Lag. IMP 재측정(아웃박스 유실 0 포함) |
+| S10 | 부하테스트·모니터링 | S09 | todo | 배포 위 k6 실측·HPA 수평확장·브로커 페일오버·Consumer Lag(브로커·Lag는 Kafka 시기 항목 — [[ADR-028]]로 제거). IMP 재측정(아웃박스 유실 0 포함) |
 
 > **우선순위(작업 순서) — 재정렬**: 서비스 기업(대용량·정합성) 지향에 맞춰 **정합성 깊이를 배포보다 앞에** 둔다.
 > **S08 아웃박스(정합성) → S09 배포(K8s·ArgoCD) → S10 부하·모니터링.** 근거: 아웃박스는 이 프로젝트 핵심
@@ -48,7 +48,7 @@ status: `todo | doing | done | blocked`
 - [event-detail.md](operator/event-detail.md) · [dlq.md](operator/dlq.md)(삭제됨 → outbox) · [alerts.md](operator/alerts.md)
 
 ### S08 아웃박스 + 정산(정합성 보강)
-- 사용자 화면 없음(백엔드 트랙). 운영 화면 [outbox.md](operator/outbox.md)는 Kafka 제거 P2a(ADR-028)에서 추가. 1단계 아웃박스(at-least-once 발행 + 소비자 멱등) / 2단계 PG 정산·보상. 설계: [ADR-010](../decisions/ADR-010-transactional-outbox.md). 실측은 IMP-011 + 통합테스트.
+- 사용자 화면 없음(백엔드 트랙). 운영 화면 [outbox.md](operator/outbox.md)는 Kafka 제거 P2a(ADR-028)에서 추가. 1단계 아웃박스(at-least-once 발행 — 소비자 멱등은 [[ADR-028]]로 없어지고 프론트 재조회가 중복을 흡수) / 2단계 PG 정산·보상. 설계: [ADR-010](../decisions/ADR-010-transactional-outbox.md). 실측은 IMP-011 + 통합테스트.
 
 ### S09 배포·운영 준비
 - 사용자 화면 없음(인프라 트랙). 상세: [docs/deployment/_index.md](../deployment/_index.md)

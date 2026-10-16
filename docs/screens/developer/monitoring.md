@@ -5,14 +5,14 @@
 - slice: S10
 
 ## 목적
-운영/실시간 시스템 상태(API 응답·Consumer Lag·인프라 헬스) 모니터링.
+운영/실시간 시스템 상태(API 응답·아웃박스 적체·인프라 헬스 — Consumer Lag는 Kafka와 함께 제거, [[ADR-028]]) 모니터링.
 
 ## 사용 API
 - `GET /dev/monitoring` (Actuator/Micrometer 기반)
 
 ## 화면 요소 (DoD 체크리스트)
 - [ ] 기간/환경 필터
-- [ ] 상단 지표 카드(요청수/평균응답/p95/에러율/Consumer Lag)
+- [ ] 상단 지표 카드(요청수/평균응답/p95/에러율/아웃박스 적체)
 - [ ] API 응답시간 추이 차트
 - [ ] 시스템 요약(Redis/DB/API 헬스 상태 — Kafka는 [[ADR-028]]로 제거)
 - [ ] 최근 에러/이벤트 로그

@@ -72,7 +72,7 @@ REST 기준. 인증은 `Authorization: Bearer <accessToken>`. 에러는 공통 �
   - 결제 상태머신: `PENDING → PAID | FAILED | EXPIRED`
   - 무통장: `VBANK_WAITING`(가상계좌+입금기한) → 입금확인 시 `PAID`
 - `GET /orders/:id` — 주문/결제 상태
-- 결제 성공 → 같은 트랜잭션에 `order.paid` 아웃박스 행 기록 → 릴레이가 Redis 채널 `sse:order`로 발행 → SSE 전달([[ADR-028]]) → 티켓(QR) 발급
+- 결제 성공 → 같은 트랜잭션에 `order.paid` 아웃박스 행 기록 → 릴레이가 Redis 채널 `sse:order`로 발행 → SSE 전달([[ADR-028]]). 티켓(QR)은 이벤트가 만들지 않고 완료 화면이 그린다
 
 ## 마이 / 취소·환불 (S06)
 - `GET /me/orders?status=` — 예매 내역(탭: 전체/예정/사용완료/취소)

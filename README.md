@@ -31,7 +31,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 | 장애 주입 | RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구, 노드 오토스케일로 Pending 파드 수용 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |
 | 대기열 토큰 정합성 보강 | 토큰 소유권(남의 입장 토큰으로 선점·이탈 차단), 재발급·이탈 경합(1인 1토큰), 대기 토큰 수명(폴링 연장·만료 토큰 승격 차단)을 통합 테스트로 검증 | [TS-043](docs/troubleshooting/TS-043-queue-token-ownership.md) · [TS-044](docs/troubleshooting/TS-044-queue-takeover-leave-race.md) · [TS-045](docs/troubleshooting/TS-045-queue-token-lifecycle.md) |
 
-10만 명 진입·자동 확장 수치는 측정 당시 api 이미지(`419c96b`, [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)) 기준입니다. 이후 대기열 보강(TS-043~045)은 통합 테스트로 검증했습니다. Kafka 제거([ADR-028](docs/decisions/ADR-028-kafka-reevaluation.md))도 이 측정 이후의 변경이며, Kafka 없는 구성의 기준선은 [IMP-034](docs/improvements/IMP-034-bprime-queue-resources-g1.md)에서 다시 쟀습니다.
+10만 명 진입·자동 확장 수치는 측정 당시 api 이미지(`419c96b`, [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)) 기준입니다. 이후 대기열 보강(TS-043~045)은 통합 테스트로 검증했습니다. Kafka 제거([ADR-028](docs/decisions/ADR-028-kafka-reevaluation.md))도 이 측정 이후의 변경입니다. Kafka 없는 구성에서 10만 명 진입은 다시 재지 않았고, 대기열 분리 비교(IMP-033) 절차의 기준선만 [IMP-034](docs/improvements/IMP-034-bprime-queue-resources-g1.md)에서 다시 쟀습니다.
 
 ## 서비스 흐름
 

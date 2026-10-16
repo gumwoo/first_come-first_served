@@ -25,7 +25,7 @@ class StartupWarmupIntegrationTest extends IntegrationTestSupport {
     @Autowired TestRestTemplate rest;
 
     @Test
-    void 기동_중_워밍업이_조회를_반복하고_모두_성공한다() {
+    void 기동_중_워밍업이_조회를_반복하고_모두_성공한다() throws InterruptedException {
         WarmupLoop.Result r = warmup.lastResult();
 
         assertThat(r).as("워밍업이 돌았어야 한다").isNotNull();
@@ -38,7 +38,21 @@ class StartupWarmupIntegrationTest extends IntegrationTestSupport {
 
         // 대조: 헤더 없는 일반 요청은 기록돼야 한다. 그래야 위 단언이 "지표가 아예 안 쌓여서 통과"가 아님을 보장한다.
         rest.getForEntity("/events?page=0&size=20", String.class);
-        assertThat(meterRegistry.get("http.server.requests").tag("uri", "/events").timer().count())
-                .as("일반 요청은 지표에 남는다").isEqualTo(1);
+        assertThat(eventsRequestCount()).as("일반 요청은 지표에 남는다").isEqualTo(1);
+    }
+
+    /**
+     * 관측은 서버 필터가 응답을 쓴 뒤에 닫으므로 클라이언트가 응답을 받은 순간에는 아직 기록 전일 수 있다. 잠깐 기다린다.
+     */
+    private long eventsRequestCount() throws InterruptedException {
+        long count = 0;
+        for (int i = 0; i < 40 && count == 0; i++) {
+            count = meterRegistry.find("http.server.requests").tag("uri", "/events").timers().stream()
+                    .mapToLong(io.micrometer.core.instrument.Timer::count).sum();
+            if (count == 0) {
+                Thread.sleep(50);
+            }
+        }
+        return count;
     }
 }

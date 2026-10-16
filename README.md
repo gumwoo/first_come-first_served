@@ -39,14 +39,14 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 공연 탐색 → 대기열 진입 → 입장 허용 → 좌석 선점 → 주문 생성 → 결제 → 예매 내역 / 환불
 ```
 
-운영자는 공연·좌석을 관리하고, 주문·DLQ·알림 상태를 확인합니다. 공연 기본 정보는 KOPIS OpenAPI를 백엔드 배치가 동기화하며, 거래에 필요한 좌석·가격·재고는 FlowTicket이 직접 관리합니다.
+운영자는 공연·좌석을 관리하고, 주문·아웃박스·알림 상태를 확인합니다. 공연 기본 정보는 KOPIS OpenAPI를 백엔드 배치가 동기화하며, 거래에 필요한 좌석·가격·재고는 FlowTicket이 직접 관리합니다.
 
 ## 핵심 설계
 
 - **대기열**: Redis Lua 스크립트로 토큰 발급·입장 승격을 원자적으로 처리합니다. 좌석 선점·이탈은 토큰을 발급받은 회원만 할 수 있고, 대기 토큰은 폴링하는 동안 수명이 연장됩니다.
 - **좌석과 주문**: PostgreSQL 조건부 `UPDATE`와 영향 행 수 검증으로 중복 선점·초과판매를 막습니다.
 - **결제 상태 전이**: 주문·결제·좌석·hold 상태를 명시적으로 전이하고 멱등성 키를 사용합니다.
-- **이벤트 전달**: 비즈니스 트랜잭션과 Outbox 기록을 함께 저장하고 Kafka 발행·DLQ 처리를 분리합니다.
+- **이벤트 전달**: 비즈니스 트랜잭션과 Outbox 기록을 함께 저장하고, 릴레이가 Redis Pub/Sub(`sse:order`)으로 발행해 SSE로 전달합니다. 별도 브로커(Kafka)는 두지 않습니다([ADR-028](docs/decisions/ADR-028-kafka-reevaluation.md)).
 - **실시간 반영**: 대기열은 서버가 다음 조회 시점(`retryAfterMs`)을 정하는 폴링으로, 좌석·주문 상태는 SSE와 재조회 보정으로 사용자 화면에 반영합니다.
 - **용량과 확장**: api의 CPU 요청량을 실측한 요청당 처리 비용으로 정하고(1100m), HPA 3~9와 Cluster Autoscaler로 Pod·Node를 늘리고 줄입니다. 공연 오픈 전 사전 확장은 Git PR로 켜고 끕니다([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md)).
 - **외부 데이터 분리**: KOPIS 호출은 요청 경로가 아닌 배치 동기화 경로에서 처리합니다.
@@ -61,8 +61,8 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 | 공연 | KOPIS 동기화·검색·상세·인기 지표 | 스케줄 기반 동기화 작업, PostgreSQL |
 | 대기열 | 발급·순번 조회·입장 승격·만료 | Redis, Lua, 폴링(`retryAfterMs`) |
 | 예매 | 좌석 hold·주문·결제·환불 | JPA, QueryDSL, 조건부 UPDATE, 멱등성 |
-| 이벤트 | 주문 완료 이벤트와 실패 격리 | Transactional Outbox, Kafka, DLQ |
-| 운영 | 공연·주문·DLQ·알림 관리 | Spring Security RBAC, 관리자 API |
+| 이벤트 | 주문 완료 이벤트와 실패 격리 | Transactional Outbox, Redis Pub/Sub |
+| 운영 | 공연·주문·아웃박스·알림 관리 | Spring Security RBAC, 관리자 API |
 
 ## 인프라 아키텍처
 
@@ -75,7 +75,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 `Terraform=인프라 / Argo CD=앱`으로 소유를 나눈다 — 근거는
 [ADR-009](docs/decisions/ADR-009-gitops-cd-argocd.md).
 
-- 로컬 개발·통합 환경은 Docker Compose로 PostgreSQL, Redis, Kafka, API를 구성합니다.
+- 로컬 개발은 Docker Compose로 PostgreSQL·Redis를 띄우고, 통합 환경(`infra/docker-compose.prod.yml`)은 여기에 API·web을 더합니다.
 - 클러스터 구성은 Kubernetes manifests와 Terraform을 사용하며, API는 health probe, graceful shutdown(`preStop`), HPA 3~9 + Cluster Autoscaler, PDB 설정을 가지고, web은 사전 확장 때 API에 자리를 내주도록 낮은 PriorityClass를 둡니다.
 - 대기열 진입·상태 조회는 ALB가 Next.js를 거치지 않고 API로 바로 보냅니다([ADR-024](docs/decisions/ADR-024-queue-path-next-hop-bypass.md)).
 - 비용 때문에 클러스터는 시험 기간에만 올리고 평소에는 내려 둡니다. Terraform과 Argo CD로 다시 올릴 수 있습니다.
@@ -127,7 +127,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 | 층 | 무엇을 막나 | 어떻게 |
 |---|---|---|
 | **코드** | 동시성 정합성 | Redis Lua로 대기열 승격을 원자화, 좌석·주문은 조건부 `UPDATE` + 영향 행 수 검증, 이벤트는 Transactional Outbox |
-| **CI** | 구조 드리프트 | 계약(enum·API·이벤트·계층)을 파일로 두고 정적 검사. **일부러 만든 위반 fixture 66개로 "규칙이 실제로 잡는지"를 메타테스트가 판정**합니다 — 규칙을 믿지 않고 규칙을 시험합니다 |
+| **CI** | 구조 드리프트 | 계약(enum·API·이벤트·계층)을 파일로 두고 정적 검사. **일부러 만든 위반 fixture 71개로 "규칙이 실제로 잡는지"를 메타테스트가 판정**합니다 — 규칙을 믿지 않고 규칙을 시험합니다 |
 | **실측** | 운영 중 장애·부하 | 클러스터를 띄우고 장애를 **주입**하고 부하를 겁니다. 롤링 배포·노드 오토스케일([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md))·RDS/Redis 페일오버([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md))·10만 명 / 10초 진입([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)) |
 
 **좋아진 수치만 싣지 않습니다.** RDS 페일오버에서 찾은 결함(30초를 다 기다린 뒤 500)을 고쳐 같은 장애를 다시 쟀습니다. 결과는 이렇습니다.
@@ -144,7 +144,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 | 영역 | 기술 |
 |---|---|
 | Backend | Java 17 (Temurin), Spring Boot 3.3.x, Gradle 8, Spring Web, Spring Security, Spring Data JPA, QueryDSL 5 (Jakarta) |
-| Data & Messaging | PostgreSQL 16, Flyway, Redis (Lettuce) — 로컬·CI `7.4` / ElastiCache `7.1`, Kafka KRaft, DLQ |
+| Data & Messaging | PostgreSQL 16, Flyway, Redis (Lettuce, Pub/Sub) — 로컬·CI `7.4` / ElastiCache `7.1` |
 | Authentication | JWT Access/Refresh, OAuth2 Client, Kakao·Naver |
 | Frontend | Node.js 20 LTS, pnpm 9, Next.js 14.2 App Router, TypeScript 5.5 |
 | Frontend State & UI | Tailwind CSS 3.4, shadcn/ui, TanStack Query 5, Zustand 4, React Hook Form 7, Zod 3 |
@@ -172,7 +172,7 @@ docs/
 e2e/                   Playwright 크리티컬 플로우
 harness/               계약·구조 드리프트 정적 검사
 infra/                 Docker Compose, Terraform, k6
-k8s/                   Kubernetes base, overlay, Kafka, monitoring, Argo CD
+k8s/                   Kubernetes base, overlay, monitoring, Argo CD
 ```
 
 ## 품질 검증 방식
@@ -183,9 +183,9 @@ k8s/                   Kubernetes base, overlay, Kafka, monitoring, Argo CD
 |---|---|---|
 | 계약 (`contracts/`) | enum·API·이벤트·오류 코드·계층 규칙을 YAML 단일 진실원으로 고정 | `events.yaml`에서 구현됨(`implemented`)으로 선언한 이벤트는 실제 발행 코드가 있어야 통과 |
 | 정적 하네스 (`npm run harness:check`) | 계약과 코드·매니페스트·문서의 어긋남 | 상태 변경 UPDATE의 `WHERE status` 가드, 파괴적 DDL, `@Autowired` 금지(생성자 주입), SSE 훅의 재동기화 경로, 매니페스트↔앱 설정 |
-| 메타테스트 | 하네스가 위반을 실제로 잡는지 | 일부러 만든 위반 fixture 66개가 전부 차단되는지 |
-| 단위·통합 테스트 (Testcontainers) | 동시성·상태 전이·Outbox/Kafka 런타임 정합성 | 실제 PostgreSQL·Redis·Kafka 컨테이너 |
-| 알림 규칙 테스트 (promtool) | 알림이 울려야 할 때 울리고, 아닐 때 울리지 않는지 | 규칙 6개 모두 양성·음성 케이스 |
+| 메타테스트 | 하네스가 위반을 실제로 잡는지 | 일부러 만든 위반 fixture 71개가 전부 차단되는지 |
+| 단위·통합 테스트 (Testcontainers) | 동시성·상태 전이·Outbox 런타임 정합성 | 실제 PostgreSQL·Redis 컨테이너 |
+| 알림 규칙 테스트 (promtool) | 알림이 울려야 할 때 울리고, 아닐 때 울리지 않는지 | 규칙 4개 모두 양성·음성 케이스 |
 | E2E (Playwright, CI 풀스택) | 브라우저↔API 경계와 UI 상태 | 프론트·백엔드가 바뀐 PR에서 실행, 실패하면 PR 체크 실패와 trace 업로드 |
 | 부하 시험 (k6, 클러스터 세션) | 10만 명 진입·폴링 폭증에서 정합성이 깨지지 않는지 | 판정식을 먼저 적고 run → 사후 정합성 검사 |
 

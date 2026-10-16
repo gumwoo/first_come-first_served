@@ -171,7 +171,9 @@ for (const file of apiFnFiles) {
 // typecheck·lint·build가 전혀 못 잡는 무증상 결함이라 정적으로 막는다.
 // 의도적으로 복구 경로가 필요 없다면(예: 1회성 알림 전용) 파일에 사유와 함께 예외 주석:
 //   // harness:allow-sse-no-resync: 단발 토스트 전용, 상태를 들고 있지 않음
-const ALLOW_SSE_RE = /\/\/\s*harness:allow-sse-no-resync\s*:?\s*(\S.*)?/;
+// 공백은 같은 줄 안에서만 넘긴다([ \t]). \s는 줄바꿈까지 넘어가, 사유가 빈 주석이 다음 줄의 코드를 사유로 삼아 통과한다
+// (백엔드 BE14 ALLOW_DDL_RE와 같은 결함).
+const ALLOW_SSE_RE = /\/\/[ \t]*harness:allow-sse-no-resync[ \t]*:?[ \t]*(\S.*)?/;
 for (const file of tsFiles) {
   const src = read(file);
   if (!/new\s+EventSource\s*\(/.test(src)) continue;

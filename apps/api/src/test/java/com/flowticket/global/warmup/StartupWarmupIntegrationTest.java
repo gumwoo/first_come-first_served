@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 
 /**
@@ -21,6 +22,7 @@ class StartupWarmupIntegrationTest extends IntegrationTestSupport {
 
     @Autowired StartupWarmup warmup;
     @Autowired MeterRegistry meterRegistry;
+    @Autowired TestRestTemplate rest;
 
     @Test
     void 기동_중_워밍업이_조회를_반복하고_모두_성공한다() {
@@ -33,5 +35,10 @@ class StartupWarmupIntegrationTest extends IntegrationTestSupport {
         // /events 타이머가 있다면 워밍업 요청이 새어 들어온 것이다.
         assertThat(meterRegistry.find("http.server.requests").tag("uri", "/events").timers())
                 .as("워밍업 요청이 지표에 섞이면 안 된다").isEmpty();
+
+        // 대조: 헤더 없는 일반 요청은 기록돼야 한다. 그래야 위 단언이 "지표가 아예 안 쌓여서 통과"가 아님을 보장한다.
+        rest.getForEntity("/events?page=0&size=20", String.class);
+        assertThat(meterRegistry.get("http.server.requests").tag("uri", "/events").timer().count())
+                .as("일반 요청은 지표에 남는다").isEqualTo(1);
     }
 }

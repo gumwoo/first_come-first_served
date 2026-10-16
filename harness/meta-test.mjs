@@ -36,6 +36,7 @@ const cases = [
   { name: "be-event-not-broadcast", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-event-not-broadcast" } },
   { name: "be-unguarded-status-update", script: "backend/check.mjs", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-unguarded-status-update" } },
   { name: "be-destructive-ddl",  script: "backend/check.mjs", expect: "파괴적 DDL:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-destructive-ddl" } },
+  { name: "be-destructive-ddl-empty-reason", script: "backend/check.mjs", expect: "예외 사유 누락:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-destructive-ddl-empty-reason" } },
   { name: "be-dangling-doc-ref", script: "backend/check.mjs", expect: "끊어진 문서 참조:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-dangling-doc-ref" } },
   { name: "be-http-no-timeout", script: "backend/check.mjs", expect: "외부 HTTP 클라이언트에 타임아웃이 없다:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-http-no-timeout" } },
   { name: "be-http-no-timeout-injected", script: "backend/check.mjs", expect: "외부 HTTP 클라이언트에 타임아웃이 없다:", env: { HARNESS_API_DIR: "harness/fixtures/violations/be-http-no-timeout-injected" } },

@@ -351,7 +351,8 @@ const DESTRUCTIVE_DDL = [
   [/\brename\s+(?:column|table|to)\b/i, "RENAME"],
   [/\bset\s+not\s+null\b/i, "SET NOT NULL"],
 ];
-const ALLOW_DDL_RE = /--\s*harness:allow-destructive-ddl\s*:?\s*(\S.*)?/i;
+// 공백은 같은 줄 안에서만 넘긴다([ \t]). \s는 줄바꿈까지 넘어가, 사유가 빈 주석이 다음 줄의 DDL을 사유로 삼아 통과한다.
+const ALLOW_DDL_RE = /--[ \t]*harness:allow-destructive-ddl[ \t]*:?[ \t]*(\S.*)?/i;
 
 for (const file of migrationFiles) {
   const raw = read(file);

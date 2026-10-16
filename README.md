@@ -127,7 +127,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 | 층 | 무엇을 막나 | 어떻게 |
 |---|---|---|
 | **코드** | 동시성 정합성 | Redis Lua로 대기열 승격을 원자화, 좌석·주문은 조건부 `UPDATE` + 영향 행 수 검증, 이벤트는 Transactional Outbox |
-| **CI** | 구조 드리프트 | 계약(enum·API·이벤트·계층)을 파일로 두고 정적 검사. **일부러 만든 위반 fixture 73개로 "규칙이 실제로 잡는지"를 메타테스트가 판정**합니다 — 규칙을 믿지 않고 규칙을 시험합니다 |
+| **CI** | 구조 드리프트 | 계약(enum·API·이벤트·계층)을 파일로 두고 정적 검사. **일부러 만든 위반 fixture 74개로 "규칙이 실제로 잡는지"를 메타테스트가 판정**합니다 — 규칙을 믿지 않고 규칙을 시험합니다 |
 | **실측** | 운영 중 장애·부하 | 클러스터를 띄우고 장애를 **주입**하고 부하를 겁니다. 롤링 배포·노드 오토스케일([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md))·RDS/Redis 페일오버([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md))·10만 명 / 10초 진입([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)) |
 
 **좋아진 수치만 싣지 않습니다.** RDS 페일오버에서 찾은 결함(30초를 다 기다린 뒤 500)을 고쳐 같은 장애를 다시 쟀습니다. 결과는 이렇습니다.
@@ -183,7 +183,7 @@ k8s/                   Kubernetes base, overlay, monitoring, Argo CD
 |---|---|---|
 | 계약 (`contracts/`) | enum·API·이벤트·오류 코드·계층 규칙을 YAML 단일 진실원으로 고정 | `events.yaml`에서 구현됨(`implemented`)으로 선언한 이벤트는 실제 발행 코드가 있어야 통과 |
 | 정적 하네스 (`npm run harness:check`) | 계약과 코드·매니페스트·문서의 어긋남 | 상태 변경 UPDATE의 `WHERE status` 가드, 파괴적 DDL, `@Autowired` 금지(생성자 주입), SSE 훅의 재동기화 경로, 매니페스트↔앱 설정 |
-| 메타테스트 | 하네스가 위반을 실제로 잡는지 | 일부러 만든 위반 fixture 73개가 전부 차단되는지 |
+| 메타테스트 | 하네스가 위반을 실제로 잡는지 | 일부러 만든 위반 fixture 74개가 전부 차단되는지 |
 | 단위·통합 테스트 (Testcontainers) | 동시성·상태 전이·Outbox 런타임 정합성 | 실제 PostgreSQL·Redis 컨테이너 |
 | 알림 규칙 테스트 (promtool) | 알림이 울려야 할 때 울리고, 아닐 때 울리지 않는지 | 규칙 4개 모두 양성·음성 케이스 |
 | E2E (Playwright, CI 풀스택) | 브라우저↔API 경계와 UI 상태 | 프론트·백엔드가 바뀐 PR에서 실행, 실패하면 PR 체크 실패와 trace 업로드 |

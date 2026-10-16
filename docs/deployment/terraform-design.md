@@ -326,7 +326,8 @@ Kafka가 쓰는 EKS 기본 `gp2`의 실제 바인딩 모드는 **확인하지 �
 3. 고아 EBS 볼륨 정리                  # 2에서 채집한 이 클러스터 소유 볼륨만. 남으면 GB-월 과금 지속
 4. terraform destroy (platform)
 5. terraform이 모르는 VPC 잔여 정리     # destroy가 실패했을 때만 — 고아 ENI·EKS 클러스터 SG 정리 후 재시도(TS-038)
-6. 잔여 점검: ALB · NAT · Elastic IP · EBS · 스냅샷 · CloudWatch 알람(flowticket-alb-*) · SNS 토픽
+6. 잔여 점검(FlowTicket 소유분만): EC2(부하 발생기 포함) · NAT · Elastic IP · VPC · EBS(PVC 포함) · EKS · RDS · ElastiCache
+   · ALB·Target Group(k8s-*) · CloudWatch 알람(flowticket-alb-*) · SNS 토픽 · Lambda·로그 그룹(Slack 중계) · S3(발생기 결과)
 ```
 
 - **bootstrap은 destroy하지 않는다.**

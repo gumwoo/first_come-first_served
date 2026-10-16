@@ -22,6 +22,10 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+    properties:
+      # 예매 경로(@BookingDbOp) 세션의 커넥션 획득·점유·SQL 수·실행 시간을 잰다(IMP-034 §6 원인 검증).
+      # Hibernate가 세션마다 이 클래스를 새로 만든다. 예매 동작이 아닌 세션에서는 시각도 재지 않는다.
+      hibernate.session.events.auto: com.flowticket.global.metrics.BookingDbSessionListener
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -156,6 +160,17 @@ management:
         flowticket.outbox.publish.lag: 5m
         # 승격 주기가 1.5초라 그보다 길면 이미 밀리고 있다. 얼마나 밀렸는지 보이도록 여유를 둔다.
         flowticket.queue.admit.tick: 10s
+      # 예매 세션 DB 계측(BookingDbSessionListener). 백분위를 파드 합산으로 내려면 히스토그램이어야 하는데,
+      # percentiles-histogram은 버킷이 많아(1ms~5s에도 수십 개) op 5개 × 지표 4개면 시계열이 크게 는다.
+      # 원인 판정에 필요한 해상도만 고정 버킷(SLO)으로 둔다. 지표마다 버킷 12개(+Inf 포함)·count·sum·max = 15개 × 지표 4개 × op 5개 = 파드당 약 300개(계산).
+      slo:
+        flowticket.booking.db.acquire: 1ms,2ms,5ms,10ms,20ms,50ms,100ms,200ms,500ms,1s,2s
+        flowticket.booking.db.held: 1ms,2ms,5ms,10ms,20ms,50ms,100ms,200ms,500ms,1s,2s
+        flowticket.booking.db.execute: 1ms,2ms,5ms,10ms,20ms,50ms,100ms,200ms,500ms,1s,2s
+        # SQL 수. 왕복 수가 AZ 배치의 영향을 키우는지 보려는 값이라 작은 수 쪽 해상도가 중요하다.
+        # 소수점으로 적어야 한다: 정수 문자열("1")은 시간(1ms)으로 해석돼 DistributionSummary에서 버킷이 조용히 빠진다
+        # (부트 3.3 ServiceLevelObjectiveBoundary — #432 G1이 재현).
+        flowticket.booking.db.statements: 1.0,2.0,3.0,4.0,5.0,6.0,8.0,10.0,13.0,16.0,20.0
 
 # 외부 연동 / 시크릿은 환경변수로만 주입 (application-local.yml은 gitignore)
 # KOPIS OPEN API 이용 제한 (공식)

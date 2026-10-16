@@ -1,6 +1,7 @@
 package com.flowticket.seat.controller;
 
 import com.flowticket.global.common.ApiResponse;
+import com.flowticket.global.metrics.BookingDbOp;
 import com.flowticket.seat.dto.HoldRequest;
 import com.flowticket.seat.dto.HoldResponse;
 import com.flowticket.seat.dto.SeatMapResponse;
@@ -31,6 +32,7 @@ public class SeatController {
         return ApiResponse.ok(seatQueryService.getSeats(id));
     }
 
+    @BookingDbOp("hold")
     @PostMapping("/events/{id}/seats/hold")
     public ApiResponse<HoldResponse> hold(@PathVariable Long id,
                                           @AuthenticationPrincipal Long userId,
@@ -38,6 +40,7 @@ public class SeatController {
         return ApiResponse.ok(seatService.hold(userId, id, request.seatIds(), request.queueToken()));
     }
 
+    @BookingDbOp("release")
     @DeleteMapping("/seats/hold/{holdId}")
     public ApiResponse<Void> release(@PathVariable Long holdId,
                                      @AuthenticationPrincipal Long userId) {

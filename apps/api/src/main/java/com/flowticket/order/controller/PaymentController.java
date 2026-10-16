@@ -1,6 +1,7 @@
 package com.flowticket.order.controller;
 
 import com.flowticket.global.common.ApiResponse;
+import com.flowticket.global.metrics.BookingDbOp;
 import com.flowticket.order.dto.PaymentConfirmRequest;
 import com.flowticket.order.dto.PaymentRequest;
 import com.flowticket.order.dto.PaymentResponse;
@@ -22,6 +23,7 @@ public class PaymentController {
         this.paymentService = paymentService;
     }
 
+    @BookingDbOp("pay")
     @PostMapping("/orders/{id}/payments")
     public ApiResponse<PaymentResponse> pay(@PathVariable Long id,
                                             @AuthenticationPrincipal Long userId,
@@ -31,6 +33,7 @@ public class PaymentController {
     }
 
     /** 결제창(Toss) 인증 확정. 클라이언트가 받은 paymentKey로 서버 승인. */
+    @BookingDbOp("confirm")
     @PostMapping("/orders/{id}/payments/confirm")
     public ApiResponse<PaymentResponse> confirm(@PathVariable Long id,
                                                 @AuthenticationPrincipal Long userId,

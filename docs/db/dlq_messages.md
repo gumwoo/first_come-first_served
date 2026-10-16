@@ -1,9 +1,9 @@
 # Table · dlq_messages
 
 - 슬라이스: `S07` (Phase 4c)
-- 마이그레이션(단일 진실원): `V12__dlq_messages.sql`
+- 마이그레이션(단일 진실원): `V12__dlq_messages.sql`(생성), `V21__drop_dlq.sql`(삭제)
 - 도메인 규칙: Kafka DLQ, [[ADR-006]] 계열(비동기 이벤트 백본)
-- **상태(2026-10-15): 앱에서 사용 중단** — Kafka 제거([[ADR-028]]) 릴리스 N(P2b-2)에서 엔티티·화면·API를 지웠다. 테이블은 N-1 Pod가 롤링 중 아직 매핑하므로 남겨 두고, N+1(P4)에서 `DROP`한다(`docs/deployment/kafka-removal-design.md` §5.3). 아래는 당시 설계 기록이다.
+- **상태: 테이블 삭제됨(`V21__drop_dlq.sql` — Kafka 제거 P4 = N+1)**. 앱 사용은 릴리스 N(P2b-2, #412)에서 끝났다(엔티티·화면·API 제거). 롤링 중 N-1 Pod가 아직 매핑할 수 있어 N에서는 남겨 두었다(Expand-Contract — `docs/deployment/kafka-removal-design.md` §5.3). 이 문서는 V12의 `CREATE TABLE`이 남아 있어 하네스 백엔드 규칙 9가 요구하므로 유지한다. 아래는 당시 설계 기록이다.
 
 ## 목적
 컨슈머 재시도가 소진되어 Dead Letter Topic(`order-events.DLT`)으로 넘어온 실패 메시지를

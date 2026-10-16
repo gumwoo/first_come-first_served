@@ -22,8 +22,7 @@ public class AlertSettings {
     @Id
     private Long id;
 
-    // dlq_pending_threshold 컬럼은 매핑하지 않는다(Kafka 제거 — ADR-028). 컬럼은 N+1 릴리스에서 지운다(Expand-Contract):
-    // 롤링 중 구버전 Pod가 아직 매핑하고 있어 이 릴리스에서 지우면 기동이 깨진다(kafka-removal-design §5.3).
+    // 예전 dlq_pending_threshold 컬럼은 Kafka 제거(ADR-028)의 Contract 단계 V21에서 지웠다(kafka-removal-design §5.3).
 
     /** 아웃박스 격리(DEAD) 행 경고 임계치(V20). */
     @Column(name = "outbox_dead_threshold", nullable = false)

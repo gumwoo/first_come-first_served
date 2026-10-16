@@ -21,7 +21,7 @@
 | orders | S05 | [orders.md](orders.md) | 설계(V8) |
 | order_items | S05 | [order_items.md](order_items.md) | 설계(V8) |
 | payments | S05 | [payments.md](payments.md) | 설계(V9) |
-| dlq_messages | S07 | [dlq_messages.md](dlq_messages.md) | 앱 사용 중단([[ADR-028]], #412) — 테이블은 P4(V21)에서 DROP(V12__dlq_messages.sql) |
-| alert_settings | S07 | [alert_settings.md](alert_settings.md) | 구현(V13__alert_settings.sql) |
+| dlq_messages | S07 | [dlq_messages.md](dlq_messages.md) | 삭제됨(V21__drop_dlq.sql, #428 — [[ADR-028]]). 생성은 V12__dlq_messages.sql |
+| alert_settings | S07 | [alert_settings.md](alert_settings.md) | 구현(V13__alert_settings.sql, V20 컬럼 추가, V21 `dlq_pending_threshold` 삭제) |
 | outbox_events | S08 | [outbox_events.md](outbox_events.md) | 구현(V14__outbox_events.sql) |
 | refund_attempts | S06 | [refund_attempts.md](refund_attempts.md) | 구현(V19__refund_attempts.sql) |

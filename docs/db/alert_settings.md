@@ -1,19 +1,18 @@
 # Table · alert_settings
 
 - 슬라이스: `S07`
-- 마이그레이션(단일 진실원): `V13__alert_settings.sql`, `V20__alert_outbox_threshold.sql`(아웃박스 격리 임계치 추가)
+- 마이그레이션(단일 진실원): `V13__alert_settings.sql`, `V20__alert_outbox_threshold.sql`(아웃박스 격리 임계치 추가), `V21__drop_dlq.sql`(`dlq_pending_threshold` 삭제)
 - 도메인 규칙: 운영 알림 임계치
 
 ## 목적
 운영 알림 임계치를 담는 **단일 행(id=1)** 설정 테이블. 앱이 쓰는 임계치는 아웃박스 격리(DEAD) 하나(`outbox_dead_threshold`)다.
 현재 격리 수가 임계치 이상이면 응답의 `outboxBreached`가 true가 된다.
-`dlq_pending_threshold`는 Kafka 제거([[ADR-028]]) 릴리스 N부터 앱이 매핑하지 않는 컬럼이고, N+1(P4)에서 지운다(Expand-Contract — `docs/deployment/kafka-removal-design.md` §5.3).
+예전 `dlq_pending_threshold`는 Kafka 제거([[ADR-028]]) 릴리스 N(#412)부터 앱이 매핑하지 않았고, N+1(P4)의 V21에서 지웠다(Expand-Contract — `docs/deployment/kafka-removal-design.md` §5.3).
 
 ## 컬럼
 | 컬럼 | 타입 | NULL | 기본값 | 제약 | 설명 |
 |------|------|------|--------|------|------|
 | id | BIGINT | N | | PK | 단일 행 식별자(항상 1) |
-| dlq_pending_threshold | INTEGER | N | 1 | | DLQ 적체 경고 임계치 — Kafka 제거 릴리스 N(P2b-2)부터 앱이 매핑하지 않는다. N+1(P4)에서 삭제 |
 | outbox_dead_threshold | INTEGER | N | 1 | | 아웃박스 격리(DEAD) 경고 임계치(V20) |
 | updated_at | TIMESTAMP | N | now() | | 마지막 수정 시각 |
 

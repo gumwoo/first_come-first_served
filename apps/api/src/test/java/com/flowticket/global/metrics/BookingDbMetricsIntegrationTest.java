@@ -85,6 +85,11 @@ class BookingDbMetricsIntegrationTest extends IntegrationTestSupport {
         assertThat(held.count()).isPositive();
         assertThat(probe.get(BookingDbSessionListener.STATEMENTS).tag("op", "hold").summary().totalAmount())
                 .as("선점은 SQL을 최소 한 번 실행한다").isPositive();
+        // 부트 레지스트리에는 application.yml의 고정 버킷(slo)이 걸려야 한다. 정수 표기면 SQL 수 버킷이 조용히 빠진다(#432 G1).
+        assertThat(meterRegistry.get(BookingDbSessionListener.STATEMENTS).tag("op", "hold").summary()
+                .takeSnapshot().histogramCounts()).as("SQL 수 고정 버킷 11개").hasSize(11);
+        assertThat(meterRegistry.get(BookingDbSessionListener.HELD).tag("op", "hold").timer()
+                .takeSnapshot().histogramCounts()).as("점유 시간 고정 버킷 11개").hasSize(11);
     }
 
     @Test

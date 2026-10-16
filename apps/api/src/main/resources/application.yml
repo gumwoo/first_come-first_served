@@ -168,7 +168,9 @@ management:
         flowticket.booking.db.held: 1ms,2ms,5ms,10ms,20ms,50ms,100ms,200ms,500ms,1s,2s
         flowticket.booking.db.execute: 1ms,2ms,5ms,10ms,20ms,50ms,100ms,200ms,500ms,1s,2s
         # SQL 수. 왕복 수가 AZ 배치의 영향을 키우는지 보려는 값이라 작은 수 쪽 해상도가 중요하다.
-        flowticket.booking.db.statements: 1,2,3,4,5,6,8,10,13,16,20
+        # 소수점으로 적어야 한다: 정수 문자열("1")은 시간(1ms)으로 해석돼 DistributionSummary에서 버킷이 조용히 빠진다
+        # (부트 3.3 ServiceLevelObjectiveBoundary — #432 G1이 재현).
+        flowticket.booking.db.statements: 1.0,2.0,3.0,4.0,5.0,6.0,8.0,10.0,13.0,16.0,20.0
 
 # 외부 연동 / 시크릿은 환경변수로만 주입 (application-local.yml은 gitignore)
 # KOPIS OPEN API 이용 제한 (공식)

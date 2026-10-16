@@ -48,6 +48,16 @@ class BookingDbInterceptorTest {
         assertThat(BookingDbContext.current()).isNull();
     }
 
+    @Test
+    void 비동기로_넘어가면_처음_스레드의_값을_지운다() throws Exception {
+        HandlerMethod handler = new HandlerMethod(new Handlers(), "hold");
+        interceptor.preHandle(request, response, handler);
+
+        interceptor.afterConcurrentHandlingStarted(request, response, handler);
+
+        assertThat(BookingDbContext.current()).isNull();
+    }
+
     static class Handlers {
         @BookingDbOp("hold")
         public void hold() {

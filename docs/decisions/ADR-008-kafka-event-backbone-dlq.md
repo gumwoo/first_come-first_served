@@ -1,6 +1,6 @@
 # ADR-008 · Kafka 이벤트 백본 + DLQ — SSE 라스트홉 유지, AFTER_COMMIT 발행
 
-- 상태: Accepted
+- 상태: Accepted → **Kafka·DLQ 부분은 [[ADR-028]]로 대체됨**(Kafka 제거 #411·#412·#415). 본문은 당시 결정 기록으로 보존한다
 - 날짜: 2026-07-24
 - 슬라이스: S07(운영, Phase 4)
 - 관련: [[ADR-006]](주문 상태 전이), [[ADR-007]](관리자 인증), `docs/db/dlq_messages.md`

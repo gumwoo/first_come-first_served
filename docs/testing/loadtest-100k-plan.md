@@ -575,7 +575,7 @@ Pod 수에서 노드 수를 바로 계산하지 않는다. 레포에 이미 걸�
 | 제약 | 내용 | 근거 |
 |---|---|---|
 | **RDS 커넥션 상한** | `maxReplicas × maximum-pool-size + 앱 외 세션 + 여유 ≤ max_connections − reserved`. API `maxReplicas`는 노드뿐 아니라 **DB 커넥션으로도 묶여 있다** — Hikari pending이 병목이면 Pod를 늘리는 것이 오히려 악화시킨다 | `application.yml`, 하네스 `be-db-conn-ceiling`, [[TS-021]](HPA 확장이 RDS 커넥션을 소진한 사건) |
-| **클러스터 내 Kafka** | 브로커가 앱과 같은 노드 예산을 쓴다 | `k8s/kafka/kafka.yaml` |
+| **클러스터 내 Kafka**(제거됨 — [[ADR-028]]) | 제거 전에는 브로커가 앱과 같은 노드 예산을 썼다 | 옛 경로 `k8s/kafka/kafka.yaml`(#415에서 삭제) |
 | **롤링 surge · 시스템 Pod · 여유** | 배포 중 겹치는 Pod와 DaemonSet·모니터링 Pod를 포함해야 한다 | `web-hpa.yaml`의 기존 계산 방식 |
 | **AWS vCPU 쿼터** | 현재 32 vCPU — 2 vCPU 노드 기준 이론상 16대가 상한. 필요 노드가 넘으면 **쿼터 증설 요청이 선행 조건**이다 | `variables.tf`·`loadtest.tfvars` 주석 |
 

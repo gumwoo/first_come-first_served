@@ -68,7 +68,7 @@
 
 ## 10. 테스트
 - 핵심 비즈니스 단위 테스트 [R, T]
-- 통합 테스트 (Testcontainers: DB/Redis/Kafka) [T]
+- 통합 테스트 (Testcontainers: DB/Redis) [T]
 - 동시성·경합 시나리오 테스트 (선착순) [T]
 - 테스트 간 상태/순서 비의존 [R]
 - 커버리지 수치보다 의미 있는 케이스 [R]

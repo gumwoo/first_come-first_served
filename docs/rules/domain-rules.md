@@ -14,7 +14,7 @@
 | S04 | [domain/seat.md](domain/seat.md) | 재고/좌석/등급/HOLD |
 | S05 | [domain/order-payment.md](domain/order-payment.md) | 주문·결제 상태전이, 구매제한 |
 | S06 | [domain/refund.md](domain/refund.md) | 취소/환불 |
-| S07 | (예정) | 운영/DLQ/이벤트 상태전이 |
+| S07 | (예정) | 운영/아웃박스/이벤트 상태전이 |
 
 ---
 

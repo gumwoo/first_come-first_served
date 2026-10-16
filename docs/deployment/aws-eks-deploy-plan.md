@@ -1,5 +1,7 @@
 # 배포 계획 — AWS EKS(라이브 K8s) + Strimzi 멀티브로커 Kafka
 
+> **Kafka 제거 뒤 읽는 법**([[ADR-028]] — 앱 전환 #411·#412, 저장소 정리 #415): 이 문서의 Kafka·Strimzi·DLQ 서술은 **제거 전 기록**이다. 지금 주문 이벤트는 아웃박스 → 릴레이 → Redis Pub/Sub(`sse:order`) → SSE로 간다. 아래 "클러스터 재생성 절차"는 지금 `scripts/bring-up.sh` 기준으로 고쳤다.
+
 - 상태(2026-08-10): **Phase 1~7 완료 / Phase 8은 부분 완료.**
   - Phase 1·2 컨테이너화·ECR 파이프라인 — 완료
   - Phase 3 Terraform(EKS·RDS·ElastiCache·ALB) — 기동 중([[ADR-012]] Accepted)
@@ -178,15 +180,12 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 1. terraform apply (platform)                       # EKS·RDS·ElastiCache·NAT
 2. aws eks update-kubeconfig --name flowticket
 3. helm: aws-load-balancer-controller               # IRSA ARN·VPC ID 인자 필요
-   helm: strimzi (ns kafka)                          # Kafka 운영 삭제 뒤엔 SKIP_KAFKA=1로 생략(kafka-removal-design.md P3a)
    helm: kube-prometheus-stack (-f k8s/monitoring/...values.yaml)
    helm: argocd (-f k8s/argocd/values.yaml)
    # metrics-server 는 EKS Add-ons 로 terraform 이 만든다(TS-019)
 4. kubectl apply -f k8s/base/namespace.yaml         # ← 반드시 ESO보다 먼저(아래 ⚠️)
    bash k8s/external-secrets/bootstrap.sh           # ESO + 시크릿 동기화
-5. kubectl apply -k k8s/kafka                       # SKIP_KAFKA=1이면 생략
-   kubectl apply -k k8s/monitoring/kafka            # Kafka 모니터링(분리됨) — SKIP_KAFKA=1이면 생략
-   kubectl apply -k k8s/monitoring
+5. kubectl apply -k k8s/monitoring
    kubectl apply -f k8s/argocd/application.yaml
 6. Route53 A 레코드를 새 ALB로 갱신                   # 클러스터 재생성 시 ALB 이름이 바뀐다
 ```

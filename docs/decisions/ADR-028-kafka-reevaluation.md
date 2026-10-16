@@ -1,6 +1,6 @@
 # ADR-028 · Kafka 재평가 — 지금 제품 요구로는 과하다고 판단, 아웃박스 → Redis Pub/Sub으로 대체한다
 
-- 상태: **Accepted(2026-10-14 20:39 KST, 사용자 결정 — B. Kafka 제거)** — 구현 전. 제거 설계·의존성 목록·단계별 PR·게이트·롤백은 [kafka-removal-design.md](../deployment/kafka-removal-design.md)
+- 상태: **Accepted(2026-10-14 20:39 KST, 사용자 결정 — B. Kafka 제거)** — **구현 완료**(앱 전환 #411·#412, 저장소 정리 #415). 남은 것: P4(`dlq_messages`·`dlq_pending_threshold` DROP)·P5(문서 정리). 제거 설계·의존성 목록·단계별 PR·게이트·롤백은 [kafka-removal-design.md](../deployment/kafka-removal-design.md)
 - 날짜: 2026-10-14
 - 관련: [[ADR-008]](Kafka 이벤트 백본 + DLQ — 이 ADR이 재평가하는 결정), [[ADR-010]](트랜잭셔널 아웃박스), [[ADR-012]](3 AZ·멀티브로커),
   [[IMP-016]](브로커 1대 장애 실증), [[TS-023]](다중 Pod SSE 전달), `docs/deployment/portfolio-framing-and-decisions.md`(도입 의도),

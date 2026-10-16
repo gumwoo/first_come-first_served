@@ -16,7 +16,7 @@
 - [ ] 진행중 이벤트 목록(예매율/잔여)
 - [ ] 최근 이벤트/주문 리스트
 - [ ] 매출 추이 차트
-- [ ] 시스템 상태 요약(Redis/Kafka/API)
+- [ ] 시스템 상태 요약(Redis/API — Kafka는 [[ADR-028]]로 제거)
 
 ## 연결
 - 이벤트 → /admin/events/:id · 주문 → /admin/orders

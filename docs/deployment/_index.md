@@ -9,14 +9,14 @@
 ## 문서 9종 (상세)
 | 문서 | 내용 |
 |------|------|
-| [aws-eks-deploy-plan.md](aws-eks-deploy-plan.md) | EKS + Strimzi 멀티브로커 배포 단계(Phase 1~8)·역할분담·DoD |
+| [aws-eks-deploy-plan.md](aws-eks-deploy-plan.md) | EKS 배포 단계(Phase 1~8)·역할분담·DoD — Strimzi·Kafka 단계는 제거 전 기록([[ADR-028]]) |
 | [terraform-design.md](terraform-design.md) | **Phase 3 구현 설계** — state 분리·CIDR·노드그룹·리소스 예산표·apply/destroy 순서, **환경 분리 기각 근거(§10)** |
 | [zero-downtime-deployment.md](zero-downtime-deployment.md) | **무중단의 정의와 조건** — REST/SSE/DB를 나눠서. ALB readiness gate, Expand-Contract, 검증 시나리오·예측 |
-| [app-changes-for-k8s-kafka.md](app-changes-for-k8s-kafka.md) | 파티션↑·복제↑·probe·graceful shutdown·**멀티팟 대응(D 섹션)** 코드/설정 변경 |
+| [app-changes-for-k8s-kafka.md](app-changes-for-k8s-kafka.md) | 파티션↑·복제↑·probe·graceful shutdown·**멀티팟 대응(D 섹션)** 코드/설정 변경 — Kafka 항목은 제거 전 기록([[ADR-028]]) |
 | [portfolio-framing-and-decisions.md](portfolio-framing-and-decisions.md) | 납득 원칙·최종 스코프·**MSA 고려·기각**·면접 서사 |
 | [operating-requirements.md](operating-requirements.md) | **운영 요구사항(2026-10-14 결정 — G1(G2 후속)·평시 B 상시 + 사전 확장, 2+2 출발 후보·L1+L3·B 실측 임시 기준, 폭증 모델 미정)** — 가용성(노드·AZ 장애)·지연·부하 범위·RTO/RPO·평시/오픈 정책. 검증한 것과 안 한 것을 구분 |
-| [workload-responsibilities.md](workload-responsibilities.md) | **워크로드 역할과 장애 책임(분석)** — 같은 이미지의 api·대기열에서 도는 스케줄러·Kafka 리스너, 락·멱등, 역할이 사라질 때 멈추는 것과 인계 |
-| [kafka-removal-design.md](kafka-removal-design.md) | **Kafka 제거 설계(구현 전, [[ADR-028]])** — 전달 보장 변화(PUBLISHED = Redis 발행 호출 성공), 실패를 삼키지 않는 릴레이 발행, 아웃박스 유지 근거·직접 발행 비교, 프론트 이벤트 유실 보완, 영역별 의존성 목록, PR 순서·운영 게이트·롤백, 노드·EBS 계산 |
+| [workload-responsibilities.md](workload-responsibilities.md) | **워크로드 역할과 장애 책임(분석)** — 같은 이미지의 api·대기열에서 도는 스케줄러(Kafka 리스너는 [[ADR-028]]로 제거), 락·멱등, 역할이 사라질 때 멈추는 것과 인계 |
+| [kafka-removal-design.md](kafka-removal-design.md) | **Kafka 제거 설계([[ADR-028]] — P1~P3 머지 완료 #409~#415, 남은 것 P4 `DROP`·P5 문서)** — 전달 보장 변화(PUBLISHED = Redis 발행 호출 성공), 실패를 삼키지 않는 릴레이 발행, 아웃박스 유지 근거·직접 발행 비교, 프론트 이벤트 유실 보완, 영역별 의존성 목록, PR 순서·운영 게이트·롤백, 노드·EBS 계산 |
 | [resource-sizing-plan.md](resource-sizing-plan.md) | **자원 산정·측정 계획(측정 전 — 후보·계획만)** — Kafka 제거 뒤 B₁(새 기준선)·B′(대기열 풀·상한·requests·축소 정책·평시 2+2 후보)·가용성 G1 시험. DB 커넥션 예산(현재 B 55/56)·노드 자리·노드 장애 계산 제약, 기록할 지표, 세션 순서, 세션 전 사용자 결정(D1~D5) |
 
 ## 멀티팟 준비 체크리스트
@@ -30,17 +30,16 @@
 | ④ | **정확한 seat.hold.expired 알림** | sweep이 결제로 안 풀린 SOLD 좌석까지 알림(과알림 오탐) | **완료**(홀드별 조건부 전이) | TS-011 §7 |
 | ③ | **PG 승인 후 롤백 보상** | 실 PG 승인 뒤 DB 롤백 시 승인만 남음(미아 승인) | **완료**(finalizePaid void, edge는 outbox 후속) | TS-011 §7·§한계 |
 
-### ① SSE 팬아웃 — 왜 Redis pub/sub인가 (Kafka 아님)
+### ① SSE 팬아웃 — 왜 Redis pub/sub인가
 ```
-결제 → Kafka(order-events)          ← 내구성 백본·재시도·DLQ·리플레이
-        → consumer(한 Pod가 소비)
-             → Redis pub/sub publish → 모든 Pod subscribe
-                  → 각 Pod가 로컬 SSE Registry 확인 → 연결 가진 Pod가 브라우저 전송
+결제 트랜잭션 → outbox_events(PENDING)        ← 내구성은 DB 아웃박스(ADR-010)
+        → OutboxRelay(ShedLock — 한 Pod) → Redis pub/sub publish(sse:order) → 모든 Pod subscribe
+             → 각 Pod가 로컬 SSE Registry 확인 → 연결 가진 Pod가 브라우저 전송
 ```
-- **Kafka는 계속 쓴다**(내구성 이벤트 백본). Redis pub/sub은 그걸 대체하는 게 아니라 **Pod 간 팬아웃 단계 추가**.
-- **왜 Kafka로 팬아웃 안 하나**: consumer group은 이벤트를 그룹 내 **한 Pod에만** 전달 → 모든 Pod가 받게 하려면 Pod마다 다른 group = 임시 group 무한 생성·중복 소비. 과한 구조.
+- **Kafka 제거([[ADR-028]]) 뒤 구조다.** 이 항목을 만들 때(2026-08)는 결제 → Kafka(`order-events`) → 한 Pod가 소비 → Redis pub/sub 팬아웃이었고, Redis pub/sub은 Kafka를 대체하는 게 아니라 Pod 간 팬아웃 단계로 **추가**한 것이었다. 지금은 릴레이가 Redis로 바로 발행하고, 팬아웃 단계는 그대로다.
+- **왜 Kafka로 팬아웃하지 않았나(당시 판단)**: consumer group은 이벤트를 그룹 내 **한 Pod에만** 전달 → 모든 Pod가 받게 하려면 Pod마다 다른 group = 임시 group 무한 생성·중복 소비. 과한 구조.
 - **왜 Redis pub/sub인가**: 이미 Redis 사용(대기열·토큰·랭킹) → 새 컴포넌트 0. "구독한 모든 Pod에 fire-and-forget 팬아웃"에 용도 정확. **best-effort(미저장)** 성격이 "SSE는 보조·DB가 진실원(ADR-008)"과 일치. "반드시 한 번 이상 전달" 요구 생기면 그때만 Kafka 알림전용/Redis Streams 고려.
-- 비유: Kafka=공식 문서 전달 시스템 / Redis pub/sub=사무실 방송 / SSE=직원에게 직접 전달.
+- 비유: 아웃박스=공식 문서 보관함 / Redis pub/sub=사무실 방송 / SSE=직원에게 직접 전달.
 
 ### ③ 이 항목만 K8s와 무관 (정직)
 ①②는 "여러 Pod로 띄우니까" 생기지만, **③은 orchestrator가 아니라 "실 결제 게이트웨이"에 달렸다.** EKS에 올려도 `payment.gateway=mock`(또는 Toss 테스트키)이면 실제 돈이 없어 DB 롤백만으로도 사실상 무해하다. 다만 **실 PG를 전제로 보상 로직을 미리 배선**해 두면(승인 실패 경로에서 `gateway.refund`로 void), 나중에 `payment.gateway=toss`로 바꾸는 순간 코드 변경 없이 안전해진다 → 그래서 **선반영**(TS-011 §7). 남은 edge(승인 직후 크래시)는 **S08 아웃박스**로 닫는다(정합성 발행 축 완성).

@@ -1,5 +1,7 @@
 # Terraform 구현 설계 — 3AZ EKS 데모 인프라
 
+> **Kafka 제거 뒤 읽는 법**([[ADR-028]] — 앱 전환 #411·#412, 저장소 정리 #415): 이 문서의 Kafka·Strimzi·DLQ 서술은 **제거 전 기록**이다. 지금 주문 이벤트는 아웃박스 → 릴레이 → Redis Pub/Sub(`sse:order`) → SSE로 간다. 리소스 예산표·Kafka 배치 절의 브로커·Strimzi 행은 당시 예산이다. 애드온 표와 apply/destroy 순서는 지금 `scripts/bring-up.sh`·`tear-down.sh` 단계와 맞췄다 — 어긋나면 스크립트가 기준이다.
+
 > 본 문서는 [ADR-012](../decisions/ADR-012-3az-eks-infra-cost-control.md)에서 확정한 인프라 결정을
 > **Terraform 구현 구조로 구체화**한다. "왜 그렇게 정했는가"는 ADR-012에, "어떻게 만드는가"는 여기에 둔다.
 
@@ -188,9 +190,8 @@ ADR-012 §5 참조. **부하 측정 시 반드시 비버스터블로 바꾼 뒤 
 | **AWS Load Balancer Controller** | Helm(부트스트랩) + IRSA | Ingress → ALB |
 | **Cluster Autoscaler** | **Helm**(부트스트랩) + IRSA | 2026-08-26 도입·실증([[IMP-021]]). 차트 버전을 고정하고 **k8s 마이너와 대조해 어긋나면 기동 중단** |
 | ArgoCD | Helm(1회 부트스트랩) | 이후 **앱만** ArgoCD가 관리 — ADR-009 |
-| **Strimzi Operator** | **Helm**(부트스트랩) | ⚠️ ArgoCD가 아니다 — `bring-up.sh` 4단계 |
-| **kube-prometheus-stack** | **Helm**(부트스트랩) | ⚠️ 위와 같다 |
-| Kafka CR, 관측 리소스(ServiceMonitor·대시보드·PrometheusRule) | **kubectl/kustomize** | `k8s/kafka`·`k8s/monitoring/kafka`·`k8s/monitoring`, `bring-up.sh` 6단계(Kafka 둘은 `SKIP_KAFKA=1`이면 생략). **ArgoCD 추적 밖** |
+| **kube-prometheus-stack** | **Helm**(부트스트랩) | ⚠️ ArgoCD가 아니다 — `bring-up.sh` 4단계 |
+| 관측 리소스(ServiceMonitor·대시보드·PrometheusRule) | **kubectl/kustomize** | `k8s/monitoring`, `bring-up.sh` 6단계. **ArgoCD 추적 밖** |
 | 앱(api/web)·HPA·PDB·Ingress·ConfigMap | **ArgoCD** | `k8s/overlays/demo-local` → `k8s/base`가 전부다 |
 
 > 경계 규칙(ADR-009): **인프라 = Terraform / 앱 = ArgoCD.**
@@ -301,10 +302,8 @@ Kafka가 쓰는 EKS 기본 `gp2`의 실제 바인딩 모드는 **확인하지 �
 1. state-bootstrap   S3 버킷 (+ 필요 시 잠금 테이블)
 2. bootstrap         Route53 Zone data 참조 → ACM 요청 → DNS 검증 대기 → ECR·IAM
 3. platform          VPC → 엔드포인트 → EKS → 노드그룹 → 애드온 → RDS → ElastiCache
-4. 부트스트랩 Helm    LB Controller → Cluster Autoscaler → Strimzi Operator
-                     → kube-prometheus-stack → ArgoCD  (모두 차트 버전 고정)
-5. kubectl/kustomize Kafka CR(k8s/kafka) → Kafka 관측(k8s/monitoring/kafka) → 관측 리소스(k8s/monitoring) → ArgoCD Application
-                     (Strimzi·Kafka CR·Kafka 관측은 SKIP_KAFKA=1이면 생략 — kafka-removal-design.md P3a)
+4. 부트스트랩 Helm    LB Controller → Cluster Autoscaler → kube-prometheus-stack → ArgoCD  (모두 차트 버전 고정)
+5. kubectl/kustomize 관측 리소스(k8s/monitoring) → ArgoCD Application
 6. ArgoCD            k8s/overlays/demo-local → k8s/base — 앱(api/web)·HPA·PDB·Ingress만
 7. 검증              Ingress ALB 생성 확인 → HTTPS → /actuator/health/readiness
 8. ALB 알람          bash scripts/alb-alarms.sh apply   (demo-alarms — ALB가 생긴 뒤에만 가능, Slack 중계 Lambda 포함, ALARM_EMAIL=... 로 이메일 구독)
@@ -317,21 +316,24 @@ Kafka가 쓰는 EKS 기본 `gp2`의 실제 바인딩 모드는 **확인하지 �
 **순서를 지키지 않으면 리소스가 남아 계속 과금된다.**
 
 ```
-0. bash scripts/alb-alarms.sh destroy  # ALB 알람 스택. ArgoCD 앱 삭제보다도 먼저 — 앱 삭제가 Ingress·파드를 연쇄 삭제해
+# scripts/tear-down.sh 단계 표시(0a, 0/6~6/6)를 그대로 쓴다
+0a. bash scripts/alb-alarms.sh destroy # ALB 알람 스택. ArgoCD 앱 삭제보다도 먼저 — 앱 삭제가 Ingress·파드를 연쇄 삭제해
                                        #   대상 그룹이 비는 순간 '정상 대상 0'이 울린다
+0. ArgoCD Application 삭제            # 먼저 지우지 않으면 아래에서 지운 워크로드를 ArgoCD가 되살린다(selfHeal)
 1. kubectl delete ingress --all        # ALB 제거. 안 하면 VPC 삭제가 막힌다
                                        #   (ALB는 Terraform이 모르는 리소스)
-2. Kafka CR 삭제 → PVC 삭제 확인        # StatefulSet PVC는 자동 삭제되지 않는다
-3. 나머지 Kubernetes 리소스 삭제
-4. EBS 볼륨 잔여 확인 (콘솔/CLI)        # 남으면 GB-월 과금 지속
-5. terraform destroy (platform)
-6. 잔여 점검: ALB · NAT · Elastic IP · EBS · 스냅샷 · CloudWatch 알람(flowticket-alb-*) · SNS 토픽
+2. 볼륨 ID 채집 → PVC 삭제(Prometheus) # PVC는 자동 삭제되지 않는다
+3. 고아 EBS 볼륨 정리                  # 2에서 채집한 이 클러스터 소유 볼륨만. 남으면 GB-월 과금 지속
+4. terraform destroy (platform)
+5. terraform이 모르는 VPC 잔여 정리     # destroy가 실패했을 때만 — 고아 ENI·EKS 클러스터 SG 정리 후 재시도(TS-038)
+6. 잔여 점검(FlowTicket 소유분만): EC2(부하 발생기 포함) · NAT · Elastic IP · VPC · EBS(PVC 포함) · EKS · RDS · ElastiCache
+   · ALB·Target Group(k8s-*) · CloudWatch 알람(flowticket-alb-*) · SNS 토픽 · Lambda·로그 그룹(Slack 중계) · S3(발생기 결과)
 ```
 
 - **bootstrap은 destroy하지 않는다.**
 - RDS는 데모용이므로 `skip_final_snapshot = true` (스냅샷도 저장 비용이 붙는다).
-- 데이터 유실은 문제가 되지 않는다 — Flyway 마이그레이션, KOPIS 동기화, 좌석 자동 시딩,
-  Kafka 토픽 자동 생성이 모두 **기동 시 스스로 채워지는** 구조다.
+- 데이터 유실은 문제가 되지 않는다 — Flyway 마이그레이션, KOPIS 동기화, 좌석 자동 시딩이
+  모두 **기동 시 스스로 채워지는** 구조다.
 
 ## 7. 사전 점검표
 

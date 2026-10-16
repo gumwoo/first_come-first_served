@@ -37,7 +37,7 @@
 | operator | `/admin/orders` | 주문/예매 내역 |
 | operator | `/admin/events` | 이벤트 관리 |
 | operator | `/admin/events/:id` | 이벤트 상세 운영 |
-| operator | `/admin/dlq` | DLQ 재처리 센터 |
+| operator | `/admin/outbox` | 아웃박스(미발행·격리 재발행) — DLQ 화면 대체([[ADR-028]]) |
 | operator | `/admin/alerts` | 알림/임계치 설정 |
 | developer | `/dev/loadtest/new` | 부하테스트 시나리오 설정 |
 | developer | `/dev/loadtest/:id/running` | 실행 상태 |

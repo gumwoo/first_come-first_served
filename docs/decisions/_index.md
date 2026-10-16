@@ -12,9 +12,9 @@ IMP(개선 일지: 문제→측정→개선)와 구분 — ADR은 "무엇을·�
 | [ADR-005](ADR-005-payment-gateway-adapter.md) | 결제 게이트웨이 — 포트-어댑터(Mock/Toss 테스트) | Accepted |
 | [ADR-006](ADR-006-order-state-transition-atomicity.md) | 주문 상태 전이 원자화 — 조건부 UPDATE + 멱등키 | Accepted |
 | [ADR-007](ADR-007-admin-auth-bootstrap.md) | 관리자 인증 — /admin/** 단일 게이트 + env 부트스트랩 | Accepted |
-| [ADR-008](ADR-008-kafka-event-backbone-dlq.md) | Kafka 이벤트 백본 + DLQ — SSE 라스트홉, AFTER_COMMIT | Accepted |
+| [ADR-008](ADR-008-kafka-event-backbone-dlq.md) | Kafka 이벤트 백본 + DLQ — SSE 라스트홉, AFTER_COMMIT | Accepted → Kafka·DLQ 부분은 ADR-028로 대체 |
 | [ADR-009](ADR-009-gitops-cd-argocd.md) | GitOps CD — ArgoCD 채택(Terraform=인프라/ArgoCD=앱) | Accepted |
-| [ADR-010](ADR-010-transactional-outbox.md) | 트랜잭셔널 아웃박스(DB↔Kafka at-least-once 발행 + 소비자 멱등) + 정산 분리 | Accepted |
+| [ADR-010](ADR-010-transactional-outbox.md) | 트랜잭셔널 아웃박스(DB↔Kafka at-least-once 발행 + 소비자 멱등) + 정산 분리 | Accepted(발행 대상은 ADR-028로 Redis Pub/Sub) |
 | [ADR-011](ADR-011-payment-reconciliation.md) | 결제 정산·보상 — 외부 PG↔내부 주문 불일치(미아 승인 취소 + 미아 취소 수렴) | Accepted (구현 완료 / 실 PG 실증 미실시) |
 | [ADR-012](ADR-012-3az-eks-infra-cost-control.md) | 3AZ EKS 인프라 — 이중화 범위와 비용 통제(apply/destroy) | Accepted |
 | [ADR-013](ADR-013-iac-ownership-secrets-access.md) | IaC 소유 경계와 비밀·접근 통제 — data/import 기준, state에 비밀 금지, 열어 둔 곳 3개 | Proposed |
@@ -32,4 +32,4 @@ IMP(개선 일지: 문제→측정→개선)와 구분 — ADR은 "무엇을·�
 | [ADR-025](ADR-025-api-requests-hpa-policy.md) | api 요청 CPU를 진입 burst 실측 비용으로(0.826 ms/req × 1,111 req/s × 1.2 → 1100m, 계산), HPA 3~9 — api 하나가 노드 하나를 차지해 HPA 확장이 곧 CA 노드 확장이 된다. 오픈 순간은 Git 사전 확장(overlay `event-prescale.yaml` 하한 9 PR → 되돌림 PR, 하네스 규칙 11이 기한 검사), 오픈 뒤는 이 정책이 확장·축소. 대가: 평상시 노드 3 → 4 가능(web 자리, 계산), 롤링 surge·web 확장 때 CA 노드 추가, api 노드는 CA가 줄이지 못함(요청 57%) — drain 절차, 확장 시점이 늦어짐 | Accepted |
 | [ADR-026](ADR-026-peak-headroom-and-placement.md) | 피크에도 배포·복구할 여유와 배치 정책 분리 — 최대 확장(HPA 9·노드 9)에서는 surge 자리가 없어 롤아웃이 멈추고, "노드당 api 하나"가 requests 1100m의 부수 효과이며, web 선점 중 PDB는 최선 노력뿐이다. 노드 상한 +1·여유 노드 예약·노드당 하나 명시 규칙(requests 재산정)·워크로드별 노드그룹을 검증 후보로 두고(상한 +1 또는 피크 배포 절차 없이는 피크 배포 정지가 안 풀림) **지금은 바꾸지 않는다**(재측정 불가) | Proposed(미적용, 검증 계획) |
 | [ADR-027](ADR-027-queue-dedicated-deployment.md) | 대기열 전용 Deployment(같은 이미지) — 분리 1단계. Ingress는 그대로 두고 `flowticket-api-queue` Service의 대상만 바꿔 A'(api 파드)·B(대기열 전용 파드)를 overlay 한 줄로 전환. 파드 예산 9 유지(B: api 3 고정 + 대기열 2~6, DB 커넥션 55 ≤ 56). 서명 토큰·별도 서비스는 정원 보장과 충돌하거나 이익이 없어 하지 않음. 측정(IMP-033): 폭증 중 예매 p95 A' 1.6~2.6초 vs B 184~272ms, 사전 등록 "B 개선"(각 2회) — 대가는 대기열 p95·노드 비용. 기본값은 A' 유지, 대기열 쪽 개선 뒤 전환 결정 | Accepted(구조) · B 효과 측정됨 |
-| [ADR-028](ADR-028-kafka-reevaluation.md) | Kafka 재평가 — 지나가는 이벤트는 `order.paid` 하나(주 흐름은 이 알림에 의존 안 함), 마지막 구간(Redis Pub/Sub)은 비보존이라 지금 제품 요구로는 과하다고 판단. 원래 문제(유령 알림·감사)는 아웃박스가 해결. 아웃박스 → Redis Pub/Sub으로 대체 결정, 다시 도입할 조건 명시 | Accepted(구현 전) |
+| [ADR-028](ADR-028-kafka-reevaluation.md) | Kafka 재평가 — 지나가는 이벤트는 `order.paid` 하나(주 흐름은 이 알림에 의존 안 함), 마지막 구간(Redis Pub/Sub)은 비보존이라 지금 제품 요구로는 과하다고 판단. 원래 문제(유령 알림·감사)는 아웃박스가 해결. 아웃박스 → Redis Pub/Sub으로 대체 결정, 다시 도입할 조건 명시 | Accepted(구현 완료 — P4 DROP 남음) |

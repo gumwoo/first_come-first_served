@@ -1,5 +1,7 @@
 # 배포 계획 — AWS EKS(라이브 K8s) + Strimzi 멀티브로커 Kafka
 
+> **Kafka 제거 뒤 읽는 법**([[ADR-028]] — 앱 전환 #411·#412, 저장소 정리 #415): 이 문서의 Kafka·Strimzi·DLQ 서술은 **제거 전 기록**이다. 지금 주문 이벤트는 아웃박스 → 릴레이 → Redis Pub/Sub(`sse:order`) → SSE로 간다. 아래 "클러스터 재생성 절차"는 지금 `scripts/bring-up.sh` 단계(1/7~7/7)와 맞췄다 — 순서가 어긋나면 스크립트가 기준이다.
+
 - 상태(2026-08-10): **Phase 1~7 완료 / Phase 8은 부분 완료.**
   - Phase 1·2 컨테이너화·ECR 파이프라인 — 완료
   - Phase 3 Terraform(EKS·RDS·ElastiCache·ALB) — 기동 중([[ADR-012]] Accepted)
@@ -175,20 +177,18 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 순서를 기억에 의존해 진행했고, metrics-server가 빠진 것을 나중에 발견했다([[TS-019]] 재발).
 
 ```
-1. terraform apply (platform)                       # EKS·RDS·ElastiCache·NAT
-2. aws eks update-kubeconfig --name flowticket
-3. helm: aws-load-balancer-controller               # IRSA ARN·VPC ID 인자 필요
-   helm: strimzi (ns kafka)                          # Kafka 운영 삭제 뒤엔 SKIP_KAFKA=1로 생략(kafka-removal-design.md P3a)
+1. terraform apply (platform)                       # EKS·RDS·ElastiCache·NAT — 스크립트 밖(비용이 생기는 단계라 손으로)
+2. aws eks update-kubeconfig --name flowticket      # bring-up.sh 1/7 (2/7은 helm 저장소 등록)
+3. helm: aws-load-balancer-controller               # 3/7 — IRSA ARN·VPC ID 인자 필요
+   helm: cluster-autoscaler                         # 4/7 — 차트 appVersion ↔ k8s 마이너 대조, 어긋나면 중단
    helm: kube-prometheus-stack (-f k8s/monitoring/...values.yaml)
    helm: argocd (-f k8s/argocd/values.yaml)
    # metrics-server 는 EKS Add-ons 로 terraform 이 만든다(TS-019)
-4. kubectl apply -f k8s/base/namespace.yaml         # ← 반드시 ESO보다 먼저(아래 ⚠️)
+4. kubectl apply -f k8s/base/namespace.yaml         # 5/7 — 반드시 ESO보다 먼저(아래 ⚠️)
    bash k8s/external-secrets/bootstrap.sh           # ESO + 시크릿 동기화
-5. kubectl apply -k k8s/kafka                       # SKIP_KAFKA=1이면 생략
-   kubectl apply -k k8s/monitoring/kafka            # Kafka 모니터링(분리됨) — SKIP_KAFKA=1이면 생략
-   kubectl apply -k k8s/monitoring
-   kubectl apply -f k8s/argocd/application.yaml
-6. Route53 A 레코드를 새 ALB로 갱신                   # 클러스터 재생성 시 ALB 이름이 바뀐다
+5. kubectl apply -k k8s/monitoring                  # 6/7
+   kubectl apply -f k8s/argocd/application.yaml     # ArgoCD가 k8s/overlays/demo-local 동기화(Healthy까지 대기)
+6. Route53 A 레코드를 새 ALB로 갱신                   # 7/7 — 클러스터 재생성 시 ALB 이름이 바뀐다
 ```
 
 ⚠️ 4번이 3번보다 뒤인 이유: ESO는 CRD를 스스로 설치하므로 순서 의존이 없지만, api Pod가
@@ -196,7 +196,7 @@ GitHub Actions ─(빌드·하네스·테스트·이미지)→ ECR
 
 ⚠️ **네임스페이스를 4번 앞에 둔 이유 — 이게 없으면 절차대로 해도 반드시 실패한다.**
 `bootstrap.sh`의 마지막 단계가 `flowticket` 네임스페이스에 ExternalSecret을 만드는데,
-그 네임스페이스는 **5번(`kubectl apply -k k8s/overlays/...`)이 만든다.** 즉 4번 → 5번 순서
+그 네임스페이스는 **5번(ArgoCD가 `k8s/overlays/demo-local`을 동기화)이 만든다.** 즉 4번 → 5번 순서
 자체는 맞지만 네임스페이스 생성만 앞으로 빼야 한다. 2026-08-16 재기동에서 실제로 걸렸다:
 
 ```

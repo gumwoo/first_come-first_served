@@ -66,13 +66,13 @@ REST 기준. 인증은 `Authorization: Bearer <accessToken>`. 에러는 공통 �
 - `DELETE /seats/hold/:holdId` — 선점 해제
 - HOLD TTL 만료 → `HOLD_EXPIRED`
 
-## 주문·결제 (S05) — Kafka 주문 이벤트
+## 주문·결제 (S05) — 주문 이벤트(아웃박스 → Redis Pub/Sub → SSE)
 - `POST /orders` — holdId로 주문 생성 → `orderId`, 상태 `PENDING`
 - `POST /orders/:id/payments` — 결제수단(card/easy/vbank) 처리
   - 결제 상태머신: `PENDING → PAID | FAILED | EXPIRED`
   - 무통장: `VBANK_WAITING`(가상계좌+입금기한) → 입금확인 시 `PAID`
 - `GET /orders/:id` — 주문/결제 상태
-- 결제 성공 → 주문확정 이벤트를 Kafka 발행 → 티켓(QR) 발급
+- 결제 성공 → 같은 트랜잭션에 `order.paid` 아웃박스 행 기록 → 릴레이가 Redis 채널 `sse:order`로 발행 → SSE 전달([[ADR-028]]). 티켓(QR)은 이벤트가 만들지 않고 완료 화면이 그린다
 
 ## 마이 / 취소·환불 (S06)
 - `GET /me/orders?status=` — 예매 내역(탭: 전체/예정/사용완료/취소)
@@ -80,12 +80,13 @@ REST 기준. 인증은 `Authorization: Bearer <accessToken>`. 에러는 공통 �
 - `POST /me/orders/:id/refund` — 취소·환불(수수료 계산 후 환불예정액)
 
 ## 운영 (S07)
-- `GET /admin/dashboard` — 지표(매출/예매수/Consumer Lag 등)
+- `GET /admin/dashboard` — 지표(공연 수/결제 주문 수/매출/아웃박스 미발행·격리 수)
 - `GET /admin/orders?...` — 주문/예매 내역(필터·페이징)
 - `GET /admin/events` `POST /admin/events` `GET/PATCH /admin/events/:id`
-- `GET /admin/dlq` — DLQ 메시지 목록(payload 포함)
-- `POST /admin/dlq/:id/retry` — 재처리 / `POST /admin/dlq/:id/discard`
-- `GET/PUT /admin/alerts` — 임계치(Lag/응답시간/에러율) + 채널(슬랙/이메일/웹훅)
+- `GET /admin/outbox?status=` — 아웃박스 행 목록(필터·페이징)
+- `POST /admin/outbox/:id/requeue` — 재발행 대기로 되돌림 / `POST /admin/outbox/:id/discard` — 폐기
+  - DLQ API(`/admin/dlq`)는 Kafka 제거(#412)로 없앴다 — 실패는 소비자가 아니라 릴레이(아웃박스 행)에 남는다
+- `GET/PUT /admin/alerts` — 아웃박스 격리(DEAD) 임계치(`outboxDeadThreshold`) + 현재 격리 수([db/alert_settings.md](../db/alert_settings.md))
 
 ## 부하·모니터링 (S10)
 - `POST /dev/loadtest` — 시나리오로 k6 실행 트리거

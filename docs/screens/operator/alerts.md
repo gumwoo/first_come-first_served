@@ -5,7 +5,7 @@
 - slice: S07
 
 ## 목적
-운영 지표 임계치(Consumer Lag/응답시간/에러율 등)와 알림 채널 설정.
+운영 지표 임계치와 알림 채널 설정. 현재 구현된 임계치는 아웃박스 격리(DEAD) 하나(`outboxDeadThreshold` — [db/alert_settings.md](../../db/alert_settings.md)). 시안의 Consumer Lag 임계치는 Kafka와 함께 제거([[ADR-028]]).
 
 ## 사용 API
 - `GET /admin/alerts` / `PUT /admin/alerts`

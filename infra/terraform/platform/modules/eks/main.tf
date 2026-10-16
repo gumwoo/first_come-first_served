@@ -203,6 +203,23 @@ locals {
     "kube-proxy"     = null
     "metrics-server" = "v0.9.0-eksbuild.11"
   }
+
+  # coredns 2개를 노드 단위로 강제 분산한다. 애드온 기본값은 hostname podAntiAffinity "preferred"(선호)뿐이라
+  # (describe-addon-configuration, v1.13.2-eksbuild.51 — k8s 1.35 기본 버전) 2개가 한 노드에 놓일 수 있었고,
+  # 실제로 그렇게 놓였다(IMP-034 §8). 그 노드를 잃으면 클러스터 DNS가 함께 멈춘다(추론 — 시험 안 함).
+  # 노드 그룹은 AZ마다 최소 1대라(node_min_size) 노드 수 때문에 Pending이 되지는 않는다(계산). coredns가 없는 노드에
+  # CPU 자리가 없으면 CA 증설이나 선점(coredns 우선순위가 높다고 알려져 있다 — 추론, 클러스터에서 확인 안 함)으로 풀린다.
+  # 기본 affinity(선호 anti-affinity·OS/아키텍처 nodeAffinity)는 덮어쓰지 않고 그대로 둔다.
+  eks_addon_configuration = {
+    "coredns" = jsonencode({
+      topologySpreadConstraints = [{
+        maxSkew           = 1
+        topologyKey       = "kubernetes.io/hostname"
+        whenUnsatisfiable = "DoNotSchedule"
+        labelSelector     = { matchLabels = { "k8s-app" = "kube-dns" } }
+      }]
+    })
+  }
 }
 
 resource "aws_eks_addon" "this" {
@@ -211,6 +228,8 @@ resource "aws_eks_addon" "this" {
   cluster_name  = aws_eks_cluster.this.name
   addon_name    = each.key
   addon_version = each.value
+
+  configuration_values = lookup(local.eks_addon_configuration, each.key, null)
 
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"

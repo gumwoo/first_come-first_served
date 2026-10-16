@@ -231,6 +231,24 @@ for (const { doc, file } of docs) {
   );
 }
 
+// ---------- 12) HPA가 소유하는 Deployment는 분산 규칙을 가진다 — IMP-034 §8 ----------
+// 복제본을 여러 개 두는 이유(노드 하나를 잃어도 남는다)는 파드가 서로 다른 노드·AZ에 있을 때만 성립한다.
+// web에 분산 규칙이 없어 2개가 한 노드에 놓일 수 있었다(IMP-034 §8). 새 Deployment가 같은 구멍으로 들어오지 않게 막는다.
+// 규칙의 강도(DoNotSchedule/ScheduleAnyway, hostname/zone)는 보지 않는다 — Deployment마다 트레이드오프가 달라
+// (api·대기열은 requests 1100m라 노드당 하나만 들어간다 — ADR-025) 매니페스트 주석에 근거를 적는 것으로 둔다.
+for (const { doc, file } of docs) {
+  if (doc.kind !== "Deployment") continue;
+  if (!hpaTargets.has(doc.metadata?.name)) continue;
+  const pod = doc.spec?.template?.spec ?? {};
+  const spread = Array.isArray(pod.topologySpreadConstraints) && pod.topologySpreadConstraints.length > 0;
+  const anti = !!pod.affinity?.podAntiAffinity;
+  if (spread || anti) continue;
+  r.fail(
+    `분산 규칙이 없는 Deployment: ${path.relative(REPO_ROOT, file)} → ${doc.metadata.name}. ` +
+      `topologySpreadConstraints나 podAntiAffinity가 없으면 복제본이 한 노드에 몰려 그 노드 하나에 전멸할 수 있다(IMP-034 §8)`
+  );
+}
+
 // ---------- 10) actuator는 관리 포트에만 두고, probe는 메인 포트에 둔다(TS-041) ----------
 //
 // 8080(메인 포트)은 공개 경로(ALB → web → Next rewrite /api/:path*)로 인터넷에서 닿는다. 경로 규칙으로 /actuator를

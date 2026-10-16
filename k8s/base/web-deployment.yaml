@@ -20,6 +20,27 @@ spec:
       # preStop(25s) + Next.js 종료 시간보다 커야 SIGKILL이 앞지르지 않는다. 30이면
       # preStop 도중에 강제 종료돼 오히려 더 나빠진다.
       terminationGracePeriodSeconds: 60
+
+      # web 파드가 한 노드에 몰리면 그 노드 하나를 잃을 때 web이 전멸한다(사이트 중단 — IMP-034 §8. 시험은 안 함).
+      # 노드 단위는 DoNotSchedule로 강제한다: 다른 노드에 자리가 없으면 Pending → Cluster Autoscaler 증설로 푼다(노드 비용이 대가).
+      # ScheduleAnyway는 자리가 없으면 같은 노드에 놓아 위험이 그대로 남는다.
+      # api가 web을 선점해도(priorityClass) 밀려난 web은 이 규칙대로 다른 노드를 찾는다 — 자리가 날 때까지는 web 1개로 버틴다.
+      # PDB(minAvailable 1)는 선점을 최선 노력으로만 막는다(Kubernetes 동작). 선점 중 가용 유지는 세션에서 확인한다.
+      # zone은 선호(ScheduleAnyway)만 둔다 — AZ 단위 강제는 노드 그룹이 AZ별이라 증설 경로가 좁아져 Pending이 길어질 수 있다(추론).
+      # matchLabelKeys(pod-template-hash): 롤링 중에는 같은 리비전 파드끼리만 센다. 없으면 surge 파드가 "web이 하나도 없는 노드"를
+      # 요구해, 노드 그룹이 상한일 때 롤아웃이 Pending으로 멈출 수 있다(구 파드는 계속 서비스). 롤아웃이 끝나면 다시 노드당 1개다.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app: flowticket-web }
+          matchLabelKeys: [pod-template-hash]
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app: flowticket-web }
       containers:
         - name: web
           image: flowticket-web:REPLACE_TAG

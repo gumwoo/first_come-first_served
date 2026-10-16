@@ -54,6 +54,7 @@ const cases = [
   { name: "k8s-ingress-queue-no-rewrite", script: "k8s/check.mjs", expect: "api 직결 경로에 /api 제거 rewrite가 없다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-ingress-queue-no-rewrite" } },
   { name: "k8s-component-ingress-patch", script: "k8s/check.mjs", expect: "Ingress 패치가 허용 목록 밖이다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-component-ingress-patch" } },
   { name: "k8s-prescale-with-split", script: "k8s/check.mjs", expect: "대기열 분리를 켠 채 사전 확장을 켰다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-prescale-with-split" } },
+  { name: "k8s-deploy-no-spread", script: "k8s/check.mjs", expect: "분산 규칙이 없는 Deployment:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-deploy-no-spread" } },
   { name: "k8s-queue-no-tz", script: "k8s/check.mjs", expect: "API 컨테이너에 TZ가 고정돼 있지 않다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-queue-no-tz" } },
   { name: "k8s-queue-spec-drift", script: "k8s/check.mjs", expect: "대기열 전용 Deployment의 파드 사양이 api와 다르다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-queue-spec-drift" } },
   { name: "k8s-queue-allowed-plus-drift", script: "k8s/check.mjs", expect: "\"terminationGracePeriodSeconds\":60", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-queue-allowed-plus-drift" } },

@@ -1,0 +1,27 @@
+# 위반 fixture: HPA가 소유하는 Deployment에 분산 규칙(topologySpreadConstraints·podAntiAffinity)이 없다.
+# 복제본 2개가 한 노드에 놓이면 그 노드 하나를 잃을 때 전멸한다(IMP-034 §8).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-web
+  namespace: flowticket
+spec:
+  selector:
+    matchLabels: { app: demo-web }
+  template:
+    metadata:
+      labels: { app: demo-web }
+    spec:
+      containers:
+        - name: web
+          image: demo-web:REPLACE_TAG
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: demo-web
+  namespace: flowticket
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: demo-web }
+  minReplicas: 2
+  maxReplicas: 4

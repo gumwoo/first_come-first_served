@@ -4,7 +4,7 @@
 
 - **동시성 정합성** — 대기열·좌석·결제를 Redis Lua·조건부 `UPDATE`·멱등성 키로 원자화합니다.
 - **10만 명 / 10초 진입 검증** — AWS EKS에서 판정 3회(통합 구조), 운영 기본값인 대기열 분리 구조에서 1회 더, 서버가 실제로 받은 요청 기준으로 정원 초과·정합성 위반 0을 확인했습니다.
-- **자동 확장** — 부하에 따라 Pod(HPA)와 Node(Cluster Autoscaler)가 늘고 줄며, 공연 오픈 전 사전 확장은 Git으로 켜고 끕니다. 통합 구조의 10만 판정 run([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md))에서 노드 9 고정 대비 노드-시간을 11~13% 덜 썼습니다(실측 노드 곡선으로 계산).
+- **자동 확장** — 부하에 따라 Pod(HPA)와 Node(Cluster Autoscaler)가 늘고 줄며, 공연 오픈 전 사전 확장은 Git으로 켜고 끕니다. 통합 구조의 10만 판정 run([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md))에서 노드 9 고정 대비 노드-시간을 11~13% 덜 썼습니다(실측 노드 곡선으로 계산 — [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md)).
 - **GitOps 배포 · 장애 주입** — Terraform(인프라)과 Argo CD(앱)로 소유를 나눠 EKS에 올리고, 배포·노드·DB·캐시에 실제로 장애를 넣어 거동을 측정합니다.
 
 ## 왜 만들었나
@@ -25,10 +25,10 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 |---|---|---|
 | 대기열 진입 10만 명 / 10초 + 자동 확장 | 판정 3회 모두 진입 요청 100,000건 정상 처리, 정원 초과·정합성 위반 0. 같은 실행에서 폴링이 몰리자 Pod 3→9·Node 6→9로 확장했다가 다시 축소 | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) |
 | 대기열 분리 구조(운영 기본값)의 10만 명 / 10초 | 오픈 전 Git PR로 대기열 Pod 2→6, 진입 요청 100,000건 전부 정상 처리(진입 p95 46ms·대기 상태 조회 p95 8ms, 서버 처리 시간), 정원 초과·정합성 위반 0(판정 도구는 판정 구간 뒤 조회 오류로 '판정 불가'를 냈고, 원인 확인 뒤 충족으로 해석 — IMP-035 §5). 오픈 뒤 Git PR로 HPA에 넘기고 대기열 6→2·Node 9→7 축소까지 기록 — 판정 1회 관측, 폴링 폭증·예매는 함께 돌리지 않음 | [IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md) |
-| 자동 확장 비용 효과 | 같은 판정 run의 실측 노드 곡선을 시간으로 적분해, 노드 9 고정 대비 노드-시간 11~13% 절감(계산). 오픈 1회·평시 4대를 가정한 하루 환산 약 54%(m6i.large 서울 $0.118/h 기준 하루 약 $13.7). 남은 초과의 절반 이상이 폭증 뒤 CA 축소 대기(약 11분)임을 확인 | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) |
+| 자동 확장 비용 효과 | 통합 구조 판정 run(IMP-031)의 실측 노드 곡선을 시간으로 적분해, 노드 9 고정 대비 노드-시간 11~13% 절감(계산). 오픈 1회·평시 4대를 가정한 하루 환산 약 54%(m6i.large 서울 $0.118/h 기준 하루 약 $13.7). 남은 초과의 절반 이상이 폭증 뒤 CA 축소 대기(약 11분)임을 확인 | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) |
 | 대기열 분리 비교 (같은 Pod 예산 9) | 폴링 폭증(7,000/s) 중 예매 p95: 통합 구조 1.6~2.6초 vs 대기열 전용 Deployment 184~272ms(각 2회, 오류·정합성 위반 0). 사전 등록 판정 "분리 쪽 개선"(운영 관점, 각 2회 — 분리만의 효과는 떼어 내지 않음). 대가로 대기열 상태 조회 p95 13~18 → 259~523ms, 노드 비용 +15~28%(계산) — 비용을 감수하고 분리 구조를 운영 기본값으로 채택(분리 구조의 10만 진입은 IMP-035에서 판정 1회 충족) | [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) · [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md) |
 | 입장자 동시 예매 | 입장자 100명이 동시에 좌석 선점·주문·결제(경합·더블클릭·결제 실패 후 재시도·1인 한도 포함), 판정 3회 정합성 위반 0 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) |
-| 무중단 배포 | 롤링 배포 중 5xx → 0 (`preStop` 25s) | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md) |
+| 무중단 배포 | 롤링 배포 중 5xx → 0 (web `preStop` 25s — web 경유 경로에서 측정. ALB가 바로 보내는 대기열 경로의 롤링 무중단은 아직 재지 않음) | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md) |
 | 장애 주입 | RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구, 노드 오토스케일로 Pending 파드 수용 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |
 | 대기열 토큰 정합성 보강 | 토큰 소유권(남의 입장 토큰으로 선점·이탈 차단), 재발급·이탈 경합(1인 1토큰), 대기 토큰 수명(폴링 연장·만료 토큰 승격 차단)을 통합 테스트로 검증 | [TS-043](docs/troubleshooting/TS-043-queue-token-ownership.md) · [TS-044](docs/troubleshooting/TS-044-queue-takeover-leave-race.md) · [TS-045](docs/troubleshooting/TS-045-queue-token-lifecycle.md) |
 
@@ -78,7 +78,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 
 - 로컬 개발은 Docker Compose로 PostgreSQL·Redis를 띄우고, 통합 환경(`infra/docker-compose.prod.yml`)은 여기에 API·web을 더합니다.
 - 클러스터 구성은 Kubernetes manifests와 Terraform을 사용하며, API는 health probe, graceful shutdown(`preStop`), HPA(분리 구조: api 3 고정·대기열 2~6) + Cluster Autoscaler, PDB 설정을 가지고, web은 사전 확장 때 API에 자리를 내주도록 낮은 PriorityClass를 둡니다.
-- 대기열 진입·상태 조회는 ALB가 Next.js를 거치지 않고 대기열 전용 Pod(api와 같은 이미지, 별도 Deployment)로 바로 보냅니다([ADR-024](docs/decisions/ADR-024-queue-path-next-hop-bypass.md) · [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md)). 예매하기 → 대기열 화면 이동도 web 서버 렌더 없이 정적 경로로 처리합니다([TS-053](docs/troubleshooting/TS-053-queue-nav-still-through-web.md)). 오픈 순간 공연 페이지의 재조회(창 포커스·새로고침)는 아직 web을 거치고, 10만 시험 범위 밖입니다.
+- 대기열 진입·상태 조회는 ALB가 Next.js를 거치지 않고 대기열 전용 Pod(api와 같은 이미지, 별도 Deployment)로 바로 보냅니다([ADR-024](docs/decisions/ADR-024-queue-path-next-hop-bypass.md) · [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md)). 예매하기 → 대기열 화면 이동도 web 서버 렌더 없이 정적 경로로 처리합니다(로컬·CI 검증, [TS-053](docs/troubleshooting/TS-053-queue-nav-still-through-web.md)). 오픈 순간 공연 페이지의 재조회(창 포커스·새로고침)는 아직 web을 거치고, 10만 시험 범위 밖입니다.
 - 비용 때문에 클러스터는 시험 기간에만 올리고 평소에는 내려 둡니다. Terraform과 Argo CD로 다시 올릴 수 있습니다.
 - 비밀값은 환경변수와 External Secrets 경로로 주입하며 코드에 저장하지 않습니다.
 - 배포·운영 문서는 [docs/deployment](docs/deployment/_index.md)와 [infra](infra)에서 관리합니다.

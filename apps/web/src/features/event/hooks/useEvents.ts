@@ -27,11 +27,12 @@ export function useEvents(
   });
 }
 
-export function useEvent(id: number) {
+export function useEvent(id: number, options: { staleTime?: number } = {}) {
   return useQuery({
     queryKey: eventKeys.detail(id),
     queryFn: () => eventApi.getEvent(id),
     enabled: Number.isFinite(id),
+    staleTime: options.staleTime,
   });
 }
 

@@ -21,7 +21,7 @@
    m6i.large(allocatable 1,930m)에 api가 하나만 들어가(2 × 1,100 > 1,930) **api 확장이 곧 노드 확장**이 된다. memory(1536Mi)·limits는 그대로.
 2. **HPA api 3~9, CPU 60%**(목표 파드 평균 660m — HPA 기본 허용 오차 0.1이라 실제 확장은 평균 약 726m를 넘을 때부터(계산), behavior 그대로 — 확장 즉시, 축소 안정화 300초). 9는 10,000/s 진입의 계산 용량(api 9·노드 9)이고
    측정 프로파일의 노드 그룹 상한(AZ당 3, `loadtest.tfvars`)과 같다. web HPA(2~4)는 그대로.
-3. **오픈 순간은 Git으로 사전 확장한다** — `k8s/overlays/demo-local/event-prescale.yaml`(HPA 하한 패치, 평소 3 = 효과 없음)을 오픈 전에 9로 올리는
+3. **오픈 순간은 Git으로 사전 확장한다**(2026-10-17 갱신: B가 운영 기본값이 되어 대상은 대기열 HPA — 하한 2 → 6, [[ADR-027]]. 아래는 A'(api HPA) 기준 원문) — `k8s/overlays/demo-local/event-prescale.yaml`(HPA 하한 패치, 평소 3 = 효과 없음)을 오픈 전에 9로 올리는
    PR을 머지하면 ArgoCD가 하한을 맞추고, 늘어난 api가 Pending → CA가 노드를 붙인다(노드 그룹 설정은 건드리지 않는다). 오픈이 지나면 3으로 되돌리는 PR을
    머지해 이후는 HPA 정책(3~9)에 맡긴다. 켤 때는 `# event:`·`# off-by:`(되돌릴 시각)를 적는다.
    하네스 k8s 규칙 11이 하한 범위(base 3~9)·표기·namespace·kustomization 참조·off-by 경과를 검사한다. 단 k8s 하네스는 CI backend job에서만 돌고 그 job은

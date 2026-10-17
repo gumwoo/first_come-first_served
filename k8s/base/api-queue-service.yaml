@@ -1,4 +1,4 @@
-# 대기열 두 경로(진입·상태, ADR-024)의 Ingress 대상. 기본(A')은 api 파드를 그대로 가리킨다 — 지금과 동작이 같다.
+# 대기열 두 경로(진입·상태, ADR-024)의 Ingress 대상. base(A' — 통합)는 api 파드를 그대로 가리킨다. 운영 overlay는 queue-split을 켜서(B — 운영 기본값, ADR-027) 대기열 전용 파드를 가리킨다.
 # components/queue-split을 켜면(B) 이 Service가 대기열 전용 Deployment를 가리킨다. Ingress는 바꾸지 않는다(하네스 규칙 2-b, ADR-027).
 # 메트릭 수집 라벨(flowticket.io/metrics)은 B에서만 붙는다 — A'에서 붙이면 같은 api 파드를 두 Service로 두 번 수집한다.
 apiVersion: v1

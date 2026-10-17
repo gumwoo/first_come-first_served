@@ -19,7 +19,7 @@
 | web | requests 300m / 256Mi, HPA 2~4, PDB minAvailable 1, 낮은 우선순위 | `k8s/base/web-*.yaml` |
 | Hikari 풀 | 파드당 5(`DB_POOL_MAX` 기본값). 대기열 Deployment는 따로 덮어쓰지 않는다 | `application.yml:20`, `queue-deployment.yaml` |
 | DB 커넥션 예산 | db.t4g.micro `max_connections` 79(2026-08-10 pg_settings 실측) − reserved 3 − 앱 외 여유 20 = **56** | 하네스 backend 규칙 17(`harness/backend/check.mjs`) |
-| 사전 확장 | `event-prescale.yaml`이 api HPA 하한을 올린다(평소 3). B와 같이 켜면 api 하한 9 > 상한 3이 되어 하네스 k8s 규칙 11이 막는다 — **B용 사전 확장은 없다** | [[ADR-025]], [operating-requirements.md](operating-requirements.md) §5 |
+| 사전 확장 | (2026-10-17 갱신) B가 운영 기본값이 되어 `event-prescale.yaml`이 대기열 HPA 하한을 올린다(평소 2, 오픈 전 6). 이전(작성 당시)에는 api HPA 대상이라 B용 사전 확장이 없었다 | [[ADR-025]], [operating-requirements.md](operating-requirements.md) §5 |
 | 노드별 flowticket 밖 CPU 요청 | A' 평시 410·600·750m(세션 20261007-e2e, 레포 밖 실측 — Kafka 네임스페이스 몫이 들어 있었을 것으로 본다, 추론) | [[ADR-025]] 계산 근거 |
 | Kafka 제거 뒤 노드별 flowticket 밖 요청 | **미확인** — 세션 기동 직후(Kafka 없이 — §5 2단계) 노드별 requests에서 처음 잰다 | [kafka-removal-design.md](kafka-removal-design.md) §6 "세션 방식 변경" |
 | B₀ 실측(Kafka 있음) | 시작 노드 6·5, 예매 p95 ②(폭증 중) hold 256·272ms·주문 260·211ms·결제 224·184ms, 폭증 상태 조회 p95 259·523ms, 대기열 HPA 상한 6 도달, 노드-시간 3.17·3.45(계산) | [[IMP-033]] v2(B 2회 관측) |

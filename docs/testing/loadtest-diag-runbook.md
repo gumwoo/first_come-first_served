@@ -41,7 +41,7 @@
 
 | 동작 | 방법 |
 |---|---|
-| 사전 확장(오픈 최소 15분 전) | `k8s/overlays/demo-local/event-prescale.yaml`의 `minReplicas`를 9로, `# event:`·`# off-by:`를 채운 PR을 머지 → ArgoCD 동기화(자동 — 위 0에서 자동 동기화를 꺼 뒀다면 수동 동기화) → api Pending → CA가 노드 추가 |
+| 사전 확장(오픈 최소 15분 전) | `k8s/overlays/demo-local/event-prescale.yaml`(대기열 HPA — B 기본값)의 `minReplicas`를 6으로, `# event:`·`# off-by:`를 채운 PR을 머지 → ArgoCD 동기화(자동 — 위 0에서 자동 동기화를 꺼 뒀다면 수동 동기화) → 대기열 Pending → CA가 노드 추가. A'로 돌린 overlay에서는 대상이 api HPA이고 9로 올린다 |
 | 정책에 넘기기(오픈 뒤) | 같은 파일을 3으로, `event`·`off-by`를 `-`로 되돌리는 PR을 머지 → 이후 HPA(3~9)·CA가 지속 부하를 따라 늘고 준다 |
 
 - kubectl로 HPA를 patch하지 않는다(selfHeal이 되돌리고 기록이 남지 않는다). 노드 그룹 설정도 바꾸지 않는다 — Pending을 CA가 해소한다.

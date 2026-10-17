@@ -12,6 +12,12 @@ const nextConfig = {
   // Dockerfile이 NEXT_OUTPUT_STANDALONE=true로 켠다.
   output: process.env.NEXT_OUTPUT_STANDALONE === "true" ? "standalone" : undefined,
   reactStrictMode: true,
+  experimental: {
+    // 처음 요청된 경로를 정적으로 만들어 캐시하는 페이지(대기열 화면 — events/[id]/queue)의 결과를 디스크에 쓰지 않는다.
+    // 기본(true)은 id마다 .next/server/app/...에 파일(약 18KB)을 남기고 지우지 않아, 아무 id로나 요청하면 파드 디스크가
+    // 끝없이 는다(#436 G1이 로컬에서 확인). 끄면 상한이 있는 메모리 캐시(cacheMaxMemorySize 기본 50MB, LRU)만 쓴다.
+    isrFlushToDisk: false,
+  },
   async rewrites() {
     return [
       // 프론트는 외부(KOPIS) 직접호출 금지: 항상 우리 BE 경유

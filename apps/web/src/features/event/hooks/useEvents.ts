@@ -27,11 +27,13 @@ export function useEvents(
   });
 }
 
-export function useEvent(id: number) {
+export function useEvent(id: number, options: { staleTime?: number } = {}) {
   return useQuery({
     queryKey: eventKeys.detail(id),
     queryFn: () => eventApi.getEvent(id),
     enabled: Number.isFinite(id),
+    // 값이 있을 때만 넘긴다 — undefined를 넘기면 나중에 QueryClient 기본값(defaultOptions)을 덮어쓴다.
+    ...(options.staleTime !== undefined && { staleTime: options.staleTime }),
   });
 }
 

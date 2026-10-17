@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Heart, CalendarClock } from "lucide-react";
 import { useEvent } from "@/features/event/hooks/useEvents";
@@ -14,6 +14,16 @@ export default function EventDetailPage() {
   const router = useRouter();
   const { data: event, isLoading, isError } = useEvent(id);
   const [tab, setTab] = useState<(typeof TABS)[number]>("공연정보");
+
+  // 대기열 화면을 미리 받아 둔다. 오픈 순간 "예매하기"를 누르면 화면 이동에 필요한 데이터(RSC)를 web에 요청하는데,
+  // 10만 명이 10초에 누르면 그 요청이 web으로 몰린다(진입 API만 web을 건너뛴다 — ADR-024). 공연 페이지를 연 시점에
+  // 받아 두면 그 요청이 오픈 전으로 흩어진다. 대기열 화면은 정적 경로라(queue/page.tsx) 서버 렌더도 없다.
+  // 받아 둔 데이터는 Next 기본값으로 5분 유효하다(FULL prefetch — staleTimes.static). 오픈 때 공연 상태가 바뀌어(재조회)
+  // 버튼이 켜지면 다시 받아 둔다. 그래도 5분 넘게 머물렀다면 이동할 때 정적 데이터를 한 번 더 받는다(서버 렌더 없음).
+  const status = event?.status;
+  useEffect(() => {
+    if (Number.isFinite(id)) router.prefetch(`/events/${id}/queue`);
+  }, [router, id, status]);
 
   if (isLoading) return <main className="mx-auto max-w-5xl p-8 text-muted-foreground">불러오는 중…</main>;
   if (isError || !event) return <main className="mx-auto max-w-5xl p-8 text-destructive">공연을 찾을 수 없습니다.</main>;

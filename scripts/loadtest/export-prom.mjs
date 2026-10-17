@@ -68,6 +68,13 @@ export const QUERIES = {
   http_p95_by_uri: "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket[1m])))",
   http_rps_by_uri: "sum by (uri) (rate(http_server_requests_seconds_count[1m]))",
   http_5xx_rate: "sum(rate(http_server_requests_seconds_count{status=~\"5..\"}[1m]))",
+  // 파드별 요청 분배 — 예매 경로는 web(Next.js rewrite) → api Service로 가서, 연결을 재사용하면 kube-proxy가 연결 단위로
+  // 파드를 고르므로 요청이 일부 파드에 쏠릴 수 있다(추론, 미측정). 대기열 두 경로는 ALB가 파드 IP로 직접 보낸다(target-type ip).
+  // app_pod_nodes(파드 → 노드 → AZ)·booking_db_*_by_pod와 함께 보면 "쏠림"과 "RDS 주 AZ와의 거리"를 가를 수 있다.
+  http_rps_by_pod_uri: "sum by (pod, uri) (rate(http_server_requests_seconds_count[1m]))",
+  booking_http_p95_by_pod:
+    "histogram_quantile(0.95, sum by (le, pod, uri) (rate(http_server_requests_seconds_bucket" +
+    "{uri=~\"/events/\\\\{id\\\\}/seats/hold|/seats/hold/\\\\{holdId\\\\}|/orders|/orders/\\\\{id\\\\}/payments(/confirm)?\"}[1m])))",
   // 진단 신호(§3.2)
   hikari_pending: "max by (pod) (hikaricp_connections_pending)",
   // 풀 크기 재산정 근거(운영 요구사항 §4 — api·대기열의 active·idle·total, 자원 산정 계획 §4). pending만으로는 "얼마나 남았나"를 모른다.

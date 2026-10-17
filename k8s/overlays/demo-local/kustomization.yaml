@@ -13,9 +13,10 @@ namespace: flowticket
 resources:
   - ../../base
 
-# 대기열 분리(B, ADR-027) — 아래 두 줄의 주석을 풀면 켜지고, 다시 주석 처리하면 A'(지금 구조)다. 켤 때는 사전 확장이 꺼져 있어야 한다.
-# components:
-#   - ../../components/queue-split
+# 대기열 분리(B, ADR-027) — 운영 기본값(operating-requirements §5 "B 상시"). 아래 두 줄을 주석 처리하면 A'(통합)로 돌아간다.
+# A'로 돌릴 때는 사전 확장(event-prescale.yaml)의 대상을 api HPA(flowticket-api)로, 평소 하한을 3으로 바꿔야 한다(하네스 k8s 규칙 11이 막는다).
+components:
+  - ../../components/queue-split
 
 # ── 이미지: base의 placeholder를 실제 레지스트리·태그로 ──────────────
 images:
@@ -30,7 +31,7 @@ images:
 # DB_HOST에는 포트를 붙이지 않는다. 모듈이 aws_db_instance.address(호스트만)를 반환하고
 # DB_PORT는 따로 있다. host:5432를 넣으면 주소가 host:5432:5432가 된다.
 patches:
-  # 공연 오픈 사전 확장(ADR-025) — HPA 하한. 평소 3(효과 없음). 켜고 끄는 법은 파일 머리말.
+  # 공연 오픈 사전 확장(ADR-025) — 대기열 HPA 하한(B). 평소 2(효과 없음). 켜고 끄는 법은 파일 머리말.
   - path: event-prescale.yaml
   - target: { kind: ConfigMap, name: flowticket-api-config }
     patch: |

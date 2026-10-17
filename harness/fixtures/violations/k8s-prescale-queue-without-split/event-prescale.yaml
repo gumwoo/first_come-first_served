@@ -1,0 +1,11 @@
+# 위반 fixture: 대기열 분리(queue-split)를 켜지 않은 overlay에서 대기열 HPA를 사전 확장한다.
+# 대기열 HPA는 분리를 켜야 생기므로 kustomize가 패치 대상을 못 찾아 빌드가 실패한다(ArgoCD 동기화 중단).
+# event: 1
+# off-by: 2099-01-01T00:00:00Z
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flowticket-api-queue
+  namespace: flowticket
+spec:
+  minReplicas: 6

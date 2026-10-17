@@ -1,0 +1,9 @@
+# 위반 fixture: queue-split을 켜지 않은 overlay(주석 처리된 줄은 꺼진 상태다).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+# components:
+#   - ../../components/queue-split
+patches:
+  - path: event-prescale.yaml

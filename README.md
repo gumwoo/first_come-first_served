@@ -25,7 +25,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 |---|---|---|
 | 대기열 진입 10만 명 / 10초 + 자동 확장 | 판정 3회 모두 진입 요청 100,000건 정상 처리, 정원 초과·정합성 위반 0. 같은 실행에서 폴링이 몰리자 Pod 3→9·Node 6→9로 확장했다가 다시 축소 | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) |
 | 자동 확장 비용 효과 | 같은 판정 run의 실측 노드 곡선을 시간으로 적분해, 노드 9 고정 대비 노드-시간 11~13% 절감(계산). 오픈 1회·평시 4대를 가정한 하루 환산 약 54%(m6i.large 서울 $0.118/h 기준 하루 약 $13.7). 남은 초과의 절반 이상이 폭증 뒤 CA 축소 대기(약 11분)임을 확인 | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) |
-| 대기열 분리 비교 (같은 Pod 예산 9) | 폴링 폭증(7,000/s) 중 예매 p95: 통합 구조 1.6~2.6초 vs 대기열 전용 Deployment 184~272ms(각 2회, 오류·정합성 위반 0). 사전 등록 판정 "분리 쪽 개선"(운영 관점, 각 2회 — 분리만의 효과는 떼어 내지 않음). 대가로 대기열 상태 조회 p95 13~18 → 259~523ms, 노드 비용 +15~28%(계산) — 운영 기본값은 통합 유지, 대기열 쪽 개선 뒤 전환 결정 | [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) · [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md) |
+| 대기열 분리 비교 (같은 Pod 예산 9) | 폴링 폭증(7,000/s) 중 예매 p95: 통합 구조 1.6~2.6초 vs 대기열 전용 Deployment 184~272ms(각 2회, 오류·정합성 위반 0). 사전 등록 판정 "분리 쪽 개선"(운영 관점, 각 2회 — 분리만의 효과는 떼어 내지 않음). 대가로 대기열 상태 조회 p95 13~18 → 259~523ms, 노드 비용 +15~28%(계산) — 비용을 감수하고 분리 구조를 운영 기본값으로 채택(분리 구조의 10만 진입은 재측정 예정) | [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) · [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md) |
 | 입장자 동시 예매 | 입장자 100명이 동시에 좌석 선점·주문·결제(경합·더블클릭·결제 실패 후 재시도·1인 한도 포함), 판정 3회 정합성 위반 0 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) |
 | 무중단 배포 | 롤링 배포 중 5xx → 0 (`preStop` 25s) | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md) |
 | 장애 주입 | RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구, 노드 오토스케일로 Pending 파드 수용 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |
@@ -48,7 +48,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 - **결제 상태 전이**: 주문·결제·좌석·hold 상태를 명시적으로 전이하고 멱등성 키를 사용합니다.
 - **이벤트 전달**: 비즈니스 트랜잭션과 Outbox 기록을 함께 저장하고, 릴레이가 Redis Pub/Sub(`sse:order`)으로 발행해 SSE로 전달합니다. 별도 브로커(Kafka)는 두지 않습니다([ADR-028](docs/decisions/ADR-028-kafka-reevaluation.md)).
 - **실시간 반영**: 대기열은 서버가 다음 조회 시점(`retryAfterMs`)을 정하는 폴링으로, 좌석·주문 상태는 SSE와 재조회 보정으로 사용자 화면에 반영합니다.
-- **용량과 확장**: api의 CPU 요청량을 실측한 요청당 처리 비용으로 정하고(1100m), HPA 3~9와 Cluster Autoscaler로 Pod·Node를 늘리고 줄입니다. 공연 오픈 전 사전 확장은 Git PR로 켜고 끕니다([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md)).
+- **용량과 확장**: api의 CPU 요청량을 실측한 요청당 처리 비용으로 정하고(1100m), HPA와 Cluster Autoscaler로 Pod·Node를 늘리고 줄입니다(운영 기본값인 분리 구조에서는 api 3 고정 + 대기열 2~6). 공연 오픈 전 사전 확장(대기열 2 → 6)은 Git PR로 켜고 끕니다([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md)).
 - **외부 데이터 분리**: KOPIS 호출은 요청 경로가 아닌 배치 동기화 경로에서 처리합니다.
 
 ## 백엔드 아키텍처
@@ -76,7 +76,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 [ADR-009](docs/decisions/ADR-009-gitops-cd-argocd.md).
 
 - 로컬 개발은 Docker Compose로 PostgreSQL·Redis를 띄우고, 통합 환경(`infra/docker-compose.prod.yml`)은 여기에 API·web을 더합니다.
-- 클러스터 구성은 Kubernetes manifests와 Terraform을 사용하며, API는 health probe, graceful shutdown(`preStop`), HPA 3~9 + Cluster Autoscaler, PDB 설정을 가지고, web은 사전 확장 때 API에 자리를 내주도록 낮은 PriorityClass를 둡니다.
+- 클러스터 구성은 Kubernetes manifests와 Terraform을 사용하며, API는 health probe, graceful shutdown(`preStop`), HPA(분리 구조: api 3 고정·대기열 2~6) + Cluster Autoscaler, PDB 설정을 가지고, web은 사전 확장 때 API에 자리를 내주도록 낮은 PriorityClass를 둡니다.
 - 대기열 진입·상태 조회는 ALB가 Next.js를 거치지 않고 API로 바로 보냅니다([ADR-024](docs/decisions/ADR-024-queue-path-next-hop-bypass.md)).
 - 비용 때문에 클러스터는 시험 기간에만 올리고 평소에는 내려 둡니다. Terraform과 Argo CD로 다시 올릴 수 있습니다.
 - 비밀값은 환경변수와 External Secrets 경로로 주입하며 코드에 저장하지 않습니다.
@@ -107,7 +107,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 
 통합 구조에서는 폭증으로 새로 생성된 Pod가 예매 요청의 약 61%를 받았고, 그 Pod들의 서버 처리 시간이 기존 Pod보다 길었습니다(실측 — 세션 중 Prometheus 조회, 원시 응답은 미보존). 분리 구조는 예매 Pod 수가 고정이라 이 경로가 없습니다.
 대신 폭증 중 대기열 Pod가 HPA 상한(6)에 닿은 채 상태 조회가 느려졌습니다 — 상한이 원인인지는 아직 검증하지 않았습니다. 노드는 한가할 때도 1~2대 더 들었습니다(대기열 최소 Pod 2개 몫).
-그래서 결론은 "분리 쪽 개선(운영 관점, 각 2회)"으로 한정하고, **운영 기본값 전환은 대기열 쪽 비용을 개선한 뒤 결정**하기로 했습니다([IMP-033](docs/improvements/IMP-033-queue-split-ab.md)).
+그래서 결론은 "분리 쪽 개선(운영 관점, 각 2회)"으로 한정했습니다([IMP-033](docs/improvements/IMP-033-queue-split-ab.md)). 대기열 쪽 자원을 줄여 비용을 낮추려던 다음 실험(B′)은 노드-시간 목표에 닿지 못했고([IMP-034](docs/improvements/IMP-034-bprime-queue-resources-g1.md)), **그 비용을 감수하고 분리 구조를 운영 기본값으로 정했습니다**([ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md)) — 예매를 받는 Pod가 대기열 폭증에 끌려가지 않는 쪽을 택한 것입니다. 분리 구조에서 10만 명 / 10초 진입은 아직 다시 재지 않았습니다.
 
 ### 롤링 배포 중 502 — 흔한 처방이 원인이 아니었다
 
@@ -127,7 +127,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 | 층 | 무엇을 막나 | 어떻게 |
 |---|---|---|
 | **코드** | 동시성 정합성 | Redis Lua로 대기열 승격을 원자화, 좌석·주문은 조건부 `UPDATE` + 영향 행 수 검증, 이벤트는 Transactional Outbox |
-| **CI** | 구조 드리프트 | 계약(enum·API·이벤트·계층)을 파일로 두고 정적 검사. **일부러 만든 위반 fixture 74개로 "규칙이 실제로 잡는지"를 메타테스트가 판정**합니다 — 규칙을 믿지 않고 규칙을 시험합니다 |
+| **CI** | 구조 드리프트 | 계약(enum·API·이벤트·계층)을 파일로 두고 정적 검사. **일부러 만든 위반 fixture 75개로 "규칙이 실제로 잡는지"를 메타테스트가 판정**합니다 — 규칙을 믿지 않고 규칙을 시험합니다 |
 | **실측** | 운영 중 장애·부하 | 클러스터를 띄우고 장애를 **주입**하고 부하를 겁니다. 롤링 배포·노드 오토스케일([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md))·RDS/Redis 페일오버([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md))·10만 명 / 10초 진입([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)) |
 
 **좋아진 수치만 싣지 않습니다.** RDS 페일오버에서 찾은 결함(30초를 다 기다린 뒤 500)을 고쳐 같은 장애를 다시 쟀습니다. 결과는 이렇습니다.
@@ -183,7 +183,7 @@ k8s/                   Kubernetes base, overlay, monitoring, Argo CD
 |---|---|---|
 | 계약 (`contracts/`) | enum·API·이벤트·오류 코드·계층 규칙을 YAML 단일 진실원으로 고정 | `events.yaml`에서 구현됨(`implemented`)으로 선언한 이벤트는 실제 발행 코드가 있어야 통과 |
 | 정적 하네스 (`npm run harness:check`) | 계약과 코드·매니페스트·문서의 어긋남 | 상태 변경 UPDATE의 `WHERE status` 가드, 파괴적 DDL, `@Autowired` 금지(생성자 주입), SSE 훅의 재동기화 경로, 매니페스트↔앱 설정 |
-| 메타테스트 | 하네스가 위반을 실제로 잡는지 | 일부러 만든 위반 fixture 74개가 전부 차단되는지 |
+| 메타테스트 | 하네스가 위반을 실제로 잡는지 | 일부러 만든 위반 fixture 75개가 전부 차단되는지 |
 | 단위·통합 테스트 (Testcontainers) | 동시성·상태 전이·Outbox 런타임 정합성 | 실제 PostgreSQL·Redis 컨테이너 |
 | 알림 규칙 테스트 (promtool) | 알림이 울려야 할 때 울리고, 아닐 때 울리지 않는지 | 규칙 4개 모두 양성·음성 케이스 |
 | E2E (Playwright, CI 풀스택) | 브라우저↔API 경계와 UI 상태 | 프론트·백엔드가 바뀐 PR에서 실행, 실패하면 PR 체크 실패와 trace 업로드 |

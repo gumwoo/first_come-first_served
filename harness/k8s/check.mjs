@@ -578,41 +578,64 @@ if (fs.existsSync(ES_DIR)) {
       r.fail("사전 확장 패치를 kustomization.yaml이 참조하지 않는다: k8s/overlays/demo-local — 하한을 올려도 클러스터에 적용되지 않는다");
     }
   }
-  let base = null;
-  for (const { doc, file } of docs) {
-    if (doc.kind !== "HorizontalPodAutoscaler" || doc.metadata?.name !== "flowticket-api") continue;
-    if (path.basename(file) === "event-prescale.yaml") continue;
-    if (Number.isInteger(doc.spec?.minReplicas) && Number.isInteger(doc.spec?.maxReplicas)) base = doc.spec;
-  }
+  // 패치가 겨누는 HPA(이름)의 base 정책(min·max)을 찾는다. A'는 api HPA, B(queue-split)는 대기열 HPA를 겨눈다(ADR-027).
+  // 같은 이름의 HPA 문서가 여럿이면 마지막 것을 쓴다 — 지금은 이름마다 하나다(component의 api 상한은 인라인 JSON 패치라 HPA 문서가 아니다).
+  // min·max를 모두 가진 HPA 패치 파일을 새로 두면 base가 바뀔 수 있으니 이 규칙을 함께 본다.
+  const baseOf = (name) => {
+    let found = null;
+    for (const { doc, file } of docs) {
+      if (doc.kind !== "HorizontalPodAutoscaler" || doc.metadata?.name !== name) continue;
+      if (path.basename(file) === "event-prescale.yaml") continue;
+      if (Number.isInteger(doc.spec?.minReplicas) && Number.isInteger(doc.spec?.maxReplicas)) found = doc.spec;
+    }
+    return found;
+  };
   for (const f of prescaleFiles) {
     const rel = path.relative(REPO_ROOT, f);
     const src = read(f);
-    let min, ns;
-    try { const d = yaml.load(src); min = d?.spec?.minReplicas; ns = d?.metadata?.namespace; } catch { min = undefined; }
+    let min, ns, target;
+    try { const d = yaml.load(src); min = d?.spec?.minReplicas; ns = d?.metadata?.namespace; target = d?.metadata?.name; } catch { min = undefined; }
     // 전략적 병합 패치는 이름·네임스페이스가 맞아야 붙는다 — 없으면 kustomize 빌드가 실패한다(ArgoCD 동기화 중단).
     if (K8S === "k8s" && ns !== "flowticket") {
       r.fail(`사전 확장 패치의 metadata.namespace가 flowticket이 아니다: ${rel} → kustomize가 대상 HPA를 못 찾아 빌드가 실패한다`);
     }
-    if (!Number.isInteger(min) || !base) {
-      r.fail(`사전 확장 패치를 읽지 못했다: ${rel} — minReplicas(정수)와 base HPA(flowticket-api의 min·max)가 필요하다`);
-      continue;
-    }
-    if (min < base.minReplicas || min > base.maxReplicas) {
-      r.fail(`사전 확장 하한이 정책 밖이다: ${rel} → minReplicas ${min}, base HPA ${base.minReplicas}~${base.maxReplicas}. 상한을 넘기려면 정책(ADR-025)부터 바꾼다`);
-      continue;
-    }
-    // 대기열 분리(components/queue-split, ADR-027)는 api 상한을 3으로 묶는다. 그 상태에서 사전 확장 하한을 올리면
-    // 하한 > 상한인 HPA가 되어 적용이 실패한다. 같은 overlay의 kustomization이 component를 켰는지 본다.
+    // 대기열 분리(components/queue-split, ADR-027)를 같은 overlay가 켰는지 본다.
     // 블록 목록(줄 끝 주석 허용)과 흐름 표기(`components: [..]`)를 둘 다 본다. `#`로 시작하는 줄은 꺼진 상태다.
     const kzSame = path.join(path.dirname(f), "kustomization.yaml");
     const kzText = fs.existsSync(kzSame) ? read(kzSame) : "";
     const splitOn =
       /^\s*-\s*[^#\n]*components\/queue-split\/?\s*(#.*)?$/m.test(kzText) ||
       /^\s*components:\s*\[[^\]#\n]*components\/queue-split/m.test(kzText);
-    if (splitOn && min !== base.minReplicas) {
+    // 대기열 HPA는 queue-split이 켜졌을 때만 클러스터에 있다. 꺼진 채 대기열 HPA를 겨누면 kustomize가 대상을 못 찾는다.
+    if (!Number.isInteger(min) || typeof target !== "string") {
+      r.fail(`사전 확장 패치를 읽지 못했다: ${rel} — metadata.name(대상 HPA)과 minReplicas(정수)가 필요하다`);
+      continue;
+    }
+    if (target === "flowticket-api-queue" && !splitOn) {
+      r.fail(
+        `대기열 분리가 꺼졌는데 대기열 HPA를 사전 확장한다: ${rel} → 대기열 HPA는 queue-split을 켜야 생긴다. ` +
+          `분리를 켜거나 사전 확장 대상을 api HPA(flowticket-api)로 바꾼다(ADR-027)`
+      );
+      continue;
+    }
+    if (target !== "flowticket-api" && target !== "flowticket-api-queue") {
+      r.fail(`사전 확장 패치의 대상이 api·대기열 HPA가 아니다: ${rel} → ${target}. flowticket-api(A') 또는 flowticket-api-queue(B)만 둔다`);
+      continue;
+    }
+    const base = baseOf(target);
+    if (!base) {
+      r.fail(`사전 확장 패치의 base HPA를 찾지 못했다: ${rel} — ${target}의 min·max(정수)가 있는 HPA 매니페스트가 필요하다`);
+      continue;
+    }
+    if (min < base.minReplicas || min > base.maxReplicas) {
+      r.fail(`사전 확장 하한이 정책 밖이다: ${rel} → minReplicas ${min}, base HPA ${base.minReplicas}~${base.maxReplicas}. 상한을 넘기려면 정책(ADR-025)부터 바꾼다`);
+      continue;
+    }
+    // queue-split은 api 상한을 3으로 묶는다. 그 상태에서 api 하한을 올리면 하한 > 상한인 HPA가 되어 적용이 실패한다.
+    if (splitOn && target === "flowticket-api" && min !== base.minReplicas) {
       r.fail(
         `대기열 분리를 켠 채 사전 확장을 켰다: ${rel} → minReplicas ${min}. queue-split은 api 상한을 3으로 묶어 ` +
-          `하한 ${min} > 상한이 된다(HPA 무효). 분리를 끄거나 사전 확장을 끈다(ADR-027)`
+          `하한 ${min} > 상한이 된다(HPA 무효). B에서는 대기열 HPA(flowticket-api-queue)를 사전 확장한다(ADR-027)`
       );
       continue;
     }
@@ -622,7 +645,7 @@ if (fs.existsSync(ES_DIR)) {
     if (!event || !offBy || Number.isNaN(Date.parse(offBy))) {
       r.fail(`사전 확장을 켰는데 공연·기한이 없다: ${rel} → minReplicas ${min}. "# event: <공연 id>"와 "# off-by: <UTC>"를 적는다(언제 끌지 모르면 켜 둔 채 잊힌다)`);
     } else if (Date.parse(offBy) < Date.now()) {
-      r.fail(`사전 확장이 기한을 넘겼다: ${rel} → event ${event}, off-by ${offBy}인데 minReplicas ${min}. 3으로 되돌리는 PR을 먼저 머지한다(노드 ${min}대 비용이 계속 나간다)`);
+      r.fail(`사전 확장이 기한을 넘겼다: ${rel} → event ${event}, off-by ${offBy}인데 minReplicas ${min}. base 하한(${base.minReplicas})으로 되돌리는 PR을 먼저 머지한다(늘어난 노드 비용이 계속 나간다)`);
     }
   }
 }

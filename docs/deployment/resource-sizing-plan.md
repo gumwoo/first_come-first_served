@@ -19,7 +19,7 @@
 | web | requests 300m / 256Mi, HPA 2~4, PDB minAvailable 1, 낮은 우선순위 | `k8s/base/web-*.yaml` |
 | Hikari 풀 | 파드당 5(`DB_POOL_MAX` 기본값). 대기열 Deployment는 따로 덮어쓰지 않는다 | `application.yml:20`, `queue-deployment.yaml` |
 | DB 커넥션 예산 | db.t4g.micro `max_connections` 79(2026-08-10 pg_settings 실측) − reserved 3 − 앱 외 여유 20 = **56** | 하네스 backend 규칙 17(`harness/backend/check.mjs`) |
-| 사전 확장 | `event-prescale.yaml`이 api HPA 하한을 올린다(평소 3). B와 같이 켜면 api 하한 9 > 상한 3이 되어 하네스 k8s 규칙 11이 막는다 — **B용 사전 확장은 없다** | [[ADR-025]], [operating-requirements.md](operating-requirements.md) §5 |
+| 사전 확장 | (2026-10-17 갱신) B가 운영 기본값이 되어 `event-prescale.yaml`이 대기열 HPA 하한을 올린다(평소 2, 오픈 전 6). 이전(작성 당시)에는 api HPA 대상이라 B용 사전 확장이 없었다 | [[ADR-025]], [operating-requirements.md](operating-requirements.md) §5 |
 | 노드별 flowticket 밖 CPU 요청 | A' 평시 410·600·750m(세션 20261007-e2e, 레포 밖 실측 — Kafka 네임스페이스 몫이 들어 있었을 것으로 본다, 추론) | [[ADR-025]] 계산 근거 |
 | Kafka 제거 뒤 노드별 flowticket 밖 요청 | **미확인** — 세션 기동 직후(Kafka 없이 — §5 2단계) 노드별 requests에서 처음 잰다 | [kafka-removal-design.md](kafka-removal-design.md) §6 "세션 방식 변경" |
 | B₀ 실측(Kafka 있음) | 시작 노드 6·5, 예매 p95 ②(폭증 중) hold 256·272ms·주문 260·211ms·결제 224·184ms, 폭증 상태 조회 p95 259·523ms, 대기열 HPA 상한 6 도달, 노드-시간 3.17·3.45(계산) | [[IMP-033]] v2(B 2회 관측) |
@@ -63,8 +63,8 @@
 | **P2 대기열 상한 조정** | 대기열 HPA `maxReplicas` | B₀에서 상한 6 도달·폭증 상태 조회 p95 259·523ms | P1(풀 — 상한을 올리면 DB 예산을 넘는다) **그리고** P3(requests 축소) 또는 노드 예산 변경. 1,100m에서는 api 3 + 대기열 6이 이미 노드 9대를 채운다(§2.2) — **1,100m에서 P2는 6을 넘길 수 없다** | 노드 그룹 최대 9(§2.2). 상한을 AZ당 4로 올리면 노드 12 × 2 vCPU + 발생기 12 vCPU = 36 > 쿼터 32(계산 — `loadtest.tfvars`의 쿼터 식, [[ADR-025]]) |
 | **P3 대기열 requests 축소 + 노드 단위 분산** | 대기열 `requests.cpu`(r), hostname 분산 규칙 | 노드당 2개 → 같은 노드 수에서 대기열 처리 자리 증가([[IMP-033]] §9) | B₁의 노드별 밖 요청·대기열 파드 CPU 사용(`app_cpu_by_pod`)·상태 조회 처리량. ⑩-b 허용 목록(준비됨 — requests·hostname 분산). 짝 조건도 하네스가 본다: 대기열 CPU 요청이 api와 다르면 대기열 파드만 고르는 hostname 분산(maxSkew 1·`DoNotSchedule`, selector가 대기열 파드 라벨의 부분집합이고 `app: flowticket-api-queue` 포함)이 있어야 한다(위반 fixture `k8s-queue-cpu-no-spread`(ScheduleAnyway)·`k8s-queue-spread-wrong-selector`(api 파드 selector)·`k8s-queue-spread-skew2`(maxSkew 2)) | §2.2 r 범위, §2.3 분산 규칙(topologySpread maxSkew 1), HPA 기준 변화 |
 | **P4 대기열 축소 정책** | 대기열 HPA `behavior.scaleDown`(안정화 창 등) | v1 b1r에서 폭증 시작 22초 뒤 대기열 파드가 3→2로 줄었다([[IMP-033]] §4 — 판정에 쓰지 않은 v1 run의 1회 관측, 축소가 폭증 지연의 주원인이라는 것은 추론) | — | 오픈이 아닌 시간의 비용과 맞바꿈 |
-| **P5 평시 2+2** | api HPA 하한 2·PDB 1, 대기열 2 | G1 출발 후보([operating-requirements.md](operating-requirements.md) §5) | B₁의 api 파드 예매 경로 CPU·지연(api 3개가 예매를 전부 받는다 — [[IMP-033]] §6) | §2.3 PDB, 남은 1개가 평시 부하를 감당하는지(G1). **적용 위치는 queue-split component 패치**로 한다 — base `api-hpa.yaml` 하한을 2로 바꾸면 `event-prescale.yaml`(하한 3)을 하네스 k8s 규칙 11이 "켜진 사전 확장"으로 보고 실패시키고, A′에도 영향이 간다 |
-| **P6 B용 사전 확장(설계만)** | 오픈 전 대기열 하한 상향(api는 고정) | L3(예정된 오픈 뒤 추가 폭증)와 평시 B 상시 + 사전 확장 결정 | 하네스 k8s 규칙 11을 component 기준으로 바꾸는 작업(+ 위반 fixture) | ADR-025 사전 확장과 동시에 켤 수 없다 |
+| **P5 평시 2+2** | api HPA 하한 2·PDB 1, 대기열 2 | G1 출발 후보([operating-requirements.md](operating-requirements.md) §5) | B₁의 api 파드 예매 경로 CPU·지연(api 3개가 예매를 전부 받는다 — [[IMP-033]] §6) | §2.3 PDB, 남은 1개가 평시 부하를 감당하는지(G1). **적용 위치는 queue-split component 패치**로 한다 — base `api-hpa.yaml` 하한을 2로 바꾸면 A′에도 영향이 간다(작성 당시에는 `event-prescale.yaml`(api 하한 3)이 규칙 11에 걸렸다 — 2026-10-17부터 사전 확장 대상은 대기열 HPA) |
+| **P6 B용 사전 확장(설계만 — 2026-10-17 구현: 대기열 HPA 2→6, 규칙 11 대상별 base, [[ADR-027]])** | 오픈 전 대기열 하한 상향(api는 고정) | L3(예정된 오픈 뒤 추가 폭증)와 평시 B 상시 + 사전 확장 결정 | 하네스 k8s 규칙 11을 component 기준으로 바꾸는 작업(+ 위반 fixture) | ADR-025 사전 확장과 동시에 켤 수 없다 |
 - 순서 제안(추론 — 의존 관계): P1 → P3 → P2(P1·P3 둘 다 필요), P4는 독립, P5는 마지막. P1·P3에 필요한 ⑩-b 하네스 수정은 준비됐다(허용 목록·짝 조건). P6은 B′ 측정 대상이 아니라 운영 정책 설계로 따로 진행한다.
 - **시도한 후보를 모두 기록한다**(가장 잘 나온 회차만 고르지 않는다 — [kafka-removal-design.md](kafka-removal-design.md) §7.5).
 

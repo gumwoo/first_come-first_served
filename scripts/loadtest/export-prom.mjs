@@ -68,6 +68,14 @@ export const QUERIES = {
   http_p95_by_uri: "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket[1m])))",
   http_rps_by_uri: "sum by (uri) (rate(http_server_requests_seconds_count[1m]))",
   http_5xx_rate: "sum(rate(http_server_requests_seconds_count{status=~\"5..\"}[1m]))",
+  // 파드별 요청 분배 — "api가 놀았다"(IMP-034 §6)가 파드 전체였는지 일부였는지를 실측으로 남긴다. 예매 경로는 web(Next.js rewrite)
+  // → api Service로 가는데, Next 14.2.15의 외부 rewrite는 agent 없이 http-proxy를 써서 요청마다 새 연결(Connection: close)을 연다
+  // (코드·로컬 재현으로 확인 — #435 G1) — 연결 재사용으로 인한 쏠림은 예상하지 않는다. 대기열 두 경로는 ALB가 파드 IP로 보낸다(target-type ip).
+  // app_pod_nodes(파드 → 노드 → AZ)·booking_db_*_by_pod와 함께 보면 "분배"와 "RDS 주 AZ와의 거리"를 가를 수 있다.
+  http_rps_by_pod_uri: "sum by (pod, uri) (rate(http_server_requests_seconds_count[1m]))",
+  booking_http_p95_by_pod:
+    "histogram_quantile(0.95, sum by (le, pod, uri) (rate(http_server_requests_seconds_bucket" +
+    "{uri=~\"/events/\\\\{id\\\\}/seats/hold|/seats/hold/\\\\{holdId\\\\}|/orders|/orders/\\\\{id\\\\}/payments(/confirm)?\"}[1m])))",
   // 진단 신호(§3.2)
   hikari_pending: "max by (pod) (hikaricp_connections_pending)",
   // 풀 크기 재산정 근거(운영 요구사항 §4 — api·대기열의 active·idle·total, 자원 산정 계획 §4). pending만으로는 "얼마나 남았나"를 모른다.

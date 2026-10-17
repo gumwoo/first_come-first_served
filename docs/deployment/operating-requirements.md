@@ -19,7 +19,7 @@
 |---|---|---|
 | 노드 | AZ 3곳 × 노드 그룹 각 min 1. 측정 프로파일(`loadtest.tfvars`) max 3·m6i.large·Redis `cache.m7g.large`, 기본값 max 2·t3.large. allocatable CPU 약 1930m(m6i.large) | 노드 최소 3대 |
 | api | requests 1100m / 1536Mi(limit 2Gi), HPA 3~9(CPU 60%), PDB minAvailable 2, AZ 분산 `ScheduleAnyway`(선호만) | 1100m라 노드당 api 계열 파드 1개 |
-| 대기열(B, 선택 구성) | api와 같은 사양, HPA 2~6, api는 3 고정(실험 조건), PDB minAvailable 1 | 3 고정·2~6은 A'와 파드 예산 9를 맞춘 **실험 조건** |
+| 대기열(B, 선택 구성 — 작성 당시. 2026-10-17부터 운영 기본값, [[ADR-027]]) | api와 같은 사양, HPA 2~6, api는 3 고정(실험 조건), PDB minAvailable 1 | 3 고정·2~6은 A'와 파드 예산 9를 맞춘 **실험 조건** |
 | web | requests 300m / 256Mi, HPA 2~4, PDB minAvailable 1 | |
 | 대기열 정원 | 공연당 동시 입장 100, 승격 주기 1.5초, 입장 유효 300초 | 공연 N개면 동시 입장 상한도 N배 |
 | 데이터 | RDS db.t4g.micro Multi-AZ(가용 커넥션 56, 계산), Redis 복제 2노드 자동 페일오버(Kafka 브로커 3·RF 3은 [[ADR-028]]로 제거) | |

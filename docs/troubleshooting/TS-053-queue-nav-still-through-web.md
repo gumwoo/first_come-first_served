@@ -36,7 +36,7 @@
 - **공연 페이지에서 미리 받기**: `router.prefetch`로 대기열 화면을 미리 받는다. Next 14.2 클라이언트 라우터 캐시(`staleTimes.static` 기본 300초) 안에 누르면 web 요청이 없다. 공연 상태가 바뀌면 다시 부른다.
 - **재조회 제거**: 대기열 화면은 `useEvent(id, { staleTime: Infinity })`로 공연 페이지의 캐시를 그대로 쓴다. 대기열 화면으로 바로 들어온 경우에만 한 번 받는다.
 - **디스크 캐시 끔**: `experimental.isrFlushToDisk: false` — 메모리 캐시(`cacheMaxMemorySize` 기본 50MB LRU, Next 소스 확인)만 쓴다.
-- 고르지 않은 대안: `experimental.staleTimes`로 미리 받기 유효 시간을 늘리기 — 만료돼도 서버 렌더 없는 정적 캐시 응답(로컬 첫 요청 80ms, 이후 3ms)이라 늘려서 얻는 것이 작다고 봤다(추론). 실험 옵션을 하나 더 늘리지 않으려는 이유도 있다 — 채택한 `isrFlushToDisk`도 Next의 experimental 옵션이다(리스크).
+- 고르지 않은 대안: `experimental.staleTimes`로 미리 받기 유효 시간을 늘리기 — 만료돼도 서버 렌더 없는 정적 캐시 응답(로컬 첫 요청 80ms, 이후 3ms)이라 늘려서 얻는 것이 작고, 채택한 `isrFlushToDisk`에 더해 experimental 옵션을 하나 더 늘리지 않는 편이 낫다고 봤다(판단·추론). `isrFlushToDisk`가 experimental이라는 점은 #436 리스크 절에 적었다.
 
 ## 검증
 - 로컬 프로덕션 빌드(실측, 로컬):

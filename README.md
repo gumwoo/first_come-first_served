@@ -3,7 +3,7 @@
 선착순 공연 예매 시스템입니다. 대기열·좌석 선점·주문·결제·환불까지 예매 흐름 전체를 다룹니다.
 
 - **동시성 정합성** — 대기열·좌석·결제를 Redis Lua·조건부 `UPDATE`·멱등성 키로 원자화합니다.
-- **10만 명 / 10초 진입 검증** — AWS EKS에서 판정 3회, 서버가 실제로 받은 요청 기준으로 정원 초과·정합성 위반 0을 확인했습니다.
+- **10만 명 / 10초 진입 검증** — AWS EKS에서 판정 3회(통합 구조), 운영 기본값인 대기열 분리 구조에서 1회 더, 서버가 실제로 받은 요청 기준으로 정원 초과·정합성 위반 0을 확인했습니다.
 - **자동 확장** — 부하에 따라 Pod(HPA)와 Node(Cluster Autoscaler)가 늘고 줄며, 공연 오픈 전 사전 확장은 Git으로 켜고 끕니다. 같은 판정 run에서 노드 9 고정 대비 노드-시간을 11~13% 덜 썼습니다(실측 노드 곡선으로 계산).
 - **GitOps 배포 · 장애 주입** — Terraform(인프라)과 Argo CD(앱)로 소유를 나눠 EKS에 올리고, 배포·노드·DB·캐시에 실제로 장애를 넣어 거동을 측정합니다.
 
@@ -24,14 +24,15 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 | 검증 | 결과(실측) | 근거 |
 |---|---|---|
 | 대기열 진입 10만 명 / 10초 + 자동 확장 | 판정 3회 모두 진입 요청 100,000건 정상 처리, 정원 초과·정합성 위반 0. 같은 실행에서 폴링이 몰리자 Pod 3→9·Node 6→9로 확장했다가 다시 축소 | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) |
+| 대기열 분리 구조(운영 기본값)의 10만 명 / 10초 | 오픈 전 Git PR로 대기열 Pod 2→6, 진입 요청 100,000건 전부 정상 처리(진입 p95 46ms·대기 상태 조회 p95 8ms, 서버 처리 시간), 정원 초과·정합성 위반 0. 오픈 뒤 Git PR로 HPA에 넘기고 대기열 6→2·Node 9→7 축소까지 기록 — 판정 1회 관측, 폴링 폭증·예매는 함께 돌리지 않음 | [IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md) |
 | 자동 확장 비용 효과 | 같은 판정 run의 실측 노드 곡선을 시간으로 적분해, 노드 9 고정 대비 노드-시간 11~13% 절감(계산). 오픈 1회·평시 4대를 가정한 하루 환산 약 54%(m6i.large 서울 $0.118/h 기준 하루 약 $13.7). 남은 초과의 절반 이상이 폭증 뒤 CA 축소 대기(약 11분)임을 확인 | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) |
-| 대기열 분리 비교 (같은 Pod 예산 9) | 폴링 폭증(7,000/s) 중 예매 p95: 통합 구조 1.6~2.6초 vs 대기열 전용 Deployment 184~272ms(각 2회, 오류·정합성 위반 0). 사전 등록 판정 "분리 쪽 개선"(운영 관점, 각 2회 — 분리만의 효과는 떼어 내지 않음). 대가로 대기열 상태 조회 p95 13~18 → 259~523ms, 노드 비용 +15~28%(계산) — 비용을 감수하고 분리 구조를 운영 기본값으로 채택(분리 구조의 10만 진입은 재측정 예정) | [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) · [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md) |
+| 대기열 분리 비교 (같은 Pod 예산 9) | 폴링 폭증(7,000/s) 중 예매 p95: 통합 구조 1.6~2.6초 vs 대기열 전용 Deployment 184~272ms(각 2회, 오류·정합성 위반 0). 사전 등록 판정 "분리 쪽 개선"(운영 관점, 각 2회 — 분리만의 효과는 떼어 내지 않음). 대가로 대기열 상태 조회 p95 13~18 → 259~523ms, 노드 비용 +15~28%(계산) — 비용을 감수하고 분리 구조를 운영 기본값으로 채택(분리 구조의 10만 진입은 IMP-035에서 판정 1회 충족) | [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) · [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md) |
 | 입장자 동시 예매 | 입장자 100명이 동시에 좌석 선점·주문·결제(경합·더블클릭·결제 실패 후 재시도·1인 한도 포함), 판정 3회 정합성 위반 0 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) |
 | 무중단 배포 | 롤링 배포 중 5xx → 0 (`preStop` 25s) | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md) |
 | 장애 주입 | RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구, 노드 오토스케일로 Pending 파드 수용 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |
 | 대기열 토큰 정합성 보강 | 토큰 소유권(남의 입장 토큰으로 선점·이탈 차단), 재발급·이탈 경합(1인 1토큰), 대기 토큰 수명(폴링 연장·만료 토큰 승격 차단)을 통합 테스트로 검증 | [TS-043](docs/troubleshooting/TS-043-queue-token-ownership.md) · [TS-044](docs/troubleshooting/TS-044-queue-takeover-leave-race.md) · [TS-045](docs/troubleshooting/TS-045-queue-token-lifecycle.md) |
 
-10만 명 진입·자동 확장 수치는 측정 당시 api 이미지(`419c96b`, [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)) 기준입니다. 이후 대기열 보강(TS-043~045)은 통합 테스트로 검증했습니다. Kafka 제거([ADR-028](docs/decisions/ADR-028-kafka-reevaluation.md))도 이 측정 이후의 변경입니다. Kafka 없는 구성에서 10만 명 진입은 다시 재지 않았고, 대기열 분리 비교(IMP-033) 절차의 기준선만 [IMP-034](docs/improvements/IMP-034-bprime-queue-resources-g1.md)에서 다시 쟀습니다.
+10만 명 진입·자동 확장 수치는 측정 당시 api 이미지(`419c96b`, [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)) 기준입니다. 이후 대기열 보강(TS-043~045)은 통합 테스트로 검증했습니다. Kafka 제거([ADR-028](docs/decisions/ADR-028-kafka-reevaluation.md))도 이 측정 이후의 변경입니다. Kafka 없는 구성에서는 대기열 분리 비교(IMP-033) 절차의 기준선을 [IMP-034](docs/improvements/IMP-034-bprime-queue-resources-g1.md)에서 다시 쟀고, 운영 기본값(대기열 분리, api 이미지 `9ad3494`)의 10만 명 / 10초 진입을 [IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md)에서 같은 판정 기준으로 1회 다시 쟀습니다(폴링 폭증 확장은 이 run에 없음).
 
 ## 서비스 흐름
 
@@ -90,7 +91,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 
 부하 도구가 "보냈다"고 기록한 요청 수는 서버 도착의 증거가 아닙니다. 그래서 ALB access log에 찍힌 **서버 도착 시각**으로 10초 창 안의 진입을 셌습니다.
 
-같은 실행 안에서 공연 오픈 전 Git PR로 Pod를 미리 늘리고, 오픈 직후 HPA·Cluster Autoscaler에 넘긴 뒤, 대기자 폴링이 몰리자 다시 Pod와 Node가 늘었다가 줄어드는 흐름까지 이어서 확인했습니다. 세 번 반복해 세 번 모두 진입 100,000건 정상 처리, 정원 초과·정합성 위반 0이었습니다([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)).
+같은 실행 안에서 공연 오픈 전 Git PR로 Pod를 미리 늘리고, 오픈 직후 HPA·Cluster Autoscaler에 넘긴 뒤, 대기자 폴링이 몰리자 다시 Pod와 Node가 늘었다가 줄어드는 흐름까지 이어서 확인했습니다. 세 번 반복해 세 번 모두 진입 100,000건 정상 처리, 정원 초과·정합성 위반 0이었습니다([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)). 운영 기본값을 대기열 분리 구조로 바꾼 뒤에는 진입을 받는 Pod가 달라졌으므로(api 9 → 대기열 6) 이전 수치를 그대로 붙이지 않고, 같은 판정 기준을 먼저 적어 두고 1회 다시 쟀습니다 — 진입 100,000건 전부 정상 처리, 정원 초과·정합성 위반 0([IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md)).
 
 ### 대기열 분리 — 결과가 갈렸을 때 결론보다 측정 절차를 먼저 고쳤다
 
@@ -107,7 +108,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 
 통합 구조에서는 폭증으로 새로 생성된 Pod가 예매 요청의 약 61%를 받았고, 그 Pod들의 서버 처리 시간이 기존 Pod보다 길었습니다(실측 — 세션 중 Prometheus 조회, 원시 응답은 미보존). 분리 구조는 예매 Pod 수가 고정이라 이 경로가 없습니다.
 대신 폭증 중 대기열 Pod가 HPA 상한(6)에 닿은 채 상태 조회가 느려졌습니다 — 상한이 원인인지는 아직 검증하지 않았습니다. 노드는 한가할 때도 1~2대 더 들었습니다(대기열 최소 Pod 2개 몫).
-그래서 결론은 "분리 쪽 개선(운영 관점, 각 2회)"으로 한정했습니다([IMP-033](docs/improvements/IMP-033-queue-split-ab.md)). 대기열 쪽 자원을 줄여 비용을 낮추려던 다음 실험(B′)은 노드-시간 목표에 닿지 못했고([IMP-034](docs/improvements/IMP-034-bprime-queue-resources-g1.md)), **그 비용을 감수하고 분리 구조를 운영 기본값으로 정했습니다**([ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md)) — 예매를 받는 Pod가 대기열 폭증에 끌려가지 않는 쪽을 택한 것입니다. 분리 구조에서 10만 명 / 10초 진입은 아직 다시 재지 않았습니다.
+그래서 결론은 "분리 쪽 개선(운영 관점, 각 2회)"으로 한정했습니다([IMP-033](docs/improvements/IMP-033-queue-split-ab.md)). 대기열 쪽 자원을 줄여 비용을 낮추려던 다음 실험(B′)은 노드-시간 목표에 닿지 못했고([IMP-034](docs/improvements/IMP-034-bprime-queue-resources-g1.md)), **그 비용을 감수하고 분리 구조를 운영 기본값으로 정했습니다**([ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md)) — 예매를 받는 Pod가 대기열 폭증에 끌려가지 않는 쪽을 택한 것입니다. 분리 구조의 10만 명 / 10초 진입은 같은 판정 기준으로 1회 다시 재서 충족했습니다([IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md)).
 
 ### 롤링 배포 중 502 — 흔한 처방이 원인이 아니었다
 
@@ -128,7 +129,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 |---|---|---|
 | **코드** | 동시성 정합성 | Redis Lua로 대기열 승격을 원자화, 좌석·주문은 조건부 `UPDATE` + 영향 행 수 검증, 이벤트는 Transactional Outbox |
 | **CI** | 구조 드리프트 | 계약(enum·API·이벤트·계층)을 파일로 두고 정적 검사. **일부러 만든 위반 fixture 75개로 "규칙이 실제로 잡는지"를 메타테스트가 판정**합니다 — 규칙을 믿지 않고 규칙을 시험합니다 |
-| **실측** | 운영 중 장애·부하 | 클러스터를 띄우고 장애를 **주입**하고 부하를 겁니다. 롤링 배포·노드 오토스케일([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md))·RDS/Redis 페일오버([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md))·10만 명 / 10초 진입([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)) |
+| **실측** | 운영 중 장애·부하 | 클러스터를 띄우고 장애를 **주입**하고 부하를 겁니다. 롤링 배포·노드 오토스케일([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md))·RDS/Redis 페일오버([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md))·10만 명 / 10초 진입([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md)·[IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md)) |
 
 **좋아진 수치만 싣지 않습니다.** RDS 페일오버에서 찾은 결함(30초를 다 기다린 뒤 500)을 고쳐 같은 장애를 다시 쟀습니다. 결과는 이렇습니다.
 
@@ -201,7 +202,7 @@ k8s/                   Kubernetes base, overlay, monitoring, Argo CD
 | 공통 API·레이아웃·디자인 | [docs/common](docs/common) |
 | 설계 결정과 대안 | [docs/decisions](docs/decisions/_index.md) |
 | 측정 기반 개선 기록 | [docs/improvements](docs/improvements/_index.md) |
-| 10만 명 부하 검증 | [100K 계획서](docs/testing/loadtest-100k-plan.md), [IMP-029](docs/improvements/IMP-029-final-100k-10s-queue.md)~[IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) |
+| 10만 명 부하 검증 | [100K 계획서](docs/testing/loadtest-100k-plan.md), [IMP-029](docs/improvements/IMP-029-final-100k-10s-queue.md)~[IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md), [IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md)(대기열 분리 구조) |
 | 대기열 분리 비교 | [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md), [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) |
 | 장애 분석과 재발 방지 | [docs/troubleshooting](docs/troubleshooting/_index.md) |
 | 배포·E2E·성능 검증 | [docs/deployment](docs/deployment/_index.md), [docs/testing](docs/testing/e2e-rules.md) |

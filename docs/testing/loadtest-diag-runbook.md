@@ -42,13 +42,13 @@
 | 동작 | 방법 |
 |---|---|
 | 사전 확장(오픈 최소 15분 전) | `k8s/overlays/demo-local/event-prescale.yaml`(대기열 HPA — B 기본값)의 `minReplicas`를 6으로, `# event:`·`# off-by:`를 채운 PR을 머지 → ArgoCD 동기화(자동 — 위 0에서 자동 동기화를 꺼 뒀다면 수동 동기화) → 대기열 Pending → CA가 노드 추가. A'로 돌린 overlay에서는 대상이 api HPA이고 9로 올린다 |
-| 정책에 넘기기(오픈 뒤) | 같은 파일을 3으로, `event`·`off-by`를 `-`로 되돌리는 PR을 머지 → 이후 HPA(3~9)·CA가 지속 부하를 따라 늘고 준다 |
+| 정책에 넘기기(오픈 뒤) | 같은 파일을 2로(A'면 3으로), `event`·`off-by`를 `-`로 되돌리는 PR을 머지 → 이후 HPA(대기열 2~6 — A'면 api 3~9)·CA가 지속 부하를 따라 늘고 준다 |
 
 - kubectl로 HPA를 patch하지 않는다(selfHeal이 되돌리고 기록이 남지 않는다). 노드 그룹 설정도 바꾸지 않는다 — Pending을 CA가 해소한다.
-- 하네스 k8s 규칙 11: 하한은 base 3~9 안, 켤 때 event·off-by 필수, off-by가 지나면 k8s 하네스 실패(CI backend job이 도는 PR에서만 — 상시 검사 아님).
-  반영 확인은 `kubectl get hpa`·노드 수·Pending. 측정 프로파일(AZ당 3)에서만 노드 9가 된다 — 기본 프로파일(AZ당 2)은 api 3개가 Pending으로 남는다.
+- 하네스 k8s 규칙 11: 하한은 대상 HPA의 base 안(대기열 2~6 — A'의 api는 3~9), 켤 때 event·off-by 필수, off-by가 지나면 k8s 하네스 실패(CI backend job이 도는 PR에서만 — 상시 검사 아님).
+  반영 확인은 `kubectl get hpa`·노드 수·Pending. 측정 프로파일(AZ당 3)에서만 노드 9가 된다 — 기본 프로파일(AZ당 2)은 늘린 파드 일부가 Pending으로 남는다(B: api 3 + 대기열 6 = 9 > 노드 6 — 계산).
 - 사전 확장 중에는 이미지가 바뀌는 PR을 머지하지 않는다(롤링 surge가 10번째 노드를 못 얻어 멈춘다).
-- 사전 확장 뒤 web Ready ≥ 1을 확인한다 — api가 web(낮은 우선순위)을 선점해 자리를 만들며, 선점은 web PDB를 보장하지 않는다(ADR-025 보충).
+- 사전 확장 뒤 web Ready ≥ 1을 확인한다 — 늘어난 대기열(A'면 api) 파드가 web(낮은 우선순위)을 선점해 자리를 만들며, 선점은 web PDB를 보장하지 않는다(ADR-025 보충).
 - CA는 api가 있는 노드(요청 57%)를 줄이지 않고, api 없는 노드도 요청이 50% 이상이거나(web 등) 파드를 옮길 자리가 없으면 줄이지 않는다(ADR-025).
   남은 노드는 drain으로 정리한다: 먼저 `kubectl describe node`로 다른 노드에 그 노드 파드(web 300m 등)가 들어갈 자리가 있는지 확인하고
   `kubectl drain <노드> --ignore-daemonsets --delete-emptydir-data` → CA가 빈 노드를 지운다. 자리가 없으면 쫓겨난 파드가 Pending → CA가 노드를 다시 붙인다.

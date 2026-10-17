@@ -14,7 +14,7 @@ resources:
   - ../../base
 
 # 대기열 분리(B, ADR-027) — 운영 기본값(operating-requirements §5 "B 상시"). 아래 두 줄을 주석 처리하면 A'(통합)로 돌아간다.
-# A'로 돌릴 때는 사전 확장(event-prescale.yaml)의 대상도 api HPA로 바꿔야 한다(하네스 k8s 규칙 11이 막는다).
+# A'로 돌릴 때는 사전 확장(event-prescale.yaml)의 대상을 api HPA(flowticket-api)로, 평소 하한을 3으로 바꿔야 한다(하네스 k8s 규칙 11이 막는다).
 components:
   - ../../components/queue-split
 

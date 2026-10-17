@@ -48,7 +48,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 - **결제 상태 전이**: 주문·결제·좌석·hold 상태를 명시적으로 전이하고 멱등성 키를 사용합니다.
 - **이벤트 전달**: 비즈니스 트랜잭션과 Outbox 기록을 함께 저장하고, 릴레이가 Redis Pub/Sub(`sse:order`)으로 발행해 SSE로 전달합니다. 별도 브로커(Kafka)는 두지 않습니다([ADR-028](docs/decisions/ADR-028-kafka-reevaluation.md)).
 - **실시간 반영**: 대기열은 서버가 다음 조회 시점(`retryAfterMs`)을 정하는 폴링으로, 좌석·주문 상태는 SSE와 재조회 보정으로 사용자 화면에 반영합니다.
-- **용량과 확장**: api의 CPU 요청량을 실측한 요청당 처리 비용으로 정하고(1100m), HPA 3~9와 Cluster Autoscaler로 Pod·Node를 늘리고 줄입니다. 공연 오픈 전 사전 확장은 Git PR로 켜고 끕니다([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md)).
+- **용량과 확장**: api의 CPU 요청량을 실측한 요청당 처리 비용으로 정하고(1100m), HPA와 Cluster Autoscaler로 Pod·Node를 늘리고 줄입니다(운영 기본값인 분리 구조에서는 api 3 고정 + 대기열 2~6). 공연 오픈 전 사전 확장(대기열 2 → 6)은 Git PR로 켜고 끕니다([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md)).
 - **외부 데이터 분리**: KOPIS 호출은 요청 경로가 아닌 배치 동기화 경로에서 처리합니다.
 
 ## 백엔드 아키텍처
@@ -76,7 +76,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 [ADR-009](docs/decisions/ADR-009-gitops-cd-argocd.md).
 
 - 로컬 개발은 Docker Compose로 PostgreSQL·Redis를 띄우고, 통합 환경(`infra/docker-compose.prod.yml`)은 여기에 API·web을 더합니다.
-- 클러스터 구성은 Kubernetes manifests와 Terraform을 사용하며, API는 health probe, graceful shutdown(`preStop`), HPA 3~9 + Cluster Autoscaler, PDB 설정을 가지고, web은 사전 확장 때 API에 자리를 내주도록 낮은 PriorityClass를 둡니다.
+- 클러스터 구성은 Kubernetes manifests와 Terraform을 사용하며, API는 health probe, graceful shutdown(`preStop`), HPA(분리 구조: api 3 고정·대기열 2~6) + Cluster Autoscaler, PDB 설정을 가지고, web은 사전 확장 때 API에 자리를 내주도록 낮은 PriorityClass를 둡니다.
 - 대기열 진입·상태 조회는 ALB가 Next.js를 거치지 않고 API로 바로 보냅니다([ADR-024](docs/decisions/ADR-024-queue-path-next-hop-bypass.md)).
 - 비용 때문에 클러스터는 시험 기간에만 올리고 평소에는 내려 둡니다. Terraform과 Argo CD로 다시 올릴 수 있습니다.
 - 비밀값은 환경변수와 External Secrets 경로로 주입하며 코드에 저장하지 않습니다.

@@ -68,9 +68,10 @@ export const QUERIES = {
   http_p95_by_uri: "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket[1m])))",
   http_rps_by_uri: "sum by (uri) (rate(http_server_requests_seconds_count[1m]))",
   http_5xx_rate: "sum(rate(http_server_requests_seconds_count{status=~\"5..\"}[1m]))",
-  // 파드별 요청 분배 — 예매 경로는 web(Next.js rewrite) → api Service로 가서, 연결을 재사용하면 kube-proxy가 연결 단위로
-  // 파드를 고르므로 요청이 일부 파드에 쏠릴 수 있다(추론, 미측정). 대기열 두 경로는 ALB가 파드 IP로 직접 보낸다(target-type ip).
-  // app_pod_nodes(파드 → 노드 → AZ)·booking_db_*_by_pod와 함께 보면 "쏠림"과 "RDS 주 AZ와의 거리"를 가를 수 있다.
+  // 파드별 요청 분배 — "api가 놀았다"(IMP-034 §6)가 파드 전체였는지 일부였는지를 실측으로 남긴다. 예매 경로는 web(Next.js rewrite)
+  // → api Service로 가는데, Next 14.2.15의 외부 rewrite는 agent 없이 http-proxy를 써서 요청마다 새 연결(Connection: close)을 연다
+  // (코드·로컬 재현으로 확인 — #435 G1) — 연결 재사용으로 인한 쏠림은 예상하지 않는다. 대기열 두 경로는 ALB가 파드 IP로 보낸다(target-type ip).
+  // app_pod_nodes(파드 → 노드 → AZ)·booking_db_*_by_pod와 함께 보면 "분배"와 "RDS 주 AZ와의 거리"를 가를 수 있다.
   http_rps_by_pod_uri: "sum by (pod, uri) (rate(http_server_requests_seconds_count[1m]))",
   booking_http_p95_by_pod:
     "histogram_quantile(0.95, sum by (le, pod, uri) (rate(http_server_requests_seconds_bucket" +

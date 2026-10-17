@@ -4,7 +4,7 @@
 
 - **동시성 정합성** — 대기열·좌석·결제를 Redis Lua·조건부 `UPDATE`·멱등성 키로 원자화합니다.
 - **10만 명 / 10초 진입 검증** — AWS EKS에서 판정 3회(통합 구조), 운영 기본값인 대기열 분리 구조에서 1회 더, 서버가 실제로 받은 요청 기준으로 정원 초과·정합성 위반 0을 확인했습니다.
-- **자동 확장** — 부하에 따라 Pod(HPA)와 Node(Cluster Autoscaler)가 늘고 줄며, 공연 오픈 전 사전 확장은 Git으로 켜고 끕니다. 같은 판정 run에서 노드 9 고정 대비 노드-시간을 11~13% 덜 썼습니다(실측 노드 곡선으로 계산).
+- **자동 확장** — 부하에 따라 Pod(HPA)와 Node(Cluster Autoscaler)가 늘고 줄며, 공연 오픈 전 사전 확장은 Git으로 켜고 끕니다. 통합 구조의 10만 판정 run([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md))에서 노드 9 고정 대비 노드-시간을 11~13% 덜 썼습니다(실측 노드 곡선으로 계산).
 - **GitOps 배포 · 장애 주입** — Terraform(인프라)과 Argo CD(앱)로 소유를 나눠 EKS에 올리고, 배포·노드·DB·캐시에 실제로 장애를 넣어 거동을 측정합니다.
 
 ## 왜 만들었나
@@ -17,7 +17,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 
 측정할 때는 잘 나온 결과만 남기지 않았습니다. 부하 발생기가 보냈다고 기록한 숫자보다 서버가 실제로 받은 요청을 기준으로 봤고, 기준에 미치지 못한 실행도 그대로 기록했습니다.
 
-최종적으로 10초 동안 10만 명이 진입하는 부하를 세 차례 반복해, 세 번 모두 100,000건의 진입 요청이 정상 처리되고 정원 초과와 정합성 위반이 한 건도 없음을 확인했습니다. 이 과정에서 부하에 따라 Kubernetes의 Pod와 Node가 실제로 늘었다가 줄어드는 것도 확인했습니다.
+최종적으로 10초 동안 10만 명이 진입하는 부하를 세 차례 반복해, 세 번 모두 100,000건의 진입 요청이 정상 처리되고 정원 초과와 정합성 위반이 한 건도 없음을 확인했습니다. 이 과정에서 부하에 따라 Kubernetes의 Pod와 Node가 실제로 늘었다가 줄어드는 것도 확인했습니다. 이후 예매 Pod를 대기열 폭증에서 떼어 내려고 대기열 전용 Deployment를 운영 기본값으로 바꿨고, 진입을 받는 Pod가 달라졌으므로 같은 기준으로 다시 재서 충족을 확인했습니다(1회).
 
 ## 검증 결과
 
@@ -78,7 +78,7 @@ FlowTicket은 선착순 예매에서 발생하는 동시성 문제를 직접 다
 
 - 로컬 개발은 Docker Compose로 PostgreSQL·Redis를 띄우고, 통합 환경(`infra/docker-compose.prod.yml`)은 여기에 API·web을 더합니다.
 - 클러스터 구성은 Kubernetes manifests와 Terraform을 사용하며, API는 health probe, graceful shutdown(`preStop`), HPA(분리 구조: api 3 고정·대기열 2~6) + Cluster Autoscaler, PDB 설정을 가지고, web은 사전 확장 때 API에 자리를 내주도록 낮은 PriorityClass를 둡니다.
-- 대기열 진입·상태 조회는 ALB가 Next.js를 거치지 않고 API로 바로 보냅니다([ADR-024](docs/decisions/ADR-024-queue-path-next-hop-bypass.md)).
+- 대기열 진입·상태 조회는 ALB가 Next.js를 거치지 않고 대기열 전용 Pod(api와 같은 이미지, 별도 Deployment)로 바로 보냅니다([ADR-024](docs/decisions/ADR-024-queue-path-next-hop-bypass.md) · [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md)). 예매하기 → 대기열 화면 이동도 web 서버 렌더 없이 정적 경로로 처리합니다([TS-053](docs/troubleshooting/TS-053-queue-nav-still-through-web.md)). 오픈 순간 공연 페이지의 재조회(창 포커스·새로고침)는 아직 web을 거치고, 10만 시험 범위 밖입니다.
 - 비용 때문에 클러스터는 시험 기간에만 올리고 평소에는 내려 둡니다. Terraform과 Argo CD로 다시 올릴 수 있습니다.
 - 비밀값은 환경변수와 External Secrets 경로로 주입하며 코드에 저장하지 않습니다.
 - 배포·운영 문서는 [docs/deployment](docs/deployment/_index.md)와 [infra](infra)에서 관리합니다.

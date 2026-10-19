@@ -21,7 +21,7 @@
 | DB 커넥션 예산 | db.t4g.micro `max_connections` 79(2026-08-10 pg_settings 실측) − reserved 3 − 앱 외 여유 20 = **56** | 하네스 backend 규칙 17(`harness/backend/check.mjs`) |
 | 사전 확장 | (2026-10-17 갱신) B가 운영 기본값이 되어 `event-prescale.yaml`이 대기열 HPA 하한을 올린다(평소 2, 오픈 전 6). 이전(작성 당시)에는 api HPA 대상이라 B용 사전 확장이 없었다 | [[ADR-025]], [operating-requirements.md](operating-requirements.md) §5 |
 | 노드별 flowticket 밖 CPU 요청 | A' 평시 410·600·750m(세션 20261007-e2e, 레포 밖 실측 — Kafka 네임스페이스 몫이 들어 있었을 것으로 본다, 추론) | [[ADR-025]] 계산 근거 |
-| Kafka 제거 뒤 노드별 flowticket 밖 요청 | 0.10~0.58코어(IMP-034 8 run), 0.18~0.66코어(IMP-035) — 2026-10-20 사후 분석([optimization-targets.md](optimization-targets.md) §2) | 세션 원자료 `node_cpu_requests` − flowticket 파드 요청 |
+| Kafka 제거 뒤 노드별 flowticket 밖 요청 | 0.10~0.58코어(IMP-034 8 run), 0.18~0.66코어(IMP-035) — 2026-10-20 기존 세션 원자료로 계산(계산 — [optimization-targets.md](optimization-targets.md) §2) | 세션 원자료 `node_cpu_requests` − flowticket 파드 요청 |
 | B₀ 실측(Kafka 있음) | 시작 노드 6·5, 예매 p95 ②(폭증 중) hold 256·272ms·주문 260·211ms·결제 224·184ms, 폭증 상태 조회 p95 259·523ms, 대기열 HPA 상한 6 도달, 노드-시간 3.17·3.45(계산) | [[IMP-033]] v2(B 2회 관측) |
 
 ## 2. 계산상 제약 — 후보가 먼저 통과해야 하는 것
@@ -46,7 +46,7 @@
 | 2+2 출발 후보(api 2 + 대기열 2) | 4 | 4 | 남는 자리 5 |
 - 하한은 실제 대수가 아니다. web 2개(300m)와 flowticket 밖 요청이 api 옆 남은 자리(1,930 − 1,100 − 밖 요청)에 들어가지 못하면 노드가 더 붙는다. B₀은 5·6대, 같은 세션의 A′는 4대에서 안정됐다([[IMP-033]] 실측 — Kafka 있음).
 - [operating-requirements.md](operating-requirements.md) §5(평시 운영 방식)는 "평시 A′"와 "평시 B 2+2"의 노드 수를 함께 계산해 차이가 크면 B 상시 결정을 다시 검토하라고 했다. 하한(계산)은 A′ 3대·B 2+2 4대다. 실제 대수는 Kafka 제거 뒤 밖 요청을 알아야 낼 수 있어 B₁의 노드별 기록으로 계산하고, 비교와 재검토 여부는 확정판에서 적는다.
-- **대기열 requests를 줄여 노드당 2개를 넣으려면(계산):** `2 × r + 밖 요청 ≤ 1,930`. 밖 요청이 Kafka 제거 전 A′ 평시 노드 값(410~750m)이면 r ≤ 590~760m, 사전 확장으로 새로 붙은 노드처럼 밖 요청이 약 180m(계산 — [[ADR-025]] 보충)이면 r ≤ 875m로, 노드마다 다르다. Kafka 제거 뒤 밖 요청은 미확인이라 **r의 후보는 B₁에서 노드별 요청을 잰 뒤 정한다**.
+- **대기열 requests를 줄여 노드당 2개를 넣으려면(계산):** `2 × r + 밖 요청 ≤ 1,930`. 밖 요청이 Kafka 제거 전 A′ 평시 노드 값(410~750m)이면 r ≤ 590~760m, 사전 확장으로 새로 붙은 노드처럼 밖 요청이 약 180m(계산 — [[ADR-025]] 보충)이면 r ≤ 875m로, 노드마다 다르다. Kafka 제거 뒤 밖 요청은 작성 당시 미확인이었다 — 2026-10-20 기존 세션 원자료로 0.10~0.58코어(IMP-034)·0.18~0.66코어(IMP-035)를 계산했다([optimization-targets.md](optimization-targets.md) §2). **r의 후보는 이 값으로 다시 계산한다**.
 - requests를 줄이면 HPA 기준도 바뀐다 — CPU 60% 목표는 requests 기준이라 r이 작아지면 같은 부하에서 더 일찍, 더 많이 확장한다. 그 파드 수가 §2.1 DB 예산과 §2.2 노드 상한 안에 들어야 한다.
 
 ### 2.3 가용성 G1 — 노드 1대가 갑자기 사라져도 핵심 경로가 계속 도는가
@@ -127,9 +127,9 @@ B₀([[IMP-033]] v2)과 같은 기록에 아래를 더한다. `export-prom.mjs`�
 ## 7. 확인하지 못한 것과 확인 장소
 | 항목 | 장소 |
 |---|---|
-| Kafka 제거 뒤 노드별 flowticket 밖 요청 | 세션 기동 직후 기록(§5 2단계) |
+| Kafka 제거 뒤 노드별 flowticket 밖 요청 | 2026-10-20 확인 — 기존 세션 원자료로 계산(§1 표, [optimization-targets.md](optimization-targets.md) §2) |
 | Strimzi Pod의 실제 requests(Kafka가 차지하던 몫) | 재지 않는다 — Kafka를 설치하지 않는다(2026-10-15). 매니페스트 기준 계산값만([kafka-removal-design.md](kafka-removal-design.md) §7.1) |
-| 노드 allocatable 메모리, `node` 레이블 질의가 값을 내는지 | 세션 bring-up 직후 |
+| 노드 allocatable 메모리, `node` 레이블 질의가 값을 내는지 | 2026-10-20 확인 — 6.94GiB, `node_allocatable`·`node_cpu_requests`가 노드 레이블로 값을 냈다(세션 20261015-nok·20261017-b100k 원자료) |
 | 대기열 파드의 Hikari active·pending(풀 축소 가능 여부) | B₁ |
 | 예매 경로 CPU-ms/req(분리 뒤 api 1,100m 재산정 근거) | B₁ |
 | `jvm_compilation_time_ms_total` 존재 여부 | 세션 첫 run 뒤 |

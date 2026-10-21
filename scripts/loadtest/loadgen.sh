@@ -133,6 +133,7 @@ case "$cmd" in
     aws ec2 wait instance-running --region "$REGION" --instance-ids "${stopped[@]}"
     # SSM 에이전트가 다시 붙어야 exec·pull을 쓸 수 있다. 발생기마다 최대 5분 기다린다.
     # 중지 직후 다시 켜면 이전 PingStatus(Online)가 남아 있을 수 있어, 마지막 핑이 시작 이후인지도 본다.
+    # 로컬 시계와 AWS 시계 차이를 30초까지 허용한다.
     for id in "${stopped[@]}"; do
       ping=""
       for _ in $(seq 1 60); do
@@ -141,7 +142,7 @@ case "$cmd" in
           --query 'InstanceInformationList[0].[PingStatus, LastPingDateTime]' --output text 2>/dev/null || true) || true
         status="${status%$'\r'}"; last="${last%$'\r'}"   # Git Bash의 aws 출력은 CRLF다
         last_s="$(date -u -d "${last:-1970-01-01}" +%s 2>/dev/null || echo 0)"
-        if [ "${status:-}" = "Online" ] && [ "$last_s" -ge "$started_at" ]; then ping="Online"; break; fi
+        if [ "${status:-}" = "Online" ] && [ "$last_s" -ge $((started_at - 30)) ]; then ping="Online"; break; fi
         sleep 5
       done
       [ "$ping" = "Online" ] || { echo "SSM 연결 대기 시간 초과: $id" >&2; exit 1; }

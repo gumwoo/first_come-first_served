@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { normalize, userDurationMs } from "./normalize.mjs";
+import { cpuIntervals, normalize, userDurationMs } from "./normalize.mjs";
 import { classify, THRESHOLDS } from "./rules.mjs";
 
 const SA = Date.parse("2026-10-21T12:00:00Z");
@@ -64,6 +64,14 @@ test("사용자 소요 시간: 동시 요청 묶음은 최댓값, 단계는 차�
   const rec = { t0LagMs: 40, steps: [{ step: "queue_status", ms: 9 }, { step: "hold", ms: 100 }, { step: "hold", ms: 300 },
     { step: "order", ms: 50 }, { step: "pay_fail", ms: 20 }, { step: "pay", ms: 70 }, { step: "pay", ms: 60 }] };
   assert.equal(userDurationMs(rec), 40 + 300 + 50 + 20 + 70);
+});
+
+test("응답이 늦은 표본 바로 다음의 짧은 간격은 다음 표본과 합쳐 CPU를 계산한다", () => {
+  // 0초 → 2초(응답 1.5초 걸림, 받은 시각 3.5초) → 3.7초(간격 0.2초) → 4.7초. CPU는 내내 1코어.
+  const at = [0, 3500, 3700, 4700];
+  const rows = at.map((ms) => ({ at: ms, v: { process_cpu_time_ns_total: ms * 1e6 } }));
+  const cores = cpuIntervals(rows).map((x) => x.cores);
+  assert.deepEqual(cores, [1, 1]); // 3.5초 구간, 0.2+1.0초를 합친 구간
 });
 
 test("구간 끝 뒤 표본이 없으면 무효다", () => {

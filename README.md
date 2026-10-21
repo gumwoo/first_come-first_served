@@ -104,13 +104,13 @@ SI 프로젝트에서 요구사항대로 기능을 만드는 경험은 쌓았지
 |---|---|---|
 | 대기열 진입 10만 명 / 10초 + 자동 확장 | 판정 3회 모두 진입 100,000건 정상 처리, 정원 초과·정합성 위반 0. 같은 실행에서 폴링이 몰리자 Pod 3→9·Node 6→9로 확장했다가 다시 축소 | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) |
 | 대기열 분리 구조(운영 기본값)의 10만 명 / 10초 | 오픈 전 Git PR로 대기열 Pod 2→6, 진입 100,000건 정상 처리(진입 p95 46ms·대기 상태 조회 p95 8ms, 서버 처리 시간), 정원 초과·정합성 위반 0. 오픈 뒤 HPA에 넘겨 대기열 6→2·Node 9→7 축소까지 기록. 판정 1회, 폴링 폭증·예매는 함께 돌리지 않음. 판정 도구가 구간 뒤 조회 오류로 '판정 불가'를 냈고, 원인을 확인한 뒤 충족으로 해석(IMP-035 §5) | [IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md) |
-| 자동 확장 비용 효과 (계산) | 통합 구조 판정 run(IMP-031)의 실측 노드 곡선을 시간으로 적분해 노드 9 고정 대비 노드-시간 11~13% 절감. 운영 기본값(분리 구조)의 노드-시간은 계산하지 않음. 남은 초과의 절반 이상은 폭증 뒤 CA 축소 대기(약 11분) | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) |
+| 자동 확장 비용 효과 (계산) | 통합 구조 판정 run(IMP-031)의 실측 노드 곡선을 시간으로 적분해 노드 9 고정 대비 노드-시간 11~13% 절감. 분리 구조 10만 진입 run(IMP-035)의 노드-시간(9 고정 대비 절감)은 계산하지 않음. 남은 초과의 절반 이상은 폭증 뒤 CA 축소 대기(약 11분) | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) |
 | 대기열 분리 비교 (같은 Pod 예산 9) | 폴링 폭증(7,000/s) 중 예매 p95: 통합 1.6~2.6초 vs 분리 184~272ms(각 2회, 오류·정합성 위반 0). 사전 등록 판정 "분리 쪽 개선"(운영 관점 — 분리만의 효과는 떼어 내지 않음). 대가로 상태 조회 p95 13~18 → 259~523ms, 노드 비용 +15~28%(계산) | [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) · [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md) |
 | 입장자 동시 예매 | 입장자 100명이 동시에 좌석 선점·주문·결제(경합·더블클릭·결제 실패 후 재시도·1인 한도 포함), 판정 3회 정합성 위반 0 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) |
 | 무중단 배포 | 롤링 배포 중 5xx → 0(web `preStop` 25s, web 경유 경로). ALB가 바로 보내는 대기열 경로는 미측정 | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md) |
 | 장애 주입 | RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구, 노드 오토스케일로 Pending 파드 수용 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |
 | 대기열 토큰 정합성 보강 | 토큰 소유권(남의 입장 토큰 차단), 재발급·이탈 경합(1인 1토큰), 대기 토큰 수명(폴링 연장·만료 토큰 승격 차단)을 통합 테스트로 검증 | [TS-043](docs/troubleshooting/TS-043-queue-token-ownership.md) · [TS-044](docs/troubleshooting/TS-044-queue-takeover-leave-race.md) · [TS-045](docs/troubleshooting/TS-045-queue-token-lifecycle.md) |
-| 설정값 근거 재검토 (로컬·시뮬레이션) | 요청량·스레드·DB 풀·노드 수 근거를 원자료 재분석·로컬 실험·kwok 시뮬레이션으로 재확인. Tomcat 스레드 400은 개선 없음 → 200 유지. 평시 노드 5 → 4대 후보(예매 api 300m)는 api·대기열 동거 시 폴링 p99 10ms대 → 0.6~1.3초로 기각, 평시 합치기·평시 api 2개는 보류 (로컬 상대 비교·조건당 1~2회, 노드 수는 시뮬레이션) | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)~[IMP-041](docs/improvements/IMP-041-peace-api-two.md) |
+| 설정값 근거 재검토 (로컬·시뮬레이션) | 요청량·스레드·DB 풀·노드 수 근거를 원자료 재분석·로컬 실험·kwok 시뮬레이션으로 재확인. Tomcat 스레드 400은 개선 없음 → 200 유지. 평시 노드 5 → 4대 후보(예매 api 300m)는 폴링 3,000/s와 예매 묶음이 겹친 조건에서 api·대기열 동거 시 폴링 p99 10ms대 → 0.6~1.3초로 기각, 평시 합치기·평시 api 2개는 보류 (로컬 상대 비교·조건당 1~2회, 노드 수는 시뮬레이션) | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)~[IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md) · [IMP-041](docs/improvements/IMP-041-peace-api-two.md) |
 | 측정 세션 비용 분해 (계산) | 평시 노드 5대·부하 발생기 3대 기준 세션 시간당 약 $2.06 — 노드 29%·발생기 28%·Redis 19%·NAT 9%. 평시 노드 1대는 약 6% | [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |
 
 ### 측정 환경
@@ -121,8 +121,8 @@ SI 프로젝트에서 요구사항대로 기능을 만드는 경험은 쌓았지
 |---|---|---|---|---|---|---|---|---|
 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) 입장자 동시 예매 | 2026-10-07 | m6i.large(측정 시 3대) | cache.t4g.micro × 2 | db.t4g.micro Multi-AZ | 있음 | k6, EC2 c6i.xlarge × 1 | `d14e36b`(매니페스트상 `874a980`과 같은 내용) | 3회 |
 | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) 통합 10만 + 자동 확장 | 2026-10-08 | m6i.large(AZ당 최대 3, 합 9) | cache.t4g.micro × 2 | db.t4g.micro Multi-AZ | 있음 | k6, EC2 c6i.xlarge × 3 | `419c96b` | 3회 |
-| [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) 대기열 분리 비교 | 2026-10-14 | m6i.large(AZ당 최대 3) | cache.m7g.large | db.t4g.micro Multi-AZ(철거 로그) | 있음 | k6, EC2 c6i.xlarge × 3(철거 로그) | `2f1f7ff` | 구조별 2회 |
-| [IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md) 분리 구조 10만 | 2026-10-17 | m6i.large(AZ당 최대 3, 합 9) | cache.m7g.large | db.t4g.micro Multi-AZ | 없음 | k6, EC2 c6i.xlarge × 3 | `9ad3494` | 1회 |
+| [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) 대기열 분리 비교 | 2026-10-14 | m6i.large(AZ당 최대 3) | cache.m7g.large × 2 | db.t4g.micro Multi-AZ(철거 로그) | 있음 | k6, EC2 c6i.xlarge × 3(철거 로그) | `2f1f7ff` | 구조별 2회 |
+| [IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md) 분리 구조 10만 | 2026-10-17 | m6i.large(AZ당 최대 3, 합 9) | cache.m7g.large × 2 | db.t4g.micro Multi-AZ | 없음 | k6, EC2 c6i.xlarge × 3 | `9ad3494` | 1회 |
 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md)·[IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) 페일오버·노드 확장 | 2026-08-26 | m6i.large | 기록 없음 | 기록 없음 | 기록 없음 | 클러스터 안 k6(25·400 rps) | 기록 없음 | 각 1회 |
 
 이후 대기열 보강(TS-043~045)은 통합 테스트로 검증했고, Kafka 제거([ADR-028](docs/decisions/ADR-028-kafka-reevaluation.md))도 IMP-031 측정 이후의 변경입니다. 그래서 Kafka 없는 분리 구조(B)의 기준선은 [IMP-034](docs/improvements/IMP-034-bprime-queue-resources-g1.md)에서, 운영 기본값의 10만 진입은 IMP-035에서 같은 판정 기준으로 다시 쟀습니다.
@@ -190,7 +190,7 @@ SI 프로젝트에서 요구사항대로 기능을 만드는 경험은 쌓았지
 | 사전 확장(노드 9대) + 발생기 3대 | 약 $2.55 | [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |
 | 평시, 발생기 0대 | 약 $1.46 | [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |
 
-- 자동 확장은 통합 구조 판정 run에서 노드 9 고정 대비 노드-시간을 11~13% 덜 썼습니다(계산, [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md)). 운영 기본값(분리 구조)으로는 아직 계산하지 않았습니다([IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md)).
+- 자동 확장은 통합 구조 판정 run에서 노드 9 고정 대비 노드-시간을 11~13% 덜 썼습니다(계산, [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md)). 분리 구조 10만 진입 run([IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md))의 같은 계산은 하지 않았습니다(분리 구조의 노드 비용 차이는 [IMP-033](docs/improvements/IMP-033-queue-split-ab.md)에서 계산).
 - 세션 비용은 세션 길이에 비례합니다. 그래서 줄일 곳은 노드 수보다 발생기를 켜 두는 시간과 세션 길이로 정했습니다([IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) §5).
 - 철거는 `scripts/tear-down.sh`가 Terraform 밖 리소스(Ingress·ALB, EBS, ENI)부터 치우고 잔여를 점검합니다(`--audit-only`는 점검만). ECR·ACM·Route53·tfstate 같은 bootstrap 리소스는 남깁니다.
 - AWS Budgets(월 $50, 4단계 알림)와 Cost Anomaly Detection을 켜 두었습니다([ADR-012](docs/decisions/ADR-012-3az-eks-infra-cost-control.md)).
@@ -218,7 +218,7 @@ docker compose -f infra/docker-compose.prod.yml exec -T postgres psql -U flowtic
 
 ### AWS — 비용 발생
 
-세션 시간당 약 $2(계산, [비용](#비용))가 듭니다. 도메인·ECR·ACM·tfstate 같은 계정별 bootstrap이 먼저 필요합니다([terraform-design.md](docs/deployment/terraform-design.md)). 처음 한 번은 `environments/demo`에서 `terraform.tfvars`(관리자 IP — 기본값 없음)와 `backend.hcl`(state-bootstrap 출력)을 만들고 `terraform init -backend-config=backend.hcl`로 초기화합니다([platform README](infra/terraform/platform/README.md)).
+세션 시간당 약 $2(계산, [비용](#비용))가 듭니다. 도메인·ECR·ACM·tfstate 같은 계정별 bootstrap이 먼저 필요합니다([terraform-design.md](docs/deployment/terraform-design.md)). 처음 한 번은 `environments/demo`에서 `terraform.tfvars`(관리자 IP — 기본값 없음)와 `backend.hcl`(state-bootstrap 출력)을 만들고 `terraform init -backend-config=backend.hcl`로 초기화합니다([platform README](infra/terraform/platform/README.md) · [`backend.hcl.example`](infra/terraform/platform/environments/demo/backend.hcl.example)).
 
 ```bash
 terraform -chdir=infra/terraform/platform/environments/demo apply -var-file=loadtest.tfvars

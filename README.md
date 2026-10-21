@@ -137,7 +137,7 @@ SI 프로젝트에서 요구사항대로 기능을 만드는 경험은 쌓았지
 | `preStop` 25s | `deregistration_delay` 늘리기 | 실패가 타깃 해제 **전** 구간에서 났고 애플리케이션 5xx는 0 | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) |
 | AZ별 NAT 3개 | NAT 1개(−$0.128/h, 계산) | 단일 NAT면 그 AZ 장애가 정상 AZ의 결제까지 막아 3 AZ 격리 주장이 성립하지 않음 | [ADR-012](docs/decisions/ADR-012-3az-eks-infra-cost-control.md) · [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |
 | Tomcat 스레드 200 | 400 | 하위 의존성이 느린 조건에서 400으로 늘려도 개선 없음(로컬) | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md) |
-| 평시 노드 5대 유지 | 요청량 낮추기 / 평시 합치기 / 평시 api 2개 | 요청량 낮추기는 절감 1대가 api·대기열 동거에서 나왔고 동거가 경합을 만들어 기각. 평시 합치기는 평시 가정 부하(폴링 300/s)에서도 경합 판정이라 보류. 평시 api 2개는 노드 절감이 2회 중 1회, 예매 영향 판단 불가라 보류(모두 로컬·시뮬레이션) | [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md) · [IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md) · [IMP-041](docs/improvements/IMP-041-peace-api-two.md) |
+| 평시 노드 5대 유지 | 요청량 낮추기 / 평시 합치기 / 평시 api 2개 | 요청량 낮추기는 절감 1대가 api·대기열 동거에서 나왔고 동거가 경합을 만들어 기각. 평시 합치기는 평시 가정 부하(폴링 300/s)에서도 경합 판정(같은 조건끼리 편차가 커 약한 근거)이라 보류. 평시 api 2개는 노드 절감이 2회 중 1회, 예매 영향 판단 불가라 보류(모두 로컬·시뮬레이션) | [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md) · [IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md) · [IMP-041](docs/improvements/IMP-041-peace-api-two.md) |
 | CA 축소 대기 10분 | 5분 | 통합 구조 run 기준 계산으로 run당 약 $0.08을 아끼는 대신 폭증 직전의 여유 노드를 잃음(추정) | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) §10 |
 
 ## 핵심 설계

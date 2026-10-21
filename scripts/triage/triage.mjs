@@ -33,7 +33,7 @@ export function report(summary, rule, ai) {
   const f = ai.final;
   lines.push(`- AI 분류: ${f.verdict}${f.cause ? " / " + f.cause : ""}${f.note ? " (" + f.note + ")" : ""}`, "");
   if (!ai.verification.ok) {
-    lines.push("## 대조 실패", ...ai.verification.failures.map((x) => `- ${x.field ?? ""}: ${x.reason}${x.actual != null ? ` (답 ${x.value}, 실제 ${x.actual})` : ""}`), "");
+    lines.push("## 대조 실패", ...ai.verification.failures.map((x) => `- ${x.field != null ? x.field + ": " : ""}${x.reason}${x.actual != null ? ` (답 ${x.value}, 실제 ${x.actual})` : ""}`), "");
     return lines.join("\n") + "\n";
   }
   const r = ai.result;

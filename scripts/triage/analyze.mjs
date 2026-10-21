@@ -10,7 +10,7 @@
 //
 // 키는 환경변수 ANTHROPIC_API_KEY로만 받는다. 모델은 TRIAGE_MODEL(기본 claude-sonnet-5-5).
 
-export const PROMPT_VERSION = "triage-prompt/v1";
+export const PROMPT_VERSION = "triage-prompt/v2";
 export const DEFAULT_MODEL = "claude-sonnet-5-5";
 export const CAUSES = ["redis", "db", "app_cpu"];
 
@@ -77,13 +77,16 @@ export const SYSTEM = `너는 부하 테스트 결과의 초기 원인 분석을
 
 필드 뜻
 - booking.p95_ms: 단계별 p95(ms), booking.p95_median_ms: 세 단계 p95의 중앙값
-- api.cpu_cores_mean: 구간 평균 api CPU 코어 수(할당 코어는 2개)
+- api.cpu_cores_mean: 구간 평균 api CPU 코어 수(할당 코어는 2개, 유휴 구간이 섞여 낮게 나온다)
+- api.cpu_cores_max: 표본 사이 api CPU 최댓값(코어)
 - api.hikari.usage_ms_mean: 커넥션 1회 점유 평균, acquire_ms_mean: 커넥션 획득 대기 평균
 - api.redis.completion_ms_mean: Redis 명령 완료 평균(ms)
 - api.scrape_rtt_ms_max: 지표 응답 최대(ms). 앱이 CPU를 못 받으면 함께 늘어난다
 - db.active_mean: PostgreSQL에서 실행 중인 세션 평균, db.idle_in_tx_mean: 트랜잭션 안에서 앱 쪽 작업을 기다리는 세션 평균
 - db.active_wait_events: 실행 중 세션의 대기 이벤트 표본 수(CPU는 대기 없이 실행 중)
-- series: 예매 시작 기준 초(s)별 api 지표`;
+- db.wal_sync_ms_per_op: WAL 동기화 1회 평균(ms), db.wal_window_s: 그 측정 구간(예매 시작 기준 초)
+- disk: 측정 대상과 분리된 디스크 프로브(측정 환경 판정용, 이미 유효로 판정된 run만 들어온다)
+- series: 예매 시작 기준 초(s)별 api 지표, scrape_rtt_ms는 그 표본의 지표 응답 시간`;
 
 export function buildRequest(summary, model = process.env.TRIAGE_MODEL || DEFAULT_MODEL) {
   return {

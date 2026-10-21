@@ -27,10 +27,16 @@ export function verify(result, summary) {
   const failures = [];
   const items = [...(result.evidence ?? []).map((e) => ["evidence", e]), ...(result.counter_evidence ?? []).map((e) => ["counter_evidence", e])];
   for (const [kind, e] of items) {
+    // 숫자가 아닌 값(null·문자열·배열)은 JS 형변환으로 우연히 맞아 보일 수 있어 먼저 걸러 낸다.
+    if (typeof e.field !== "string" || typeof e.value !== "number" || !Number.isFinite(e.value)) {
+      failures.push({ kind, field: e.field, value: e.value, reason: "값 형식" });
+      continue;
+    }
     const r = resolve(summary, e.field);
     if (!r.found) failures.push({ kind, field: e.field, value: e.value, reason: "경로 없음" });
     else if (!sameNumber(e.value, r.value)) failures.push({ kind, field: e.field, value: e.value, actual: r.value, reason: "값 불일치" });
   }
   if (result.verdict === "cause" && !(result.evidence ?? []).length) failures.push({ kind: "evidence", reason: "원인 판정에 근거가 없다" });
+  if (result.verdict === "cause" && !(result.candidates ?? []).length) failures.push({ kind: "candidates", reason: "원인 판정에 후보가 없다" });
   return { ok: failures.length === 0, checked: items.length, failures };
 }

@@ -22,9 +22,11 @@ const answer = {
 };
 const fakeClient = (input) => ({ messages: { create: async (req) => ({ model: req.model, stop_reason: "tool_use", usage: { input_tokens: 900, output_tokens: 200 }, content: [{ type: "tool_use", name: TOOL.name, input }] }) } });
 
-test("도구 하나를 강제로 호출하게 요청하고, 입력은 요약 JSON뿐이다", () => {
+test("strict 도구 하나로 받고(강제 호출·temperature 없이), 입력은 요약 JSON뿐이다", () => {
   const req = buildRequest(summary, "m");
-  assert.deepEqual(req.tool_choice, { type: "tool", name: "report_diagnosis" });
+  assert.deepEqual(req.tool_choice, { type: "auto" });
+  assert.equal(req.tools[0].strict, true);
+  assert.equal("temperature" in req, false);
   assert.equal(req.messages.length, 1);
   assert.ok(req.messages[0].content.endsWith(JSON.stringify(summary)));
 });
@@ -41,6 +43,8 @@ test("근거 경로와 값을 요약 JSON과 대조한다", async () => {
   const check = verify(wrong, summary);
   assert.deepEqual(check.failures.map((f) => f.reason), ["값 불일치", "경로 없음"]);
   assert.equal(finalVerdict({ result: wrong }, check).verdict, "undetermined");
+  assert.equal(verify({ ...answer, evidence: [{ ...answer.evidence[0], value: "6.3" }] }, summary).ok, false); // 숫자가 아닌 값
+  assert.equal(verify({ ...answer, candidates: [] }, summary).ok, false);                                       // 후보 없는 원인 판정
 });
 
 test("측정 무효이거나 규칙상 이상이 없으면 AI를 부르지 않는다", () => {

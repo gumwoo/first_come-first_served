@@ -2,7 +2,9 @@
 //
 // 경계
 // - 입력은 normalize.mjs의 요약 JSON뿐이다. 원자료·문서·라벨은 보내지 않는다.
-// - 출력은 도구 하나(report_diagnosis)를 강제로 호출하게 해 JSON 스키마로만 받는다.
+// - 출력은 도구 하나(report_diagnosis, strict)로 받는다. Sonnet 5.5는 강제 도구 호출(tool_choice tool·any)과
+//   기본값이 아닌 temperature를 400으로 거부해, tool_choice auto + strict + 프롬프트 지시로 받는다.
+//   도구를 부르지 않은 응답은 실패로 처리한다.
 // - 근거 수치마다 요약 JSON의 필드 경로를 달게 하고, verify.mjs가 원자료 요약과 대조한다.
 // - 설정 변경·조치를 실행하거나 지시하지 않는다. 후보와 근거, 확인할 항목만 낸다(ADR-029).
 //
@@ -14,7 +16,8 @@ export const CAUSES = ["redis", "db", "app_cpu"];
 
 export const TOOL = {
   name: "report_diagnosis",
-  description: "예매 묶음 run의 원인 진단을 보고한다.",
+  description: "예매 묶음 run의 원인 진단을 보고한다. 응답마다 반드시 한 번 호출한다.",
+  strict: true,
   input_schema: {
     type: "object",
     additionalProperties: false,
@@ -54,12 +57,13 @@ export const TOOL = {
         },
       },
       unchecked: { type: "array", items: { type: "string" }, description: "입력에 없어 확인하지 못한 데이터" },
-      next_checks: { type: "array", items: { type: "string" }, description: "사람이 다음에 확인할 항목. 설정 변경 지시가 아니라 확인할 지표·실험" },
+      next_checks: { type: "array", items: { type: "string" }, description: "사람이 다음에 확인할 지표·실험만 적는다" },
     },
   },
 };
 
 export const SYSTEM = `너는 부하 테스트 결과의 초기 원인 분석을 돕는다. 사람이 최종 판단한다.
+답은 반드시 report_diagnosis 도구를 한 번 호출해 낸다. 도구 밖에 따로 글을 쓰지 않는다.
 입력은 입장자 100명이 같은 순간 예매(좌석 선점·주문·결제)를 시작한 run 하나의 요약 JSON이다.
 구성: Spring Boot api 1개(HikariCP 풀 5, Tomcat), PostgreSQL, Redis(입장 검증·토큰 블랙리스트·좌석 알림 발행).
 원인 범주는 세 가지다: redis(Redis 응답 지연), db(PostgreSQL 쿼리 지연), app_cpu(api 컨테이너 CPU 부족).
@@ -84,11 +88,11 @@ export const SYSTEM = `너는 부하 테스트 결과의 초기 원인 분석을
 export function buildRequest(summary, model = process.env.TRIAGE_MODEL || DEFAULT_MODEL) {
   return {
     model,
-    max_tokens: 2000,
-    temperature: 0,
+    max_tokens: 16000, // 생각(adaptive thinking) 토큰도 여기에 포함된다
+    output_config: { effort: "medium" },
     system: SYSTEM,
     tools: [TOOL],
-    tool_choice: { type: "tool", name: TOOL.name },
+    tool_choice: { type: "auto" },
     messages: [{ role: "user", content: `요약 JSON:\n${JSON.stringify(summary)}` }],
   };
 }
@@ -103,7 +107,10 @@ export async function analyze(summary, { client, model } = {}) {
   const req = buildRequest(summary, model);
   const res = await client.messages.create(req);
   const call = (res.content ?? []).find((c) => c.type === "tool_use" && c.name === TOOL.name);
-  if (!call) throw new Error(`응답에 ${TOOL.name} 호출이 없다(stop_reason=${res.stop_reason})`);
+  if (!call) {
+    const why = { max_tokens: "출력 한도에 걸렸다", refusal: "모델이 응답을 거절했다" }[res.stop_reason] ?? "도구를 호출하지 않았다";
+    throw new Error(`응답에 ${TOOL.name} 호출이 없다: ${why}(stop_reason=${res.stop_reason})`);
+  }
   return {
     result: call.input,
     model: res.model ?? req.model,

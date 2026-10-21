@@ -29,6 +29,7 @@ export function report(summary, rule, ai) {
   lines.push(`- 예매 p95(세 단계 중앙값): ${summary.booking.p95_median_ms}ms, 5xx ${summary.booking.http5xx}건`);
   lines.push(`- 규칙 분류: ${rule.verdict}${rule.cause ? " / " + rule.cause : ""} (${rule.reasons.join("; ")})`);
   if (!ai) return lines.join("\n") + "\n";
+  if (ai.error) return [...lines, `- AI 분석 실패: ${ai.error}`].join("\n") + "\n";
   const f = ai.final;
   lines.push(`- AI 분류: ${f.verdict}${f.cause ? " / " + f.cause : ""}${f.note ? " (" + f.note + ")" : ""}`, "");
   if (!ai.verification.ok) {
@@ -36,11 +37,12 @@ export function report(summary, rule, ai) {
     return lines.join("\n") + "\n";
   }
   const r = ai.result;
-  lines.push("## 원인 후보", ...r.candidates.map((c, i) => `${i + 1}. ${c.cause} (${c.confidence}): ${c.rationale}`), "");
-  lines.push("## 근거(요약 JSON과 대조 완료)", ...r.evidence.map((e) => `- ${e.claim} \`${e.field}\` = ${e.value}`), "");
-  if (r.counter_evidence.length) lines.push("## 반대 지표", ...r.counter_evidence.map((e) => `- ${e.claim} \`${e.field}\` = ${e.value}`), "");
-  if (r.unchecked.length) lines.push("## 확인하지 못한 데이터", ...r.unchecked.map((x) => `- ${x}`), "");
-  if (r.next_checks.length) lines.push("## 다음에 확인할 것", ...r.next_checks.map((x) => `- ${x}`), "");
+  const section = (title, xs, fmt) => { if ((xs ?? []).length) lines.push(title, ...xs.map(fmt), ""); };
+  section("## 원인 후보", r.candidates, (c, i) => `${i + 1}. ${c.cause} (${c.confidence}): ${c.rationale}`);
+  section("## 근거(요약 JSON과 대조 완료)", r.evidence, (e) => `- ${e.claim} \`${e.field}\` = ${e.value}`);
+  section("## 반대 지표", r.counter_evidence, (e) => `- ${e.claim} \`${e.field}\` = ${e.value}`);
+  section("## 확인하지 못한 데이터", r.unchecked, (x) => `- ${x}`);
+  section("## 다음에 확인할 것", r.next_checks, (x) => `- ${x}`);
   lines.push(`_${ai.model} · ${ai.prompt_version} · 입력 ${ai.usage.input_tokens} / 출력 ${ai.usage.output_tokens} 토큰_`);
   return lines.join("\n") + "\n";
 }
@@ -48,6 +50,7 @@ export function report(summary, rule, ai) {
 export async function triage(runDir, { useAi = true, client } = {}) {
   const out = path.join(runDir, "triage");
   fs.mkdirSync(out, { recursive: true });
+  fs.rmSync(path.join(out, "ai.json"), { force: true }); // 이전 실행의 AI 결과가 남지 않게
   const summary = normalize(runDir);
   const rule = classify(summary);
   fs.writeFileSync(path.join(out, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
@@ -55,9 +58,13 @@ export async function triage(runDir, { useAi = true, client } = {}) {
   let ai = null;
   const gate = shouldCallAi(summary, rule);
   if (useAi && gate.call) {
-    const res = await analyze(summary, { client });
-    const verification = verify(res.result, summary);
-    ai = { ...res, verification, final: finalVerdict(res, verification) };
+    try {
+      const res = await analyze(summary, { client });
+      const verification = verify(res.result, summary);
+      ai = { ...res, verification, final: finalVerdict(res, verification) };
+    } catch (e) {
+      ai = { error: e.message, final: { verdict: "undetermined", cause: null, note: "AI 분석 실패" } };
+    }
     fs.writeFileSync(path.join(out, "ai.json"), JSON.stringify(ai, null, 2) + "\n");
   }
   fs.writeFileSync(path.join(out, "report.md"), report(summary, rule, ai));

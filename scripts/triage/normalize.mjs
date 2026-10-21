@@ -69,6 +69,21 @@ export function windowDelta(rows, from, to, key) {
   return { d: (after.v[key] ?? 0) - (before.v[key] ?? 0), dt: (after.at - before.at) / 1000, bracketed: before.at <= from && after.t >= to };
 }
 
+// 표본 사이 CPU(코어). 응답이 늦은 표본 바로 다음은 간격이 0.2초 안팎으로 짧아져 값이 부풀므로,
+// 간격이 MIN_CPU_INTERVAL_S 이상이 될 때까지 다음 표본과 합쳐 계산한다. 반환은 구간 끝 표본과 그 구간의 CPU.
+const MIN_CPU_INTERVAL_S = 0.9;
+export function cpuIntervals(rows) {
+  const out = [];
+  let anchor = rows[0];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i], dt = (r.at - anchor.at) / 1000;
+    if (dt < MIN_CPU_INTERVAL_S) continue;
+    out.push({ row: r, cores: ((r.v.process_cpu_time_ns_total ?? 0) - (anchor.v.process_cpu_time_ns_total ?? 0)) / 1e9 / dt });
+    anchor = r;
+  }
+  return out;
+}
+
 export function summarizeApi(rows, from, to) {
   const cpu = windowDelta(rows, from, to, "process_cpu_time_ns_total");
   const use = [windowDelta(rows, from, to, "hikaricp_connections_usage_seconds_sum"), windowDelta(rows, from, to, "hikaricp_connections_usage_seconds_count")];
@@ -78,11 +93,7 @@ export function summarizeApi(rows, from, to) {
   const inWin = rows.filter((r) => r.at >= from && r.at <= to);
   const max = (k) => (inWin.length ? Math.max(...inWin.map((r) => r.v[k] ?? 0)) : null);
   // 구간 평균 CPU는 유휴 구간에 희석된다. 표본 사이 CPU의 최댓값을 함께 둔다.
-  const perSample = [];
-  for (let i = 1; i < rows.length; i++) {
-    const r = rows[i], p = rows[i - 1], dt = (r.at - p.at) / 1000;
-    if (r.at >= from && r.at <= to && dt > 0) perSample.push(((r.v.process_cpu_time_ns_total ?? 0) - (p.v.process_cpu_time_ns_total ?? 0)) / 1e9 / dt);
-  }
+  const perSample = cpuIntervals(rows).filter((x) => x.row.at >= from && x.row.at <= to).map((x) => x.cores);
   return {
     bracketed: Boolean(cpu?.bracketed),
     cpu_cores_mean: cpu ? round(cpu.d / 1e9 / cpu.dt, 2) : null,
@@ -127,14 +138,12 @@ export function summarizeDb(pgLines, walLines, from, to, sa = null) {
 // 초 단위 시계열(예매 시작 기준). AI가 시간 흐름을 볼 수 있게 짧게 담는다.
 function series(rows, sa, from, to) {
   const out = [];
-  for (let i = 1; i < rows.length; i++) {
-    const r = rows[i], p = rows[i - 1];
+  for (const { row: r, cores } of cpuIntervals(rows)) {
     if (r.at < from || r.at > to) continue;
-    const dt = (r.at - p.at) / 1000;
     out.push({
       s: round((r.at - sa) / 1000, 0),
       scrape_rtt_ms: r.v.rtt ?? null,
-      cpu_cores: dt > 0 ? round(((r.v.process_cpu_time_ns_total ?? 0) - (p.v.process_cpu_time_ns_total ?? 0)) / 1e9 / dt, 2) : null,
+      cpu_cores: round(cores, 2),
       tomcat_busy: r.v.tomcat_threads_busy_threads ?? null,
       hikari_active: r.v.hikaricp_connections_active ?? null,
       hikari_pending: r.v.hikaricp_connections_pending ?? null,

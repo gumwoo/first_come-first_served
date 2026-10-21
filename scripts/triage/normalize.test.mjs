@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { normalize } from "./normalize.mjs";
+import { normalize, userDurationMs } from "./normalize.mjs";
 import { classify, THRESHOLDS } from "./rules.mjs";
 
 const SA = Date.parse("2026-10-21T12:00:00Z");
@@ -18,7 +18,7 @@ function makeRun({ walMs = 1, diskMs = 2, users = 3, pgActive = 0 } = {}) {
   for (let s = -3; s <= 20; s++) {
     const k = Math.max(0, s + 2); // 구간 시작(−2초)부터 쌓인다
     rows.push(JSON.stringify({ t: SA + s * 1000, api: {
-      rtt: 10, process_cpu_time_ns_total: k * 1e9, tomcat_threads_busy_threads: s >= 0 && s < 3 ? 40 : 1,
+      rtt: 0, process_cpu_time_ns_total: k * 1e9, tomcat_threads_busy_threads: s >= 0 && s < 3 ? 40 : 1,
       hikaricp_connections_active: 0, hikaricp_connections_pending: s === 1 ? 30 : 0,
       hikaricp_connections_usage_seconds_sum: k * 0.05, hikaricp_connections_usage_seconds_count: k * 5,
       hikaricp_connections_acquire_seconds_sum: 0, hikaricp_connections_acquire_seconds_count: k * 5,
@@ -60,6 +60,19 @@ test("디스크 프로브가 느리거나 예매 결과가 빠지면 무효다",
   assert.match(missing.validity.reasons.join(), /2\/3명분/);
 });
 
+test("사용자 소요 시간: 동시 요청 묶음은 최댓값, 단계는 차례로 더하고 늦은 출발을 더한다", () => {
+  const rec = { t0LagMs: 40, steps: [{ step: "queue_status", ms: 9 }, { step: "hold", ms: 100 }, { step: "hold", ms: 300 },
+    { step: "order", ms: 50 }, { step: "pay_fail", ms: 20 }, { step: "pay", ms: 70 }, { step: "pay", ms: 60 }] };
+  assert.equal(userDurationMs(rec), 40 + 300 + 50 + 20 + 70);
+});
+
+test("구간 끝 뒤 표본이 없으면 무효다", () => {
+  const dir = makeRun({ users: 3 });
+  const rows = fs.readFileSync(path.join(dir, "sampler.jsonl"), "utf8").trim().split("\n").slice(0, 12); // 예매 시작 +8초까지만
+  fs.writeFileSync(path.join(dir, "sampler.jsonl"), rows.join("\n") + "\n");
+  assert.match(normalize(dir).validity.reasons.join(), /감싸지 못한다/);
+});
+
 test("규칙 분류: 무효·정상·Redis·DB·앱 CPU·판단 불가", () => {
   const base = normalize(makeRun());
   const slow = { ...base, booking: { ...base.booking, p95_median_ms: THRESHOLDS.anomaly_p95_median_ms + 1 } };
@@ -69,6 +82,8 @@ test("규칙 분류: 무효·정상·Redis·DB·앱 CPU·판단 불가", () => {
   assert.equal(classify(with_({ api: { ...slow.api, redis: { cmds: 1, completion_ms_mean: THRESHOLDS.redis_completion_ms + 1 } } })).cause, "redis");
   assert.equal(classify(with_({ db: { ...slow.db, active_mean: THRESHOLDS.db_active_mean + 1 } })).cause, "db");
   assert.equal(classify(with_({ api: { ...slow.api, hikari: { ...slow.api.hikari, usage_ms_mean: THRESHOLDS.app_usage_ms + 1 } } })).cause, "app_cpu");
-  assert.equal(classify(with_({ api: { ...slow.api, scrape_rtt_ms_max: THRESHOLDS.app_scrape_rtt_ms + 1 } })).cause, "app_cpu");
+  // 지표 응답 지연은 점유 값이 없을 때만 쓴다.
+  assert.equal(classify(with_({ api: { ...slow.api, scrape_rtt_ms_max: THRESHOLDS.app_scrape_rtt_ms + 1 } })).verdict, "undetermined");
+  assert.equal(classify(with_({ api: { ...slow.api, hikari: { ...slow.api.hikari, usage_ms_mean: null }, scrape_rtt_ms_max: THRESHOLDS.app_scrape_rtt_ms + 1 } })).cause, "app_cpu");
   assert.equal(classify(slow).verdict, "undetermined");
 });

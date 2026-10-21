@@ -6,7 +6,7 @@
 #   scripts/loadtest/loadgen.sh push <로컬 파일> <발생기 경로> # 사용자 토큰 파일 등을 S3 경유로 나눠 준다
 #   scripts/loadtest/loadgen.sh exec [--gen N] -- <명령>     # 모든(또는 N번째) 발생기에서 명령 실행
 #   scripts/loadtest/loadgen.sh pull <session-id>           # 발생기의 run 출력을 로컬 artifacts/로 받는다
-#   scripts/loadtest/loadgen.sh stop                        # 발생기를 중지한다(run 묶음 사이 — 컴퓨팅 요금이 멈춘다)
+#   scripts/loadtest/loadgen.sh stop                        # 발생기를 중지한다(run 묶음 사이에 컴퓨팅 요금을 멈춘다)
 #   scripts/loadtest/loadgen.sh start                       # 중지한 발생기를 다시 켜고 SSM 연결까지 기다린다
 #
 # exec는 발생기 번호를 GEN 환경변수(g1, g2, …)로 넘긴다. run-entry.sh의 --gen에 그대로 쓴다.
@@ -114,24 +114,34 @@ case "$cmd" in
     echo "받음: $ROOT/artifacts/loadtest/$session"
     ;;
   stop)
-    mapfile -t running < <(ids)
+    # aws 조회가 실패하면(자격 증명 만료 등) 여기서 멈춘다. 프로세스 치환으로 받으면 실패가 "발생기 없음"으로 보인다.
+    list="$(ids)"
+    mapfile -t running <<< "$list"
+    [ -z "$list" ] && running=()
     if [ "${#running[@]}" -eq 0 ]; then echo "실행 중인 발생기가 없다"; exit 0; fi
     aws ec2 stop-instances --region "$REGION" --instance-ids "${running[@]}" --query 'StoppingInstances[].InstanceId' --output text
     aws ec2 wait instance-stopped --region "$REGION" --instance-ids "${running[@]}"
     echo "중지됨: ${#running[@]}대"
     ;;
   start)
-    mapfile -t stopped < <(ids_in stopped)
+    list="$(ids_in stopped)"
+    mapfile -t stopped <<< "$list"
+    [ -z "$list" ] && stopped=()
+    started_at="$(date -u +%s)"
     if [ "${#stopped[@]}" -eq 0 ]; then echo "중지된 발생기가 없다"; exit 0; fi
     aws ec2 start-instances --region "$REGION" --instance-ids "${stopped[@]}" --query 'StartingInstances[].InstanceId' --output text
     aws ec2 wait instance-running --region "$REGION" --instance-ids "${stopped[@]}"
     # SSM 에이전트가 다시 붙어야 exec·pull을 쓸 수 있다. 발생기마다 최대 5분 기다린다.
+    # 중지 직후 다시 켜면 이전 PingStatus(Online)가 남아 있을 수 있어, 마지막 핑이 시작 이후인지도 본다.
     for id in "${stopped[@]}"; do
       ping=""
       for _ in $(seq 1 60); do
-        ping="$(aws ssm describe-instance-information --region "$REGION" --filters "Key=InstanceIds,Values=$id" \
-          --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null || true)"
-        [ "$ping" = "Online" ] && break
+        status=""; last=""
+        read -r status last < <(aws ssm describe-instance-information --region "$REGION" --filters "Key=InstanceIds,Values=$id" \
+          --query 'InstanceInformationList[0].[PingStatus, LastPingDateTime]' --output text 2>/dev/null || true) || true
+        status="${status%$'\r'}"; last="${last%$'\r'}"   # Git Bash의 aws 출력은 CRLF다
+        last_s="$(date -u -d "${last:-1970-01-01}" +%s 2>/dev/null || echo 0)"
+        if [ "${status:-}" = "Online" ] && [ "$last_s" -ge "$started_at" ]; then ping="Online"; break; fi
         sleep 5
       done
       [ "$ping" = "Online" ] || { echo "SSM 연결 대기 시간 초과: $id" >&2; exit 1; }

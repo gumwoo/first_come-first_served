@@ -71,14 +71,14 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 
 클러스터를 띄우지 않고 설정값의 근거를 확인하기 위해 두 가지 방법을 썼습니다.
 
-- **kwok 스케줄링 시뮬레이션**: 실제 kube-scheduler에 가짜 노드를 붙이고, 실제 클러스터 스냅샷(시스템 Pod·데몬셋·노드 명세)과 현재 매니페스트를 올려 요청량을 바꿨을 때의 평시·사전 확장 노드 수를 계산했습니다. 현재 구성(평시 5대, 사전 확장 9대)이 재현되는 것을 먼저 확인했습니다.
-- **로컬 코어 고정 실험**: 같은 이미지 컨테이너를 노드 크기(코어 2개)에 고정하고 `docker update --cpuset-cpus`로 재시작 없이 조건을 바꿨습니다. 측정 순서를 교차(ABBA)해 비교했고, 판정 기준은 측정 전에 정했습니다.
+- **kwok 스케줄링 시뮬레이션**: 실제 kube-scheduler에 가짜 노드를 붙이고, 실제 클러스터 스냅샷(시스템 Pod·데몬셋·노드 명세)과 현재 매니페스트를 올려 요청량을 바꿨을 때의 평시·사전 확장 노드 수를 계산했습니다. 현재 구성에서 실제와 같은 노드 수(평시 5대, 사전 확장 9대)가 나오는 것을 먼저 확인했습니다.
+- **로컬 코어 고정 실험**: 같은 이미지 컨테이너를 노드 크기(코어 2개)에 고정하고 조건을 하나씩 바꿔 비교했습니다. 판정 기준은 측정 전에 정했고, 조건 사이의 비교는 측정 순서를 교차하거나 배정을 맞바꿔 환경 차이를 줄였습니다.
 
 | 질문 | 방법 | 결과 | 결정 |
 |---|---|---|---|
 | Tomcat 스레드를 늘리면 나아지는가 | 로컬, Redis만 느리게 한 조건 | 200 → 400에서 처리 성능 개선 없음 | 200 유지 ([IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)) |
-| 예매 api CPU 요청량을 낮춰 노드를 줄일 수 있는가 | kwok + 로컬 | 300m로 낮추면 평시 5 → 4대지만, 줄어든 1대는 api와 대기열이 한 노드를 나눠 쓰는 배치였고 이때 폴링 p99가 10ms대에서 0.6~1.3초로 늘어남 | 1100m 유지 ([IMP-037](docs/improvements/IMP-037-node-consolidation-scheduling-sim.md) · [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md)) |
-| 평시에만 합치고 오픈 전에 떼면 | kwok으로 평시 → 사전 확장 → 축소 한 바퀴 | api 변경을 먼저 끝내야 롤링이 노드 상한에 막히지 않음. 평시 동거 시 예매 p95 증가(로컬) | 채택하지 않음 ([IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md)) |
+| 예매 api CPU 요청량을 낮춰 노드를 줄일 수 있는가 | kwok + 로컬 | 300m로 낮추면 평시 5 → 4대지만, 줄어든 1대는 api와 대기열이 한 노드를 나눠 쓰는 배치였고 오픈 부하(폴링 3,000/s + 예매 묶음)에서 폴링 p99가 10ms대에서 0.6~1.3초로 늘어남 | 1100m 유지 ([IMP-037](docs/improvements/IMP-037-node-consolidation-scheduling-sim.md) · [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md)) |
+| 평시에만 합치고 오픈 전에 떼면 | kwok으로 평시 → 사전 확장 → 축소 한 바퀴 + 로컬 | api 변경을 먼저 끝내면 롤링이 노드 상한에 막히지 않음. 평시 가정 부하(폴링 300/s)에서 동거 시 예매 p95가 늘었고, 1,000/s에서는 판정이 갈림 | 채택 보류 ([IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md)) |
 | 평시 예매 api를 2개로 줄이면 | kwok + 로컬 | 평시 4대가 되는 경우와 5대가 남는 경우로 갈림 | 3개 유지 ([IMP-041](docs/improvements/IMP-041-peace-api-two.md)) |
 | 예매 순간 DB 풀을 늘리면 | 로컬, 교차 배정 8묶음 | 풀 5 → 8의 효과가 쌍마다 일관되지 않음 | 5 유지 ([IMP-042](docs/improvements/IMP-042-booking-db-pool-5-vs-8.md)) |
 

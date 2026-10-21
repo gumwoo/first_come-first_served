@@ -107,6 +107,9 @@ jobs:
       # 장애 초기 분석: run 요약(누적 지표 차분·측정 무효 판정)과 규칙 분류기. 의존성 없는 node 내장 테스트.
       - name: triage normalize/rules test (run 요약·규칙 분류)
         run: node --test scripts/triage/normalize.test.mjs
+      # AI 분석 경계: 요청 형식·근거 수치 대조·호출 조건. 실제 API는 부르지 않는다(가짜 client, SDK 설치 불필요).
+      - name: triage AI boundary test (근거 대조·호출 조건)
+        run: node --test scripts/triage/analyze.test.mjs
 
   backend:
     name: 백엔드 (하네스 → 테스트)

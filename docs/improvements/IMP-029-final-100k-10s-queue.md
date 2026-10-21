@@ -99,7 +99,7 @@
 - 관찰(시각 UTC, 증거 `platform-timeline.log`·`platform-hpa-describe.txt`·`platform-ca.log`):
   05:56:17 HPA 9→10(CPU 97%, 이벤트 "cpu above target")·10번째 파드 Pending → 05:56:47 노드 10 Ready → 05:57:03 api 10 Running →
   06:01:21 HPA 10→9("All metrics below target") → 06:12:59 CA가 빈 노드 제거 → 노드 9(HPA 축소 약 11.6분 뒤).
-- 측정 조건: 시연 부하 run은 무효 조건에 걸렸다(진입 요청 89,489건 중 200 84,071·응답 없음(상태 0) 5,418, dropped 11,013, 발생기 CPU 1초 최대 86 / 98 / 89%, burst 구간을 vmstat과 netdev 시각에 맞춘 근사).
+- 측정 조건: 시연 부하 run은 무효 조건에 걸렸다(진입 요청 89,489건 중 200 84,071·응답 없음(상태 0) 5,418, dropped 11,013, 발생기 CPU 1초 최대 86 / 98 / 89%, burst 구간, vmstat을 netdev 시각에 맞춘 근사).
   조건은 v1과 같은 `--rate 3350`(발생기 `6a4dfa4`, #355 포함·#356 전)이었고, `requests` 변경 롤아웃과 drain으로 api 파드가 새로 떠 예열 없이 첫 부하를 받았다.
   HPA 확장(05:56:17)은 burst(T0 05:55:31) 뒤였고, 그 계기(CPU 97%)도 이 run에서 나왔다. 시연 준비 중 롤아웃 서지로 붙은 노드는 CA가 지우지 못해(api 노드 CPU 예약 > 50%) 운영자가 drain했다.
   시연의 정합성은 판정에서 뺐다(축소로 지운 파드의 감사 로그가 빠져 사후 검사가 "판정 불가, 빠진 파드 1"이었다, 확인). 확장·축소는 Git의 운영 설정(requests 300m·HPA)과 다른 세션 한정 설정에서 관찰했다.

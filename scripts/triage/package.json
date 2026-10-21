@@ -1,0 +1,14 @@
+{
+  "name": "flowticket-triage",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "부하 테스트 run의 초기 원인 분석(규칙 분류 + Claude Messages API). 서비스 런타임과 분리된 운영 도구",
+  "scripts": {
+    "triage": "node triage.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.131.0"
+  }
+}

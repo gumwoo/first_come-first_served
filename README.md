@@ -67,6 +67,21 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 
 ([TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md))
 
+### 로컬·시뮬레이션으로 설정값 검증
+
+클러스터를 띄우지 않고 설정값의 근거를 확인하기 위해 두 가지 방법을 썼습니다.
+
+- **kwok 스케줄링 시뮬레이션**: 실제 kube-scheduler에 가짜 노드를 붙이고, 실제 클러스터 스냅샷(시스템 Pod·데몬셋·노드 명세)과 현재 매니페스트를 올려 요청량을 바꿨을 때의 평시·사전 확장 노드 수를 계산했습니다. 현재 구성(평시 5대, 사전 확장 9대)이 재현되는 것을 먼저 확인했습니다.
+- **로컬 코어 고정 실험**: 같은 이미지 컨테이너를 노드 크기(코어 2개)에 고정하고 `docker update --cpuset-cpus`로 재시작 없이 조건을 바꿨습니다. 측정 순서를 교차(ABBA)해 비교했고, 판정 기준은 측정 전에 정했습니다.
+
+| 질문 | 방법 | 결과 | 결정 |
+|---|---|---|---|
+| Tomcat 스레드를 늘리면 나아지는가 | 로컬, Redis만 느리게 한 조건 | 200 → 400에서 처리 성능 개선 없음 | 200 유지 ([IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)) |
+| 예매 api CPU 요청량을 낮춰 노드를 줄일 수 있는가 | kwok + 로컬 | 300m로 낮추면 평시 5 → 4대지만, 줄어든 1대는 api와 대기열이 한 노드를 나눠 쓰는 배치였고 이때 폴링 p99가 10ms대에서 0.6~1.3초로 늘어남 | 1100m 유지 ([IMP-037](docs/improvements/IMP-037-node-consolidation-scheduling-sim.md) · [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md)) |
+| 평시에만 합치고 오픈 전에 떼면 | kwok으로 평시 → 사전 확장 → 축소 한 바퀴 | api 변경을 먼저 끝내야 롤링이 노드 상한에 막히지 않음. 평시 동거 시 예매 p95 증가(로컬) | 채택하지 않음 ([IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md)) |
+| 평시 예매 api를 2개로 줄이면 | kwok + 로컬 | 평시 4대가 되는 경우와 5대가 남는 경우로 갈림 | 3개 유지 ([IMP-041](docs/improvements/IMP-041-peace-api-two.md)) |
+| 예매 순간 DB 풀을 늘리면 | 로컬, 교차 배정 8묶음 | 풀 5 → 8의 효과가 쌍마다 일관되지 않음 | 5 유지 ([IMP-042](docs/improvements/IMP-042-booking-db-pool-5-vs-8.md)) |
+
 ### 정합성을 지키는 방법
 
 | 단계 | 목적 | 방법 |
@@ -87,7 +102,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 무중단 배포 | 롤링 배포 중 5xx 0건 (web `preStop` 25s) | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md) |
 | 장애 주입 | RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구, 노드 오토스케일로 Pending 파드 수용 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |
 | 대기열 토큰 정합성 | 토큰 소유권 검증, 재발급·이탈 경합(1인 1토큰), 대기 토큰 수명 관리를 통합 테스트로 검증 | [TS-043](docs/troubleshooting/TS-043-queue-token-ownership.md) · [TS-044](docs/troubleshooting/TS-044-queue-takeover-leave-race.md) · [TS-045](docs/troubleshooting/TS-045-queue-token-lifecycle.md) |
-| 설정값 근거 재검토 | CPU 요청량, Tomcat 스레드, DB 풀, 노드 수의 근거를 측정 원자료 재분석, 로컬 실험, kwok 스케줄링 시뮬레이션으로 확인. Tomcat 스레드는 400으로 늘려도 효과가 없어 200 유지, 평시 노드 수는 줄이는 후보 3가지를 검토해 현재 5대 유지 | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)~[IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md) · [IMP-041](docs/improvements/IMP-041-peace-api-two.md) |
+| 설정값 근거 재검토 | CPU 요청량, Tomcat 스레드, DB 풀, 노드 수의 근거를 측정 원자료 재분석, 로컬 실험, kwok 스케줄링 시뮬레이션으로 확인. Tomcat 스레드는 400으로 늘려도 효과가 없어 200 유지, 평시 노드 수는 줄이는 후보 3가지를 검토해 현재 5대 유지, 예매 api DB 풀은 5 유지 | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)~[IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md) · [IMP-041](docs/improvements/IMP-041-peace-api-two.md) · [IMP-042](docs/improvements/IMP-042-booking-db-pool-5-vs-8.md) |
 | 측정 세션 비용 분해 | 평시 노드 5대, 부하 발생기 3대 기준 세션 시간당 약 $2.06 (계산). 비중은 노드 29%, 발생기 28%, Redis 19%, NAT 9% | [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |
 
 ### 측정 환경

@@ -6,6 +6,8 @@
 #   scripts/loadtest/loadgen.sh push <로컬 파일> <발생기 경로> # 사용자 토큰 파일 등을 S3 경유로 나눠 준다
 #   scripts/loadtest/loadgen.sh exec [--gen N] -- <명령>     # 모든(또는 N번째) 발생기에서 명령 실행
 #   scripts/loadtest/loadgen.sh pull <session-id>           # 발생기의 run 출력을 로컬 artifacts/로 받는다
+#   scripts/loadtest/loadgen.sh stop                        # 발생기를 중지한다(run 묶음 사이 — 컴퓨팅 요금이 멈춘다)
+#   scripts/loadtest/loadgen.sh start                       # 중지한 발생기를 다시 켜고 SSM 연결까지 기다린다
 #
 # exec는 발생기 번호를 GEN 환경변수(g1, g2, …)로 넘긴다. run-entry.sh의 --gen에 그대로 쓴다.
 # 결과 버킷은 철거 때 함께 지워진다. run이 끝날 때마다 pull 한다(§7).
@@ -16,10 +18,16 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 REGION="${AWS_REGION:-ap-northeast-2}"
 REMOTE_ROOT=/opt/flowticket
 
-ids() {
+ids() { ids_in running; }
+
+# 발생기는 세션 내내 켜 둘 필요가 없다(IMP-040: c6i.xlarge × 3이 세션 시간당 비용의 약 28%).
+# 개수를 0으로 내리면(Terraform loadgen_instance_count=0) 결과 버킷까지 지워지므로 인스턴스를 중지·시작한다.
+# 중지 중에는 컴퓨팅 요금이 없고 루트 EBS(gp3 30GiB)만 과금된다. 자동 할당 공인 IP는 반납되지만 SSM으로만 다루므로 영향이 없다.
+# checkout한 저장소·k6는 루트 볼륨에 남아 시작 뒤 그대로 쓴다.
+ids_in() {
   # 이름 순(flowticket-loadgen-1, -2, …)으로 고정해 GEN 번호가 실행마다 바뀌지 않게 한다.
   aws ec2 describe-instances --region "$REGION" \
-    --filters Name=tag:Project,Values=flowticket Name=tag:Role,Values=loadgen Name=instance-state-name,Values=running \
+    --filters Name=tag:Project,Values=flowticket Name=tag:Role,Values=loadgen "Name=instance-state-name,Values=$1" \
     --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value, InstanceId]' --output text \
     | sort -V | awk '{print $2}'
 }
@@ -105,6 +113,31 @@ case "$cmd" in
     aws s3 sync --region "$REGION" "s3://$b/runs/$session" "$ROOT/artifacts/loadtest/$session" --only-show-errors
     echo "받음: $ROOT/artifacts/loadtest/$session"
     ;;
+  stop)
+    mapfile -t running < <(ids)
+    if [ "${#running[@]}" -eq 0 ]; then echo "실행 중인 발생기가 없다"; exit 0; fi
+    aws ec2 stop-instances --region "$REGION" --instance-ids "${running[@]}" --query 'StoppingInstances[].InstanceId' --output text
+    aws ec2 wait instance-stopped --region "$REGION" --instance-ids "${running[@]}"
+    echo "중지됨: ${#running[@]}대"
+    ;;
+  start)
+    mapfile -t stopped < <(ids_in stopped)
+    if [ "${#stopped[@]}" -eq 0 ]; then echo "중지된 발생기가 없다"; exit 0; fi
+    aws ec2 start-instances --region "$REGION" --instance-ids "${stopped[@]}" --query 'StartingInstances[].InstanceId' --output text
+    aws ec2 wait instance-running --region "$REGION" --instance-ids "${stopped[@]}"
+    # SSM 에이전트가 다시 붙어야 exec·pull을 쓸 수 있다. 발생기마다 최대 5분 기다린다.
+    for id in "${stopped[@]}"; do
+      ping=""
+      for _ in $(seq 1 60); do
+        ping="$(aws ssm describe-instance-information --region "$REGION" --filters "Key=InstanceIds,Values=$id" \
+          --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null || true)"
+        [ "$ping" = "Online" ] && break
+        sleep 5
+      done
+      [ "$ping" = "Online" ] || { echo "SSM 연결 대기 시간 초과: $id" >&2; exit 1; }
+    done
+    echo "시작됨: ${#stopped[@]}대(SSM Online)"
+    ;;
   *)
-    sed -n '2,10p' "$0"; exit 2 ;;
+    sed -n '2,12p' "$0"; exit 2 ;;
 esac

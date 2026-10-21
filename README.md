@@ -9,12 +9,12 @@
 | 동시성 정합성 | 입장자 100명이 동시에 좌석 선점·주문·결제(같은 좌석 경합, 중복 클릭, 결제 실패 후 재시도, 1인 한도 포함)를 수행해 판정 3회 모두 정합성 위반 0건 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) |
 | 10만 명 / 10초 진입 | ALB access log 기준 서버가 받은 진입 요청 100,000건을 모두 정상 처리, 정원 초과·정합성 위반 0건 (통합 구조 3회, 대기열 분리 구조 1회) | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) · [IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md) |
 | 자동 확장 | 폴링이 몰리자 Pod 3→9, Node 6→9로 확장한 뒤 부하가 끝나고 다시 축소. 노드 9대 고정 운영 대비 노드-시간 11~13% 절감 (계산) | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) · [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) |
-| 무중단 배포·장애 대응 | 롤링 배포 중 5xx 0건, RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구 | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) |
+| 무중단 배포·장애 대응 | 롤링 배포 중 5xx 0건(web `preStop` 25s), RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구 | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) |
 | 비용 분석 | 측정 세션 비용을 항목별로 분해(시간당 약 $2.06, 계산)해 비용을 줄일 우선순위를 정함 | [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |
 
 ## 프로젝트 배경
 
-SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 기능이 많은 트래픽 속에서도 올바르게 동작하는지 직접 확인할 기회는 적었습니다. 선착순 예매는 정원보다 많은 사용자가 입장하거나 같은 좌석이 두 번 팔리는 문제가 화면만으로는 잘 드러나지 않는 도메인입니다. 그래서 동시성 문제를 막는 구현부터 시작했고, AWS에 직접 배포해 부하·배포·자동 확장·장애 상황에서 정합성이 유지되는지 측정했습니다. 측정은 부하 도구의 전송 기록 대신 서버가 실제로 받은 요청을 기준으로 집계했습니다.
+SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 기능이 많은 트래픽 속에서도 올바르게 동작하는지 직접 확인할 기회는 적었습니다. 선착순 예매는 정원보다 많은 사용자가 입장하거나 같은 좌석이 두 번 팔리는 문제가 화면만으로는 잘 드러나지 않는 도메인입니다. 그래서 동시성 문제를 막는 구현부터 시작했고, AWS에 직접 배포해 부하·배포·자동 확장·장애 상황에서 정합성이 유지되는지 측정했습니다. 진입 요청 수는 부하 도구의 전송 기록 대신 서버가 실제로 받은 요청을 기준으로 집계했습니다.
 
 ## 서비스 흐름
 
@@ -37,7 +37,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
   <img alt="통합 구조 10만 명 측정 run pf-r2의 api Pod 수와 Ready 노드 수. 오픈 약 15분 전 사전 확장 PR 머지로 둘 다 9가 되고, 오픈 뒤 사전 확장을 끄자 api Pod가 3까지, 노드가 6까지 줄어든다. 오픈 15~23분의 폴링 폭증(7,000/s) 동안 api Pod와 노드가 다시 9까지 늘었고, 폭증 뒤 api Pod 3, 노드 4로 줄었다." src="docs/assets/scaling-pf-r2-light.png">
 </picture>
 
-<sub>측정값 출처: IMP-031 pf-r2. 데이터 [`imp031-pf-r2-scaling.csv`](docs/assets/imp031-pf-r2-scaling.csv), 생성 스크립트 [`scaling-chart.py`](docs/assets/scaling-chart.py)</sub>
+<sub>출처: IMP-031 pf-r2 측정 데이터. 데이터 [`imp031-pf-r2-scaling.csv`](docs/assets/imp031-pf-r2-scaling.csv), 생성 스크립트 [`scaling-chart.py`](docs/assets/scaling-chart.py)</sub>
 
 운영 구성을 대기열 분리 구조로 바꾼 뒤에는 진입을 받는 Pod가 api 9개에서 대기열 6개로 달라졌기 때문에, 같은 판정 기준으로 다시 측정했습니다. 진입 100,000건을 모두 정상 처리했고 정원 초과·정합성 위반은 없었습니다([IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md)).
 
@@ -63,7 +63,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 조건 | 요청 | 5xx |
 |---|---|---|
 | `preStop` 5s | 6,001 | 발생 |
-| `preStop` 25s | 6,001 | **0** |
+| `preStop` 25s | 6,001 | 0 |
 
 ([TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md))
 
@@ -103,14 +103,14 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 
 | 선택 | 비교한 대안 | 선택 이유 | 근거 |
 |---|---|---|---|
-| 같은 이미지의 대기열 전용 Deployment | 통합 구조 유지, 서비스 분리 | 폭증 중 예매 p95를 1.6~2.6초에서 184~272ms로 낮춤. 노드 비용 증가(+15~28%, 계산)를 감안하고 선택 | [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md) · [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) |
+| 같은 이미지의 대기열 전용 Deployment | 통합 구조 유지, 서비스 분리 | 폭증 중 예매 p95가 통합 구조 1.6~2.6초, 분리 구조 184~272ms(각 2회). 노드 비용 증가(+15~28%, 계산)를 감안하고 선택 | [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md) · [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) |
 | 대기열 상태는 폴링(`retryAfterMs`) | 대기열 SSE | 대기자 전원의 SSE 연결은 Pod 메모리 1Gi에서 약 3,300~3,500개 시점에 OOM이 발생 | [ADR-023](docs/decisions/ADR-023-burst-entry-and-waiting-two-axes.md) |
 | Outbox + Redis Pub/Sub | Kafka | 아웃박스 이벤트가 `order.paid` 하나뿐이어서 브로커 3대를 운영할 필요가 없다고 판단 | [ADR-028](docs/decisions/ADR-028-kafka-reevaluation.md) |
 | `preStop` 25s | `deregistration_delay` 조정 | 실패가 타깃 해제 이전 구간에서 발생했고 애플리케이션 5xx는 0건 | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) |
 | AZ별 NAT 3개 | NAT 1개 | NAT를 하나만 두면 그 AZ 장애가 다른 AZ의 결제 호출까지 막음 | [ADR-012](docs/decisions/ADR-012-3az-eks-infra-cost-control.md) |
 | Tomcat 스레드 200 | 400 | 하위 의존성이 느린 조건에서 400으로 늘려도 처리 성능이 개선되지 않음 | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md) |
 | 평시 노드 5대 | CPU 요청량 축소, 평시 노드 통합, 평시 api 2개 | 노드를 줄이면 api와 대기열이 한 노드를 나눠 쓰면서 응답이 느려지거나, 절감 효과가 일정하지 않음 | [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md) · [IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md) · [IMP-041](docs/improvements/IMP-041-peace-api-two.md) |
-| CA 축소 대기 10분 | 5분 | 5분으로 줄이면 run당 약 $0.08 절감되지만(계산) 폭증 직전의 여유 노드가 먼저 제거됨 | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) §10 |
+| CA 축소 대기 10분 | 5분 | 5분으로 줄이면 run당 약 $0.08 절감되지만 폭증 직전의 여유 노드가 먼저 제거됨(계산) | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) §10 |
 
 ## 핵심 설계
 
@@ -119,7 +119,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 - **결제 상태 전이**: 주문·결제·좌석·hold 상태를 명시적으로 전이하고 멱등성 키를 사용합니다.
 - **이벤트 전달**: 비즈니스 트랜잭션과 Outbox 기록을 함께 저장하고, 릴레이가 Redis Pub/Sub(`sse:order`)으로 발행해 SSE로 전달합니다.
 - **실시간 반영**: 대기열은 서버가 다음 조회 시점(`retryAfterMs`)을 정하는 폴링으로, 좌석·주문 상태는 SSE와 재조회로 화면에 반영합니다.
-- **용량과 확장**: 예매 api의 CPU 요청량 1100m는 진입 요청 1건당 처리 비용 측정값으로 계산했습니다([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md), [설정값 근거](docs/deployment/optimization-targets.md)). HPA와 Cluster Autoscaler로 Pod와 Node를 늘리고 줄이며(api 3개 고정, 대기열 2~6개), 대기열 Pod가 늘기 시작하는 데 40~70초, 노드 추가에 100~150초가 걸리기 때문에 공연 오픈 전에는 Git PR로 대기열을 2개에서 6개로 미리 늘립니다.
+- **용량과 확장**: 예매 api의 CPU 요청량 1100m는 api가 진입까지 받던 통합 구조에서 진입 요청 1건당 처리 비용 측정값으로 계산했고([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md)), 대기열 분리 구조로 바꾼 뒤에는 예매 순간 1~2초 동안 코어 2개 가까이 쓰는 것을 확인해 같은 값을 유지했습니다([설정값 근거](docs/deployment/optimization-targets.md)). HPA와 Cluster Autoscaler로 Pod와 Node를 늘리고 줄이며(api 3개 고정, 대기열 2~6개), 대기열 Pod가 늘기 시작하는 데 40~70초, 노드 추가에 100~150초가 걸리기 때문에 공연 오픈 전에는 Git PR로 대기열을 2개에서 6개로 미리 늘립니다.
 - **외부 데이터 분리**: KOPIS 호출은 요청 경로와 분리해 배치 동기화로 처리합니다.
 
 ## 백엔드 아키텍처
@@ -160,7 +160,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 평시, 발생기 없음 | 약 $1.46 | [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |
 
 - 자동 확장으로 통합 구조 측정 run에서 노드 9대 고정 대비 노드-시간을 11~13% 줄였습니다(계산, [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md)).
-- 비용 분해 결과 부하 발생기 가동 시간과 세션 길이의 비중이 커서, 이 두 가지를 우선 관리합니다([IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md)).
+- 비용 분해 결과 부하 발생기 비중이 크고 전체 비용이 세션 길이에 비례해서, 발생기 가동 시간과 세션 길이를 우선 관리합니다([IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md)).
 - 철거는 `scripts/tear-down.sh`가 Terraform 외부 리소스(Ingress·ALB, EBS, ENI)를 먼저 정리한 뒤 남은 리소스를 점검합니다(`--audit-only`는 점검만 수행). ECR·ACM·Route53·tfstate 같은 bootstrap 리소스는 유지합니다.
 - AWS Budgets(월 $50, 4단계 알림)와 Cost Anomaly Detection을 설정했습니다([ADR-012](docs/decisions/ADR-012-3az-eks-infra-cost-control.md)).
 

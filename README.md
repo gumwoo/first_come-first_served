@@ -119,7 +119,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 - **결제 상태 전이**: 주문·결제·좌석·hold 상태를 명시적으로 전이하고 멱등성 키를 사용합니다.
 - **이벤트 전달**: 비즈니스 트랜잭션과 Outbox 기록을 함께 저장하고, 릴레이가 Redis Pub/Sub(`sse:order`)으로 발행해 SSE로 전달합니다.
 - **실시간 반영**: 대기열은 서버가 다음 조회 시점(`retryAfterMs`)을 정하는 폴링으로, 좌석·주문 상태는 SSE와 재조회로 화면에 반영합니다.
-- **용량과 확장**: 예매 api의 CPU 요청량 1100m는 api가 진입까지 받던 통합 구조에서 진입 요청 1건당 처리 비용 측정값으로 계산했고([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md)), 대기열 분리 구조로 바꾼 뒤에는 예매 순간 1~2초 동안 코어 2개 가까이 쓰는 것을 확인해 같은 값을 유지했습니다([설정값 근거](docs/deployment/optimization-targets.md)). HPA와 Cluster Autoscaler로 Pod와 Node를 늘리고 줄이며(api 3개 고정, 대기열 2~6개), 대기열 Pod가 늘기 시작하는 데 40~70초, 노드 추가에 100~150초가 걸리기 때문에 공연 오픈 전에는 Git PR로 대기열을 2개에서 6개로 미리 늘립니다.
+- **용량과 확장**: 예매 api의 CPU 요청량 1100m는 api가 진입까지 받던 통합 구조에서 진입 요청 1건당 처리 비용 측정값으로 계산했고([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md)), 대기열 분리 구조로 바꾼 뒤에는 로컬 실험으로 예매 순간 1~2초 동안 코어 2개 가까이 쓰는 것을 확인해([IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)) 같은 값을 유지했습니다([설정값 근거](docs/deployment/optimization-targets.md)). HPA와 Cluster Autoscaler로 Pod와 Node를 늘리고 줄이며(api 3개 고정, 대기열 2~6개), 대기열 Pod가 늘기 시작하는 데 40~70초, 노드 추가에 100~150초가 걸리기 때문에 공연 오픈 전에는 Git PR로 대기열을 2개에서 6개로 미리 늘립니다.
 - **외부 데이터 분리**: KOPIS 호출은 요청 경로와 분리해 배치 동기화로 처리합니다.
 
 ## 백엔드 아키텍처

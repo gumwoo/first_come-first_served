@@ -1,0 +1,62 @@
+# 장애 분석 도구용 로컬 실험실: 원인을 알고 주입한 예매 묶음 run을 만든다(scripts/triage 입력).
+# 구성은 로컬 실험 L7([[IMP-043]])과 같다. 컨테이너마다 코어를 고정해 서로의 CPU를 빼앗지 않게 한다.
+#
+#   bash infra/triage-lab/lab.sh up        # 빌드·기동·시드·토큰
+#   bash infra/triage-lab/lab.sh run <fault>
+#
+# 코어 번호는 16코어 PC 기준 기본값이다. 다른 PC는 환경변수로 바꾼다.
+# JWT_SECRET은 이 실험실에서만 쓰는 검증용 기본값이다(운영 키와 무관, docker-compose.prod.yml과 같은 방식).
+
+name: ft-triage
+
+x-app: &app
+  build:
+    context: ../..
+    dockerfile: apps/api/Dockerfile
+  image: flowticket-api:triage-lab
+  mem_limit: 2g
+  environment: &env
+    DB_HOST: postgres
+    DB_PORT: 5432
+    DB_NAME: flowticket
+    DB_USERNAME: flowticket
+    DB_PASSWORD: flowticket
+    REDIS_HOST: redis
+    REDIS_PORT: 6379
+    JWT_SECRET: ${JWT_SECRET:-triage-lab-secret-0123456789-0123456789-0123456789}
+    PAYMENT_GATEWAY: mock
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+
+services:
+  postgres:
+    image: postgres:16
+    cpuset: "${LAB_PG_CPUS:-6,7}"
+    # WAL 동기화 시간을 재야 저장소 지연이 낀 run을 가려낼 수 있다(기본은 꺼져 있어 0으로 찍힌다).
+    command: ["postgres", "-c", "track_wal_io_timing=on"]
+    environment:
+      POSTGRES_DB: flowticket
+      POSTGRES_USER: flowticket
+      POSTGRES_PASSWORD: flowticket
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U flowticket -d flowticket"], interval: 3s, timeout: 3s, retries: 30 }
+
+  redis:
+    image: redis:7.4
+    cpuset: "${LAB_REDIS_CPUS:-4}"
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 3s, timeout: 3s, retries: 30 }
+
+  # 예매 api. 풀은 운영과 같은 기본값(5)이다.
+  api:
+    <<: *app
+    cpuset: "${LAB_API_CPUS:-2,3}"
+    ports: ["18080:8080"]
+
+  # 대기열 전용(운영 구조 B와 같은 이미지, 풀 3). 진입·상태 조회만 받는다.
+  queue:
+    <<: *app
+    cpuset: "${LAB_QUEUE_CPUS:-8,9}"
+    environment:
+      <<: *env
+      DB_POOL_MAX: "3"
+    ports: ["18081:8080"]

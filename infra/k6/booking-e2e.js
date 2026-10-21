@@ -17,6 +17,7 @@
 //   k6 run --log-format=raw -e K6_BASE_URL=https://flow-ticket.com/api -e EVENT_ID=1826 -e USERS=tokens.json \
 //     -e START_AT=2026-10-07T12:00:00Z infra/k6/booking-e2e.js
 //   USER_OFFSET: 토큰 파일에서 쓸 첫 사용자 인덱스(기본 0). ENTRY_LEAD_SECONDS: T0 몇 초 전에 진입할지(기본 20).
+//   QUEUE_BASE_URL: 대기열 진입·상태 조회를 보낼 주소(기본 K6_BASE_URL). 대기열 전용 컨테이너가 따로 있는 로컬 실험실용.
 import http from "k6/http";
 import { sleep } from "k6";
 import exec from "k6/execution";
@@ -25,6 +26,7 @@ import crypto from "k6/crypto";
 import { SharedArray } from "k6/data";
 
 const BASE = __ENV.K6_BASE_URL || "http://localhost:8080";
+const QBASE = __ENV.QUEUE_BASE_URL || BASE;
 const EVENT_ID = __ENV.EVENT_ID;
 const USER_OFFSET = Number(__ENV.USER_OFFSET || 0);
 const ENTRY_LEAD_SECONDS = Number(__ENV.ENTRY_LEAD_SECONDS || 20);
@@ -145,13 +147,13 @@ export default function (data) {
 
   // 1) 진입 → ADMITTED. 공연을 리셋한 뒤 100명이면 정원 100이라 승격 주기(1.5초) 한두 번 안에 모두 입장한다.
   sleep(Math.max(0, (START_AT - ENTRY_LEAD_SECONDS * 1000 - Date.now()) / 1000));
-  const entry = call("queue_entry", "POST", `${BASE}/events/${EVENT_ID}/queue/token`);
+  const entry = call("queue_entry", "POST", `${QBASE}/events/${EVENT_ID}/queue/token`);
   const qd = dataOf(entry) || {};
   const queueToken = qd.token;
   let status = qd.status;
   while (queueToken && status !== "ADMITTED" && Date.now() < START_AT - 1000) {
     sleep(1);
-    const s = call("queue_status", "GET", `${BASE}/queue/status?token=${encodeURIComponent(queueToken)}`);
+    const s = call("queue_status", "GET", `${QBASE}/queue/status?token=${encodeURIComponent(queueToken)}`);
     status = (dataOf(s) || {}).status;
   }
   rec.admitted = status === "ADMITTED";

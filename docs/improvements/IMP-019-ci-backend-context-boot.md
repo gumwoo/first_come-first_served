@@ -120,8 +120,8 @@ DB/JPA 초기화 단계가 +0.6초 시점까지 진행됐고, 그 뒤 40초가 �
 (`order-events`, `order-events.DLT`) Spring Boot가 부팅 시 브로커에 붙어 토픽을 만들려 한다.
 붙지 못한 채 재시도하다 약 40초 뒤에 포기한다.
 
-`listener.auto-startup`이 효과가 없던 이유도 여기서 설명된다. 멈추는 주체는 리스너가 아닌
-admin 클라이언트다.
+`listener.auto-startup`이 효과가 없던 이유도 여기서 설명된다. 멈추는 주체는 admin
+클라이언트다.
 
 ## 6. 조치 (해결)
 

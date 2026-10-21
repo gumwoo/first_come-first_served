@@ -135,7 +135,7 @@ baseline 중앙값보다 느렸다. baseline이 95~104초로 촘촘했던 것과
 ## 8. 측정 조건
 
 - GitHub Actions 러너 기준이다. baseline은 4회 측정의 중앙값, 소스만 변경은 n=4, cold/warm은 각 1회다.
-- Web의 소스만 변경은 아직 측정 대상 머지가 없었다. §6의 머지는 모두 `apps/api`만 바뀌어
+- Web의 소스만 변경은 측정하지 않았다. §6의 머지는 모두 `apps/api`만 바뀌어
   Web은 완전 히트(5초)였다.
 - OIDC 신뢰 조건을 `ref:refs/heads/main`으로 좁힌 상태라(PR #164) 이 워크플로는 브랜치에서
   시험할 수 없고, main에 머지한 뒤 측정했다. image.yml을 고칠 때마다 같은 제약이 적용된다

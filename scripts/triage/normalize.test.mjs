@@ -79,8 +79,10 @@ test("cgroup 통계에서 할당량에 막힌 주기 비율을 구한다", () =>
   const lines = [-3, -2, -1, 0, 1, 2, 3].map((s, i) => `${iso(SA + s * 1000)} usage_usec=${i * 400000} nr_periods=${i * 10} nr_throttled=${i * 8} throttled_usec=0`);
   const c = summarizeCgroup(lines, SA - 2000, SA + 2000);
   assert.equal(c.throttled_period_ratio, 0.8);
+  assert.equal(c.throttled_period_ratio_max, 0.8);
   assert.equal(c.cpu_cores_mean, 0.4);
   assert.equal(summarizeCgroup([], SA, SA + 1000), null); // 파일이 없는 이전 run
+  assert.equal(summarizeCgroup([`${iso(SA)} `, `${iso(SA + 1000)} `], SA, SA + 1000), null); // 통계를 못 읽은 줄
 });
 
 test("구간 끝 뒤 표본이 없으면 무효다", () => {

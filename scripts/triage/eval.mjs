@@ -16,7 +16,7 @@ import { finalVerdict } from "./triage.mjs";
 
 const EXPECTED = { none: "normal", redis: "redis", db: "db", cpu: "app_cpu" };
 // 공개 단가(100만 토큰당, 10만 토큰 이하 프롬프트). 모델이 바뀌면 함께 고친다.
-const PRICE = { "claude-haiku-5-5": { in: 0.10, out: 0.50 } };
+const PRICE = { "claude-haiku-5-5": { in: 0.10, out: 0.50 }, "claude-sonnet-5-5": { in: 2, out: 10 } };
 
 // 판정 하나를 범주 코드로: 원인이면 원인, 정상이면 normal, 그 밖(판단 불가)은 undetermined
 export const label = (v) => (v.verdict === "cause" ? v.cause : v.verdict === "normal" ? "normal" : "undetermined");

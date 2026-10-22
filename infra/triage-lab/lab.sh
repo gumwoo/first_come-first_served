@@ -15,7 +15,9 @@
 # DB CPU 0.3코어·경쟁 컨테이너(가중치 4배)로는 예매 지연이 정상 범위였다(infra/triage-lab/README.md).
 # 할당량 해제는 --cpus를 고정 코어 수로 되돌리는 방식이다(docker update --cpus 0은 제한을 풀지 않는다).
 #
-# 결과: artifacts/triage-lab/runs/<무작위 id>/ (sampler.jsonl, pg.tsv, wal.tsv, disk.txt, book.log, meta.json)
+# 결과: artifacts/triage-lab/runs/<무작위 id>/ (sampler.jsonl, pg.tsv, wal.tsv, disk.txt, cgroup-api.txt, book.log, meta.json)
+# cgroup-api.txt는 api 컨테이너의 cgroup CPU 통계(할당량에 막힌 주기 수 포함)다. 할당량에 막힌 컨테이너는 CPU 사용량이
+# 낮게 찍혀 사용량만으로는 CPU 부족을 알아보기 어렵다(IMP-044). 컨테이너 밖(호스트 cgroup 이름공간)에서 읽는다.
 # disk.txt는 측정 대상과 분리된 컨테이너의 디스크 동기화 지연이다. 호스트 저장소가 느린 run을 가려내는 데 쓴다(IMP-043).
 # PostgreSQL의 WAL 동기화 시간은 DB가 CPU를 못 받을 때도 부풀어, 측정 환경 판정에는 쓰지 않는다.
 # 원인 라벨은 run 디렉터리 밖 artifacts/triage-lab/labels.jsonl에만 남긴다. 분석 도구가 라벨을 보지 않게 하기 위해서다.
@@ -108,6 +110,8 @@ burst() { # <run 디렉터리>
   node "$HERE/sampler.mjs" "$dir/sampler.jsonl" 85 & local sp=$!  # 예매 시작 +40초까지(분석 구간 최대 +30초보다 넉넉히)
   MSYS_NO_PATHCONV=1 docker run --rm --cpuset-cpus "${LAB_PROBE_CPUS:-14}" -v "$w/infra/triage-lab:/lab:ro" debian:bookworm-slim \
     timeout 85 bash /lab/disk-probe.sh > "$dir/disk.txt" 2>/dev/null & local dp=$!
+  MSYS_NO_PATHCONV=1 docker run --rm --privileged --cgroupns=host --cpuset-cpus "${LAB_PROBE_CPUS:-14}" -v "$w/infra/triage-lab:/lab:ro" debian:bookworm-slim \
+    bash /lab/cgroup-sampler.sh "$(docker inspect -f '{{.Id}}' "$(cid api)")" 85 > "$dir/cgroup-api.txt" 2>/dev/null & local cp=$!
   ( sleep 15; psqlx < "$HERE/pgwatch.sql" > "$dir/pg.tsv" 2>&1 ) & local pp=$!
   (
     q="select clock_timestamp(), wal_sync, wal_sync_time from pg_stat_wal"
@@ -117,7 +121,7 @@ burst() { # <run 디렉터리>
   MSYS_NO_PATHCONV=1 docker run --rm --network ft-triage_default --cpuset-cpus "${LAB_K6_CPUS:-10,11}" -v "$w:/w" grafana/k6:0.54.0 run --log-format=raw \
     -e K6_BASE_URL=http://api:8080 -e QUEUE_BASE_URL=http://queue:8080 -e EVENT_ID="$EVENT_ID" -e USERS=/w/artifacts/triage-lab/tokens.json \
     -e USER_OFFSET="$OFFSET" -e START_AT="$sa" /w/infra/k6/booking-e2e.js > "$dir/book.log" 2>&1 || true
-  wait "$sp" "$pp" "$wp" "$dp" || true
+  wait "$sp" "$pp" "$wp" "$dp" "$cp" || true
   printf '{"startAt":"%s","eventId":%s,"users":%s}\n' "$sa" "$EVENT_ID" "$USERS_PER_RUN" > "$dir/meta.json"
 }
 

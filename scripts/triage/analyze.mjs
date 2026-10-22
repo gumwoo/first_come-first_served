@@ -12,7 +12,7 @@
 // 구간 집계 수치 약 35개와 초 단위 시계열(표본 8~17개)을 읽고 원인 3범주 중 고르는 일이라 Haiku를 기본으로 둔다.
 // 수치를 잘못 옮기면 verify.mjs가 걸러 판단 불가가 된다.
 
-export const PROMPT_VERSION = "triage-prompt/v3";
+export const PROMPT_VERSION = "triage-prompt/v4";
 export const DEFAULT_MODEL = "claude-haiku-5-5";
 export const CAUSES = ["redis", "db", "app_cpu"];
 
@@ -72,6 +72,7 @@ export const SYSTEM = `너는 부하 테스트 결과의 초기 원인 분석을
 
 규칙
 - 입력 JSON에 있는 수치만 쓴다. 근거마다 필드 경로와 값을 그대로 단다. 계산한 값을 새로 만들지 않는다.
+- 근거에는 숫자 필드만 쓴다(validity 같은 참·거짓 필드는 근거로 쓰지 않는다).
 - 예매 지연이 크지 않고 오류가 없으면 normal로 답한다.
 - 지표가 서로 모순되거나 어느 범주도 뒷받침되지 않으면 undetermined로 답한다. 억지로 고르지 않는다.
 - 1순위 후보와 맞지 않는 관측이 있으면 counter_evidence에 적는다.
@@ -81,6 +82,9 @@ export const SYSTEM = `너는 부하 테스트 결과의 초기 원인 분석을
 - booking.p95_ms: 단계별 p95(ms), booking.p95_median_ms: 세 단계 p95의 중앙값
 - api.cpu_cores_mean: 구간 평균 api CPU 코어 수(할당 코어는 2개, 유휴 구간이 섞여 낮게 나온다)
 - api.cpu_cores_max: 표본 사이 api CPU 최댓값(코어)
+- api.cgroup.throttled_period_ratio: 구간 동안 api 컨테이너가 CPU 할당량에 막힌 주기 비율(0~1), throttled_period_ratio_max: 초 단위 최댓값.
+  할당량에 막힌 컨테이너는 CPU를 더 쓰지 못해 CPU 사용량(cpu_cores_*)이 오히려 낮게 보인다. CPU 부족은 사용량보다 이 비율로 판단한다.
+  앱이 CPU를 못 받으면 Redis 응답 처리와 트랜잭션도 함께 늦어져 Redis·DB 지표가 같이 오를 수 있다
 - api.hikari.usage_ms_mean: 커넥션 1회 점유 평균, acquire_ms_mean: 커넥션 획득 대기 평균.
   점유 평균은 Redis를 부르지 않는 주문·결제의 커넥션 사용까지 합친 평균이다. Redis 지연과 크기를 직접 비교하지 말고 정상 기준 대비 얼마나 늘었는지 본다
 - api.redis.completion_ms_mean: Redis 명령 완료 평균(ms)
@@ -91,13 +95,14 @@ export const SYSTEM = `너는 부하 테스트 결과의 초기 원인 분석을
 - disk: 측정 대상과 분리된 디스크 프로브(측정 환경 판정용, 이미 유효로 판정된 run만 들어온다)
 - series: 예매 시작 기준 초(s)별 api 지표, scrape_rtt_ms는 그 표본의 지표 응답 시간
 
-정상 기준(같은 구성·같은 부하에서 장애를 넣지 않은 run 3회의 범위)
-- booking.p95_median_ms 293~816
-- api.redis.completion_ms_mean 0.31~0.64
-- api.hikari.usage_ms_mean 4.7~13, api.hikari.acquire_ms_mean 56~168
-- api.tomcat_busy_max 7~20, api.cpu_cores_max 0.76~1.76, api.scrape_rtt_ms_max 69~525
-- db.active_mean 0~0.06, db.idle_in_tx_mean 0.06~0.28, db.wal_sync_ms_per_op 0.73~0.82
-기준 범위를 벗어난 정도를 근거로 쓴다. 기준은 3회뿐이라 범위 근처의 값은 이상으로 단정하지 않는다.`;
+정상 기준(같은 구성·같은 부하에서 장애를 넣지 않은 run 9회의 범위, cgroup 항목은 그중 6회)
+- booking.p95_median_ms 293~1069
+- api.redis.completion_ms_mean 0.31~0.84
+- api.hikari.usage_ms_mean 4.7~21.5, api.hikari.acquire_ms_mean 56~253
+- api.tomcat_busy_max 1~69, api.cpu_cores_max 0.76~1.76, api.scrape_rtt_ms_max 69~1312
+- api.cgroup.throttled_period_ratio 0~0.02, api.cgroup.throttled_period_ratio_max 0~0.18
+- db.active_mean 0~0.41, db.idle_in_tx_mean 0.06~0.28, db.wal_sync_ms_per_op 0.73~16.98
+WAL 동기화는 호스트 디스크 상태에 따라 정상 run에서도 크게 흔들린다. 기준 범위를 벗어난 정도를 근거로 쓰고, 범위 근처의 값은 이상으로 단정하지 않는다.`;
 
 export function buildRequest(summary, model = process.env.TRIAGE_MODEL || DEFAULT_MODEL) {
   return {

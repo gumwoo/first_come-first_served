@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { cpuIntervals, normalize, userDurationMs } from "./normalize.mjs";
+import { cpuIntervals, normalize, summarizeCgroup, userDurationMs } from "./normalize.mjs";
 import { classify, THRESHOLDS } from "./rules.mjs";
 
 const SA = Date.parse("2026-10-21T12:00:00Z");
@@ -74,6 +74,17 @@ test("응답이 늦은 표본 바로 다음의 짧은 간격은 다음 표본과
   assert.deepEqual(cores, [1, 1]); // 3.5초 구간, 0.2+1.0초를 합친 구간
 });
 
+test("cgroup 통계에서 할당량에 막힌 주기 비율을 구한다", () => {
+  // 1초마다 주기 10개, 구간 동안 그중 8개가 막힘
+  const lines = [-3, -2, -1, 0, 1, 2, 3].map((s, i) => `${iso(SA + s * 1000)} usage_usec=${i * 400000} nr_periods=${i * 10} nr_throttled=${i * 8} throttled_usec=0`);
+  const c = summarizeCgroup(lines, SA - 2000, SA + 2000);
+  assert.equal(c.throttled_period_ratio, 0.8);
+  assert.equal(c.throttled_period_ratio_max, 0.8);
+  assert.equal(c.cpu_cores_mean, 0.4);
+  assert.equal(summarizeCgroup([], SA, SA + 1000), null); // 파일이 없는 이전 run
+  assert.equal(summarizeCgroup([`${iso(SA)} `, `${iso(SA + 1000)} `], SA, SA + 1000), null); // 통계를 못 읽은 줄
+});
+
 test("구간 끝 뒤 표본이 없으면 무효다", () => {
   const dir = makeRun({ users: 3 });
   const rows = fs.readFileSync(path.join(dir, "sampler.jsonl"), "utf8").trim().split("\n").slice(0, 12); // 예매 시작 +8초까지만
@@ -89,6 +100,8 @@ test("규칙 분류: 무효·정상·Redis·DB·앱 CPU·판단 불가", () => {
   assert.equal(classify(base).verdict, "normal");
   assert.equal(classify(with_({ api: { ...slow.api, redis: { cmds: 1, completion_ms_mean: THRESHOLDS.redis_completion_ms + 1 } } })).cause, "redis");
   assert.equal(classify(with_({ db: { ...slow.db, active_mean: THRESHOLDS.db_active_mean + 1 } })).cause, "db");
+  // CPU 할당량에 막힌 비율이 높으면 Redis·DB 기준을 넘어도 app_cpu다
+  assert.equal(classify(with_({ api: { ...slow.api, cgroup: { throttled_period_ratio: 0.9 }, redis: { cmds: 1, completion_ms_mean: 9 } } })).cause, "app_cpu");
   assert.equal(classify(with_({ api: { ...slow.api, hikari: { ...slow.api.hikari, usage_ms_mean: THRESHOLDS.app_usage_ms + 1 } } })).cause, "app_cpu");
   // 지표 응답 지연은 점유 값이 없을 때만 쓴다.
   assert.equal(classify(with_({ api: { ...slow.api, scrape_rtt_ms_max: THRESHOLDS.app_scrape_rtt_ms + 1 } })).verdict, "undetermined");

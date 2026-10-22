@@ -152,6 +152,31 @@ function series(rows, sa, from, to) {
   return out;
 }
 
+// api 컨테이너 cgroup CPU 통계(cgroup-api.txt). 구간 경계는 windowDelta와 같은 방식(직전·직후 표본)이다.
+// throttled_period_ratio: 구간 동안 CPU 할당량에 막힌 주기 비율(0~1). 파일이 없거나(이전 run) 통계를 못 읽은 줄뿐이면 null.
+export function summarizeCgroup(lines, from, to) {
+  const rows = lines.map((l) => l.trim().split(/\s+/)).filter((c) => /^\d{4}-/.test(c[0]))
+    .map((c) => ({ t: Date.parse(c[0]), v: Object.fromEntries(c.slice(1).map((kv) => kv.split("=")).map(([k, x]) => [k, Number(x)])) }))
+    .filter((r) => Number.isFinite(r.v.nr_periods)); // cpu.stat 경로를 못 찾으면 시각만 남는다. 0으로 읽히지 않게 뺀다
+  if (rows.length < 2) return null;
+  const before = rows.filter((r) => r.t <= from).at(-1) ?? rows[0];
+  const after = rows.find((r) => r.t >= to) ?? rows.at(-1);
+  const d = (k) => (after.v[k] ?? 0) - (before.v[k] ?? 0);
+  const dt = (after.t - before.t) / 1000;
+  const perSec = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i], p = rows[i - 1];
+    if (r.t < from || r.t > to) continue;
+    const periods = r.v.nr_periods - p.v.nr_periods;
+    if (periods > 0) perSec.push((r.v.nr_throttled - p.v.nr_throttled) / periods);
+  }
+  return {
+    throttled_period_ratio: d("nr_periods") > 0 ? round(d("nr_throttled") / d("nr_periods"), 2) : 0,
+    throttled_period_ratio_max: perSec.length ? round(Math.max(...perSec), 2) : 0,
+    cpu_cores_mean: dt > 0 ? round(d("usage_usec") / 1e6 / dt, 2) : null,
+  };
+}
+
 export function summarizeDisk(lines, from, to) {
   const ms = lines.map((l) => l.split(" ")).filter((c) => /^\d{4}-/.test(c[0]))
     .map((c) => ({ t: Date.parse(c[0]), ms: +c[1] })).filter((r) => r.t >= from && r.t <= to).map((r) => r.ms);
@@ -169,6 +194,7 @@ export function normalize(runDir) {
   const api = summarizeApi(rows, from, to);
   const db = summarizeDb(readLines(path.join(runDir, "pg.tsv")), readLines(path.join(runDir, "wal.tsv")), from, to, sa);
   const disk = summarizeDisk(readLines(path.join(runDir, "disk.txt")), from, to);
+  api.cgroup = summarizeCgroup(readLines(path.join(runDir, "cgroup-api.txt")), from, to);
 
   const reasons = [];
   if (booking.users < meta.users) reasons.push(`예매 결과가 ${booking.users}/${meta.users}명분이다`);

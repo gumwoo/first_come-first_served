@@ -27,6 +27,7 @@ test("strict 도구 하나로 받고(강제 호출·temperature 없이), 입력�
   assert.deepEqual(req.tool_choice, { type: "auto" });
   assert.equal(req.tools[0].strict, true);
   assert.equal("temperature" in req, false);
+  assert.match(req.system, /정상 기준/); // AI도 정상 범위를 받는다(규칙의 원인별 기준값은 받지 않는다)
   assert.equal(req.messages.length, 1);
   assert.ok(req.messages[0].content.endsWith(JSON.stringify(summary)));
 });

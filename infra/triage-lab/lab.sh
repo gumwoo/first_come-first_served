@@ -134,7 +134,7 @@ case "$cmd" in
     echo "준비 완료"
     ;;
   run)
-    # 반복문 안에서 lab.sh run을 부르면 docker compose exec(-T여도 표준 입력은 붙는다)와 docker run -i가
+    # 반복문 안에서 lab.sh run을 부르면 앞쪽에서 도는 docker compose exec(-T여도 표준 입력은 붙는다)가
     # 반복문의 입력을 읽어, 반복문이 첫 줄 뒤에 끝난다(2026-10-22 시험). run은 시작할 때 표준 입력을 끊는다.
     exec < /dev/null
     fault=${2:?fault가 필요하다}; level=${3:-1}

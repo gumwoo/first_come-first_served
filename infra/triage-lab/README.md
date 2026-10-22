@@ -11,6 +11,7 @@
 | Redis 7.4 | 4 | |
 | k6 | 10·11 | `infra/k6/booking-e2e.js`(입장자 100명 동시 예매) |
 | 디스크 프로브 | 14 | 측정 대상과 분리된 동기 쓰기 지연 |
+| cgroup 수집 | 14 | api 컨테이너 CPU 통계(할당량에 막힌 주기 수), 호스트 cgroup 이름공간에서 읽음 |
 
 ## 사용법
 ```bash
@@ -34,6 +35,13 @@ bash infra/triage-lab/lab.sh down
 | none | 주입 없음 | | 대조군 |
 
 할당량 해제는 `--cpus`를 고정 코어 수로 되돌리는 방식이다. `docker update --cpus 0`은 제한을 풀지 않는다.
+
+## CPU 할당량에 막힌 정도
+CPU 할당량으로 주입한 장애에서는 api CPU 사용량이 할당량(0.4·0.25코어) 아래로 낮게 찍힌다. 사용량만 보면 CPU에 여유가 있는 것처럼 보여,
+1차 평가에서 AI가 CPU 장애 6회를 모두 다른 원인으로 판정했다([IMP-044](../../docs/improvements/IMP-044-triage-rule-vs-ai-eval.md)).
+그래서 api 컨테이너의 cgroup `cpu.stat`(`nr_periods`·`nr_throttled`)을 1초마다 읽어(`cgroup-sampler.sh`) 할당량에 막힌 주기 비율을 요약에 넣는다.
+컨테이너 안에서 읽으면 그 컨테이너의 할당량에 같이 묶이므로, 호스트 cgroup 이름공간의 별도 컨테이너에서 읽는다.
+개발용 run에서 이 비율은 정상 0~0.1, CPU 장애 0.75(강도 1)·1.0(강도 2)이었다.
 
 ## 측정 환경 판정
 호스트 저장소가 느린 run은 원인 분석에서 뺀다([IMP-043](../../docs/improvements/IMP-043-booking-burst-connection-wait-cause.md)).

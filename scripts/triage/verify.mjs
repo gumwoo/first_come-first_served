@@ -15,6 +15,7 @@ export function resolve(obj, field) {
     if (cur == null || typeof cur !== "object" || !(p in cur)) return { found: false };
     cur = cur[p];
   }
+  if (typeof cur === "boolean") return { found: true, value: cur ? 1 : 0 }; // 참·거짓 필드는 1·0으로 대조한다
   return { found: typeof cur === "number", value: cur };
 }
 

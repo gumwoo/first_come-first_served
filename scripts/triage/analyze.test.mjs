@@ -34,6 +34,7 @@ test("strict 도구 하나로 받고(강제 호출·temperature 없이), 입력�
 
 test("근거 경로와 값을 요약 JSON과 대조한다", async () => {
   assert.deepEqual(resolve(summary, "db.active_wait_events.IO:WALSync"), { found: true, value: 2 });
+  assert.deepEqual(resolve(summary, "validity.valid"), { found: true, value: 1 }); // 참·거짓 필드는 1·0
   const ok = await analyze(summary, { client: fakeClient(answer) });
   assert.equal(verify(ok.result, summary).ok, true);
   assert.deepEqual(finalVerdict(ok, verify(ok.result, summary)), { verdict: "cause", cause: "redis", note: null });

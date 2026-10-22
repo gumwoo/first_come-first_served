@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 export const SCHEMA = "triage.summary/v1";
 const PRE_S = 2;          // 예매 시작 전 몇 초부터 볼지
-const MAX_POST_S = 30;    // 분석 구간 끝의 상한. 수집기는 예매 시작 뒤 40초까지 돈다(infra/triage-lab/lab.sh)
+const MAX_POST_S = 30;    // 분석 구간 끝의 상한. api 지표 수집기는 예매 시작 뒤 75초까지 돈다(infra/triage-lab/lab.sh)
 // 측정 대상과 분리된 디스크 프로브(8KB 쓰기 + fdatasync)의 구간 중앙값이 이보다 느리면 저장소 지연이 낀 run이다.
 // 평소 중앙값은 약 2ms다(IMP-043 probe2·4). PostgreSQL WAL 동기화 시간은 DB가 CPU를 못 받을 때도 부풀어 기준으로 쓰지 않는다.
 const DISK_PROBE_LIMIT_MS = 10;

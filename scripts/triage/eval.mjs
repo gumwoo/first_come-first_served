@@ -1,6 +1,6 @@
 // 평가: 원인을 알고 주입한 run 묶음에서 규칙 분류기와 AI 분석을 같은 요약으로 판정하고, 라벨과 맞춰 채점한다.
 //   node scripts/triage/eval.mjs --runs <ids.txt> --labels <labels.jsonl> --runs-dir <runs 디렉터리> --out <결과 디렉터리> [--no-ai]
-//   ids.txt: 한 줄에 "id ... valid"(infra/triage-lab 평가 측정 기록). valid로 끝난 run만 쓴다.
+//   ids.txt: 한 줄에 "id fault level try 판정 시각"(평가 측정 기록). 판정이 valid인 줄만 쓴다(invalid·excluded 줄은 뺀다).
 //
 // - 판정 순서를 섞고, AI 입력은 요약 JSON뿐이다(run id·라벨은 채점 때만 쓴다).
 // - AI는 유효 run 전부에 부른다(AI 단독). 파이프라인(규칙이 정상이면 AI를 부르지 않음, triage.mjs) 결과도 따로 계산한다.
@@ -75,7 +75,7 @@ export async function evaluate({ ids, labels, runsDir, outDir, useAi = true, cli
   const cost = price ? tokens.reduce((a, u) => a + (u.input_tokens * price.in + u.output_tokens * price.out) / 1e6, 0) : null;
   const summary = {
     runs: rows.length, skipped: rows.filter((r) => r.skipped).map((r) => r.id),
-    score: score(useAi ? scored : scored.map((r) => ({ ...r, ai: r.rule, pipeline: r.rule }))),
+    score: useAi ? score(scored) : { rule: score(scored.map((r) => ({ ...r, ai: r.rule, pipeline: r.rule }))).rule, ai: null, pipeline: null },
     ai_verify_failures: scored.filter((r) => r.ai_verify_ok === false).length,
     ai_errors: scored.filter((r) => r.ai_error).length,
     tokens: tokens.length ? {

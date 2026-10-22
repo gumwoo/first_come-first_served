@@ -41,8 +41,7 @@ ncpu() {
 API_N=$(ncpu "${LAB_API_CPUS:-2,3}") PG_N=$(ncpu "${LAB_PG_CPUS:-6,7}")
 cid() { "${DC[@]}" ps -q "$1"; }
 psqlc() { "${DC[@]}" exec -T postgres psql -U flowticket -d flowticket -v ON_ERROR_STOP=1 -At -F $'\t' "$@"; }
-# 측정용: 같은 네트워크의 별도 컨테이너(프로브 코어)에서 접속한다. -i라 표준 입력을 읽으므로 -c로 쓸 때는 < /dev/null을 붙인다
-# (반복문 안에서 lab.sh를 부르면 반복문의 입력을 읽어 버린다).
+# 측정용: 같은 네트워크의 별도 컨테이너(프로브 코어)에서 접속한다.
 psqlx() {
   MSYS_NO_PATHCONV=1 docker run --rm -i --network ft-triage_default --cpuset-cpus "${LAB_PROBE_CPUS:-14}" -e PGPASSWORD=flowticket postgres:16 \
     psql -h postgres -U flowticket -d flowticket -At -F $'\t' "$@"
@@ -135,6 +134,9 @@ case "$cmd" in
     echo "준비 완료"
     ;;
   run)
+    # 반복문 안에서 lab.sh run을 부르면 docker compose exec(-T여도 표준 입력은 붙는다)와 docker run -i가
+    # 반복문의 입력을 읽어, 반복문이 첫 줄 뒤에 끝난다(2026-10-22 시험). run은 시작할 때 표준 입력을 끊는다.
+    exec < /dev/null
     fault=${2:?fault가 필요하다}; level=${3:-1}
     [ "$fault" = none ] && level=0
     node "$ROOT/infra/loadgen/mint-tokens.mjs" check --tokens "$OUT/tokens.json" --need 600

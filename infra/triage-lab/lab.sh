@@ -41,7 +41,8 @@ ncpu() {
 API_N=$(ncpu "${LAB_API_CPUS:-2,3}") PG_N=$(ncpu "${LAB_PG_CPUS:-6,7}")
 cid() { "${DC[@]}" ps -q "$1"; }
 psqlc() { "${DC[@]}" exec -T postgres psql -U flowticket -d flowticket -v ON_ERROR_STOP=1 -At -F $'\t' "$@"; }
-# 측정용: 같은 네트워크의 별도 컨테이너(프로브 코어)에서 접속한다.
+# 측정용: 같은 네트워크의 별도 컨테이너(프로브 코어)에서 접속한다. -i라 표준 입력을 읽으므로 -c로 쓸 때는 < /dev/null을 붙인다
+# (반복문 안에서 lab.sh를 부르면 반복문의 입력을 읽어 버린다).
 psqlx() {
   MSYS_NO_PATHCONV=1 docker run --rm -i --network ft-triage_default --cpuset-cpus "${LAB_PROBE_CPUS:-14}" -e PGPASSWORD=flowticket postgres:16 \
     psql -h postgres -U flowticket -d flowticket -At -F $'\t' "$@"
@@ -111,8 +112,8 @@ burst() { # <run 디렉터리>
   ( sleep 15; psqlx < "$HERE/pgwatch.sql" > "$dir/pg.tsv" 2>&1 ) & local pp=$!
   (
     q="select clock_timestamp(), wal_sync, wal_sync_time from pg_stat_wal"
-    until [ "$(date -u +%s)" -ge $((sas - 3)) ]; do sleep 0.2; done; echo "before	$(psqlx -c "$q")" > "$dir/wal.tsv"
-    until [ "$(date -u +%s)" -ge $((sas + 15)) ]; do sleep 0.2; done; echo "after	$(psqlx -c "$q")" >> "$dir/wal.tsv"
+    until [ "$(date -u +%s)" -ge $((sas - 3)) ]; do sleep 0.2; done; echo "before	$(psqlx -c "$q" < /dev/null)" > "$dir/wal.tsv"
+    until [ "$(date -u +%s)" -ge $((sas + 15)) ]; do sleep 0.2; done; echo "after	$(psqlx -c "$q" < /dev/null)" >> "$dir/wal.tsv"
   ) & local wp=$!
   MSYS_NO_PATHCONV=1 docker run --rm --network ft-triage_default --cpuset-cpus "${LAB_K6_CPUS:-10,11}" -v "$w:/w" grafana/k6:0.54.0 run --log-format=raw \
     -e K6_BASE_URL=http://api:8080 -e QUEUE_BASE_URL=http://queue:8080 -e EVENT_ID="$EVENT_ID" -e USERS=/w/artifacts/triage-lab/tokens.json \

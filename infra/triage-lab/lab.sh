@@ -111,8 +111,8 @@ burst() { # <run 디렉터리>
   ( sleep 15; psqlx < "$HERE/pgwatch.sql" > "$dir/pg.tsv" 2>&1 ) & local pp=$!
   (
     q="select clock_timestamp(), wal_sync, wal_sync_time from pg_stat_wal"
-    until [ "$(date -u +%s)" -ge $((sas - 3)) ]; do sleep 0.2; done; echo "before	$(psqlx -c "$q")" > "$dir/wal.tsv"
-    until [ "$(date -u +%s)" -ge $((sas + 15)) ]; do sleep 0.2; done; echo "after	$(psqlx -c "$q")" >> "$dir/wal.tsv"
+    until [ "$(date -u +%s)" -ge $((sas - 3)) ]; do sleep 0.2; done; echo "before	$(psqlx -c "$q" < /dev/null)" > "$dir/wal.tsv"
+    until [ "$(date -u +%s)" -ge $((sas + 15)) ]; do sleep 0.2; done; echo "after	$(psqlx -c "$q" < /dev/null)" >> "$dir/wal.tsv"
   ) & local wp=$!
   MSYS_NO_PATHCONV=1 docker run --rm --network ft-triage_default --cpuset-cpus "${LAB_K6_CPUS:-10,11}" -v "$w:/w" grafana/k6:0.54.0 run --log-format=raw \
     -e K6_BASE_URL=http://api:8080 -e QUEUE_BASE_URL=http://queue:8080 -e EVENT_ID="$EVENT_ID" -e USERS=/w/artifacts/triage-lab/tokens.json \
@@ -134,6 +134,9 @@ case "$cmd" in
     echo "준비 완료"
     ;;
   run)
+    # 반복문 안에서 lab.sh run을 부르면 앞쪽에서 도는 docker compose exec(-T여도 표준 입력은 붙는다)가
+    # 반복문의 입력을 읽어, 반복문이 첫 줄 뒤에 끝난다(2026-10-22 시험). run은 시작할 때 표준 입력을 끊는다.
+    exec < /dev/null
     fault=${2:?fault가 필요하다}; level=${3:-1}
     [ "$fault" = none ] && level=0
     node "$ROOT/infra/loadgen/mint-tokens.mjs" check --tokens "$OUT/tokens.json" --need 600

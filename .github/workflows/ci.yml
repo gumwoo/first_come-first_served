@@ -110,6 +110,9 @@ jobs:
       # AI 분석 경계: 요청 형식·근거 수치 대조·호출 조건. 실제 API는 부르지 않는다(가짜 client, SDK 설치 불필요).
       - name: triage AI boundary test (근거 대조·호출 조건)
         run: node --test scripts/triage/analyze.test.mjs
+      # 평가 채점(규칙·AI·파이프라인의 정답·판단 불가·정상 오탐 집계).
+      - name: triage eval scoring test (평가 채점)
+        run: node --test scripts/triage/eval.test.mjs
 
   backend:
     name: 백엔드 (하네스 → 테스트)

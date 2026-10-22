@@ -81,6 +81,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 평시에만 합치고 오픈 전에 떼면 | kwok으로 평시 → 사전 확장 → 축소 한 바퀴 + 로컬 | api 변경을 먼저 끝내면 롤링이 노드 상한에 막히지 않음. 평시 가정 부하(폴링 300/s)에서 동거 시 예매 p95가 늘었고, 1,000/s에서는 판정이 갈림 | 채택 보류 ([IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md)) |
 | 평시 예매 api를 2개로 줄이면 | kwok + 로컬 | 평시 4대가 되는 경우와 5대가 남는 경우로 갈림 | 3개 유지 ([IMP-041](docs/improvements/IMP-041-peace-api-two.md)) |
 | 예매 순간 DB 풀을 늘리면 | 로컬, 디스크 지연 묶음을 걸러낸 교차 8묶음 | 4쌍 중 3쌍이 ±20% 안. 풀 8은 커넥션마다 점유가 길어져 처리량이 비슷함(계산) | 5 유지 ([IMP-042](docs/improvements/IMP-042-booking-db-pool-5-vs-8.md) · [IMP-043](docs/improvements/IMP-043-booking-burst-connection-wait-cause.md)) |
+| 장애 초기 원인 분석에 AI를 쓰면 | 로컬 장애 주입 23회(Redis·DB·CPU, 정상), 규칙 분류기와 Claude Haiku 5.5를 같은 요약으로 채점 | 장애 정답 규칙 13/17, AI 11/17, 정상 오탐 둘 다 0. 호출당 약 $0.002 | 원인 판정은 규칙, AI는 근거·반대 지표·확인 항목 정리 ([IMP-044](docs/improvements/IMP-044-triage-rule-vs-ai-eval.md) · [ADR-029](docs/decisions/ADR-029-ai-triage-boundary.md)) |
 
 ### 정합성을 지키는 방법
 

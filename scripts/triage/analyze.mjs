@@ -4,12 +4,13 @@
 // - 입력은 normalize.mjs의 요약 JSON뿐이다. 원자료·문서·라벨은 보내지 않는다.
 // - 출력은 도구 하나(report_diagnosis, strict)로 받는다. tool_choice는 auto + 프롬프트 지시다.
 //   Haiku 5.5는 강제 도구 호출을 받지만 그때는 생각 없이 바로 호출하고, Sonnet 5.5는 400으로 거부한다.
-//   temperature 등 샘플링 값은 두 모델 모두 기본값만 받는다. 도구를 부르지 않은 응답은 실패로 처리한다.
+//   temperature·top_p·top_k는 두 모델 모두 보내지 않는다(마이그레이션 문서의 제거 대상). 도구를 부르지 않은 응답은 실패로 처리한다.
 // - 근거 수치마다 요약 JSON의 필드 경로를 달게 하고, verify.mjs가 원자료 요약과 대조한다.
 // - 설정 변경·조치를 실행하거나 지시하지 않는다. 후보와 근거, 확인할 항목만 낸다(ADR-029).
 //
 // 키는 환경변수 ANTHROPIC_API_KEY로만 받는다. 모델은 TRIAGE_MODEL(기본 claude-haiku-5-5).
-// 요약 수치 약 30개를 읽고 원인 3범주 중 고르는 일이라 Haiku를 기본으로 둔다. 수치를 잘못 옮기면 verify.mjs가 걸러 판단 불가가 된다.
+// 구간 집계 수치 약 35개와 초 단위 시계열(표본 8~17개)을 읽고 원인 3범주 중 고르는 일이라 Haiku를 기본으로 둔다.
+// 수치를 잘못 옮기면 verify.mjs가 걸러 판단 불가가 된다.
 
 export const PROMPT_VERSION = "triage-prompt/v2";
 export const DEFAULT_MODEL = "claude-haiku-5-5";

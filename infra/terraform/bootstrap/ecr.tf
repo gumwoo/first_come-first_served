@@ -1,10 +1,5 @@
-# ECR: 콘솔로 먼저 만든 저장소다. apply 전에 import해야 한다.
-#   terraform import 'aws_ecr_repository.this["api"]' flowticket-api
-#   terraform import 'aws_ecr_repository.this["web"]' flowticket-web
-# 절차: README.md
-#
-# import 후 첫 plan은 콘솔 기본값과 아래 선언의 차이를 보여준다. 그 diff를 눈으로
-# 확인하고 적용하는 것이 이 스택의 목적이다. 지금까지 콘솔 설정이 코드에 없었다.
+# ECR: 콘솔로 먼저 만든 저장소라 apply 전에 import해야 한다. 명령·절차: README.md "1. 기존 자원 import".
+# import 후 첫 plan의 diff(콘솔 기본값 vs 아래 선언)를 확인하고 적용하는 것이 이 스택의 목적이다.
 
 locals {
   ecr_repositories = {
@@ -27,8 +22,7 @@ resource "aws_ecr_repository" "this" {
   }
 
   lifecycle {
-    # 저장소를 지우면 그 안의 이미지가 전부 사라진다. CI가 다시 push할 수는 있지만
-    # 과거 SHA로의 롤백 경로가 끊긴다.
+    # 지우면 이미지가 전부 사라져 과거 SHA로의 롤백 경로가 끊긴다.
     prevent_destroy = true
   }
 }
@@ -41,12 +35,8 @@ resource "aws_ecr_lifecycle_policy" "this" {
 
   repository = aws_ecr_repository.this[each.key].name
 
-  # 규칙 순서가 의미를 만든다. untagged를 먼저 걷어내지 않으면, 태그 없는 이미지가
-  # 보관 한도(${var.ecr_keep_last_images}개) 안의 자리를 차지해 롤백 가능한 태그 이미지가
-  # 그만큼 줄어든다.
-  #
-  # 태그 없는 이미지는 같은 SHA를 다시 push할 때 생긴다(image.yml workflow_dispatch 재실행).
-  # 태그로 참조할 수 없으므로 롤백에 쓸 수 없다. 남겨 둘 이유가 없다.
+  # 규칙 순서가 의미를 만든다. untagged(같은 SHA 재push 때 생기고 롤백에 못 쓴다)를 먼저 걷어내지 않으면
+  # 보관 한도(${var.ecr_keep_last_images}개)의 자리를 차지해 롤백 가능한 태그 이미지가 그만큼 줄어든다.
   policy = jsonencode({
     rules = concat(
       var.ecr_untagged_expire_days > 0 ? [{

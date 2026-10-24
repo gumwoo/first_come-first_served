@@ -1,10 +1,7 @@
-# ALB 알람을 Slack으로 — SNS 토픽에 Lambda 구독을 붙여, Prometheus 알림(Alertmanager)과 같은 웹훅으로 보낸다.
-#
-# 왜 Lambda인가(AWS Chatbot 대신): 웹훅 하나 = 채널 하나(kube-prometheus-stack.values.yaml)라 이미 있는 비밀을 그대로 쓰면
-# 수신처·비밀이 하나로 유지되고, 전부 코드라 alb-alarms.sh apply/destroy에 함께 묶인다. Chatbot은 콘솔에서 Slack
-# 워크스페이스 OAuth 승인이 한 번 필요하고 웹훅과 별개의 연동이 하나 더 생긴다.
-#
-# 웹훅 URL을 Lambda 환경변수로 넣지 않는다 — 그러면 Terraform state에 평문으로 남는다. 파라미터 이름만 넘기고 실행 중에 읽는다.
+# ALB 알람을 Slack으로: SNS 토픽에 Lambda 구독을 붙여 Alertmanager와 같은 웹훅으로 보낸다.
+# AWS Chatbot 대신 Lambda인 이유: 기존 웹훅 비밀 하나로 수신처가 유지되고, 전부 코드라 alb-alarms.sh apply/destroy에
+# 묶인다(Chatbot은 콘솔 OAuth 승인과 별도 연동이 필요하다).
+# 웹훅 URL을 Lambda 환경변수로 넣지 않는다(state에 평문으로 남는다). 파라미터 이름만 넘기고 실행 중에 읽는다.
 
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}

@@ -64,7 +64,7 @@ spec:
             - secretRef: { name: flowticket-api-secrets } # 클러스터 밖에서 생성(k8s/README.md)
 
           # probe 경로는 application.yml의 health group과 한 쌍이다.
-          #   readiness = readinessState, db, redis   (없으면 요청을 처리할 수 없는 의존성만)
+          #   readiness = readinessState, db          (모든 사용자 API가 쓰는 DB만. Redis는 조회가 장애 시 버티므로 넣지 않는다, ADR-030)
           #   liveness  = livenessState               (외부 의존성 넣으면 DB 장애에 무한 재시작)
           # /readyz·/livez는 그 그룹의 메인 포트(8080) 추가 경로다. 관리 포트(8081)로 옮기지 않는다 —
           # 8081은 별도 톰캣이라 8080 요청 스레드가 포화돼도 성공해 버린다(아래 liveness 주석의 상황을 못 본다).

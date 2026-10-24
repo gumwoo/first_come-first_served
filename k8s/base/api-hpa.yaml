@@ -1,6 +1,4 @@
-# HPA는 CPU만 기준으로 삼는다. (Kafka를 쓰던 때에도 컨슈머 랙 기준 확장은 두지 않았다 — 컨슈머 작업이 가벼워
-# 랙이 CPU를 따라가지 않았다, aws-eks-deploy-plan.md §0. Kafka는 ADR-028로 제거됐다.)
-# api·web 두 티어 모두 HPA 대상이다(→ web-hpa.yaml).
+# HPA는 CPU만 기준으로 삼는다. api·web 두 티어 모두 HPA 대상이다(→ web-hpa.yaml).
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -9,12 +7,10 @@ metadata:
 spec:
   scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: flowticket-api }
   minReplicas: 3
-  # 9(ADR-025): 10,000/s 진입 burst의 계산 용량(IMP-027 6b — api 9·노드 9)과 같다. A'(통합)에서는 오픈 전에 HPA 하한을 9로 올려
-  # 사전 확장하고(overlay event-prescale.yaml — Git PR), 오픈 뒤에는 이 정책(3~9, CPU 60% = 목표 파드 660m)이 지속 부하를 맡는다.
-  # B(운영 기본값 — ADR-027)에서는 queue-split이 상한을 3으로 묶고, 사전 확장은 대기열 HPA가 받는다. requests 1100m라 api 하나가
-  # 노드 하나를 차지하므로 3 → 9는 노드 3 → 9(노드 그룹 AZ당 최대 3, loadtest.tfvars)이고 CA가 붙인다.
-  # 이전 7은 노드 3대 예산(api 7×300m)에서 나온 값이었다 — CA를 전제로 하지 않았다.
-  # DB 커넥션(TS-021, 하네스 backend 규칙): (9 + maxSurge 1) × 풀 5 = 50 ≤ 가용 56.
+  # 9(ADR-025): 10,000/s 진입 burst의 계산 용량(IMP-027)과 같다. requests 1100m라 api 하나가 노드 하나를 차지하므로
+  # 3 → 9는 노드 3 → 9이고 CA가 붙인다. 오픈 전 사전 확장은 overlay event-prescale.yaml이 맡는다.
+  # B(queue-split, ADR-027)에서는 component가 상한을 3으로 묶는다.
+  # DB 커넥션 상한과 짝이다(TS-021, 하네스 backend 규칙 17): (9 + maxSurge 1) × 풀 5 = 50 ≤ 가용 56.
   maxReplicas: 9
   metrics:
     - type: Resource

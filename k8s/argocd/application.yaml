@@ -1,16 +1,13 @@
-# ArgoCD Application: 이 저장소의 k8s/overlays/demo-local 을 클러스터에 지속 동기화한다(ADR-009).
-# 코드 계약은 harness가, 클러스터 상태는 ArgoCD가 Git과 비교한다. 측정·장애 대응 중 손으로 넣은
-# kubectl 변경이 드리프트로 남는 것을 막는다(TS-021 §6-1).
-#
-# 부트스트랩은 한 번 수동이다: kubectl apply -f k8s/argocd/application.yaml
-# (이 파일까지 ArgoCD가 관리하려면 App-of-Apps가 필요하지만, 이 규모에서는 두지 않는다.)
+# ArgoCD Application: k8s/overlays/demo-local 을 클러스터에 지속 동기화한다(ADR-009).
+# 측정·장애 대응 중 손으로 넣은 kubectl 변경이 드리프트로 남는 것을 막는다(TS-021 §6-1).
+# 이 파일 자체는 ArgoCD가 관리하지 않고 한 번 적용한다(scripts/bring-up.sh, App-of-Apps는 두지 않는다).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: flowticket
   namespace: argocd
   finalizers:
-    # Application을 지울 때 배포된 리소스도 함께 정리되도록 한다(고아 리소스 방지).
+    # Application을 지우면 배포된 리소스도 함께 정리한다.
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
@@ -23,23 +20,20 @@ spec:
     server: https://kubernetes.default.svc
     namespace: flowticket
   syncPolicy:
-    # 자동 동기화를 켠다. 두 전제가 모두 성립해야 한다.
-    #  1) CI가 이미지 태그를 Git에 커밋한다(image.yml의 bump-tag). 이게 없으면 자동화는
-    #     "새 이미지를 배포할 방법이 없는" 상태가 된다.
-    #  2) sync가 HPA의 파드 수를 덮어쓰지 않는다(argocd-controller가 spec.replicas를 소유하지
-    #     않음). 이게 깨진 채로 selfHeal을 켜면 부하 중 스케일아웃이 자동으로 취소된다.
+    # 자동 동기화는 두 전제가 모두 성립해야 한다.
+    #  1) CI가 이미지 태그를 Git에 커밋한다(image.yml의 bump-tag). 없으면 새 이미지를 배포할 방법이 없다.
+    #  2) sync가 HPA의 파드 수를 덮어쓰지 않는다(argocd-controller가 spec.replicas를 소유하지 않음).
+    #     깨진 채로 selfHeal을 켜면 부하 중 스케일아웃이 자동으로 취소된다.
     automated:
-      # 클러스터에서 손으로 바꾼 것을 Git 상태로 되돌린다. 이 프로젝트가 도입한 이유 그 자체다
-      # (TS-021 §6-1: HPA 수동 패치가 며칠간 드리프트로 남았다).
+      # 클러스터에서 손으로 바꾼 것을 Git 상태로 되돌린다. ArgoCD를 도입한 이유다(TS-021 §6-1).
       selfHeal: true
-      # Git에서 지운 리소스를 클러스터에서도 지운다. 없으면 "삭제"만 GitOps 밖으로 새어나가
-      # 고아 리소스가 쌓인다. 적용 전 확인함: 추적 대상은 Git 매니페스트와 1:1이고,
-      # 손으로 만든 k6-load Job·k6-scripts ConfigMap·pgcheck Pod는 추적 밖이라 지워지지 않는다.
+      # Git에서 지운 리소스를 클러스터에서도 지운다. 추적 대상은 Git 매니페스트와 1:1이라
+      # 손으로 만든 k6-load Job·k6-scripts ConfigMap·pgcheck Pod는 지워지지 않는다.
       prune: true
     syncOptions:
-      # 네임스페이스가 없으면 만든다(base에 namespace.yaml이 있지만 순서 의존을 없앤다).
+      # base에 namespace.yaml이 있지만 순서 의존을 없앤다.
       - CreateNamespace=true
-      # 대량 리소스가 아니므로 서버사이드 적용으로 필드 소유권 충돌을 줄인다.
+      # 필드 소유권 충돌을 줄인다.
       - ServerSideApply=true
       # RespectIgnoreDifferences=true 는 쓰지 않는다. 이 클러스터에서 sync를 막지 못했다(TS-022).
       # 실제 방어는 api-deployment.yaml에서 replicas 필드를 없앤 것이다.

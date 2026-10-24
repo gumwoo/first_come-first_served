@@ -1,16 +1,7 @@
-# ALB 계층 오류 알람 — 앱(Spring) 지표가 보지 못하는 오류를 ALB 지표로 본다.
-#
-# 왜 필요한가: PrometheusRule의 서버 오류 알람은 http_server_requests{outcome="SERVER_ERROR"}, 즉 요청이 Spring까지
-# 와서 5xx로 끝난 경우만 센다. 롤링 배포 중 502(TS-035)는 ALB가 대상에 닿지 못해 스스로 만든 오류라 앱 5xx가 0이었고,
-# 같은 장애가 다시 나도 그 알람은 울리지 않는다. 그래서 ALB가 내는 CloudWatch 지표로 따로 본다.
-#   - HTTPCode_ELB_5XX_Count   : ALB가 직접 만든 5xx(대상 연결 실패·타임아웃·정상 대상 없음)
-#   - TargetConnectionErrorCount: ALB가 대상과 연결을 맺지 못한 횟수(종료 중인 파드로 보낸 요청 등)
-#   - HealthyHostCount(대상 그룹별): 정상 대상이 0이면 그 서비스로 가는 요청은 전부 503
-#
-# 왜 별도 스택인가: ALB는 Terraform이 아니라 AWS Load Balancer Controller가 Ingress를 보고 만든다. demo 스택을 apply하는
-# 시점에는 ALB가 없어 알람 차원(LoadBalancer=app/<이름>/<id>)을 알 수 없다. 그래서 ALB가 생긴 뒤 이 스택을 따로 적용하고
-# (scripts/alb-alarms.sh apply), 철거 때는 Ingress를 지우기 전에 먼저 지운다(scripts/tear-down.sh).
-# ALB를 data "aws_lb"로 찾지 않고 변수로 받는 이유: data 소스는 destroy 때도 다시 읽혀, ALB가 이미 없으면 철거가 실패한다.
+# ALB 계층 오류 알람. 앱 5xx 알람(outcome="SERVER_ERROR")은 ALB가 대상에 닿지 못해 스스로 만든 오류
+# (롤링 배포 502, TS-035)를 보지 못해 ALB CloudWatch 지표로 따로 본다.
+# ALB는 LBC가 Ingress를 보고 만들어 demo apply 시점에 없으므로 별도 스택이다(scripts/alb-alarms.sh apply).
+# data "aws_lb"로 찾지 않고 변수로 받는다. data 소스는 destroy 때도 읽혀 ALB가 없으면 철거가 실패한다(terraform-design §1).
 
 resource "aws_sns_topic" "alb_alarms" {
   name = "flowticket-alb-alarms"
@@ -35,8 +26,8 @@ resource "aws_cloudwatch_metric_alarm" "elb_5xx" {
   dimensions        = { LoadBalancer = var.alb_arn_suffix }
   statistic         = "Sum"
   period            = 60
-  # 1분 하나로 판정한다. TS-035의 롤링 배포 502는 약 14초 창에 13~16건이 몰리고 끝나는 순간 장애라, 2분 연속을 요구하면
-  # 놓친다. 그 장애가 분 경계에 걸쳐 1분 창마다 임계 아래로 나뉘면 아래 TargetConnectionError 알람(1건 이상)이 잡는다.
+  # 1분 하나로 판정한다. TS-035의 502는 십수 초 안에 끝나는 순간 장애라 2분 연속을 요구하면 놓친다.
+  # 분 경계로 나뉘어 임계 아래가 되면 아래 TargetConnectionError 알람(1건 이상)이 잡는다.
   evaluation_periods  = 1
   threshold           = var.elb_5xx_threshold
   comparison_operator = "GreaterThanOrEqualToThreshold"

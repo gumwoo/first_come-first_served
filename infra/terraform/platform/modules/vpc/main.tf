@@ -1,12 +1,8 @@
-# VPC: 3 AZ, 계층별 서브넷 3종, AZ별 NAT.
-#
-# 설계 근거는 ADR-012, 구조는 docs/deployment/terraform-design.md §2.
-# 핵심: NAT를 AZ마다 두고 "같은 AZ의 NAT로만" 내보낸다. 교차 AZ로 라우팅하면
-# AZ 격리가 깨지고(한 AZ 장애가 다른 AZ의 PG 승인까지 차단) 데이터 전송료도 붙는다.
+# VPC: 3 AZ, 계층별 서브넷 3종, AZ별 NAT(ADR-012, terraform-design §2).
+# NAT는 "같은 AZ의 NAT로만" 내보낸다. 교차 AZ로 라우팅하면 AZ 격리가 깨지고 데이터 전송료도 붙는다.
 
 locals {
-  # az => index. 서브넷 CIDR 리스트와 AZ를 짝지어 for_each를 돌리기 위한 맵.
-  # count 대신 for_each를 쓰는 이유: AZ 목록 중간이 바뀌어도 뒤 리소스가 재생성되지 않는다.
+  # az => index. count 대신 for_each라 AZ 목록 중간이 바뀌어도 뒤 리소스가 재생성되지 않는다.
   az_index = { for idx, az in var.azs : az => idx }
 }
 

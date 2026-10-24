@@ -1,13 +1,11 @@
 # state 백엔드 자체를 만드는 스택: 닭과 달걀이라 여기만 local state를 쓴다.
-#
-# 한 번 만들고 거의 손대지 않는다. bootstrap·platform이 이 버킷에 state를 둔다.
-# state 파일에는 리소스 속성이 평문으로 들어가므로 버저닝·암호화·퍼블릭 차단이 필수다.
+# bootstrap·platform이 이 버킷에 state를 둔다. state에는 리소스 속성이 평문으로 들어가므로
+# 버저닝·암호화·퍼블릭 차단이 필수다.
 
 data "aws_caller_identity" "current" {}
 
 locals {
-  # 버킷 이름은 전역 유일해야 한다. 계정 ID를 붙여 결정적으로 만든다
-  # (이 값은 apply 시점에 계산되며 저장소에 커밋되지 않는다. backend.hcl은 gitignore 대상).
+  # 전역 유일하도록 계정 ID를 붙인다. 이 값은 커밋되지 않는다(backend.hcl은 gitignore 대상).
   bucket_name = "flowticket-tfstate-${data.aws_caller_identity.current.account_id}"
 }
 
@@ -53,10 +51,8 @@ resource "aws_s3_bucket_public_access_block" "state" {
 resource "aws_s3_bucket_lifecycle_configuration" "state" {
   bucket = aws_s3_bucket.state.id
 
-  # 두 리소스 모두 버킷만 참조하므로 Terraform 그래프상 서로 순서 제약이 없다.
-  # 버저닝보다 먼저 적용될 수 있다. 그러면 비활성 버킷에 "비현행 버전 만료" 규칙이 걸리는
-  # 의미상 어긋난 상태가 되고, 실행 순서가 매번 달라져 재현되지 않는 실패가 될 수 있다.
-  # (AWS가 이를 거부하는지는 확인하지 않았다. 다만 순서를 우연에 맡길 이유가 없다.)
+  # 버저닝과 서로 순서 제약이 없어, 버저닝이 꺼진 버킷에 "비현행 버전 만료" 규칙이 먼저 걸릴 수 있다.
+  # AWS가 이를 거부하는지는 확인하지 않았지만 순서를 우연에 맡기지 않는다.
   depends_on = [aws_s3_bucket_versioning.state]
 
   rule {
@@ -78,9 +74,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "state" {
 # ---------------------------------------------------------------------------
 # 잠금
 # ---------------------------------------------------------------------------
-# Terraform 1.10+ 는 S3 네이티브 잠금(use_lockfile)을 지원해 이 테이블이 필요 없다.
-# 현재 CI가 1.9.8을 쓰므로 DynamoDB 잠금을 둔다. 버전을 올리면 var.create_lock_table을
-# false로 두고 backend에서 use_lockfile을 쓰면 된다.
+# CI가 Terraform 1.9.8이라 S3 네이티브 잠금(use_lockfile, 1.10+) 대신 DynamoDB 잠금을 둔다. 전환법은 README.md.
 resource "aws_dynamodb_table" "lock" {
   count = var.create_lock_table ? 1 : 0
 

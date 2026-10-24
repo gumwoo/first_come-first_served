@@ -1,10 +1,8 @@
-# 운영 이미지 로컬 검증용. IDE에서 소스를 실행하는 게 아니라 실제 빌드된 이미지로
-# 전체 스택을 띄워, EKS로 가기 전에 "컨테이너 안에서 동작하는가"를 먼저 확인한다.
+# 운영 이미지 로컬 검증용. 실제 빌드된 이미지로 전체 스택을 띄워 EKS 전에 컨테이너 안 동작을 확인한다
+# (외부 주소 env 주입, readiness, web→api 프록시).
 #
 #   docker compose -f infra/docker-compose.prod.yml up --build
 #
-# 여기서 확인하는 것: 컨테이너에서 외부 주소가 env로 잘 주입되는가(localhost 하드코딩 잔재 없음),
-# readiness가 의존성 준비를 반영하는가, web→api 프록시가 컨테이너 네트워크로 붙는가.
 # 비밀은 .env 또는 셸 환경에서 주입한다(이 파일에 실제 값을 적지 않는다).
 
 name: flowticket-prod
@@ -65,8 +63,7 @@ services:
       context: ..
       dockerfile: apps/web/Dockerfile
       args:
-        # rewrites는 standalone 번들에 구워지므로 빌드 시점에 넣어야 한다(런타임 env로는 안 바뀜).
-        # 브라우저는 /api 상대경로로 부르고 Next 서버가 이 주소로 프록시한다.
+        # rewrites는 standalone 번들에 구워지므로 빌드 시점에 넣어야 한다(apps/web/Dockerfile).
         API_ORIGIN: http://api:8080
     image: flowticket-web:local
     ports:

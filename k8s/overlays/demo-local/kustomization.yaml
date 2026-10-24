@@ -1,11 +1,6 @@
 # ArgoCD가 동기화하는 오버레이다. 아래 값은 식별자(계정 ID·엔드포인트·ARN)이고 시크릿이 아니다.
-#
-# 값 출처:
-#   terraform -chdir=infra/terraform/platform/environments/demo output -raw db_endpoint
-#   terraform ... output -raw redis_endpoint
-#   terraform ... output -raw certificate_arn
-#   aws sts get-caller-identity --query Account --output text   → ECR 레지스트리 앞부분
-#   이미지 태그 = ECR에 실제로 올라간 커밋 SHA(전체 40자)
+# 값 출처: terraform(platform/environments/demo) output의 db_endpoint·redis_endpoint·certificate_arn,
+# ECR 레지스트리 앞부분 = AWS 계정 ID, 이미지 태그 = ECR에 실제로 올라간 커밋 SHA(전체 40자).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: flowticket
@@ -13,7 +8,7 @@ namespace: flowticket
 resources:
   - ../../base
 
-# 대기열 분리(B, ADR-027) — 운영 기본값(operating-requirements §5 "B 상시"). 아래 두 줄을 주석 처리하면 A'(통합)로 돌아간다.
+# 대기열 분리(B, ADR-027) — 운영 기본값(operating-requirements §5). 아래 두 줄을 주석 처리하면 A'(통합)로 돌아간다.
 # A'로 돌릴 때는 사전 확장(event-prescale.yaml)의 대상을 api HPA(flowticket-api)로, 평소 하한을 3으로 바꿔야 한다(하네스 k8s 규칙 11이 막는다).
 components:
   - ../../components/queue-split
@@ -28,8 +23,7 @@ images:
     newTag: 3e6073b1d9053c9db6fea5091e764802cd3d54b4
 
 # ── ConfigMap: 데이터 엔드포인트 ──────────────────────────────────
-# DB_HOST에는 포트를 붙이지 않는다. 모듈이 aws_db_instance.address(호스트만)를 반환하고
-# DB_PORT는 따로 있다. host:5432를 넣으면 주소가 host:5432:5432가 된다.
+# DB_HOST에는 포트를 붙이지 않는다. 모듈이 호스트만 반환하고 DB_PORT는 따로 있어, host:5432를 넣으면 host:5432:5432가 된다.
 patches:
   # 공연 오픈 사전 확장(ADR-025) — 대기열 HPA 하한(B). 평소 2(효과 없음). 켜고 끄는 법은 파일 머리말.
   - path: event-prescale.yaml

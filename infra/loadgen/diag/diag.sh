@@ -17,8 +17,7 @@
 # env로 덮으면 힙 설정이 사라져 측정이 오염된다. JDK_JAVA_OPTIONS는 java 런처가 명령줄 앞에 붙인다(회수한 JFR의
 # jvmArguments로 확인) — 같은 옵션이 겹치면 뒤에 오는 JAVA_OPTS가 우선이다.
 set -euo pipefail
-# Windows Git Bash(MSYS)는 인자 안의 /tmp/… 를 Windows 경로로 바꿔 kubectl.exe에 넘긴다. 컨테이너 경로가 C:/Users/…로
-# 바뀌면 JVM이 녹화 파일을 못 만들어 기동에 실패한다(측정 세션 20261005-1440에서 CrashLoopBackOff로 확인). 리눅스에서는 무시된다.
+# Windows Git Bash(MSYS)는 인자 안의 /tmp/…를 Windows 경로로 바꿔, JVM이 녹화 파일을 못 만들고 기동에 실패한다.
 # 대신 로컬 파일 경로도 변환되지 않으므로 kubectl에는 로컬 절대 경로를 넘기지 않는다(매니페스트는 stdin, 회수는 상대 경로).
 export MSYS_NO_PATHCONV=1
 NS=flowticket

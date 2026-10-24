@@ -1,7 +1,4 @@
-# IRSA: 서비스 어카운트별 IAM 역할.
-#
-# 노드 역할에 권한을 몰아주면 그 노드의 모든 Pod가 같은 권한을 얻는다.
-# IRSA는 "이 네임스페이스의 이 서비스 어카운트"로 한정한다.
+# IRSA: 서비스 어카운트별 IAM 역할. 노드 역할에 권한을 몰아주면 그 노드의 모든 Pod가 같은 권한을 얻는다.
 
 # 모듈에 region 변수가 없어 provider 설정에서 가져온다(계정도 동일).
 data "aws_region" "current" {}
@@ -118,10 +115,8 @@ resource "aws_iam_role_policy" "cluster_autoscaler" {
 # ---------------------------------------------------------------------------
 # AWS Load Balancer Controller
 # ---------------------------------------------------------------------------
-# 이 컨트롤러의 IAM 정책은 AWS 관리형 정책이 없고, 공식 저장소가 배포하는 JSON을
-#    그대로 쓰는 것이 표준 절차다. 손으로 옮겨 적으면 누락·오타로 Ingress 생성이
-#    실패하므로, 파일을 내려받아 두고 여기서 읽는다.
-#    받는 법: modules/eks/policies/README.md
+# IAM 정책은 공식 저장소가 배포하는 JSON 파일을 받아 두고 읽는다. 손으로 옮기면 누락·오타로
+# Ingress 생성이 실패한다. 받는 법: modules/eks/policies/README.md
 resource "aws_iam_role" "load_balancer_controller" {
   name               = "${var.cluster_name}-lbc"
   assume_role_policy = data.aws_iam_policy_document.irsa_assume["lbc"].json
@@ -137,17 +132,10 @@ resource "aws_iam_role_policy" "load_balancer_controller" {
 # ---------------------------------------------------------------------------
 # External Secrets Operator
 # ---------------------------------------------------------------------------
-# flowticket-api-secrets(키 11개)는 매니페스트로 복구되지 않는 유일한 리소스다. 손으로 넣으면
-# 클러스터를 재생성할 때마다 다시 넣어야 하고 인코딩·플레이스홀더 실수로 api 기동이 실패하므로
-# ESO로 동기화한다.
-#
-# 저장소로 SSM Parameter Store를 쓴다(Secrets Manager 아님):
-#   - Standard 파라미터 + SecureString은 저장 비용이 없다. Secrets Manager는 시크릿당 과금
-#   - 로테이션이 필요 없는 값들이라 Secrets Manager의 이점이 없다
-#   - DB 자격증명만은 예외로 이미 Secrets Manager에 있다(RDS가 마스터 암호를 관리): 그쪽은
-#     ExternalSecret이 별도 provider로 읽는다
-#
-# 권한은 경로로 좁힌다. /flowticket/* 밖은 읽지 못한다.
+# flowticket-api-secrets는 매니페스트로 복구되지 않아 ESO로 동기화한다. 손으로 넣으면 클러스터를 재생성할 때마다
+# 다시 넣어야 하고, 실수하면 api 기동이 실패한다.
+# 저장소는 SSM Parameter Store다. Standard + SecureString은 저장 비용이 없고 로테이션이 필요 없는 값들이다.
+# DB 자격증명만 RDS 관리형이라 Secrets Manager에 있다. 권한은 /flowticket/* 경로로 좁힌다.
 data "aws_iam_policy_document" "external_secrets" {
   statement {
     sid    = "ReadFlowticketParameters"

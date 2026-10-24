@@ -1,9 +1,6 @@
 # EKS: 클러스터 + AZ별 노드그룹 3개 + 애드온.
-#
-# 노드그룹을 AZ마다 분리하는 이유는 EBS다(ADR-012 §3).
-# 서브넷 3개를 가진 노드그룹 하나로 두면, 노드가 죽었을 때 ASG가 다른 AZ에 대체 노드를
-# 띄울 수 있고 그러면 PVC를 쓰는 파드(지금은 Prometheus — 예전엔 Kafka 브로커도)의 EBS가 붙지 못해 영구 Pending이 된다.
-# AZ별 노드그룹이면 대체 노드가 항상 같은 AZ에 뜬다.
+# 노드그룹을 AZ마다 나누는 이유는 EBS다. 대체 노드가 다른 AZ에 뜨면 PVC를 쓰는 파드(Prometheus)의
+# EBS가 붙지 못해 영구 Pending이 된다(ADR-012 §3).
 
 data "aws_partition" "current" {}
 
@@ -34,11 +31,8 @@ resource "aws_iam_role_policy_attachment" "cluster" {
 # ---------------------------------------------------------------------------
 # 클러스터
 # ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# 봉투 암호화: 고객 관리형 KMS 키(CMK)를 일부러 쓰지 않는다.
-# EKS 1.28+는 AWS 소유 키로 기본 암호화하고, CMK는 삭제 시 클러스터가 복구 불가다.
+# 봉투 암호화에 고객 관리형 KMS 키(CMK)를 일부러 쓰지 않는다. CMK는 삭제되면 클러스터가 복구 불가다.
 # 근거·붙이는 방법은 platform/README.md "봉투 암호화".
-# ---------------------------------------------------------------------------
 
 # 로그 그룹을 먼저 만들어 보존 기간을 못 박는다. EKS가 알아서 만들게 두면 보존이
 # "만료 없음"이라, 클러스터를 지운 뒤에도 로그 저장 요금이 계속 남는다(데모 전제와 어긋난다).
@@ -55,10 +49,8 @@ resource "aws_eks_cluster" "this" {
   role_arn = aws_iam_role.cluster.arn
   version  = var.kubernetes_version
 
-  # 2) 컨트롤플레인 로그: 롤링 무중단 실증의 증거다.
-  # api/audit이 없으면 "무중단이었다"를 애플리케이션 로그로만 주장하게 된다. scheduler·
-  # controllerManager는 파드 재배치가 왜 그렇게 일어났는지를 설명한다.
-  # CloudWatch Logs 수집·보존 요금이 붙지만 데모 기간(수 시간)에는 미미하다.
+  # 컨트롤플레인 로그는 롤링 무중단 실증의 증거다. api/audit이 없으면 "무중단이었다"를 앱 로그로만
+  # 주장하게 되고, scheduler·controllerManager는 파드 재배치 이유를 설명한다.
   enabled_cluster_log_types = var.cluster_log_types
 
   vpc_config {
@@ -160,10 +152,8 @@ resource "aws_eks_node_group" "this" {
   }
 
   tags = merge(var.tags, {
-    # Cluster Autoscaler가 ASG를 자동 탐색하는 데 쓰는 태그.
-    # 관리형 노드그룹의 tags가 하위 ASG까지 전파되는지는 프로바이더 버전에 따라 다르다.
-    #    apply 후 ASG에 이 태그가 실제로 붙었는지 확인하고, 없으면 ASG에 직접 붙여야
-    #    CA가 이 노드그룹을 인식하지 못한다.
+    # Cluster Autoscaler의 ASG 자동 탐색 태그. 관리형 노드그룹 tags가 ASG까지 전파되는지는 프로바이더
+    # 버전에 따라 다르다. apply 후 ASG에 붙었는지 확인하고, 없으면 ASG에 직접 붙인다(없으면 CA가 못 찾는다).
     "k8s.io/cluster-autoscaler/enabled"             = "true"
     "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
   })
@@ -180,22 +170,10 @@ resource "aws_eks_node_group" "this" {
 # ---------------------------------------------------------------------------
 # 애드온
 # ---------------------------------------------------------------------------
-# metrics-server가 여기 있는 이유: HPA는 metrics-server 없이는 CPU를 못 읽어
-# `cpu: <unknown>` 상태로 스케일 판단 자체를 못 한다(TS-019). 손으로 설치하면 클러스터를
-# 재생성할 때 빠지므로 EKS Add-ons로 고정한다.
-#
-# metrics-server는 community add-on이다. AWS가 만든 add-on(vpc-cni 등)과 달리
-# AWS는 설치·업데이트·삭제 같은 lifecycle만 지원하고 기능 자체는 커뮤니티가 책임진다.
-# 다만 IAM 정책이나 IRSA가 필요 없어 아래 for_each 목록에 넣는 것으로 충분하다
-# (EBS CSI를 별도 리소스로 뺀 이유가 IRSA였다).
-#
-# 버전(null)을 지정하지 않은 add-on은 생성 시점의 Kubernetes 버전에 맞는 기본 호환 버전이
-# 선택된다. 클러스터 버전을 올려도 기존 add-on이 자동으로 올라가지는 않으므로,
-# 갱신이 필요하면 별도로 수행해야 한다.
-#
-# metrics-server는 고정한다(TS-050). 기본 버전이 v0.9.0-eksbuild.12로 바뀐 뒤 그 APIService가 OpenAPI v2에
-# 깨진 정의를 넣어 protobuf 형식 /openapi/v2가 503이 됐고, helm 설치 검증과 ArgoCD 동기화가 모두 멈췄다.
-# 올릴 때는 새 클러스터에서 protobuf /openapi/v2가 200인지 먼저 확인한다(TS-050 확인 명령).
+# metrics-server가 없으면 HPA가 CPU를 못 읽어 스케일 판단을 못 한다(TS-019). 클러스터를 재생성해도
+# 빠지지 않게 EKS Add-on으로 둔다. IRSA가 필요 없어 이 목록으로 충분하다(EBS CSI는 IRSA 때문에 따로 둔다).
+# metrics-server 버전은 고정한다. eksbuild.12가 protobuf /openapi/v2를 503으로 만들어 helm·ArgoCD가 멈췄다(TS-050).
+# 올릴 때는 TS-050의 확인 명령으로 새 클러스터에서 200인지 먼저 본다.
 locals {
   eks_addon_versions = {
     "vpc-cni"        = null
@@ -204,12 +182,9 @@ locals {
     "metrics-server" = "v0.9.0-eksbuild.11"
   }
 
-  # coredns 2개를 노드 단위로 강제 분산한다. 애드온 기본값은 hostname podAntiAffinity "preferred"(선호)뿐이라
-  # (describe-addon-configuration, v1.13.2-eksbuild.51 — k8s 1.35 기본 버전) 2개가 한 노드에 놓일 수 있었고,
-  # 실제로 그렇게 놓였다(IMP-034 §8). 그 노드를 잃으면 클러스터 DNS가 함께 멈춘다(추론 — 시험 안 함).
-  # 노드 그룹은 AZ마다 최소 1대라(node_min_size) 노드 수 때문에 Pending이 되지는 않는다(계산). coredns가 없는 노드에
-  # CPU 자리가 없으면 CA 증설이나 선점(coredns 우선순위가 높다고 알려져 있다 — 추론, 클러스터에서 확인 안 함)으로 풀린다.
-  # 기본 affinity(선호 anti-affinity·OS/아키텍처 nodeAffinity)는 덮어쓰지 않고 그대로 둔다.
+  # coredns 2개를 노드 단위로 강제 분산한다(한 노드를 잃으면 클러스터 DNS가 함께 멈춘다, 추론). 애드온 기본값은
+  # hostname anti-affinity "preferred"뿐이라 2개가 한 노드에 놓인 적이 있다(IMP-034 §8).
+  # 노드그룹이 AZ마다 최소 1대(node_min_size)라 노드 수 때문에 Pending이 되지는 않는다(계산). 기본 affinity는 덮어쓰지 않는다.
   eks_addon_configuration = {
     "coredns" = jsonencode({
       topologySpreadConstraints = [{

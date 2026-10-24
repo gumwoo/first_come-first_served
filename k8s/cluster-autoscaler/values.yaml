@@ -1,10 +1,7 @@
-# Cluster Autoscaler: helm values.
+# Cluster Autoscaler helm values(ADR-012 §4, 측정은 IMP-021).
 #
-# ADR-012 §4. 설치만 하지 않고 측정(scripts/node-autoscale-test.sh, IMP-021)과 함께 둔다.
-#
-# Terraform 쪽 전제: IRSA 역할·autoscaling 정책, ASG 태그
-# (k8s.io/cluster-autoscaler/{enabled,owned}), 노드그룹의
-# `ignore_changes = [scaling_config[0].desired_size]`.
+# Terraform 쪽 전제: IRSA 역할·autoscaling 정책, ASG 태그(k8s.io/cluster-autoscaler/{enabled,owned}),
+# 노드그룹의 `ignore_changes = [scaling_config[0].desired_size]`.
 
 # ASG 태그로 노드그룹을 스스로 찾는다. 노드그룹 이름을 여기 박으면 AZ가 늘 때마다 고쳐야 한다.
 autoDiscovery:
@@ -29,13 +26,10 @@ extraArgs:
   # kube-system 파드가 있는 노드도 축소 대상으로 본다. 데모 클러스터라 노드 수가 적어
   # 이걸 끄면 사실상 축소가 일어나지 않는다.
   skip-nodes-with-system-pods: false
-  # 로컬 스토리지를 쓰는 파드가 있는 노드는 기본적으로 축소하지 않는다.
-  # Prometheus 데이터는 EBS(PVC)에 있다. 다만 emptyDir을 쓰는 파드(prometheus-operator가 만드는 Prometheus Pod의 설정용
-  # emptyDir, storage 설정이 없는 Alertmanager 등 — 추론, 확인 안 함)가 있는 노드는 이 값이 true면 축소가 막힌다.
-  # 측정에서 축소가 안 일어나면 이 값을 먼저 의심할 것.
+  # true면 emptyDir을 쓰는 파드(Prometheus·Alertmanager 등으로 추론, 확인 안 함)가 있는 노드의 축소가 막힌다.
+  # 측정에서 축소가 안 일어나면 이 값을 먼저 의심한다.
   skip-nodes-with-local-storage: false
-  # 기본 10분. 측정 세션에서 축소를 관찰하려면 10분을 기다려야 한다.
-  # 이 값을 줄이면 "기본 동작"이 아닌 것을 재게 된다. 기본값을 유지하고 기다린다.
+  # 기본값(10분)을 명시한다. 줄이면 "기본 동작"이 아닌 것을 재게 되므로 유지하고 기다린다.
   scale-down-unneeded-time: 10m
 
 # CA 자신이 축출되면 스케일 판단이 끊긴다. 축소 대상에서 제외한다.
@@ -46,9 +40,6 @@ resources:
   requests: { cpu: 100m, memory: 300Mi }
   limits: { memory: 500Mi }
 
-# 이미지 태그를 여기서 직접 고정하지 않는다. 고정된 차트가 고른 이미지를 그대로 쓴다
-# 차트 버전(bring-up.sh의 $CA_CHART_VERSION)이 박혀 있으므로 이미지도 함께 결정된다.
-#
-# 자동으로 맞춰지는 것이 아니다. 클러스터 버전을 올리면 차트 버전을 사람이 올려야 한다.
-# 잊으면 CA 앱 버전과 k8s 마이너가 어긋나는데, bring-up.sh가 설치 전에 그 둘을 대조해
-# 중단하므로 모르고 지나가지는 않는다.
+# 이미지 태그는 고정하지 않고 차트 버전(bring-up.sh의 $CA_CHART_VERSION)이 고른 것을 쓴다.
+# 클러스터 버전을 올리면 차트 버전을 사람이 올려야 한다. 어긋나면 bring-up.sh가 설치 전에
+# CA 앱 버전과 k8s 마이너를 대조해 중단한다.

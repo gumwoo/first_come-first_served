@@ -1,11 +1,6 @@
-# VPC 엔드포인트: AWS 서비스 트래픽을 NAT 경로에서 분리한다.
-#
-# 필수 구성은 아니다. NAT가 3개 있으므로 엔드포인트가 없어도
-# 시스템은 동작한다(terraform-design §2). 그래서 var.enabled로 통째로 끌 수 있게 뒀다.
-#
-# S3는 Gateway 유형이라 시간당 요금이 없고, ECR 이미지 레이어가 S3 경로를 쓰므로
-# 이미지 pull 트래픽의 상당 부분이 NAT를 우회한다. 넣는 이득이 가장 크다.
-# 반면 Interface 유형은 AZ마다 ENI가 생기고 시간당 과금된다.
+# VPC 엔드포인트: AWS 서비스 트래픽을 NAT 경로에서 분리한다. NAT가 있어 없어도 동작하므로
+# var.enabled로 통째로 끌 수 있다(terraform-design §2).
+# S3 Gateway는 시간당 요금이 없고 ECR 이미지 레이어 pull이 NAT를 우회해 이득이 가장 크다.
 
 locals {
   enabled = var.enabled ? 1 : 0

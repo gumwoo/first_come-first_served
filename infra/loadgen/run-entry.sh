@@ -1,33 +1,25 @@
 #!/usr/bin/env bash
 # 대기열 진입 시험 run 하나를 실행하고 출력을 run 디렉터리에 모은다(loadtest-100k-plan §7 "원시 데이터").
 #
-# 진입(k6)을 돌리고, --poll-hold N을 주면 발급된 대기 토큰을 대기자 폴링 발생기(poll-hold.mjs)가 받아 N초 동안 상태를 묻는다
-# (프론트와 같은 규칙 — retryAfterMs + jitter). 두 프로세스라 진입 iteration이 대기를 붙들지 않는다. 대기열 SSE는 제거됐다
-# (ADR-023 §2) — 예전 --sse-hold는 받지 않고, --no-sse는 이전 호출과의 호환을 위해 받기만 한다. 분산 실행이면 발생기마다 같은 --session/--run과 다른 --gen으로 실행한다 —
-# 출력은 같은 run 디렉터리에 발생기 이름을 붙여 모인다.
-#
-# 발생기 자원(CPU·메모리·네트워크)도 함께 남긴다. 발생기 포화는 시험 무효 조건이고(§3.1), 그것을 판정할
-# 원시 데이터가 여기서만 나온다(§8 Generator 축).
+# 진입(k6)을 돌리고, --poll-hold N을 주면 발급된 대기 토큰을 poll-hold.mjs가 받아 N초 동안 상태를 묻는다
+# (프론트와 같은 retryAfterMs + jitter, 별도 프로세스라 진입 iteration이 대기를 붙들지 않는다).
+# 대기열 SSE는 제거됐다(ADR-023 §2): --sse-hold는 거부하고 --no-sse는 호환용으로 받기만 한다.
+# 발생기 자원(CPU·메모리·네트워크)도 남긴다. 발생기 포화는 시험 무효 조건이다(§3.1).
 #
 # 사용(발생기 인스턴스, Linux):
 #   infra/loadgen/run-entry.sh --session 20261002-1400 --run step7-50k_constant-r1 --gen g1 \
 #     --base https://flow-ticket.com/api --event 1733 --users ~/tokens.json --users-n 25000 --offset 0 \
 #     --entry-seconds 10 --dist constant [--poll-hold 300]
-#   --poll-hold N: 대기 토큰을 poll-hold.mjs가 받아 첫 토큰부터 N초 동안 상태를 묻는다(결과 <run>/poll-<gen>/).
-#     발생기 종료(end-<gen>.json)는 k6와 폴링이 모두 끝난 시각이라 사후 검사 --until은 폴링 끝 뒤로 잡힌다.
+#   --poll-hold N: 첫 토큰부터 N초 동안 상태를 묻는다(결과 <run>/poll-<gen>/). end-<gen>.json은 폴링까지 끝난 시각이다.
 #
-# 분산 실행(발생기 G대가 한 run을 나눠 건다):
-#   --gens G를 주면 --users-n은 **전체** 사용자 수, --offset은 전체의 시작 인덱스다. 각 발생기는 --gen gK(K=1..G)로
-#   자기 몫을 계산한다 — 몫 = 전체/G(나머지는 마지막 발생기), 시작 = offset + (K−1)×(전체/G). --pre-vus·--max-vus는
-#   발생기 하나의 값이다.
-#   --start-at(UTC ISO)을 주면 k6 setup()이 그 시각까지 기다렸다가 도착을 시작한다(VU 할당이 끝난 뒤 장벽).
-#   모든 발생기에 같은 --start-at을 준다. 이미 지난 시각이면 그 발생기는 시작하지 않는다.
+# 분산 실행(발생기 G대가 한 run을 나눠 건다. 발생기마다 같은 --session/--run, 다른 --gen):
+#   --gens G: --users-n은 **전체** 사용자 수, --offset은 전체의 시작 인덱스가 되고, 각 발생기가 --gen gK(K=1..G)로
+#     자기 몫을 계산한다(몫 = 전체/G, 나머지는 마지막 발생기). --pre-vus·--max-vus는 발생기 하나의 값이다.
+#   --start-at(UTC ISO): k6 setup()이 그 시각까지 기다렸다가 도착을 시작한다. 모든 발생기에 같은 값을 준다.
 #   scripts/loadtest/loadgen.sh exec -- 'infra/loadgen/run-entry.sh ... --gen $GEN --gens 3 --start-at 2026-10-07T01:00:00Z'
-#   --warm-seconds W: 진입 시작(--start-at) 전 W초 동안 VU마다 keep-alive 연결을 미리 맺는다(queue-entry-rate.js WARM_SECONDS).
-#     T0에 새 연결이 한꺼번에 열리며 실제 송신이 늦어지는 것을 막는다. 기본 0(끔).
-#   --rate N: 발생기 한 대의 초당 도착 수(constant). 주지 않으면 round(몫 ÷ 진입 시간). 조금 높게 주면 몫이 진입 시간 안에서
-#     모두 소진되고 남은 iteration은 요청 없이 끝난다(queue-entry-rate.js ARRIVAL_RATE).
-#   --print-plan: 계산한 몫(gen·usersN·offset·startAt)만 JSON 한 줄로 내고 끝낸다(실행 전 확인·테스트용).
+#   --warm-seconds W: 진입 시작 전 W초 동안 VU마다 keep-alive 연결을 미리 맺는다(T0 연결 폭주 방지, 기본 0).
+#   --rate N: 발생기 한 대의 초당 도착 수(constant). 기본 round(몫 ÷ 진입 시간).
+#   --print-plan: 계산한 몫만 JSON 한 줄로 내고 끝낸다(실행 전 확인·테스트용).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -98,8 +90,8 @@ if [ -n "$GENS" ]; then
   [ "$K" -eq "$GENS" ] && USERS_N=$((USERS_TOTAL - (GENS - 1) * SHARE))
   [ "$USERS_N" -gt 0 ] || { echo "발생기 몫이 0이다(전체 $USERS_TOTAL, 발생기 $GENS)" >&2; exit 2; }
 fi
-# --rate의 목적은 "몫이 진입 시간 안에 모두 도착"이다. rate × 진입 시간이 몫보다 작으면 일부가 끝내 도착하지 못한다
-# (너무 낮은 rate — 반올림·잘못 나눈 값 — 를 막는다. 합계를 넣어 너무 높은 값은 막지 않는다: 실제 값은 meta의 arrivalRate로 확인. 사용자 결정).
+# rate × 진입 시간이 몫보다 작으면 일부가 끝내 도착하지 못하므로 거부한다.
+# 너무 높은 값은 막지 않는다(실제 값은 meta의 arrivalRate로 확인).
 if [ -n "$ARRIVAL_RATE" ] && [ $((ARRIVAL_RATE * ENTRY_SECONDS)) -lt "$USERS_N" ]; then
   echo "--rate $ARRIVAL_RATE × 진입 $ENTRY_SECONDS초 = $((ARRIVAL_RATE * ENTRY_SECONDS)) < 이 발생기 몫 $USERS_N — 일부가 도착하지 못한다(--rate는 발생기 한 대의 값)" >&2
   exit 2
@@ -176,8 +168,7 @@ else
   RUN_STATUS=${PIPESTATUS[0]}
 fi
 set -e
-# 발생기가 멈춘 시각(§3.3 사후 검사의 --until 대조). 이 파일이 없으면 사후 검사는 run 종료 시각을 확인할 수 없어
-# 판정 불가로 끝난다(발생기가 중간에 죽은 run).
+# 발생기가 멈춘 시각(§3.3 사후 검사의 --until 대조). 이 파일이 없으면 사후 검사는 판정 불가로 끝난다.
 printf '{ "generator": "%s", "endedAt": "%s", "status": %s }\n' "$GEN" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$RUN_STATUS" \
   > "$OUT/end-$GEN.json"
 

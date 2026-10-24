@@ -29,7 +29,7 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       # 명령 시간 상한. 비워 두면 Lettuce 기본값 60초라, Redis 장애 동안 Redis를 거치는 요청이 60초씩 묶이고
-      # 블랙리스트 fail-open도 60초 뒤에야 동작한다(IMP-046). 정상 응답은 ms 단위라 2초면 정상 요청을 끊지 않는다(IMP-027).
+      # 블랙리스트 fail-open도 60초 뒤에야 동작한다(IMP-046). 정상 응답은 ms 단위다(IMP-027 평균 기준, 폭증 중 꼬리 지연은 미측정 — IMP-046).
       # 대기열 Lua·ShedLock·좌석 알림 구독이 같은 연결을 쓰므로 이 값이 함께 적용된다(ADR-030).
       timeout: ${REDIS_COMMAND_TIMEOUT:2s}
       # ElastiCache는 TLS를 켜고 만들어, 운영(k8s)에서 평문으로 붙으면 Redis를 쓰는 요청이 전부 실패한다(ADR-030).

@@ -182,7 +182,8 @@ locals {
     "metrics-server" = "v0.9.0-eksbuild.11"
   }
 
-  # coredns 2개를 노드 단위로 강제 분산한다. 애드온 기본값은 hostname anti-affinity "preferred"뿐이라 2개가
+  # coredns 2개를 노드 단위로 강제 분산한다(한 노드를 잃으면 클러스터 DNS가 함께 멈춘다, 추론). 애드온 기본값은
+  # hostname anti-affinity "preferred"뿐이라 2개가
   # 한 노드에 놓인 적이 있다(IMP-034 §8). 노드그룹이 AZ마다 최소 1대(node_min_size)라 노드 수 때문에
   # Pending이 되지는 않는다(계산). 기본 affinity는 덮어쓰지 않는다.
   eks_addon_configuration = {

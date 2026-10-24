@@ -23,7 +23,7 @@ spec:
       # 앱의 SHUTDOWN_TIMEOUT(30s, configmap.yaml) + preStop(5s)보다 커야 한다. 작으면 진행 중 요청을 마치기 전에 SIGKILL이 온다.
       terminationGracePeriodSeconds: 45
 
-      # 같은 AZ에 replica가 몰리면 노드 하나가 죽을 때 용량이 통째로 빠진다.
+      # 같은 AZ에 replica가 몰리면 AZ 하나를 잃을 때 용량이 통째로 빠진다.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
@@ -85,6 +85,7 @@ spec:
           resources:
             # limits.cpu는 두지 않는다 — 스로틀링으로 p99가 튀고, 부하 실증에서 재려는 것이 바로 그 지연이다.
             # memory: 1Gi에서는 SSE 연결이 많을 때 컨테이너 한도 초과로 OOMKilled됐다(힙 소진이 아님, 근거: IMP-023).
+            # 2Gi는 그 재시작을 없애려는 값이고 용량 산정값은 아니다.
             # cpu 1100m: 진입 burst 실측 비용에서 계산한 값(ADR-025, IMP-027). m6i.large에 api가 하나만 들어가 api 확장이 곧
             # 노드 확장(CA)이 되고, HPA 60% 기준선이 진입 처리 용량 근처에서 반응한다. 바꾸면 HPA·노드 예산을 함께 다시 본다.
             requests: { cpu: "1100m", memory: "1536Mi" }

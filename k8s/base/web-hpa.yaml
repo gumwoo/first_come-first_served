@@ -1,4 +1,4 @@
-# web 수평 확장. 부하 실측에서 첫 실패 지점이 web 티어였다 — api만 늘려도 앞단 web이 막히면 502가 난다.
+# web 수평 확장. 부하 실측에서 첫 실패 지점이 web 티어였다(aws-eks-deploy-plan.md) — api만 늘려도 앞단 web이 막히면 502가 난다.
 # 노드 예산(ADR-025 이후): api가 노드당 하나라 노드 수를 정하고(CA), web은 그 노드들의 남는 자리에 들어간다.
 # 남는 자리는 합계가 아니라 노드별로 본다(flowticket 밖 요청이 노드마다 다르다).
 apiVersion: autoscaling/v2

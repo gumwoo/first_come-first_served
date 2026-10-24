@@ -62,6 +62,8 @@ const cases = [
   { name: "k8s-queue-cpu-no-spread", script: "k8s/check.mjs", expect: "대기열 CPU 요청을 api와 다르게 두었는데 노드 단위 분산이 없다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-queue-cpu-no-spread" } },
   { name: "k8s-queue-spread-wrong-selector", script: "k8s/check.mjs", expect: "대기열 CPU 요청을 api와 다르게 두었는데 노드 단위 분산이 없다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-queue-spread-wrong-selector" } },
   { name: "k8s-queue-spread-skew2", script: "k8s/check.mjs", expect: "대기열 CPU 요청을 api와 다르게 두었는데 노드 단위 분산이 없다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-queue-spread-skew2" } },
+  { name: "k8s-api-readiness-env", script: "k8s/check.mjs", expect: "대기열 전용 Deployment의 파드 사양이 api와 다르다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-api-readiness-env" } },
+  { name: "k8s-queue-readiness-no-redis", script: "k8s/check.mjs", expect: "대기열 Deployment readiness에 redis가 없다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-queue-readiness-no-redis" } },
   { name: "k8s-api-pool-env", script: "k8s/check.mjs", expect: "api Deployment에 DB_POOL_MAX env가 있다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-api-pool-env" } },
   { name: "k8s-buildtime-env", script: "k8s/check.mjs", expect: "빌드 시점 값을 런타임 env로 주입:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-buildtime-env" } },
   { name: "k8s-orphan-externalsecret", script: "k8s/check.mjs", expect: "ExternalSecret이 적용되지 않는다:", env: { HARNESS_K8S_DIR: "harness/fixtures/violations/k8s-orphan-externalsecret" } },

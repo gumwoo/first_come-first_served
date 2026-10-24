@@ -33,8 +33,8 @@ class RedisDefaultFactoryUnchangedIntegrationTest extends IntegrationTestSupport
 
         RedisConnectionFactory factory = context.getBean(RedisConnectionFactory.class);
         assertThat(factory).isInstanceOf(LettuceConnectionFactory.class);
-        // spring.data.redis.timeout 미설정 → Lettuce 기본값(RedisURI.DEFAULT_TIMEOUT 60초). 발행용 3초가 섞이면 안 된다.
+        // spring.data.redis.timeout(기본 2초, ADR-030)을 그대로 쓴다. 발행용 3초가 섞이면 안 된다.
         assertThat(((LettuceConnectionFactory) factory).getClientConfiguration().getCommandTimeout())
-                .isEqualTo(Duration.ofSeconds(60));
+                .isEqualTo(Duration.ofSeconds(2));
     }
 }

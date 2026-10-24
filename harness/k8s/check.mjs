@@ -311,6 +311,7 @@ for (const apiDeployDoc of apiDeployDocs) {
 // 어긋나면(resources·env·probe 수치 등) A'/B 비교가 "분리" 말고 다른 차이까지 섞는다. 이름을 맞춘 뒤 파드 사양 전체를 비교한다.
 // 허용 차이(명시 목록 — docs/deployment/resource-sizing-plan.md §3 P1·P3): 대기열 쪽 자원 조정 후보만 뺀다.
 //   - 컨테이너 env `DB_POOL_MAX`(대기열 풀 축소 — 규칙 17이 queue-deployment.yaml 원문에서 읽어 DB 예산에 넣는다)
+//   - 컨테이너 env `HEALTH_READINESS_INCLUDE`(대기열만 readiness에 redis를 더한다 — ADR-030, 아래 ⑩-c가 값을 본다)
 //   - 컨테이너 `resources.requests.cpu`(대기열 requests 축소)
 //   - `topologySpreadConstraints` 중 topologyKey가 kubernetes.io/hostname인 항목(노드 단위 분산 — 위 requests 축소와 한 쌍)
 // 이 밖의 차이(메모리·limits·다른 env·probe·zone 분산·종료 유예 등)는 그대로 실패한다.
@@ -333,7 +334,7 @@ for (const apiDeployDoc of apiDeployDocs) {
       const s = structuredClone(spec ?? {});
       for (const c of s.containers ?? []) {
         if (queue && Array.isArray(c.env)) {
-          c.env = c.env.filter((e) => e?.name !== "DB_POOL_MAX");
+          c.env = c.env.filter((e) => !["DB_POOL_MAX", "HEALTH_READINESS_INCLUDE"].includes(e?.name));
           if (c.env.length === 0) delete c.env;
         }
         if (c.resources?.requests) {
@@ -357,6 +358,20 @@ for (const apiDeployDoc of apiDeployDocs) {
           `backend 규칙 17이 api 풀을 거기서만 읽어, 매니페스트에서 바꾸면 DB 커넥션 예산 검사가 그 값을 보지 못한다(TS-021). ` +
           `DB_POOL_MAX를 다르게 둘 수 있는 것은 대기열 Deployment뿐이다(⑩-b 허용 목록)`
       );
+    }
+    // ⑩-c 대기열 Deployment의 readiness에는 redis가 있어야 한다(ADR-030). 대기열 경로는 Redis 없이는 처리할 수 없어,
+    // 빠지면 Redis 장애 중 대기열 Pod가 Ready로 남아 요청 스레드가 Redis 명령 시간 상한만큼씩 묶인다.
+    // 예매 api 쪽에 이 env를 두면 ⑩-b 비교(api 쪽은 걷지 않는다)가 불일치로 잡는다.
+    {
+      const qEnv = (q.doc.spec?.template?.spec?.containers ?? []).flatMap((c) => c?.env ?? []);
+      const inc = qEnv.find((e) => e?.name === "HEALTH_READINESS_INCLUDE")?.value;
+      const parts = String(inc ?? "").split(",").map((x) => x.trim());
+      if (!["readinessState", "db", "redis"].every((x) => parts.includes(x))) {
+        r.fail(
+          `대기열 Deployment readiness에 redis가 없다: ${path.relative(REPO_ROOT, q.file)} → HEALTH_READINESS_INCLUDE=${inc ?? "(없음)"}. ` +
+            `"readinessState,db,redis"로 둔다 — 대기열은 Redis 없이 처리할 수 없어 장애 중에는 Service에서 빠져야 한다(ADR-030)`
+        );
+      }
     }
     // 짝 조건(자원 산정 계획 §2.3): 대기열 CPU 요청을 api와 다르게 두면 같은 Deployment 파드 둘이 한 노드에 놓일 수 있다 —
     // 그 노드를 잃으면 둘 다 사라져 가용성 G1(노드 1대 장애)을 깬다. 그래서 대기열 파드만 고르는 hostname 분산

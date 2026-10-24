@@ -30,8 +30,14 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      # ElastiCache는 전송 중 암호화(TLS)를 켜고 만든다. TLS를 켠 캐시에 평문으로 붙으면
-      # 연결이 전부 실패하고, readiness에 redis가 있어 Pod가 영원히 Ready가 되지 않는다.
+      # 명령 시간 상한. 비워 두면 Lettuce 기본값 60초라, Redis가 멈추거나 끊긴 동안 Redis를 거치는 요청이 60초씩 묶이고
+      # 블랙리스트 fail-open·조회수 기록 무시도 60초 뒤에야 넘어갔다(IMP-046 실측). 정상 응답은 ms 단위이고
+      # 10K/s 진입 폭증에서도 Lettuce 평균 지연은 최대 39.9ms였다(IMP-027, 평균만 있어 꼬리 지연은 모른다).
+      # 대기열 Lua·ShedLock·좌석 알림 구독이 같은 연결을 쓰므로 이 값이 함께 적용된다(ADR-030).
+      timeout: ${REDIS_COMMAND_TIMEOUT:2s}
+      # ElastiCache는 전송 중 암호화(TLS)를 켜고 만든다. TLS를 켠 캐시에 평문으로 붙으면 연결이 전부 실패한다.
+      # 대기열 전용 Pod는 readiness에 redis가 있어 Ready가 되지 않고, 예매 api Pod는 Ready지만 Redis를 쓰는 요청이
+      # 실패하며 블랙리스트 조회 실패 알림(FlowticketBlacklistCheckFailing)이 울린다(ADR-030, 설정에서 끌어낸 것).
       #
       # 기본값이 false인 것이 중요하다. 로컬 개발과 CI(Testcontainers Redis)는 평문이라
       # true로 박으면 개발 흐름과 테스트가 통째로 깨진다. 운영(k8s)에서만 켠다.
@@ -105,9 +111,12 @@ management:
         # 요청을 못 받는 파드에 트래픽이 가고(readiness) 멈춘 메인 포트를 놓친다(liveness, IMP-024 참고).
         add-additional-paths: true
       group:
-        # readiness = "지금 트래픽을 받아도 되는가". DB·Redis는 없으면 요청을 못 처리하니 포함한다.
+        # readiness = "지금 트래픽을 받아도 되는가". 모든 사용자 API가 쓰는 DB만 넣는다.
+        # Redis는 넣지 않는다: 조회 경로의 Redis 사용(블랙리스트·랭킹, 켠 경우 좌석 캐시)은 장애 시 통과·DB 대체로 버티는데,
+        # Redis를 넣으면 공유 의존성 하나에 모든 api Pod가 동시에 Service에서 빠져 조회까지 끊긴다(ADR-030).
+        # 대기열 전용 Deployment는 Redis 없이는 할 일이 없어 HEALTH_READINESS_INCLUDE로 redis를 더한다(k8s/components/queue-split).
         readiness:
-          include: readinessState, db, redis
+          include: ${HEALTH_READINESS_INCLUDE:readinessState,db}
         # liveness = "프로세스를 재시작해야 하는가". 외부 의존성을 넣으면 DB 장애에 Pod가 무한 재시작한다.
         liveness:
           include: livenessState

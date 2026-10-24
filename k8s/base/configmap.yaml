@@ -15,7 +15,8 @@ data:
   REDIS_PORT: "6379"
 
   # ElastiCache는 transit_encryption_enabled = true다. 이 값이 없거나 false면 Redis 연결이
-  # 전부 실패하고, readiness에 redis가 있어 Pod가 영원히 Ready가 되지 않는다.
+  # 전부 실패한다. 대기열 Pod는 readiness에 redis가 있어 Ready가 되지 않고, 예매 api Pod는 Ready지만
+  # Redis를 쓰는 요청이 실패하며 블랙리스트 조회 실패 알림이 울린다(ADR-030, 설정에서 끌어낸 것).
   REDIS_SSL_ENABLED: "true"
 
   # ── 종료 유예 ─────────────────────────────────────────────────

@@ -1,15 +1,9 @@
-# Grafana 대시보드를 ConfigMap으로 넣는다.
+# Grafana 대시보드 ConfigMap. Grafana 사이드카가 `grafana_dashboard: "1"` 라벨을 보고 모든 네임스페이스에서
+# 자동 로드하므로, Grafana persistence를 꺼 두어도 관측 스택 재설치 후 되살아난다.
 #
-# kube-prometheus-stack의 grafana-sc-dashboard 사이드카가 `grafana_dashboard: "1"` 라벨이 붙은
-# ConfigMap을 모든 네임스페이스에서 감시해 자동 로드한다(실측: LABEL=grafana_dashboard,
-# LABEL_VALUE=1, NAMESPACE=ALL). 그래서 UI에서 손으로 임포트할 필요가 없고, 저장소에 커밋되므로
-# 관측 스택을 재설치해도 되살아난다(Grafana는 persistence를 끈 상태다).
-#
-# 여기 쓰인 메트릭 이름은 실제 /actuator/prometheus 출력에서 확인한 것만 넣었다. 아웃박스 행(ADR-028)의 이름은
-# Prometheus 레지스트리 스크랩 출력을 단위 테스트로 대조한다(OperationalMetricsTest·OutboxRelayMetricNameTest) — 클러스터 스크랩은 미확인.
-# 없는 이름을 쓰면 에러 없이 빈 패널이 되기 때문이다.
-# 백분위 패널은 application.yml의 percentiles-histogram 설정과 한 쌍이다.
-# 그 설정 없이 적용하면 http_server_requests_seconds_bucket이 없어 패널이 비어 있게 된다.
+# 메트릭 이름은 /actuator/prometheus 출력에서 확인한 것만 쓴다. 없는 이름은 에러 없이 빈 패널이 된다.
+# 아웃박스 지표(ADR-028) 이름은 OperationalMetricsTest·OutboxRelayMetricNameTest가 대조한다(클러스터 스크랩은 미확인).
+# 백분위 패널은 application.yml의 percentiles-histogram 설정과 짝이다. 없으면 _bucket 지표가 없어 패널이 빈다.
 apiVersion: v1
 kind: ConfigMap
 metadata:

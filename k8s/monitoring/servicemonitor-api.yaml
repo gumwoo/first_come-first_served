@@ -4,11 +4,9 @@ metadata:
   name: flowticket-api
   namespace: flowticket
 spec:
-  # Service의 라벨을 고른다(Pod 라벨이 아니다). ServiceMonitor는 Service를 통해
-  # Endpoints를 찾아 Pod IP로 직접 스크레이프한다. Service의 로드밸런싱을 타지
-  # 않으므로 3개 Pod가 각각 별도 타깃이 된다(그래야 Pod별 JVM/스레드를 구분한다).
-  # 대기열 전용 Service(ADR-027)도 B에서는 같은 라벨을 받는다. job 라벨은 Service 이름이 아니라 flowticket.io/job 값 —
-  # 두 Service 모두 flowticket-api라 알림 규칙과 대시보드 질의(job="flowticket-api")가 그대로 두 종류 파드를 본다.
+  # Service 라벨로 고르고 Pod마다 별도 타깃으로 스크레이프한다(Pod별 JVM·스레드 구분).
+  # job 라벨은 Service 이름이 아니라 flowticket.io/job 값이다. 대기열 전용 Service(ADR-027, B)도 같은 라벨과
+  # 값(flowticket-api)을 받으므로 알림 규칙·대시보드의 job="flowticket-api"가 두 종류 파드를 함께 본다.
   jobLabel: flowticket.io/job
   selector:
     matchLabels: { flowticket.io/metrics: "true" }
@@ -19,5 +17,5 @@ spec:
     - port: management
       path: /actuator/prometheus
       interval: 15s
-      # 스크레이프는 인증 없이 나간다. SecurityConfig가 이 한 경로만 permitAll이다. 클러스터 내부 전용인 이유는
-      # 포트다 — actuator는 관리 포트(8081)에만 있고, 인터넷에서 닿는 경로(ALB → web → Next rewrite)는 8080만 쓴다(TS-041).
+      # 스크레이프는 인증 없이 나간다(SecurityConfig가 이 경로만 permitAll). actuator가 관리 포트(8081)에만
+      # 있고 인터넷 경로(ALB → web → Next rewrite)는 8080만 쓰기 때문에 내부 전용으로 유지된다(TS-041).

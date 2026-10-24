@@ -33,7 +33,7 @@
 |---|---|
 | graceful shutdown | `application.yml` — `server.shutdown: graceful` |
 | 종료 유예 | `spring.lifecycle.timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}` |
-| probe 분리 | readiness=`readinessState,db,redis` / liveness=`livenessState` |
+| probe 분리 | readiness=`readinessState,db`(대기열 Deployment는 `HEALTH_READINESS_INCLUDE`로 `redis` 추가, ADR-030) / liveness=`livenessState` |
 | probe 인증 예외 | `SecurityConfig` — 메인 포트 `/livez`·`/readyz`(probe 추가 경로, TS-041) permitAll |
 | **SIGTERM 전달** | `apps/api/Dockerfile` — `ENTRYPOINT ["sh","-c","exec java ..."]` |
 | SSE 복원력 | `useOrder`·`useSeats`의 `onopen → refresh()` (TS-012) |

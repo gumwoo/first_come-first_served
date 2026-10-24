@@ -63,6 +63,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 조건 | 요청 | 5xx |
 |---|---|---|
 | `preStop` 5s | 6,001 | 발생 |
+| readiness는 예매 api DB만, 대기열 DB·Redis | 기존(DB·Redis 모두), 둘 다 제외 | Redis는 모든 Pod가 함께 써서 넣으면 장애 중 조회까지 끊김. 대기열은 Redis 없이 처리할 수 없어 장애 중 빠지는 편이 요청 스레드를 묶지 않음 | [ADR-030](docs/decisions/ADR-030-readiness-shared-dependencies.md) · [IMP-046](docs/improvements/IMP-046-redis-outage-readiness.md) |
 | `preStop` 25s | 6,001 | 0 |
 
 ([TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md))
@@ -102,6 +103,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 입장자 동시 예매 | 입장자 100명이 동시에 좌석 선점·주문·결제, 3회 모두 정합성 위반 0건 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) |
 | 무중단 배포 | 롤링 배포 중 5xx 0건 (web `preStop` 25s) | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md) |
 | 장애 주입 | RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구, 노드 오토스케일로 Pending 파드 수용 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |
+| Redis 장애 중 조회 | 로컬에서 Redis를 멈춰 확인. readiness에서 Redis를 빼고 Redis 명령 상한을 60초에서 2초로 줄여, 공연 상세·내 주문이 60초에서 약 2초로 응답하고 대기열 진입·좌석 선점은 약 4초 뒤 503으로 응답(1회 측정). 대기열 Pod는 readiness에 Redis를 남겨 장애 중 Service에서 빠지게 함 | [IMP-046](docs/improvements/IMP-046-redis-outage-readiness.md) · [ADR-030](docs/decisions/ADR-030-readiness-shared-dependencies.md) |
 | 대기열 토큰 정합성 | 토큰 소유권 검증, 재발급·이탈 경합(1인 1토큰), 대기 토큰 수명 관리를 통합 테스트로 검증 | [TS-043](docs/troubleshooting/TS-043-queue-token-ownership.md) · [TS-044](docs/troubleshooting/TS-044-queue-takeover-leave-race.md) · [TS-045](docs/troubleshooting/TS-045-queue-token-lifecycle.md) |
 | 설정값 근거 재검토 | CPU 요청량, Tomcat 스레드, DB 풀, 노드 수의 근거를 측정 원자료 재분석, 로컬 실험, kwok 스케줄링 시뮬레이션으로 확인. Tomcat 스레드는 400으로 늘려도 효과가 없어 200 유지, 평시 노드 수는 줄이는 후보 3가지를 검토해 현재 5대 유지, 예매 api DB 풀은 5 유지 | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)~[IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md) · [IMP-041](docs/improvements/IMP-041-peace-api-two.md) · [IMP-042](docs/improvements/IMP-042-booking-db-pool-5-vs-8.md) · [IMP-043](docs/improvements/IMP-043-booking-burst-connection-wait-cause.md) |
 | 측정 세션 비용 분해 | 평시 노드 5대, 부하 발생기 3대 기준 세션 시간당 약 $2.06 (계산). 비중은 노드 29%, 발생기 28%, Redis 19%, NAT 9% | [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |

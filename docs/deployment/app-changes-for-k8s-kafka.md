@@ -47,6 +47,7 @@
 ### C-1. liveness/readiness probe 정합 — **완료(S09-0)**
 - 반영: `management.endpoint.health.probes.enabled=true`로 `/actuator/health/{liveness,readiness}` 노출.
 - **readiness = `readinessState, db, redis`** — 없으면 요청을 처리할 수 없는 의존성만 포함.
+  (2026-10-24 변경: 예매 api는 `readinessState, db`, 대기열 Deployment만 `redis`를 더한다 — [ADR-030](../decisions/ADR-030-readiness-shared-dependencies.md))
   **Kafka는 의도적으로 제외**: 브로커 장애는 알림 지연일 뿐이고 아웃박스가 유실을 막는다(ADR-008/010).
   readiness에 넣으면 브로커 하나 죽었다고 API 전체가 트래픽에서 빠지는 과잉 차단이 된다.
 - **liveness = `livenessState`만** — 외부 의존성을 넣으면 DB 장애에 Pod가 무한 재시작한다.
@@ -95,6 +96,7 @@
 `platform` 스택이 ElastiCache를 `transit_encryption_enabled = true`로 만든다. **TLS를 켠 캐시는
 클라이언트도 TLS로 붙어야 하고, 아니면 연결이 전부 실패한다.** 앱 설정이 따라가지 않으면
 Pod가 뜨자마자 readiness에서 걸려 영원히 Ready가 안 된다(C-1의 readiness에 `redis`가 있다).
+(ADR-030 뒤로는 대기열 Pod만 Ready가 안 되고, 예매 api Pod는 Ready로 뜨되 Redis를 쓰는 요청이 실패하며 블랙리스트 조회 실패 알림이 울린다.)
 
 **왜 켰나**: 프라이빗 서브넷 + SG는 "네트워크에 못 들어온다"는 방어이고 TLS는 "들어와도 못
 읽는다"는 방어다. 계층이 다르므로 하나로 갈음하지 않는다. 특히 **대기열 토큰이 Redis를 지나므로**

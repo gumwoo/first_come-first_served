@@ -17,10 +17,10 @@ components:
 images:
   - name: flowticket-api
     newName: 891612580915.dkr.ecr.ap-northeast-2.amazonaws.com/flowticket-api
-    newTag: 3e6073b1d9053c9db6fea5091e764802cd3d54b4
+    newTag: afada8c731af92edf4c36e9e091c1e35ebab940c
   - name: flowticket-web
     newName: 891612580915.dkr.ecr.ap-northeast-2.amazonaws.com/flowticket-web
-    newTag: 3e6073b1d9053c9db6fea5091e764802cd3d54b4
+    newTag: afada8c731af92edf4c36e9e091c1e35ebab940c
 
 # ── ConfigMap: 데이터 엔드포인트 ──────────────────────────────────
 # DB_HOST에는 포트를 붙이지 않는다. 모듈이 호스트만 반환하고 DB_PORT는 따로 있어, host:5432를 넣으면 host:5432:5432가 된다.

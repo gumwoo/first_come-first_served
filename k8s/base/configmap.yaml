@@ -19,7 +19,7 @@ data:
   REDIS_SSL_ENABLED: "true"
 
   # ── 종료 유예 ─────────────────────────────────────────────────
-  # 애플리케이션이 진행 중 요청을 마칠 시간. api의 terminationGracePeriodSeconds(45)보다 작아야 한다.
+  # 애플리케이션이 진행 중 요청을 마칠 시간. api의 preStop(25s)과 더해 terminationGracePeriodSeconds(60)보다 작아야 한다.
   # 크면 앱이 끝나기 전에 SIGKILL이 온다.
   SHUTDOWN_TIMEOUT: "30s"
 

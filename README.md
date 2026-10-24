@@ -63,7 +63,6 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 조건 | 요청 | 5xx |
 |---|---|---|
 | `preStop` 5s | 6,001 | 발생 |
-| readiness는 예매 api DB만, 대기열 DB·Redis | 기존(DB·Redis 모두), 둘 다 제외 | Redis는 모든 Pod가 함께 써서 넣으면 장애 중 조회까지 끊김. 대기열은 Redis 없이 처리할 수 없어 장애 중 빠지는 편이 요청 스레드를 묶지 않음 | [ADR-030](docs/decisions/ADR-030-readiness-shared-dependencies.md) · [IMP-046](docs/improvements/IMP-046-redis-outage-readiness.md) |
 | `preStop` 25s | 6,001 | 0 |
 
 ([TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [IMP-015](docs/improvements/IMP-015-rolling-zero-downtime.md))
@@ -89,7 +88,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 단계 | 목적 | 방법 |
 |---|---|---|
 | **코드** | 동시성 정합성 | Redis Lua로 대기열 승격을 원자적으로 처리, 좌석·주문은 조건부 `UPDATE`와 영향 행 수 검증, 이벤트는 Transactional Outbox |
-| **CI** | 구조 이탈 방지 | 계약(enum·API·이벤트·계층)을 파일로 관리하고 정적 검사. 일부러 만든 위반 fixture 75개로 검사 규칙이 실제로 위반을 잡는지 메타테스트로 확인 |
+| **CI** | 구조 이탈 방지 | 계약(enum·API·이벤트·계층)을 파일로 관리하고 정적 검사. 일부러 만든 위반 fixture 77개로 검사 규칙이 실제로 위반을 잡는지 메타테스트로 확인 |
 | **측정** | 운영 환경의 장애·부하 | 클러스터에 장애를 주입하고 부하를 걸어 동작 확인. 롤링 배포, 노드 오토스케일([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md)), RDS/Redis 페일오버([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md)), 10만 명 / 10초 진입([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) · [IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md)) |
 
 ## 검증 결과 전체
@@ -125,6 +124,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 대기열 상태는 폴링(`retryAfterMs`) | 대기열 SSE | 대기자 전원의 SSE 연결은 Pod 메모리 1Gi에서 약 3,300~3,500개 시점에 OOM이 발생 | [ADR-023](docs/decisions/ADR-023-burst-entry-and-waiting-two-axes.md) |
 | Outbox + Redis Pub/Sub | Kafka | 아웃박스 이벤트가 `order.paid` 하나뿐이어서 브로커 3대를 운영할 필요가 없다고 판단 | [ADR-028](docs/decisions/ADR-028-kafka-reevaluation.md) |
 | `preStop` 25s | `deregistration_delay` 조정 | 실패가 타깃 해제 이전 구간에서 발생했고 애플리케이션 5xx는 0건 | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) |
+| readiness는 예매 api DB만, 대기열 DB·Redis | 기존(DB·Redis 모두), 둘 다 제외 | Redis는 모든 Pod가 함께 써서 넣으면 장애 중 조회까지 끊김. 대기열은 Redis 없이 처리할 수 없어 장애 중 빠지는 편이 요청 스레드를 묶지 않음 | [ADR-030](docs/decisions/ADR-030-readiness-shared-dependencies.md) · [IMP-046](docs/improvements/IMP-046-redis-outage-readiness.md) |
 | AZ별 NAT 3개 | NAT 1개 | NAT를 하나만 두면 그 AZ 장애가 다른 AZ의 결제 호출까지 막음 | [ADR-012](docs/decisions/ADR-012-3az-eks-infra-cost-control.md) |
 | Tomcat 스레드 200 | 400 | 하위 의존성이 느린 조건에서 400으로 늘려도 처리 성능이 개선되지 않음 | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md) |
 | 평시 노드 5대 | CPU 요청량 축소, 평시 노드 통합, 평시 api 2개 | 노드를 줄이면 api와 대기열이 한 노드를 나눠 쓰면서 응답이 느려지거나, 절감 효과가 일정하지 않음 | [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md) · [IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md) · [IMP-041](docs/improvements/IMP-041-peace-api-two.md) |
@@ -265,7 +265,7 @@ k8s/                   Kubernetes base, overlay, monitoring, Argo CD
 |---|---|---|
 | 계약 (`contracts/`) | enum·API·이벤트·오류 코드·계층 규칙을 YAML로 관리 | `events.yaml`에 구현됨(`implemented`)으로 선언한 이벤트는 실제 발행 코드가 있어야 통과 |
 | 정적 하네스 (`npm run harness:check`) | 계약과 코드·매니페스트·문서의 불일치 | 상태 변경 UPDATE의 `WHERE status` 조건, 파괴적 DDL, `@Autowired` 금지(생성자 주입), SSE 훅의 재동기화 경로, 매니페스트와 앱 설정 |
-| 메타테스트 | 하네스가 위반을 실제로 잡는지 | 일부러 만든 위반 fixture 75개가 모두 차단되는지 |
+| 메타테스트 | 하네스가 위반을 실제로 잡는지 | 일부러 만든 위반 fixture 77개가 모두 차단되는지 |
 | 단위·통합 테스트 (Testcontainers) | 동시성, 상태 전이, Outbox 정합성 | 실제 PostgreSQL·Redis 컨테이너 사용 |
 | 알림 규칙 테스트 (promtool) | 알림이 필요한 상황에서만 울리는지 | 규칙 4개의 양성·음성 케이스 |
 | E2E (Playwright, CI 풀스택) | 브라우저와 API 사이 흐름, UI 상태 | 프론트·백엔드 변경 PR에서 실행, 실패 시 trace 업로드 |

@@ -118,7 +118,7 @@ Secrets Manager에 만든다. Deployment는 `secretRef: flowticket-api-secrets`�
 | web `preStop(25s)` ↔ `terminationGracePeriodSeconds(60)` | preStop < Pod | 뒤집히면 preStop 도중 SIGKILL — 고치려던 것보다 나빠진다 |
 | probe 경로 ↔ `application.yml`의 health group | 예매 api readiness = `readinessState, db`, 대기열 Deployment = `readinessState, db, redis`(`HEALTH_READINESS_INCLUDE`) | 모든 Pod가 함께 쓰는 의존성을 readiness에 넣으면 그 하나가 흔들릴 때 API 전체가 빠진다. 조회는 Redis 장애 중에도 응답하므로 예매 api는 DB만 넣고, Redis 없이 처리할 수 없는 대기열만 redis를 더한다([ADR-030](../docs/decisions/ADR-030-readiness-shared-dependencies.md)) |
 | `API_ORIGIN`(**build-arg**) ↔ `next.config.mjs` rewrites | `http://flowticket-api` | 이름·포트가 틀리면 프록시가 엉뚱한 곳으로 간다 |
-| `REDIS_SSL_ENABLED=true` ↔ ElastiCache TLS | 둘 다 켜짐 | 하나만 켜지면 Redis 연결이 전부 실패한다. **대기열 Pod는 영원히 Ready 안 됨**, 예매 api Pod는 Ready지만 Redis를 쓰는 요청이 실패하고 블랙리스트 조회 실패 알림이 울린다 |
+| `REDIS_SSL_ENABLED=true` ↔ ElastiCache TLS | 둘 다 켜짐 | 하나만 켜지면 Redis 연결이 전부 실패한다. **대기열 Pod는 영원히 Ready 안 됨**, 예매 api Pod는 Ready지만 Redis를 쓰는 요청이 실패하고 블랙리스트 조회 실패 알림이 울린다(ADR-030, 설정에서 끌어낸 것) |
 
 마지막 줄이 [C-7](../docs/deployment/app-changes-for-k8s-kafka.md) 체크리스트 2번이다.
 

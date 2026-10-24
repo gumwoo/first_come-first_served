@@ -70,7 +70,7 @@ spec:
             - name: DB_POOL_MAX
               value: "3"
             # 대기열 경로(진입·상태)는 Redis 없이는 처리할 수 없다. readiness에 redis를 더해, Redis를 못 쓰는 대기열 Pod는
-            # Service에서 빠지게 한다(Redis 명령 시간 상한 2초 동안 요청 스레드가 묶이지 않게 ALB가 바로 503을 준다).
+            # Service에서 빠지게 한다(빠진 뒤에는 ALB가 503을 줘 요청 스레드가 Redis 명령 시간 상한만큼 묶이지 않는다, 쿠버네티스 동작에서 미루어 본 것).
             # 예매 api Pod는 넣지 않는다(application.yml 기본값, ADR-030). 하네스 k8s 규칙 ⑩-b 허용 목록·⑩-c가 이 값을 본다.
             - name: HEALTH_READINESS_INCLUDE
               value: "readinessState,db,redis"

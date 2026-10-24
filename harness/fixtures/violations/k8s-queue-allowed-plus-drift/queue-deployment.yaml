@@ -68,6 +68,8 @@ spec:
               value: "2"
             - name: MANAGEMENT_SERVER_PORT
               value: "8081"
+            - name: HEALTH_READINESS_INCLUDE
+              value: "readinessState,db,redis"
           envFrom:
             - configMapRef: { name: flowticket-api-config }
             - secretRef: { name: flowticket-api-secrets } # 클러스터 밖에서 생성(k8s/README.md)

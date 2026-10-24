@@ -50,7 +50,7 @@ aws eks update-kubeconfig --region ap-northeast-2 --name flowticket
 
 이 스택은 ElastiCache를 **전송 중 암호화(TLS) 켜진 상태로** 만든다.
 **앱이 평문으로 붙으면 Redis 연결이 전부 실패한다. 대기열 Pod는 readiness에 `redis`가 들어 있어
-영원히 Ready가 되지 않고, 예매 api Pod는 Ready로 뜨되 Redis를 쓰는 요청이 실패한다**([ADR-030](../../../docs/decisions/ADR-030-readiness-shared-dependencies.md)).
+영원히 Ready가 되지 않고, 예매 api Pod는 Ready로 뜨되 Redis를 쓰는 요청이 실패한다**(설정에서 끌어낸 것)([ADR-030](../../../docs/decisions/ADR-030-readiness-shared-dependencies.md)).
 
 `k8s/` 매니페스트에 `REDIS_SSL_ENABLED=true`를 넣어야 한다(앱 yml이 읽는 이름과 한 쌍).
 체크리스트: [`docs/deployment/app-changes-for-k8s-kafka.md`](../../../docs/deployment/app-changes-for-k8s-kafka.md) **C-7**.

@@ -82,6 +82,7 @@ public class GlobalExceptionHandler {
 
     /**
      * Redis 연결 실패·명령 시간 초과(Lettuce 시간 초과는 QueryTimeoutException으로 바뀐다)는 500이 아니라 503.
+     * QueryTimeoutException은 DB 쿼리 시간 초과도 같은 타입이다. 지금은 DB 쿼리 시간 상한을 두지 않아 Redis에서만 생긴다.
      * 대기열·좌석 선점처럼 Redis 없이는 처리할 수 없는 요청이 장애 중에 받는 응답이다(ADR-030).
      */
     @ExceptionHandler({RedisConnectionFailureException.class, QueryTimeoutException.class})

@@ -66,6 +66,8 @@ spec:
             # 하네스 k8s 규칙 ⑩이 이 값(8080이 아닌 숫자)과 probe 위치를 강제한다.
             - name: MANAGEMENT_SERVER_PORT
               value: "8081"
+            - name: HEALTH_READINESS_INCLUDE
+              value: "readinessState,db,redis"
           envFrom:
             - configMapRef: { name: flowticket-api-config }
             - secretRef: { name: flowticket-api-secrets } # 클러스터 밖에서 생성(k8s/README.md)

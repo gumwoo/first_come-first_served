@@ -31,13 +31,13 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       # 명령 시간 상한. 비워 두면 Lettuce 기본값 60초라, Redis가 멈추거나 끊긴 동안 Redis를 거치는 요청이 60초씩 묶이고
-      # fail-open·DB 대체(블랙리스트·랭킹)도 60초 뒤에야 동작했다(IMP-046 실측). 정상 응답은 ms 단위이고
+      # 블랙리스트 fail-open·조회수 기록 무시도 60초 뒤에야 넘어갔다(IMP-046 실측). 정상 응답은 ms 단위이고
       # 10K/s 진입 폭증에서도 Lettuce 평균 지연은 최대 39.9ms였다(IMP-027, 평균만 있어 꼬리 지연은 모른다).
       # 대기열 Lua·ShedLock·좌석 알림 구독이 같은 연결을 쓰므로 이 값이 함께 적용된다(ADR-030).
       timeout: ${REDIS_COMMAND_TIMEOUT:2s}
       # ElastiCache는 전송 중 암호화(TLS)를 켜고 만든다. TLS를 켠 캐시에 평문으로 붙으면 연결이 전부 실패한다.
       # 대기열 전용 Pod는 readiness에 redis가 있어 Ready가 되지 않고, 예매 api Pod는 Ready지만 Redis를 쓰는 요청이
-      # 실패하며 블랙리스트 조회 실패 알림(FlowticketBlacklistCheckFailing)이 울린다(ADR-030).
+      # 실패하며 블랙리스트 조회 실패 알림(FlowticketBlacklistCheckFailing)이 울린다(ADR-030, 설정에서 끌어낸 것).
       #
       # 기본값이 false인 것이 중요하다. 로컬 개발과 CI(Testcontainers Redis)는 평문이라
       # true로 박으면 개발 흐름과 테스트가 통째로 깨진다. 운영(k8s)에서만 켠다.

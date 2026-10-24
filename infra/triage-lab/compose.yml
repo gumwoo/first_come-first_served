@@ -1,5 +1,5 @@
 # 장애 분석 도구용 로컬 실험실: 원인을 알고 주입한 예매 묶음 run을 만든다(scripts/triage 입력).
-# 구성은 로컬 실험 L7([[IMP-043]])과 같다. 컨테이너마다 코어를 고정해 서로의 CPU를 빼앗지 않게 한다.
+# 구성은 로컬 실험 L7(IMP-043)과 같다. 컨테이너마다 코어를 고정해 서로의 CPU를 빼앗지 않게 한다.
 #
 #   bash infra/triage-lab/lab.sh up        # 빌드·기동·시드·토큰
 #   bash infra/triage-lab/lab.sh run <fault>

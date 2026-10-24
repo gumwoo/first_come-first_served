@@ -11,18 +11,15 @@
 #   redis  Redis 컨테이너에 네트워크 지연(netem): 명령마다 응답이 늦는 상태
 #   db     PostgreSQL 컨테이너 CPU 할당량 축소: DB가 CPU를 못 받아 쿼리가 느린 상태
 #   cpu    예매 api 컨테이너 CPU 할당량 축소: 앱 CPU가 모자란 상태
-# 강도는 주입 확인 run으로 정했다. 예매 묶음이 Redis·DB에 거는 부하가 작아, Redis CPU 0.1코어·지연 3~10ms,
-# DB CPU 0.3코어·경쟁 컨테이너(가중치 4배)로는 예매 지연이 정상 범위였다(infra/triage-lab/README.md).
+# 강도 근거는 infra/triage-lab/README.md "주입 확인".
 # 할당량 해제는 --cpus를 고정 코어 수로 되돌리는 방식이다(docker update --cpus 0은 제한을 풀지 않는다).
 #
 # 결과: artifacts/triage-lab/runs/<무작위 id>/ (sampler.jsonl, pg.tsv, wal.tsv, disk.txt, cgroup-api.txt, book.log, meta.json)
-# cgroup-api.txt는 api 컨테이너의 cgroup CPU 통계(할당량에 막힌 주기 수 포함)다. 할당량에 막힌 컨테이너는 CPU 사용량이
-# 낮게 찍혀 사용량만으로는 CPU 부족을 알아보기 어렵다(IMP-044). 컨테이너 밖(호스트 cgroup 이름공간)에서 읽는다.
-# disk.txt는 측정 대상과 분리된 컨테이너의 디스크 동기화 지연이다. 호스트 저장소가 느린 run을 가려내는 데 쓴다(IMP-043).
-# PostgreSQL의 WAL 동기화 시간은 DB가 CPU를 못 받을 때도 부풀어, 측정 환경 판정에는 쓰지 않는다.
+# cgroup-api.txt: api 컨테이너 cgroup CPU 통계. 할당량에 막히면 사용량이 낮게 찍혀 사용량만으로는 CPU 부족을 못 알아본다(IMP-044).
+# disk.txt: 측정 대상과 분리된 디스크 동기화 지연으로 호스트 저장소가 느린 run을 가려낸다(IMP-043).
+# WAL 동기화 시간은 DB CPU 부족에도 부풀어 측정 환경 판정에 쓰지 않는다.
 # 원인 라벨은 run 디렉터리 밖 artifacts/triage-lab/labels.jsonl에만 남긴다. 분석 도구가 라벨을 보지 않게 하기 위해서다.
-# 라벨에는 강도 번호와 함께 실제 주입값·방법을 남긴다(강도 표가 바뀌어도 run의 조건이 남는다).
-# 측정용 psql(세션 상태·WAL)은 PostgreSQL 컨테이너 밖 별도 컨테이너에서 돌린다. db 주입으로 줄인 CPU를 측정이 나눠 쓰지 않게 한다.
+# 측정용 psql은 PostgreSQL 컨테이너 밖에서 돌린다. db 주입으로 줄인 CPU를 측정이 나눠 쓰지 않게 한다.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -138,8 +135,8 @@ case "$cmd" in
     echo "준비 완료"
     ;;
   run)
-    # 반복문 안에서 lab.sh run을 부르면 앞쪽에서 도는 docker compose exec(-T여도 표준 입력은 붙는다)가
-    # 반복문의 입력을 읽어, 반복문이 첫 줄 뒤에 끝난다(2026-10-22 시험). run은 시작할 때 표준 입력을 끊는다.
+    # 반복문 안에서 lab.sh run을 부르면 docker compose exec(-T여도 표준 입력은 붙는다)가 반복문의 입력을 읽어
+    # 반복문이 첫 줄 뒤에 끝난다. run은 시작할 때 표준 입력을 끊는다.
     exec < /dev/null
     fault=${2:?fault가 필요하다}; level=${3:-1}
     [ "$fault" = none ] && level=0

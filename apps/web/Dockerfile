@@ -1,34 +1,29 @@
 # FlowTicket Web(Next.js) 운영 이미지.
 # 빌드 컨텍스트는 저장소 루트: `docker build -f apps/web/Dockerfile .`
-#
-# Next.js `output: "standalone"`은 실행에 필요한 의존성만 추려 번들을 만든다.
-# 그래서 최종 이미지에는 node_modules 전체가 아니라 추려진 결과만 들어간다.
+# Next.js `output: "standalone"` 번들만 최종 이미지에 넣는다.
 
 # ── 1단계: 빌드 ───────────────────────────────────────────────
 FROM node:20-bookworm-slim AS builder
 WORKDIR /app
 RUN corepack enable
 
-# 락파일 기준으로 먼저 설치해 소스만 바뀐 재빌드에서 설치 레이어가 캐시된다.
+# 락파일 기준으로 먼저 설치해 소스만 바뀐 재빌드에서 설치 레이어가 캐시된다(IMP-014).
 COPY apps/web/package.json apps/web/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY apps/web/ ./
 
-# API 오리진은 빌드 시점에 정해진다. next.config의 rewrites는 standalone 번들로 구워지므로
-# 런타임 환경변수로는 바뀌지 않는다(주입해도 빌드 때 값으로 프록시해 ECONNREFUSED가 난다).
-# 그래서 build-arg로 받는다.
-#  - 로컬 compose: http://api:8080 (컨테이너 네트워크 서비스명)
-#  - K8s: http://flowticket-api (Service DNS). ALB는 web만 보고 /api·/oauth2는 이 rewrite가
-#    프록시한다. Ingress가 API로 직결하면 ALB가 접두어를 안 떼어 Spring이 404를 낸다.
-#    포트를 붙이지 않는다: Service는 80을 열고 targetPort 8080으로 넘긴다.
+# next.config의 rewrites는 standalone 번들로 구워져 런타임 환경변수로는 바뀌지 않는다
+# (주입해도 빌드 때 값으로 프록시해 ECONNREFUSED가 난다). 그래서 build-arg로 받는다.
+#  - 로컬 compose: http://api:8080
+#  - K8s: http://flowticket-api (Service DNS, 포트 없이 80). ALB는 web만 보고 /api·/oauth2는 이 rewrite가
+#    프록시한다. Ingress가 API로 직결하면 접두어가 떼어지지 않아 Spring이 404를 낸다.
 ARG API_ORIGIN=http://localhost:8080
 ENV API_ORIGIN=$API_ORIGIN
 
-# 토스 결제창(ADR-005)용 공개 클라이언트 키. NEXT_PUBLIC_* 는 브라우저 번들에 구워지므로
-# 런타임 주입(k8s Secret 등)으로는 바뀌지 않아 여기서 받는다. 공개 키라 repository variable로 둔다.
-#
-# 비어 있으면 에러 없이 결제창 없는 confirm 경로로 빠진다(pay/page.tsx). 하네스 규칙 6)이 ARG 누락을 막는다.
+# 토스 결제창(ADR-005)용 공개 클라이언트 키. NEXT_PUBLIC_*는 브라우저 번들에 구워져 여기서 받는다.
+# 공개 키라 repository variable로 둔다. 비어 있으면 에러 없이 결제창 없는 confirm 경로로 빠진다(pay/page.tsx).
+# 하네스 k8s 규칙 6)이 ARG 누락을 막는다.
 ARG NEXT_PUBLIC_TOSS_CLIENT_KEY=
 ENV NEXT_PUBLIC_TOSS_CLIENT_KEY=$NEXT_PUBLIC_TOSS_CLIENT_KEY
 

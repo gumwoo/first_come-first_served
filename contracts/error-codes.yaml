@@ -42,4 +42,5 @@ codes:
   # 공통
   - { code: NOT_FOUND,        http: 404 }
   - { code: TOO_MANY_REQUESTS, http: 429 }
+  - { code: SERVICE_UNAVAILABLE, http: 503 }  # Redis 연결 실패·명령 시간 초과(ADR-030)
   - { code: INTERNAL_ERROR,   http: 500 }

@@ -1,6 +1,8 @@
 package com.flowticket.global.error;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.QueryTimeoutException;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
@@ -76,6 +78,18 @@ public class GlobalExceptionHandler {
         ErrorCode code = ErrorCode.VALIDATION_ERROR;
         return ResponseEntity.status(code.getStatus())
                 .body(ErrorResponse.of(code.name(), "요청 본문 형식이 올바르지 않습니다."));
+    }
+
+    /**
+     * Redis 연결 실패·명령 시간 초과(Lettuce 시간 초과는 QueryTimeoutException으로 바뀐다)는 500이 아니라 503.
+     * 대기열·좌석 선점처럼 Redis 없이는 처리할 수 없는 요청이 장애 중에 받는 응답이다(ADR-030).
+     */
+    @ExceptionHandler({RedisConnectionFailureException.class, QueryTimeoutException.class})
+    public ResponseEntity<ErrorResponse> handleUnavailable(Exception e) {
+        log.warn("의존성 일시 장애로 503: {}", e.toString());
+        ErrorCode code = ErrorCode.SERVICE_UNAVAILABLE;
+        return ResponseEntity.status(code.getStatus())
+                .body(ErrorResponse.of(code.name(), code.getDefaultMessage()));
     }
 
     @ExceptionHandler(Exception.class)

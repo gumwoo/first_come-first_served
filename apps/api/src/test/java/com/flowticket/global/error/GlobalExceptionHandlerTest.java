@@ -3,6 +3,8 @@ package com.flowticket.global.error;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.QueryTimeoutException;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -23,5 +25,17 @@ class GlobalExceptionHandlerTest {
         assertThat(res.getBody()).isNotNull();
         assertThat(res.getBody().error().code()).isEqualTo(ErrorCode.VALIDATION_ERROR.name());
         assertThat(res.getBody().error().message()).contains("token");
+    }
+
+    @Test
+    void Redis_연결_실패와_명령_시간_초과는_503() {
+        for (Exception ex : new Exception[] {
+                new RedisConnectionFailureException("down"), new QueryTimeoutException("Redis command timed out")}) {
+            ResponseEntity<ErrorResponse> res = handler.handleUnavailable(ex);
+
+            assertThat(res.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(res.getBody()).isNotNull();
+            assertThat(res.getBody().error().code()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE.name());
+        }
     }
 }

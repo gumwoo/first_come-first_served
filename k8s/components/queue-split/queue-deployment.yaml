@@ -21,7 +21,7 @@ spec:
     metadata:
       labels: { app: flowticket-api-queue, flowticket.io/app: api }
     spec:
-      terminationGracePeriodSeconds: 45
+      terminationGracePeriodSeconds: 60
 
       topologySpreadConstraints:
         - maxSkew: 1
@@ -74,7 +74,7 @@ spec:
           lifecycle:
             preStop:
               exec:
-                command: ["sh", "-c", "sleep 5"]
+                command: ["sh", "-c", "sleep 25"]
 
           resources:
             # requests.cpu는 ⑩-b 허용 목록이라 대기열만 따로 줄일 수 있다(위 머리말의 hostname 분산 짝 조건). 지금은 api와 같다.

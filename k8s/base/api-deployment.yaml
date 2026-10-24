@@ -20,8 +20,8 @@ spec:
       # flowticket.io/app: api — api와 대기열 전용 파드 공통. 로그 수집·정합성 검사가 이 라벨로 둘 다 고른다(ADR-027).
       labels: { app: flowticket-api, flowticket.io/app: api }
     spec:
-      # 앱의 SHUTDOWN_TIMEOUT(30s, configmap.yaml) + preStop(5s)보다 커야 한다. 작으면 진행 중 요청을 마치기 전에 SIGKILL이 온다.
-      terminationGracePeriodSeconds: 45
+      # 앱의 SHUTDOWN_TIMEOUT(30s, configmap.yaml) + preStop(25s) = 55s보다 커야 한다. 작으면 진행 중 요청을 마치기 전에 SIGKILL이 온다.
+      terminationGracePeriodSeconds: 60
 
       # 같은 AZ에 replica가 몰리면 AZ 하나를 잃을 때 용량이 통째로 빠진다.
       topologySpreadConstraints:
@@ -79,8 +79,8 @@ spec:
             preStop:
               exec:
                 # Pod 종료와 ALB 타깃 등록 해제가 비동기라, 바로 내려가면 아직 오는 요청이 502가 된다.
-                # 5초는 드레이닝이 시작될 시간을 버는 값이고 그 창을 덮는다고 보장하지는 않는다(근거: IMP-015).
-                command: ["sh", "-c", "sleep 5"]
+                # 대기열 두 경로는 ALB가 이 Pod(A') 또는 대기열 Pod(B)로 직접 보내므로 web과 같은 25초로 등록 해제 전파를 덮는다(TS-035).
+                command: ["sh", "-c", "sleep 25"]
 
           resources:
             # limits.cpu는 두지 않는다 — 스로틀링으로 p99가 튀고, 부하 실증에서 재려는 것이 바로 그 지연이다.

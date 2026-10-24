@@ -17,18 +17,14 @@ spec:
     spec:
       # api보다 낮은 우선순위 — 노드 자리가 없을 때 api가 web을 밀어낼 수 있다(web-priorityclass.yaml, ADR-025 보충).
       priorityClassName: flowticket-web-low
-      # preStop(25s) + Next.js 종료 시간보다 커야 SIGKILL이 앞지르지 않는다. 30이면
-      # preStop 도중에 강제 종료돼 오히려 더 나빠진다.
+      # preStop(25s) + Next.js 종료 시간보다 커야 SIGKILL이 앞지르지 않는다. 30이면 preStop 도중에 강제 종료된다.
       terminationGracePeriodSeconds: 60
 
-      # web 파드가 한 노드에 몰리면 그 노드 하나를 잃을 때 web이 전멸한다(사이트 중단 — IMP-034 §8. 시험은 안 함).
-      # 노드 단위는 DoNotSchedule로 강제한다: 다른 노드에 자리가 없으면 Pending → Cluster Autoscaler 증설로 푼다(노드 비용이 대가).
-      # ScheduleAnyway는 자리가 없으면 같은 노드에 놓아 위험이 그대로 남는다.
-      # api가 web을 선점해도(priorityClass) 밀려난 web은 이 규칙대로 다른 노드를 찾는다 — 자리가 날 때까지는 web 1개로 버틴다.
-      # PDB(minAvailable 1)는 선점을 최선 노력으로만 막는다(Kubernetes 동작). 선점 중 가용 유지는 세션에서 확인한다.
+      # 노드 단위는 DoNotSchedule로 강제한다. web이 한 노드에 몰리면 그 노드를 잃을 때 web이 전멸한다(IMP-034 §8).
+      # 다른 노드에 자리가 없으면 Pending → Cluster Autoscaler 증설로 푼다(ScheduleAnyway는 같은 노드에 놓아 위험이 남는다).
       # zone은 선호(ScheduleAnyway)만 둔다 — AZ 단위 강제는 노드 그룹이 AZ별이라 증설 경로가 좁아져 Pending이 길어질 수 있다(추론).
-      # matchLabelKeys(pod-template-hash): 롤링 중에는 같은 리비전 파드끼리만 센다. 없으면 surge 파드가 "web이 하나도 없는 노드"를
-      # 요구해, 노드 그룹이 상한일 때 롤아웃이 Pending으로 멈출 수 있다(구 파드는 계속 서비스). 롤아웃이 끝나면 다시 노드당 1개다.
+      # matchLabelKeys(pod-template-hash): 롤링 중 같은 리비전 파드끼리만 센다. 없으면 surge 파드가 "web이 없는 노드"를 요구해
+      # 노드 그룹이 상한일 때 롤아웃이 Pending으로 멈출 수 있다.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -46,13 +42,10 @@ spec:
           image: flowticket-web:REPLACE_TAG
           ports:
             - containerPort: 3000
-          # API_ORIGIN을 여기 두지 않는다. 런타임 env로는 바뀌지 않는다.
-          # next.config.mjs의 rewrites()가 standalone 번들로 구워지기 때문이다.
-          # 이미지 빌드의 build-arg로 정한다(.github/workflows/image.yml).
+          # API_ORIGIN을 여기 두지 않는다. next.config.mjs의 rewrites()가 standalone 번들로 구워져 런타임 env로는 바뀌지 않고,
+          # 이미지 빌드의 build-arg로 정한다(.github/workflows/image.yml). 넣으면 효과 없는 죽은 값이 된다(하네스 규칙 4).
           #
-          # 여기에 넣으면 "설정한 것처럼 보이지만 아무 효과가 없는" 죽은 값이 된다.
-          # Next.js standalone 서버에는 전용 헬스 엔드포인트가 없다. 루트 응답으로 갈음한다.
-          # "프로세스가 HTTP를 받는가"까지만 보는 것이고, 그 이상은 확인하지 않는다.
+          # Next.js standalone 서버에는 전용 헬스 엔드포인트가 없어 루트 응답으로 갈음한다 — "프로세스가 HTTP를 받는가"까지만 본다.
           readinessProbe:
             httpGet: { path: /, port: 3000 }
             periodSeconds: 5
@@ -62,14 +55,12 @@ spec:
             periodSeconds: 15
             failureThreshold: 3
           lifecycle:
-            # preStop이 등록 해제 전파(EndpointSlice → LB 컨트롤러 → ALB)보다 짧으면, ALB가 아직 정상으로 아는
-            # 파드가 먼저 죽어 롤링 중 504/502가 난다(TS-035). deregistration_delay를 줄이거나 늘리는 문제가 아니다.
-            # 25s는 넉넉히 잡은 값이고 최소 필요값은 재지 않았다.
+            # preStop이 등록 해제 전파(EndpointSlice → LB 컨트롤러 → ALB)보다 짧으면, ALB가 아직 정상으로 아는 파드가 먼저 죽어
+            # 롤링 중 504/502가 난다(TS-035). deregistration_delay와는 다른 값이다. 25s는 넉넉히 잡은 값이고 최소 필요값은 재지 않았다.
             preStop:
               exec: { command: ["sh", "-c", "sleep 25"] }
           resources:
-            # 부하 실측에서 파드당 0.16~0.59 core를 썼다. 300m은 최대보다 낮다(requests는 상한이 아니라 예약이다).
-            # 노드 배치는 web-hpa.yaml 주석 — ADR-025 이후 api가 노드당 하나라 web 자리가 노드별로 좁다.
+            # requests는 상한이 아니라 예약이다. 노드 배치는 web-hpa.yaml 주석 — api가 노드당 하나라 web 자리가 노드별로 좁다(ADR-025).
             requests: { cpu: "300m", memory: "256Mi" }
             limits: { memory: "512Mi" }
           securityContext:

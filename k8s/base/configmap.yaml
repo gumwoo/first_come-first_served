@@ -7,36 +7,34 @@ metadata:
   namespace: flowticket
 data:
   # ── 데이터 연결 ────────────────────────────────────────────────
-  # 호스트는 terraform output(db_endpoint·redis_endpoint)에서 채운다.
+  # 호스트는 terraform output(db_endpoint·redis_endpoint)에서 오버레이가 채운다.
   DB_HOST: "REPLACE_DB_HOST"
   DB_PORT: "5432"
   DB_NAME: "flowticket"
   REDIS_HOST: "REPLACE_REDIS_HOST"
   REDIS_PORT: "6379"
 
-  # ElastiCache는 transit_encryption_enabled = true다. 이 값이 없거나 false면 Redis 연결이
-  # 전부 실패한다. 대기열 Pod는 readiness에 redis가 있어 Ready가 되지 않고, 예매 api Pod는 Ready지만
-  # Redis를 쓰는 요청이 실패하며 블랙리스트 조회 실패 알림이 울린다(ADR-030, 설정에서 끌어낸 것).
+  # ElastiCache는 transit_encryption_enabled = true라, 이 값이 없거나 false면 Redis 연결이 전부 실패한다.
+  # 대기열 Pod는 Ready가 되지 않고, 예매 api Pod는 Ready인 채 Redis를 쓰는 요청이 실패한다(ADR-030).
   REDIS_SSL_ENABLED: "true"
 
   # ── 종료 유예 ─────────────────────────────────────────────────
-  # 애플리케이션이 진행 중 요청을 마칠 시간. terminationGracePeriodSeconds보다 작아야
-  # 한다. 크면 앱이 끝나기 전에 SIGKILL이 온다(무중단 배포가 깨지는 흔한 지점).
+  # 애플리케이션이 진행 중 요청을 마칠 시간. api의 terminationGracePeriodSeconds(45)보다 작아야 한다.
+  # 크면 앱이 끝나기 전에 SIGKILL이 온다.
   SHUTDOWN_TIMEOUT: "30s"
 
-  # ── 좌석맵 캐시 (실험 스위치) ───────────────────────────────
-  # 성능 실험용 스위치다(IMP-020). 0 = 끔.
-  # 끄는 이유는 정확성이다. 이벤트 기반 무효화가 없어 TTL 동안 이미
-  # 선점된 좌석이 AVAILABLE로 보인다. 운영으로 올리려면 그것부터 만든다(IMP-020 §다음).
+  # ── 캐시 ──────────────────────────────────────────────────────
+  # 좌석맵 캐시는 실험 스위치다(IMP-020). 0 = 끔. 이벤트 기반 무효화가 없어 TTL 동안 이미 선점된 좌석이
+  # AVAILABLE로 보이므로, 켜려면 무효화부터 만든다(IMP-020 §다음).
   SEAT_MAP_CACHE_TTL_MS: "0"
-  # 진입 경로 판매 상태 캐시(파드 메모리) 1초 — 버스트 중 진입마다 DB를 읽지 않게. 판매 중지·재개는 최대 1초 늦게 반영된다.
+  # 진입 경로 판매 상태 캐시(파드 메모리, IMP-026). 버스트 중 진입마다 DB를 읽지 않게 하고, 판매 중지·재개는 최대 1초 늦게 반영된다.
   QUEUE_BOOKABLE_CACHE_TTL_MS: "1000"
 
   # ── 운영 값 ───────────────────────────────────────────────────
   COOKIE_SECURE: "true"
   PAYMENT_GATEWAY: "toss"
 
-  # 소셜 로그인 성공/실패 후 브라우저가 돌아갈 곳. 기본값이 http://localhost:3000이라
-  # 주입하지 않으면 인증에 성공하고도 localhost로 보내진다(배포에서만 드러난다).
+  # 소셜 로그인 후 브라우저가 돌아갈 곳. 기본값이 http://localhost:3000이라 주입하지 않으면
+  # 인증에 성공하고도 localhost로 보내진다(배포에서만 드러난다, TS-017).
   OAUTH_SUCCESS_REDIRECT: "https://flow-ticket.com"
   OAUTH_FAILURE_REDIRECT: "https://flow-ticket.com/login?error=oauth"

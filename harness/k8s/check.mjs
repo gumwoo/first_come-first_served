@@ -328,6 +328,11 @@ for (const apiDeployDoc of apiDeployDocs) {
           ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))
           : v;
     const HOSTNAME = "kubernetes.io/hostname";
+    // ⑩-d가 요구하는 api 회피 term: 키는 labelSelector·topologyKey뿐, selector는 정확히 { matchLabels: { app: flowticket-api } }.
+    // namespaces·namespaceSelector·matchExpressions가 붙으면 규칙이 좁아지거나 무효가 될 수 있어 같은 term으로 보지 않는다.
+    const isApiAvoid = (t) =>
+      t && Object.keys(t).sort().join(",") === "labelSelector,topologyKey" && t.topologyKey === HOSTNAME &&
+      JSON.stringify(canon(t.labelSelector)) === JSON.stringify({ matchLabels: { app: "flowticket-api" } });
     // DB_POOL_MAX는 대기열 쪽에서만 걷는다. api Deployment에 두면 규칙 17(backend)이 그 값을 읽지 않아(api 풀은 application.yml
     // 기본값에서만 읽는다) DB 예산 초과가 조용히 통과한다 — 그래서 api 쪽은 그대로 남겨 불일치로 잡고, 아래에서 따로 알린다.
     // requests.cpu·hostname 분산은 양쪽에서 걷는다(api 쪽 값이 바뀌어도 비교가 깨지지 않게 — 차이는 짝 조건이 본다).
@@ -348,7 +353,14 @@ for (const apiDeployDoc of apiDeployDocs) {
         s.topologySpreadConstraints = s.topologySpreadConstraints.filter((t) => t?.topologyKey !== HOSTNAME);
         if (s.topologySpreadConstraints.length === 0) delete s.topologySpreadConstraints;
       }
-      if (queue) delete s.affinity; // api 쪽 affinity는 걷지 않는다 — api에 두면 불일치로 잡는다
+      // 대기열 쪽은 api 회피 term 하나만 걷는다. 다른 affinity(nodeAffinity 등)는 그대로 비교한다. api 쪽은 걷지 않는다.
+      const pa = queue ? s.affinity?.podAntiAffinity : null;
+      if (pa && Array.isArray(pa.requiredDuringSchedulingIgnoredDuringExecution)) {
+        pa.requiredDuringSchedulingIgnoredDuringExecution = pa.requiredDuringSchedulingIgnoredDuringExecution.filter((t) => !isApiAvoid(t));
+        if (pa.requiredDuringSchedulingIgnoredDuringExecution.length === 0) delete pa.requiredDuringSchedulingIgnoredDuringExecution;
+        if (Object.keys(pa).length === 0) delete s.affinity.podAntiAffinity;
+        if (Object.keys(s.affinity).length === 0) delete s.affinity;
+      }
       return s;
     };
     const norm = (spec, opt) => JSON.stringify(canon(stripAllowed(spec, opt))).replaceAll("flowticket-api-queue", "flowticket-api");
@@ -365,12 +377,13 @@ for (const apiDeployDoc of apiDeployDocs) {
     // 낮추면 동거가 돌아오므로 규칙으로 둔다: required podAntiAffinity, topologyKey hostname, selector app: flowticket-api.
     {
       const terms = q.doc.spec?.template?.spec?.affinity?.podAntiAffinity?.requiredDuringSchedulingIgnoredDuringExecution ?? [];
-      const ok = terms.some((t) => t?.topologyKey === HOSTNAME && t?.labelSelector?.matchLabels?.app === "flowticket-api");
+      const ok = terms.some(isApiAvoid);
       if (!ok) {
         r.fail(
           `대기열 Deployment에 api Pod 회피 규칙이 없다: ${path.relative(REPO_ROOT, q.file)}. ` +
             `affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution에 ` +
-            `{ labelSelector.matchLabels.app: flowticket-api, topologyKey: kubernetes.io/hostname }을 둔다 — api·대기열 동거 경합(IMP-038, IMP-047)`
+            `{ labelSelector: { matchLabels: { app: flowticket-api } }, topologyKey: kubernetes.io/hostname }만 담은 term을 둔다 ` +
+            `(namespaces·matchExpressions 등을 붙이지 않는다) — api·대기열 동거 경합(IMP-038, IMP-047)`
         );
       }
     }

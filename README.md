@@ -77,7 +77,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 질문 | 방법 | 결과 | 결정 |
 |---|---|---|---|
 | Tomcat 스레드를 늘리면 나아지는가 | 로컬, Redis만 느리게 한 조건 | 200 → 400에서 처리 성능 개선 없음 | 200 유지 ([IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)) |
-| 예매 api CPU 요청량을 낮춰 노드를 줄일 수 있는가 | kwok + 로컬 | 300m로 낮추면 평시 5 → 4대지만, 줄어든 1대는 api와 대기열이 한 노드를 나눠 쓰는 배치였고 오픈 부하(폴링 3,000/s + 예매 묶음)에서 폴링 p99가 10ms대에서 0.6~1.3초로 늘어남 | 1100m 유지 ([IMP-037](docs/improvements/IMP-037-node-consolidation-scheduling-sim.md) · [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md)) |
+| 예매 api CPU 요청량을 낮춰 노드를 줄일 수 있는가 | kwok + 로컬 | 300m로 낮추면 평시 5 → 4대지만, 줄어든 1대는 api와 대기열이 한 노드를 나눠 쓰는 배치였고 오픈 부하(폴링 3,000/s + 예매 묶음)에서 예매 p95가 41~87% 늘고 대기열 Tomcat 스레드가 200으로 포화됨 | 1100m 유지 ([IMP-037](docs/improvements/IMP-037-node-consolidation-scheduling-sim.md) · [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md)) |
 | api와 대기열을 같은 노드에 두지 않는 규칙 | kwok(실제 스케줄러) | 지금 요청량에서는 노드 수 변화 없음(평시 5, 사전 확장 9). api 요청량을 300m로 낮춘 조건에서도 api·대기열이 한 노드에 놓이지 않음 | 대기열 Pod에 api Pod 회피 규칙 적용 ([IMP-047](docs/improvements/IMP-047-queue-api-anti-affinity-sim.md)) |
 | 평시에만 합치고 오픈 전에 떼면 | kwok으로 평시 → 사전 확장 → 축소 한 바퀴 + 로컬 | api 변경을 먼저 끝내면 롤링이 노드 상한에 막히지 않음. 평시 가정 부하(폴링 300/s)에서 동거 시 예매 p95가 늘었고, 1,000/s에서는 판정이 갈림 | 채택 보류 ([IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md)) |
 | 평시 예매 api를 2개로 줄이면 | kwok + 로컬 | 평시 4대가 되는 경우와 5대가 남는 경우로 갈림 | 3개 유지 ([IMP-041](docs/improvements/IMP-041-peace-api-two.md)) |

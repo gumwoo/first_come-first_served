@@ -23,8 +23,8 @@ spec:
     spec:
       terminationGracePeriodSeconds: 60
 
-      # api Pod가 있는 노드에는 놓이지 않는다(required). api·대기열이 한 노드를 나눠 쓰면 폴링 p99가 10ms대에서 0.6~1.3초로
-      # 늘었다(IMP-038). 지금은 requests 1100m라 원래 떨어져 놓이지만, requests를 낮춰도 이 분리가 유지되게 규칙으로 둔다(IMP-047).
+      # api Pod가 있는 노드에는 놓이지 않는다(required). 오픈 부하에서 api·대기열이 한 노드를 나눠 쓰면 예매 p95가 41~87% 늘고
+      # 대기열 Tomcat 스레드가 200으로 포화됐다(IMP-038). 지금은 requests 1100m라 원래 떨어져 놓이지만, requests를 낮춰도 분리가 유지되게 규칙으로 둔다(IMP-047).
       # 대기열에만 둔다(⑩-b 허용 목록). required anti-affinity는 스케줄러가 양방향으로 지켜 api Pod도 대기열 노드에 놓이지 않는다.
       affinity:
         podAntiAffinity:

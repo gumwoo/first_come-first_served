@@ -88,6 +88,7 @@ spec:
             # 2Gi는 그 재시작을 없애려는 값이고 용량 산정값은 아니다.
             # cpu 1100m: 진입 burst 실측 비용에서 계산한 값(ADR-025, IMP-027). m6i.large에 api가 하나만 들어가 api 확장이 곧
             # 노드 확장(CA)이 되고, HPA 60% 기준선이 진입 처리 용량 근처에서 반응한다. 바꾸면 HPA·노드 예산을 함께 다시 본다.
+            # A′ 값이다. B(components/queue-split)에서는 예매만 받아 200m·노드마다 하나로 바꾼다(ADR-031).
             requests: { cpu: "1100m", memory: "1536Mi" }
             limits: { memory: "2Gi" }
 

@@ -3,6 +3,9 @@
 # 예외(⑩-b 허용 목록 — docs/deployment/resource-sizing-plan.md §3 P1·P3): 대기열만 DB_POOL_MAX·HEALTH_READINESS_INCLUDE env,
 # requests.cpu, hostname topologySpread, api Pod 회피 anti-affinity term 하나(⑩-d)를 다르게 둘 수 있다. requests.cpu를 다르게 두면 대기열 파드만 고르는 hostname 분산
 # (maxSkew 1·DoNotSchedule, selector에 app: flowticket-api-queue)이 함께 있어야 한다.
+#
+# 이 파일은 평시 모양이다(ADR-031): requests 200m, api 회피는 preferred. 공연 오픈 전에는 components/queue-peak가
+# requests 1100m·api 회피 required로 바꾼다(사전 확장 PR, overlay event-prescale.yaml 머리말).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,20 +26,30 @@ spec:
     spec:
       terminationGracePeriodSeconds: 60
 
-      # api Pod가 있는 노드에는 놓이지 않는다(required). 오픈 부하에서 api·대기열이 한 노드를 나눠 쓰면 예매 p95가 41~87% 늘고
-      # 대기열 Tomcat 스레드가 200으로 포화됐다(IMP-038). 지금은 requests 1100m라 원래 떨어져 놓이지만, requests를 낮춰도 분리가 유지되게 규칙으로 둔다(IMP-047).
-      # 대기열에만 둔다(⑩-b 허용 목록). required anti-affinity는 스케줄러가 양방향으로 지켜 api Pod도 대기열 노드에 놓이지 않는다.
+      # 평시에는 api Pod 노드를 가능하면 피한다(preferred). 평시 노드 3대에서는 api와 한 노드를 쓴다. 평시 부하(열린 대기열 없음)에서
+      # 동거의 예매·조회 지연 차이는 30% 기준 안이었다(IMP-049 로컬).
+      # 오픈 부하에서는 동거가 예매 p95를 41~87% 늘리고 대기열 Tomcat 스레드를 200으로 포화시켰다(IMP-038). 그래서 오픈 전에는
+      # components/queue-peak가 이 term을 required로 바꾼다(IMP-047, ADR-031). 대기열에만 둔다(⑩-b 허용 목록, ⑩-d가 모양을 본다).
       affinity:
         podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels: { app: flowticket-api }
-              topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels: { app: flowticket-api }
+                topologyKey: kubernetes.io/hostname
 
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
           whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app: flowticket-api-queue }
+        # 대기열 Pod는 노드마다 하나. 평시 대기열 2개가 한 노드에 놓이면 그 노드를 비울 때 PDB(minAvailable 1)에 막혀
+        # 오픈 뒤 평시 3대로 돌아오지 않았다(IMP-049 시뮬레이션 C-s). requests.cpu가 api와 다를 때의 짝 조건(⑩-b)이기도 하다.
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels: { app: flowticket-api-queue }
 
@@ -87,8 +100,9 @@ spec:
                 command: ["sh", "-c", "sleep 25"]
 
           resources:
-            # requests.cpu는 ⑩-b 허용 목록이라 대기열만 따로 줄일 수 있다(위 머리말의 hostname 분산 짝 조건). 지금은 api와 같다.
-            requests: { cpu: "1100m", memory: "1536Mi" }
+            # 평시 값. 평시에는 열린 대기열이 없어 대기열 CPU가 0.01코어였다(IMP-049 로컬). 오픈 전에는 components/queue-peak가
+            # 1100m(ADR-025 진입 burst 산정)로 바꾼다. requests.cpu는 ⑩-b 허용 목록이다(위 hostname 분산이 짝).
+            requests: { cpu: "200m", memory: "1536Mi" }
             limits: { memory: "2Gi" }
 
           securityContext:

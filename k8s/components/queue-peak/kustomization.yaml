@@ -1,0 +1,23 @@
+# 대기열 피크 모양(ADR-031) — 공연 오픈 사전 확장 때만 overlay의 components:에 켠다(queue-split 다음 줄).
+#   - requests.cpu 1100m: 진입 burst 실측 비용으로 정한 값(ADR-025). 대기열 Pod 하나가 노드 하나를 쓴다.
+#   - api Pod 회피를 required로: 오픈 부하에서 api·대기열 동거는 예매 p95 +41~87%, 대기열 Tomcat 스레드 포화(IMP-038, IMP-047).
+# 켜면 대기열 Deployment가 롤링으로 교체되고, 새 Pod는 api가 없는 노드가 필요해 Cluster Autoscaler가 노드를 붙인다.
+# 피크 구성(api 3 + 대기열 6 = 노드 9, 동거 0)은 이 component를 켠 상태로 측정한 값과 같다(IMP-035, IMP-047).
+# 끄는 시점은 overlay event-prescale.yaml 머리말(대기열이 빈 뒤). 하네스 k8s 규칙 ⑩-d가 아래 required term을, 규칙 11이 켜고 끄는 조건을 본다.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - target: { kind: Deployment, name: flowticket-api-queue }
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 1100m
+      - op: replace
+        path: /spec/template/spec/affinity
+        value:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels: { app: flowticket-api }
+                topologyKey: kubernetes.io/hostname

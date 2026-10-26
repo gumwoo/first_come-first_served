@@ -312,27 +312,30 @@ for (const apiDeployDoc of apiDeployDocs) {
 // 허용 차이(명시 목록 — docs/deployment/resource-sizing-plan.md §3 P1·P3): 대기열 쪽 자원 조정 후보만 뺀다.
 //   - 컨테이너 env `DB_POOL_MAX`(대기열 풀 축소 — 규칙 17이 queue-deployment.yaml 원문에서 읽어 DB 예산에 넣는다)
 //   - 컨테이너 env `HEALTH_READINESS_INCLUDE`(대기열만 readiness에 redis를 더한다 — ADR-030, 아래 ⑩-c가 값을 본다)
-//   - 대기열 `affinity`의 api Pod 회피 term 하나(IMP-047, 아래 ⑩-d가 모양을 본다). 다른 affinity는 그대로 비교한다
+//   - 대기열 `affinity`의 api Pod 회피 term 하나(required 또는 weight가 붙은 preferred — IMP-047·ADR-031, 아래 ⑩-d가 모양을 본다). 다른 affinity는 그대로 비교한다
 //   - 컨테이너 `resources.requests.cpu`(대기열 requests 축소)
 //   - `topologySpreadConstraints` 중 topologyKey가 kubernetes.io/hostname인 항목(노드 단위 분산 — 위 requests 축소와 한 쌍)
 // 이 밖의 차이(메모리·limits·다른 env·probe·zone 분산·종료 유예 등)는 그대로 실패한다.
+const canon = (v) =>
+  Array.isArray(v)
+    ? v.map(canon)
+    : v && typeof v === "object"
+      ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))
+      : v;
+const HOSTNAME = "kubernetes.io/hostname";
+// ⑩-d가 요구하는 api 회피 term: 키는 labelSelector·topologyKey뿐, selector는 정확히 { matchLabels: { app: flowticket-api } }.
+// namespaces·namespaceSelector·matchExpressions가 붙으면 규칙이 좁아지거나 무효가 될 수 있어 같은 term으로 보지 않는다.
+const isApiAvoid = (t) =>
+  t && Object.keys(t).sort().join(",") === "labelSelector,topologyKey" && t.topologyKey === HOSTNAME &&
+  JSON.stringify(canon(t.labelSelector)) === JSON.stringify({ matchLabels: { app: "flowticket-api" } });
+// 평시 모양(ADR-031)의 preferred 회피: { weight, podAffinityTerm: <위 term> }
+const isApiAvoidPreferred = (p) =>
+  p && Object.keys(p).sort().join(",") === "podAffinityTerm,weight" && Number.isInteger(p.weight) && isApiAvoid(p.podAffinityTerm);
 {
   const byName = Object.fromEntries(apiDeployDocs.map(({ doc, file }) => [doc.metadata.name, { doc, file }]));
   const api = byName["flowticket-api"];
   const q = byName["flowticket-api-queue"];
   if (api && q) {
-    const canon = (v) =>
-      Array.isArray(v)
-        ? v.map(canon)
-        : v && typeof v === "object"
-          ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))
-          : v;
-    const HOSTNAME = "kubernetes.io/hostname";
-    // ⑩-d가 요구하는 api 회피 term: 키는 labelSelector·topologyKey뿐, selector는 정확히 { matchLabels: { app: flowticket-api } }.
-    // namespaces·namespaceSelector·matchExpressions가 붙으면 규칙이 좁아지거나 무효가 될 수 있어 같은 term으로 보지 않는다.
-    const isApiAvoid = (t) =>
-      t && Object.keys(t).sort().join(",") === "labelSelector,topologyKey" && t.topologyKey === HOSTNAME &&
-      JSON.stringify(canon(t.labelSelector)) === JSON.stringify({ matchLabels: { app: "flowticket-api" } });
     // DB_POOL_MAX는 대기열 쪽에서만 걷는다. api Deployment에 두면 규칙 17(backend)이 그 값을 읽지 않아(api 풀은 application.yml
     // 기본값에서만 읽는다) DB 예산 초과가 조용히 통과한다 — 그래서 api 쪽은 그대로 남겨 불일치로 잡고, 아래에서 따로 알린다.
     // requests.cpu·hostname 분산은 양쪽에서 걷는다(api 쪽 값이 바뀌어도 비교가 깨지지 않게 — 차이는 짝 조건이 본다).
@@ -355,9 +358,12 @@ for (const apiDeployDoc of apiDeployDocs) {
       }
       // 대기열 쪽은 api 회피 term 하나만 걷는다. 다른 affinity(nodeAffinity 등)는 그대로 비교한다. api 쪽은 걷지 않는다.
       const pa = queue ? s.affinity?.podAntiAffinity : null;
-      if (pa && Array.isArray(pa.requiredDuringSchedulingIgnoredDuringExecution)) {
-        pa.requiredDuringSchedulingIgnoredDuringExecution = pa.requiredDuringSchedulingIgnoredDuringExecution.filter((t) => !isApiAvoid(t));
-        if (pa.requiredDuringSchedulingIgnoredDuringExecution.length === 0) delete pa.requiredDuringSchedulingIgnoredDuringExecution;
+      if (pa) {
+        for (const [key, match] of [["requiredDuringSchedulingIgnoredDuringExecution", isApiAvoid], ["preferredDuringSchedulingIgnoredDuringExecution", isApiAvoidPreferred]]) {
+          if (!Array.isArray(pa[key])) continue;
+          pa[key] = pa[key].filter((t) => !match(t));
+          if (pa[key].length === 0) delete pa[key];
+        }
         if (Object.keys(pa).length === 0) delete s.affinity.podAntiAffinity;
         if (Object.keys(s.affinity).length === 0) delete s.affinity;
       }
@@ -373,17 +379,18 @@ for (const apiDeployDoc of apiDeployDocs) {
           `DB_POOL_MAX를 다르게 둘 수 있는 것은 대기열 Deployment뿐이다(⑩-b 허용 목록)`
       );
     }
-    // ⑩-d 대기열 Pod는 api Pod가 있는 노드에 놓이지 않는다(IMP-038 동거 경합, IMP-047). requests가 지금은 분리를 만들지만
-    // 낮추면 동거가 돌아오므로 규칙으로 둔다: required podAntiAffinity, topologyKey hostname, selector app: flowticket-api.
+    // ⑩-d 대기열 Pod는 api Pod 노드를 피한다(IMP-038 동거 경합, IMP-047). 평시 모양(이 Deployment)은 preferred로 api 노드에 함께
+    // 놓일 수 있고, 오픈 전에 켜는 피크 모양(components/queue-peak)이 required로 바꾼다(ADR-031) — 그 component는 아래에서 따로 본다.
     {
-      const terms = q.doc.spec?.template?.spec?.affinity?.podAntiAffinity?.requiredDuringSchedulingIgnoredDuringExecution ?? [];
-      const ok = terms.some(isApiAvoid);
+      const pa = q.doc.spec?.template?.spec?.affinity?.podAntiAffinity ?? {};
+      const ok = (pa.requiredDuringSchedulingIgnoredDuringExecution ?? []).some(isApiAvoid) ||
+        (pa.preferredDuringSchedulingIgnoredDuringExecution ?? []).some(isApiAvoidPreferred);
       if (!ok) {
         r.fail(
           `대기열 Deployment에 api Pod 회피 규칙이 없다: ${path.relative(REPO_ROOT, q.file)}. ` +
-            `affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution에 ` +
+            `affinity.podAntiAffinity의 preferred(weight 포함) 또는 required에 ` +
             `{ labelSelector: { matchLabels: { app: flowticket-api } }, topologyKey: kubernetes.io/hostname }만 담은 term을 둔다 ` +
-            `(namespaces·matchExpressions 등을 붙이지 않는다) — api·대기열 동거 경합(IMP-038, IMP-047)`
+            `(namespaces·matchExpressions 등을 붙이지 않는다) — api·대기열 동거 경합(IMP-038, IMP-047, ADR-031)`
         );
       }
     }
@@ -443,6 +450,31 @@ for (const apiDeployDoc of apiDeployDocs) {
       r.fail(
         `대기열 전용 Deployment의 파드 사양이 api와 다르다: ${path.relative(REPO_ROOT, q.file)} ↔ ${path.relative(REPO_ROOT, api.file)} ` +
           `(첫 차이 근처: …${b.slice(Math.max(0, i - 40), i + 40)}…). 이름·app 라벨 말고는 같아야 A'/B 비교가 분리 효과만 본다(ADR-027)`
+      );
+    }
+  }
+}
+// ⑩-d(피크 모양) 오픈 전에 켜는 components/queue-peak는 대기열 api 회피를 required로 바꿔야 한다(ADR-031). 평시 모양의 preferred만
+// 남으면 사전 확장 때 새 대기열 Pod가 api 노드에 놓일 수 있다 — 오픈 부하의 동거 경합(IMP-038). 인라인 JSON 패치의 affinity 값을 본다.
+{
+  const peakFiles = manifests.filter((f) => /components[\\/]queue-peak[\\/]kustomization\.ya?ml$/.test(f));
+  if (K8S === "k8s" && peakFiles.length === 0) r.fail("대기열 피크 모양(k8s/components/queue-peak/kustomization.yaml)이 없다: 규칙 ⑩-d·11이 무력화된 상태");
+  for (const f of peakFiles) {
+    let ok = false;
+    try {
+      for (const p of yaml.load(read(f))?.patches ?? []) {
+        if (p?.target?.kind !== "Deployment" || p?.target?.name !== "flowticket-api-queue" || typeof p.patch !== "string") continue;
+        for (const op of yaml.load(p.patch) ?? []) {
+          if (!["replace", "add"].includes(op?.op) || op?.path !== "/spec/template/spec/affinity") continue;
+          if ((op.value?.podAntiAffinity?.requiredDuringSchedulingIgnoredDuringExecution ?? []).some(isApiAvoid)) ok = true;
+        }
+      }
+    } catch { ok = false; }
+    if (!ok) {
+      r.fail(
+        `대기열 피크 모양에 api 회피 규칙이 없다: ${path.relative(REPO_ROOT, f)}. flowticket-api-queue Deployment 패치에서 ` +
+          `/spec/template/spec/affinity를 requiredDuringSchedulingIgnoredDuringExecution ` +
+          `[{ labelSelector: { matchLabels: { app: flowticket-api } }, topologyKey: kubernetes.io/hostname }]로 바꾼다 — 오픈 부하의 동거 경합(IMP-038, ADR-031)`
       );
     }
   }
@@ -611,6 +643,9 @@ if (fs.existsSync(ES_DIR)) {
 // 되돌리고 기록도 남지 않는다. 그 대신 Git 값은 잊히면 그대로 남는다(노드 9대 비용). 그래서:
 //   - 하한은 base 하한 이상, base 상한 이하여야 한다(정책 밖으로 올리거나 정책보다 내리지 않는다).
 //   - base 하한보다 크면 "# event: <id>"와 "# off-by: <UTC>"가 있어야 하고, off-by가 지났으면 실패한다 — CI backend job이 도는 PR(apps/api·contracts·harness·k8s·ci.yml 변경)에서만 막는다. 상시 검사가 아니다.
+//   - B에서 대기열 하한을 올리면 같은 overlay가 피크 모양(components/queue-peak)도 켜야 한다(ADR-031). 평시 모양(200m·preferred)으로 늘리면
+//     대기열 Pod가 api 노드에 함께 놓인다. 피크 모양은 오픈 뒤 하한을 내린 다음에도 대기열이 빌 때까지 켜 두므로, 켜져 있는 동안에도
+//     event·off-by가 있어야 한다(잊으면 노드 9대 비용). 대기열 분리가 꺼진 채 켜면 패치 대상이 없어 빌드가 실패한다.
 //   - 실제 저장소에서는 이 파일이 overlay에 있고 kustomization.yaml이 패치로 참조해야 한다(참조가 없으면 올려도 적용되지 않는다).
 {
   const prescaleFiles = manifests.filter((f) => path.basename(f) === "event-prescale.yaml");
@@ -646,9 +681,15 @@ if (fs.existsSync(ES_DIR)) {
     // 블록 목록(줄 끝 주석 허용)과 흐름 표기(`components: [..]`)를 둘 다 본다. `#`로 시작하는 줄은 꺼진 상태다.
     const kzSame = path.join(path.dirname(f), "kustomization.yaml");
     const kzText = fs.existsSync(kzSame) ? read(kzSame) : "";
-    const splitOn =
-      /^\s*-\s*[^#\n]*components\/queue-split\/?\s*(#.*)?$/m.test(kzText) ||
-      /^\s*components:\s*\[[^\]#\n]*components\/queue-split/m.test(kzText);
+    const componentOn = (name) =>
+      new RegExp(`^\\s*-\\s*[^#\\n]*components/${name}/?\\s*(#.*)?$`, "m").test(kzText) ||
+      new RegExp(`^\\s*components:\\s*\\[[^\\]#\\n]*components/${name}`, "m").test(kzText);
+    const splitOn = componentOn("queue-split");
+    const peakOn = componentOn("queue-peak");
+    if (peakOn && !splitOn) {
+      r.fail(`대기열 분리가 꺼졌는데 피크 모양을 켰다: ${rel} → queue-peak는 queue-split의 대기열 Deployment를 패치한다. 둘 다 켜거나 queue-peak를 끈다(ADR-031)`);
+      continue;
+    }
     // 대기열 HPA는 queue-split이 켜졌을 때만 클러스터에 있다. 꺼진 채 대기열 HPA를 겨누면 kustomize가 대상을 못 찾는다.
     if (!Number.isInteger(min) || typeof target !== "string") {
       r.fail(`사전 확장 패치를 읽지 못했다: ${rel} — metadata.name(대상 HPA)과 minReplicas(정수)가 필요하다`);
@@ -682,13 +723,20 @@ if (fs.existsSync(ES_DIR)) {
       );
       continue;
     }
-    if (min === base.minReplicas) continue; // 꺼진 상태
+    if (target === "flowticket-api-queue" && min > base.minReplicas && !peakOn) {
+      r.fail(
+        `대기열 하한을 올렸는데 피크 모양이 꺼져 있다: ${rel} → minReplicas ${min}. 같은 PR에서 kustomization.yaml의 components/queue-peak를 켠다 — ` +
+          `평시 모양(200m·api 회피 preferred)으로 늘리면 대기열 Pod가 api 노드에 함께 놓인다(오픈 부하의 동거 경합, IMP-038·ADR-031)`
+      );
+    }
+    if (min === base.minReplicas && !peakOn) continue; // 꺼진 상태
+    const state = `minReplicas ${min}${peakOn ? ", queue-peak 켜짐" : ""}`;
     const event = src.match(/^#\s*event:\s*(\d+)\s*$/m)?.[1];
     const offBy = src.match(/^#\s*off-by:\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s*$/m)?.[1];
     if (!event || !offBy || Number.isNaN(Date.parse(offBy))) {
-      r.fail(`사전 확장을 켰는데 공연·기한이 없다: ${rel} → minReplicas ${min}. "# event: <공연 id>"와 "# off-by: <UTC>"를 적는다(언제 끌지 모르면 켜 둔 채 잊힌다)`);
+      r.fail(`사전 확장을 켰는데 공연·기한이 없다: ${rel} → ${state}. "# event: <공연 id>"와 "# off-by: <UTC>"를 적는다(언제 끌지 모르면 켜 둔 채 잊힌다)`);
     } else if (Date.parse(offBy) < Date.now()) {
-      r.fail(`사전 확장이 기한을 넘겼다: ${rel} → event ${event}, off-by ${offBy}인데 minReplicas ${min}. base 하한(${base.minReplicas})으로 되돌리는 PR을 먼저 머지한다(늘어난 노드 비용이 계속 나간다)`);
+      r.fail(`사전 확장이 기한을 넘겼다: ${rel} → event ${event}, off-by ${offBy}인데 ${state}. base 하한(${base.minReplicas})으로 되돌리고 queue-peak를 끄는 PR을 먼저 머지한다(늘어난 노드 비용이 계속 나간다)`);
     }
   }
 }

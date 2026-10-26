@@ -1,0 +1,11 @@
+# 위반 fixture: 대기열 하한을 6으로 올렸는데 피크 모양(queue-peak)이 꺼져 있다.
+# 평시 모양(200m·api 회피 preferred)으로 늘린 대기열 Pod가 api 노드에 함께 놓인다(ADR-031).
+# event: 1
+# off-by: 2099-01-01T00:00:00Z
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flowticket-api-queue
+  namespace: flowticket
+spec:
+  minReplicas: 6

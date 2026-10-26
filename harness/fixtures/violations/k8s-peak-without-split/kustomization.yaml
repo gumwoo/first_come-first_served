@@ -1,0 +1,9 @@
+# 위반 fixture: 대기열 분리(queue-split) 없이 피크 모양(queue-peak)만 켠 overlay.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+components:
+  - ../../components/queue-peak
+patches:
+  - path: event-prescale.yaml

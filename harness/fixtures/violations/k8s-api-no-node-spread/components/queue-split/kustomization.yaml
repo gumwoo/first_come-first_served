@@ -1,0 +1,10 @@
+# 위반 fixture: B에서 예매 api requests만 낮추고 노드 단위 분산 패치를 빠뜨렸다.
+# 피크 중 CA가 사용률 낮은 api 노드를 비워 api 둘이 한 노드에 모인다(IMP-049 시뮬레이션 C).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target: { kind: Deployment, name: flowticket-api }
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 200m

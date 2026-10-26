@@ -1,12 +1,12 @@
-# 공연 오픈 사전 확장(ADR-025, B 구성 — ADR-027) — Git PR로 켜고 끈다. 평소에는 base와 같은 2라 효과가 없다.
-# 오픈 순간(10초 진입)은 HPA·CA가 흡수하지 못해, 오픈 전에 하한을 6(상한)으로 올리고 오픈 뒤 2로 되돌린다(근거: loadtest-100k-plan §6 "확장의 역할", 결과: IMP-035).
+# 공연 오픈 사전 확장(ADR-025, B 구성 — ADR-027, 평시·피크 모양 — ADR-031) — Git PR로 켜고 끈다. 평소에는 base와 같은 2라 효과가 없다.
+# 오픈 순간(10초 진입)은 HPA·CA가 흡수하지 못해, 오픈 전에 대기열을 피크 모양(kustomization.yaml의 components/queue-peak)으로 바꾸고
+# 하한을 6(상한)으로 올린다. 오픈 뒤에는 하한만 2로, 대기열이 빈 뒤에 피크 모양을 끈다(근거: loadtest-100k-plan §6, 결과: IMP-035·IMP-049).
 # 대상이 대기열 HPA인 이유: B에서는 진입·상태 조회가 대기열 Deployment로 가고 api는 queue-split이 3으로 묶는다(api 하한을 올리면
 # 하한 > 상한). 켜고 끄는 절차·머지 시점은 docs/testing/loadtest-diag-runbook.md.
-#
-# 기본값(2)보다 크게 올릴 때는 아래 두 줄을 반드시 채운다(하네스 k8s 규칙 11). off-by가 지났는데 2보다 크면 k8s 하네스가 실패하지만
-# CI backend job이 도는 PR에서만 막으므로, 켠 사람이 off-by까지 되돌린다(켜 둔 채 잊으면 노드 9대 비용이 계속 나간다).
-# 사전 확장 중(노드 9)에는 이미지가 바뀌는 PR을 머지하지 않는다 — 롤링 surge가 10번째 노드를 못 얻어 멈춘다(ADR-025).
-#   event: <공연 id>          off-by: <되돌릴 UTC 시각, YYYY-MM-DDTHH:MM:SSZ>
+# 하한이 2보다 크거나 queue-peak가 켜져 있으면 아래 두 줄을 반드시 채운다(하네스 k8s 규칙 11). off-by는 피크 모양까지 끌 시각이다.
+# off-by가 지났는데 켜져 있으면 k8s 하네스가 실패하지만 CI backend job이 도는 PR에서만 막으므로, 켠 사람이 off-by까지 되돌린다.
+# 피크 모양인 동안에는 이미지가 바뀌는 PR을 머지하지 않는다 — 노드 9에서 롤링 surge가 10번째 노드를 못 얻어 멈춘다(ADR-025).
+#   event: <공연 id>          off-by: <피크 모양을 끌 UTC 시각, YYYY-MM-DDTHH:MM:SSZ>
 #
 # event: -
 # off-by: -

@@ -1,0 +1,10 @@
+# 위반 fixture: 오픈 뒤 하한은 2로 되돌렸지만 피크 모양(queue-peak)이 켜진 채 남은 overlay.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+components:
+  - ../../components/queue-split
+  - ../../components/queue-peak
+patches:
+  - path: event-prescale.yaml

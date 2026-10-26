@@ -1,0 +1,10 @@
+# 위반 fixture: 하한은 base(2)인데 queue-peak가 켜진 채 off-by가 지났다(노드 9대 비용이 계속 나간다).
+# event: 1825
+# off-by: 2020-01-01T00:00:00Z
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flowticket-api-queue
+  namespace: flowticket
+spec:
+  minReplicas: 2

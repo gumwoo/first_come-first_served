@@ -41,15 +41,16 @@
 
 | 동작 | 방법 |
 |---|---|
-| 사전 확장(오픈 최소 15분 전) | `k8s/overlays/demo-local/event-prescale.yaml`(대기열 HPA — B 기본값)의 `minReplicas`를 6으로, `# event:`·`# off-by:`를 채운 PR을 머지 → ArgoCD 동기화(자동 — 위 0에서 자동 동기화를 꺼 뒀다면 수동 동기화) → 대기열 Pending → CA가 노드 추가. A'로 돌린 overlay에서는 대상이 api HPA이고 9로 올린다 |
-| 정책에 넘기기(오픈 뒤) | 같은 파일을 2로(A'면 3으로), `event`·`off-by`를 `-`로 되돌리는 PR을 머지 → 이후 HPA(대기열 2~6 — A'면 api 3~9)·CA가 지속 부하를 따라 늘고 준다 |
+| 사전 확장(오픈 최소 15분 전) | 한 PR에서: overlay `kustomization.yaml`의 `- ../../components/queue-peak` 주석을 풀고(대기열 피크 모양 1100m·api 회피 required, ADR-031), `event-prescale.yaml`(대기열 HPA — B 기본값)의 `minReplicas`를 6으로, `# event:`·`# off-by:`(피크 모양을 끌 시각)를 채운다 → 머지 → ArgoCD 동기화(자동 — 위 0에서 자동 동기화를 꺼 뒀다면 수동 동기화) → 대기열이 롤링으로 피크 모양이 되며 새 Pod Pending → CA가 노드 추가. A'로 돌린 overlay에서는 queue-peak 없이 대상이 api HPA이고 9로 올린다 |
+| 정책에 넘기기(오픈 뒤) | `minReplicas`만 2로(A'면 3으로) 되돌리는 PR을 머지한다. 피크 모양과 `event`·`off-by`는 그대로 둔다 → 이후 HPA(대기열 2~6 — A'면 api 3~9)·CA가 폴링 부하를 따라 늘고 준다. 피크 대기열이 2개까지 줄면 노드 5대다(IMP-049 시뮬레이션) |
+| 평시 모양으로(대기열이 빈 뒤) | 대기자 0을 확인한 뒤 `queue-peak` 줄을 다시 주석 처리하고 `event`·`off-by`를 `-`로 되돌리는 PR을 머지 → 대기열이 평시 모양(200m·api 회피 preferred)으로 롤링 → CA가 평시 3대로 줄인다(IMP-049 시뮬레이션). 폴링이 남은 채 돌리면 늘어난 대기열 Pod가 api 노드에 함께 놓일 수 있다(오픈 부하의 동거 경합, IMP-038) |
 
 - kubectl로 HPA를 patch하지 않는다(selfHeal이 되돌리고 기록이 남지 않는다). 노드 그룹 설정도 바꾸지 않는다 — Pending을 CA가 해소한다.
-- 하네스 k8s 규칙 11: 하한은 대상 HPA의 base 안(대기열 2~6 — A'의 api는 3~9), 켤 때 event·off-by 필수, off-by가 지나면 k8s 하네스 실패(CI backend job이 도는 PR에서만 — 상시 검사 아님).
+- 하네스 k8s 규칙 11: 하한은 대상 HPA의 base 안(대기열 2~6 — A'의 api는 3~9), 대기열 하한을 올리면 queue-peak도 켜져 있어야 하고, 하한을 올렸거나 queue-peak가 켜져 있으면 event·off-by 필수, off-by가 지나면 k8s 하네스 실패(CI backend job이 도는 PR에서만 — 상시 검사 아님).
   반영 확인은 `kubectl get hpa`·노드 수·Pending. 측정 프로파일(AZ당 3)에서만 노드 9가 된다 — 기본 프로파일(AZ당 2)은 늘린 파드 일부가 Pending으로 남는다(B: api 3 + 대기열 6 = 9 > 노드 6 — 계산).
-- 사전 확장 중에는 이미지가 바뀌는 PR을 머지하지 않는다(롤링 surge가 10번째 노드를 못 얻어 멈춘다).
+- 피크 모양인 동안에는 이미지가 바뀌는 PR을 머지하지 않는다(롤링 surge가 10번째 노드를 못 얻어 멈춘다).
 - 사전 확장 뒤 web Ready ≥ 1을 확인한다 — 늘어난 대기열(A'면 api) 파드가 web(낮은 우선순위)을 선점해 자리를 만들며, 선점은 web PDB를 보장하지 않는다(ADR-025 보충).
-- CA는 api가 있는 노드(요청 57%)를 줄이지 않고, api 없는 노드도 요청이 50% 이상이거나(web 등) 파드를 옮길 자리가 없으면 줄이지 않는다(ADR-025).
+- CA는 api가 있는 노드를 줄이지 않는다(A'는 요청 57%, B는 api가 노드마다 하나(hostname 분산 DoNotSchedule)라 옮길 자리가 없다 — ADR-031). api 없는 노드도 요청이 50% 이상이거나(web 등) 파드를 옮길 자리가 없으면 줄이지 않는다(ADR-025).
   남은 노드는 drain으로 정리한다: 먼저 `kubectl describe node`로 다른 노드에 그 노드 파드(web 300m 등)가 들어갈 자리가 있는지 확인하고
   `kubectl drain <노드> --ignore-daemonsets --delete-emptydir-data` → CA가 빈 노드를 지운다. 자리가 없으면 쫓겨난 파드가 Pending → CA가 노드를 다시 붙인다.
 - 넘긴 뒤 HPA 축소는 안정화 300초, CA 노드 축소는 그 뒤 약 10분(IMP-029 시연 관찰 11.6분).

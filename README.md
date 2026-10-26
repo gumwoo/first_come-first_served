@@ -82,6 +82,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 예매 api 요청량을 낮춰 평시 노드를 줄이면 | 로컬(가정 평시 조회) + kwok | 평시 조회에서 예매 api Pod당 CPU 평균 0.07~0.39코어. 요청량 후보 800m로는 평시 노드가 5대로 그대로였고, 평시 기준 200m는 평시 4대지만 오픈 순간에 api와 대기열이 한 노드에 놓임 | 1100m와 분리 규칙 유지 ([IMP-048](docs/improvements/IMP-048-booking-api-requests-review.md)) |
 | 평시에만 합치고 오픈 전에 떼면 | kwok으로 평시 → 사전 확장 → 축소 한 바퀴 + 로컬 | api 변경을 먼저 끝내면 롤링이 노드 상한에 막히지 않음. 평시 가정 부하(폴링 300/s)에서 동거 시 예매 p95가 늘었고, 1,000/s에서는 판정이 갈림 | 채택 보류 ([IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md)) |
 | 평시 예매 api를 2개로 줄이면 | kwok + 로컬 | 평시 4대가 되는 경우와 5대가 남는 경우로 갈림 | 3개 유지 ([IMP-041](docs/improvements/IMP-041-peace-api-two.md)) |
+| 평시에는 대기열을 작게 두고 오픈 전에 피크 모양으로 바꾸면 | kwok으로 평시 → 사전 확장 → 피크 중 축소 → 되돌림 한 바퀴(적용 순서 3가지 × 2회) + 로컬 | 평시 3대, 사전 확장 9대(동거 0), 되돌린 뒤 3대. 예매 api와 대기열을 노드마다 하나로 두는 분산 규칙 두 개가 필요했음. 평시 동거의 예매·조회 p95 차이는 4쌍 모두 30% 안 | 적용, 평시 노드 5 → 3대(월 약 $170, 계산) ([IMP-049](docs/improvements/IMP-049-queue-peace-peak-shape.md) · [ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md)) |
 | 예매 순간 DB 풀을 늘리면 | 로컬, 디스크 지연 묶음을 걸러낸 교차 8묶음 | 4쌍 중 3쌍이 ±20% 안. 풀 8은 커넥션마다 점유가 길어져 처리량이 비슷함(계산) | 5 유지 ([IMP-042](docs/improvements/IMP-042-booking-db-pool-5-vs-8.md) · [IMP-043](docs/improvements/IMP-043-booking-burst-connection-wait-cause.md)) |
 | 장애 초기 원인 분석에 AI를 쓰면 | 로컬 장애 주입(Redis·DB·CPU, 정상), 규칙 분류기와 Claude Haiku 5.5를 같은 요약으로 채점 | 1차 23회: 장애 정답 규칙 13/17, AI 11/17(CPU 0/6). 요약에 CPU 할당량에 막힌 주기 비율을 넣은 2차 22회: 규칙 15/16, AI 16/16(CPU 6/6), 정상 오탐 규칙 0·AI 1. 호출당 약 $0.002 | 원인 판정은 규칙, AI는 근거·반대 지표·확인 항목 정리 ([IMP-044](docs/improvements/IMP-044-triage-rule-vs-ai-eval.md) · [IMP-045](docs/improvements/IMP-045-triage-eval-cpu-throttling.md) · [ADR-029](docs/decisions/ADR-029-ai-triage-boundary.md)) |
 
@@ -106,7 +107,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 장애 주입 | RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구, 노드 오토스케일로 Pending 파드 수용 | [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) · [IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md) |
 | Redis 장애 중 조회 | 로컬에서 Redis를 멈춰 확인. readiness에서 Redis를 빼고 Redis 명령 상한을 60초에서 2초로 줄여, 공연 상세·내 주문이 60초에서 약 2초로 응답하고 대기열 진입·좌석 선점은 약 4초 뒤 503으로 응답(1회 측정). 대기열 Pod는 readiness에 Redis를 남겨 장애 중 Service에서 빠지게 함 | [IMP-046](docs/improvements/IMP-046-redis-outage-readiness.md) · [ADR-030](docs/decisions/ADR-030-readiness-shared-dependencies.md) |
 | 대기열 토큰 정합성 | 토큰 소유권 검증, 재발급·이탈 경합(1인 1토큰), 대기 토큰 수명 관리를 통합 테스트로 검증 | [TS-043](docs/troubleshooting/TS-043-queue-token-ownership.md) · [TS-044](docs/troubleshooting/TS-044-queue-takeover-leave-race.md) · [TS-045](docs/troubleshooting/TS-045-queue-token-lifecycle.md) |
-| 설정값 근거 재검토 | CPU 요청량, Tomcat 스레드, DB 풀, 노드 수의 근거를 측정 원자료 재분석, 로컬 실험, kwok 스케줄링 시뮬레이션으로 확인. Tomcat 스레드는 400으로 늘려도 효과가 없어 200 유지, 평시 노드 수는 줄이는 후보 3가지를 검토해 현재 5대 유지, 예매 api DB 풀은 5 유지 | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)~[IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md) · [IMP-041](docs/improvements/IMP-041-peace-api-two.md) · [IMP-042](docs/improvements/IMP-042-booking-db-pool-5-vs-8.md) · [IMP-043](docs/improvements/IMP-043-booking-burst-connection-wait-cause.md) |
+| 설정값 근거 재검토 | CPU 요청량, Tomcat 스레드, DB 풀, 노드 수의 근거를 측정 원자료 재분석, 로컬 실험, kwok 스케줄링 시뮬레이션으로 확인. Tomcat 스레드는 400으로 늘려도 효과가 없어 200 유지, 평시 노드 수는 후보 3가지를 검토한 뒤 대기열 평시·피크 모양 전환으로 5대에서 3대로 줄임, 예매 api DB 풀은 5 유지 | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)~[IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md) · [IMP-041](docs/improvements/IMP-041-peace-api-two.md) · [IMP-049](docs/improvements/IMP-049-queue-peace-peak-shape.md) · [IMP-042](docs/improvements/IMP-042-booking-db-pool-5-vs-8.md) · [IMP-043](docs/improvements/IMP-043-booking-burst-connection-wait-cause.md) |
 | 측정 세션 비용 분해 | 평시 노드 5대, 부하 발생기 3대 기준 세션 시간당 약 $2.06 (계산). 비중은 노드 29%, 발생기 28%, Redis 19%, NAT 9% | [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |
 
 ### 측정 환경
@@ -129,7 +130,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | readiness는 예매 api DB만, 대기열 DB·Redis | 기존(DB·Redis 모두), 둘 다 제외 | Redis는 모든 Pod가 함께 써서 넣으면 장애 중 조회까지 끊김. 대기열은 Redis 없이 처리할 수 없어 장애 중 빠지는 편이 요청 스레드를 묶지 않음 | [ADR-030](docs/decisions/ADR-030-readiness-shared-dependencies.md) · [IMP-046](docs/improvements/IMP-046-redis-outage-readiness.md) |
 | AZ별 NAT 3개 | NAT 1개 | NAT를 하나만 두면 그 AZ 장애가 다른 AZ의 결제 호출까지 막음 | [ADR-012](docs/decisions/ADR-012-3az-eks-infra-cost-control.md) |
 | Tomcat 스레드 200 | 400 | 하위 의존성이 느린 조건에서 400으로 늘려도 처리 성능이 개선되지 않음 | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md) |
-| 평시 노드 5대 | CPU 요청량 축소, 평시 노드 통합, 평시 api 2개 | 노드를 줄이면 api와 대기열이 한 노드를 나눠 쓰면서 응답이 느려지거나, 절감 효과가 일정하지 않음 | [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md) · [IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md) · [IMP-041](docs/improvements/IMP-041-peace-api-two.md) |
+| 평시 노드 3대(대기열 평시·피크 모양 전환) | 평시 5대 유지, CPU 요청량만 축소, 평시 api 2개, Deployment 두 개, 작은 Pod 개수 늘리기 | 오픈 순간 구성은 측정한 구성(대기열 1100m·api와 다른 노드) 그대로이고, 평시에는 열린 대기열이 없어 동거 영향이 30% 안. Deployment 두 개는 HPA가 0개로 줄지 않고, 작은 Pod를 늘리면 DB 커넥션 예산을 넘음 | [ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md) · [IMP-049](docs/improvements/IMP-049-queue-peace-peak-shape.md) · [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md) |
 | CA 축소 대기 10분 | 5분 | 5분으로 줄이면 run당 약 $0.08 절감되지만 폭증 직전의 여유 노드가 먼저 제거됨(계산) | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) §10 |
 
 ## 핵심 설계
@@ -139,7 +140,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 - **결제 상태 전이**: 주문·결제·좌석·hold 상태를 명시적으로 전이하고 멱등성 키를 사용합니다.
 - **이벤트 전달**: 비즈니스 트랜잭션과 Outbox 기록을 함께 저장하고, 릴레이가 Redis Pub/Sub(`sse:order`)으로 발행해 SSE로 전달합니다.
 - **실시간 반영**: 대기열은 서버가 다음 조회 시점(`retryAfterMs`)을 정하는 폴링으로, 좌석·주문 상태는 SSE와 재조회로 화면에 반영합니다.
-- **용량과 확장**: 예매 api의 CPU 요청량 1100m는 api가 진입까지 받던 통합 구조에서 진입 요청 1건당 처리 비용 측정값으로 계산했고([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md)), 대기열 분리 구조로 바꾼 뒤에는 로컬 실험으로 예매 순간 1~2초 동안 코어 2개 가까이 쓰는 것을 확인해([IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)) 같은 값을 유지했습니다([설정값 근거](docs/deployment/optimization-targets.md)). HPA와 Cluster Autoscaler로 Pod와 Node를 늘리고 줄이며(api 3개 고정, 대기열 2~6개), 대기열 Pod가 늘기 시작하는 데 40~70초, 노드 추가에 100~150초가 걸리기 때문에 공연 오픈 전에는 Git PR로 대기열을 2개에서 6개로 미리 늘립니다.
+- **용량과 확장**: CPU 요청량 1100m는 진입 요청 1건당 처리 비용 측정값으로 계산했고([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md)), 오픈 순간에 진입을 받는 대기열의 피크 모양에 씁니다. 평시에는 열린 대기열이 없어 대기열과 예매 api를 200m로 두고(예매 api는 평시 조회 실측, [IMP-048](docs/improvements/IMP-048-booking-api-requests-review.md)), 오픈 전 사전 확장 PR에서 대기열을 피크 모양으로 바꿉니다([ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md), [설정값 근거](docs/deployment/optimization-targets.md)). HPA와 Cluster Autoscaler로 Pod와 Node를 늘리고 줄이며(api 3개 고정, 대기열 2~6개), 대기열 Pod가 늘기 시작하는 데 40~70초, 노드 추가에 100~150초가 걸리기 때문에 공연 오픈 전에는 Git PR로 대기열을 2개에서 6개로 미리 늘립니다.
 - **외부 데이터 분리**: KOPIS 호출은 요청 경로와 분리해 배치 동기화로 처리합니다.
 
 ## 백엔드 아키텍처

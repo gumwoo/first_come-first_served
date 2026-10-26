@@ -389,7 +389,7 @@ const isApiAvoidPreferred = (p) =>
       if (!ok) {
         r.fail(
           `대기열 Deployment에 api Pod 회피 규칙이 없다: ${path.relative(REPO_ROOT, q.file)}. ` +
-            `affinity.podAntiAffinity의 preferred(weight 포함) 또는 required에 ` +
+            `affinity.podAntiAffinity의 preferred(weight 100) 또는 required에 ` +
             `{ labelSelector: { matchLabels: { app: flowticket-api } }, topologyKey: kubernetes.io/hostname }만 담은 term을 둔다 ` +
             `(namespaces·matchExpressions 등을 붙이지 않는다) — api·대기열 동거 경합(IMP-038, IMP-047, ADR-031)`
         );

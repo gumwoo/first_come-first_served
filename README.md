@@ -78,6 +78,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 |---|---|---|---|
 | Tomcat 스레드를 늘리면 나아지는가 | 로컬, Redis만 느리게 한 조건 | 200 → 400에서 처리 성능 개선 없음 | 200 유지 ([IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)) |
 | 예매 api CPU 요청량을 낮춰 노드를 줄일 수 있는가 | kwok + 로컬 | 300m로 낮추면 평시 5 → 4대지만, 줄어든 1대는 api와 대기열이 한 노드를 나눠 쓰는 배치였고 오픈 부하(폴링 3,000/s + 예매 묶음)에서 폴링 p99가 10ms대에서 0.6~1.3초로 늘어남 | 1100m 유지 ([IMP-037](docs/improvements/IMP-037-node-consolidation-scheduling-sim.md) · [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md)) |
+| api와 대기열을 같은 노드에 두지 않는 규칙 | kwok(실제 스케줄러) | 지금 요청량에서는 노드 수 변화 없음(평시 5, 사전 확장 9). api 요청량을 300m로 낮춘 조건에서도 api·대기열이 한 노드에 놓이지 않음 | 대기열 Pod에 api Pod 회피 규칙 적용 ([IMP-047](docs/improvements/IMP-047-queue-api-anti-affinity-sim.md)) |
 | 평시에만 합치고 오픈 전에 떼면 | kwok으로 평시 → 사전 확장 → 축소 한 바퀴 + 로컬 | api 변경을 먼저 끝내면 롤링이 노드 상한에 막히지 않음. 평시 가정 부하(폴링 300/s)에서 동거 시 예매 p95가 늘었고, 1,000/s에서는 판정이 갈림 | 채택 보류 ([IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md)) |
 | 평시 예매 api를 2개로 줄이면 | kwok + 로컬 | 평시 4대가 되는 경우와 5대가 남는 경우로 갈림 | 3개 유지 ([IMP-041](docs/improvements/IMP-041-peace-api-two.md)) |
 | 예매 순간 DB 풀을 늘리면 | 로컬, 디스크 지연 묶음을 걸러낸 교차 8묶음 | 4쌍 중 3쌍이 ±20% 안. 풀 8은 커넥션마다 점유가 길어져 처리량이 비슷함(계산) | 5 유지 ([IMP-042](docs/improvements/IMP-042-booking-db-pool-5-vs-8.md) · [IMP-043](docs/improvements/IMP-043-booking-burst-connection-wait-cause.md)) |
@@ -88,7 +89,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 단계 | 목적 | 방법 |
 |---|---|---|
 | **코드** | 동시성 정합성 | Redis Lua로 대기열 승격을 원자적으로 처리, 좌석·주문은 조건부 `UPDATE`와 영향 행 수 검증, 이벤트는 Transactional Outbox |
-| **CI** | 구조 이탈 방지 | 계약(enum·API·이벤트·계층)을 파일로 관리하고 정적 검사. 일부러 만든 위반 fixture 77개로 검사 규칙이 실제로 위반을 잡는지 메타테스트로 확인 |
+| **CI** | 구조 이탈 방지 | 계약(enum·API·이벤트·계층)을 파일로 관리하고 정적 검사. 일부러 만든 위반 fixture 78개로 검사 규칙이 실제로 위반을 잡는지 메타테스트로 확인 |
 | **측정** | 운영 환경의 장애·부하 | 클러스터에 장애를 주입하고 부하를 걸어 동작 확인. 롤링 배포, 노드 오토스케일([IMP-021](docs/improvements/IMP-021-cluster-autoscaler-node-scaling.md)), RDS/Redis 페일오버([TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md)), 10만 명 / 10초 진입([IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) · [IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md)) |
 
 ## 검증 결과 전체
@@ -265,7 +266,7 @@ k8s/                   Kubernetes base, overlay, monitoring, Argo CD
 |---|---|---|
 | 계약 (`contracts/`) | enum·API·이벤트·오류 코드·계층 규칙을 YAML로 관리 | `events.yaml`에 구현됨(`implemented`)으로 선언한 이벤트는 실제 발행 코드가 있어야 통과 |
 | 정적 하네스 (`npm run harness:check`) | 계약과 코드·매니페스트·문서의 불일치 | 상태 변경 UPDATE의 `WHERE status` 조건, 파괴적 DDL, `@Autowired` 금지(생성자 주입), SSE 훅의 재동기화 경로, 매니페스트와 앱 설정 |
-| 메타테스트 | 하네스가 위반을 실제로 잡는지 | 일부러 만든 위반 fixture 77개가 모두 차단되는지 |
+| 메타테스트 | 하네스가 위반을 실제로 잡는지 | 일부러 만든 위반 fixture 78개가 모두 차단되는지 |
 | 단위·통합 테스트 (Testcontainers) | 동시성, 상태 전이, Outbox 정합성 | 실제 PostgreSQL·Redis 컨테이너 사용 |
 | 알림 규칙 테스트 (promtool) | 알림이 필요한 상황에서만 울리는지 | 규칙 4개의 양성·음성 케이스 |
 | E2E (Playwright, CI 풀스택) | 브라우저와 API 사이 흐름, UI 상태 | 프론트·백엔드 변경 PR에서 실행, 실패 시 trace 업로드 |

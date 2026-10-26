@@ -312,6 +312,7 @@ for (const apiDeployDoc of apiDeployDocs) {
 // 허용 차이(명시 목록 — docs/deployment/resource-sizing-plan.md §3 P1·P3): 대기열 쪽 자원 조정 후보만 뺀다.
 //   - 컨테이너 env `DB_POOL_MAX`(대기열 풀 축소 — 규칙 17이 queue-deployment.yaml 원문에서 읽어 DB 예산에 넣는다)
 //   - 컨테이너 env `HEALTH_READINESS_INCLUDE`(대기열만 readiness에 redis를 더한다 — ADR-030, 아래 ⑩-c가 값을 본다)
+//   - 대기열 `affinity`의 api Pod 회피 term 하나(IMP-047, 아래 ⑩-d가 모양을 본다). 다른 affinity는 그대로 비교한다
 //   - 컨테이너 `resources.requests.cpu`(대기열 requests 축소)
 //   - `topologySpreadConstraints` 중 topologyKey가 kubernetes.io/hostname인 항목(노드 단위 분산 — 위 requests 축소와 한 쌍)
 // 이 밖의 차이(메모리·limits·다른 env·probe·zone 분산·종료 유예 등)는 그대로 실패한다.
@@ -327,6 +328,11 @@ for (const apiDeployDoc of apiDeployDocs) {
           ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))
           : v;
     const HOSTNAME = "kubernetes.io/hostname";
+    // ⑩-d가 요구하는 api 회피 term: 키는 labelSelector·topologyKey뿐, selector는 정확히 { matchLabels: { app: flowticket-api } }.
+    // namespaces·namespaceSelector·matchExpressions가 붙으면 규칙이 좁아지거나 무효가 될 수 있어 같은 term으로 보지 않는다.
+    const isApiAvoid = (t) =>
+      t && Object.keys(t).sort().join(",") === "labelSelector,topologyKey" && t.topologyKey === HOSTNAME &&
+      JSON.stringify(canon(t.labelSelector)) === JSON.stringify({ matchLabels: { app: "flowticket-api" } });
     // DB_POOL_MAX는 대기열 쪽에서만 걷는다. api Deployment에 두면 규칙 17(backend)이 그 값을 읽지 않아(api 풀은 application.yml
     // 기본값에서만 읽는다) DB 예산 초과가 조용히 통과한다 — 그래서 api 쪽은 그대로 남겨 불일치로 잡고, 아래에서 따로 알린다.
     // requests.cpu·hostname 분산은 양쪽에서 걷는다(api 쪽 값이 바뀌어도 비교가 깨지지 않게 — 차이는 짝 조건이 본다).
@@ -347,6 +353,14 @@ for (const apiDeployDoc of apiDeployDocs) {
         s.topologySpreadConstraints = s.topologySpreadConstraints.filter((t) => t?.topologyKey !== HOSTNAME);
         if (s.topologySpreadConstraints.length === 0) delete s.topologySpreadConstraints;
       }
+      // 대기열 쪽은 api 회피 term 하나만 걷는다. 다른 affinity(nodeAffinity 등)는 그대로 비교한다. api 쪽은 걷지 않는다.
+      const pa = queue ? s.affinity?.podAntiAffinity : null;
+      if (pa && Array.isArray(pa.requiredDuringSchedulingIgnoredDuringExecution)) {
+        pa.requiredDuringSchedulingIgnoredDuringExecution = pa.requiredDuringSchedulingIgnoredDuringExecution.filter((t) => !isApiAvoid(t));
+        if (pa.requiredDuringSchedulingIgnoredDuringExecution.length === 0) delete pa.requiredDuringSchedulingIgnoredDuringExecution;
+        if (Object.keys(pa).length === 0) delete s.affinity.podAntiAffinity;
+        if (Object.keys(s.affinity).length === 0) delete s.affinity;
+      }
       return s;
     };
     const norm = (spec, opt) => JSON.stringify(canon(stripAllowed(spec, opt))).replaceAll("flowticket-api-queue", "flowticket-api");
@@ -358,6 +372,20 @@ for (const apiDeployDoc of apiDeployDocs) {
           `backend 규칙 17이 api 풀을 거기서만 읽어, 매니페스트에서 바꾸면 DB 커넥션 예산 검사가 그 값을 보지 못한다(TS-021). ` +
           `DB_POOL_MAX를 다르게 둘 수 있는 것은 대기열 Deployment뿐이다(⑩-b 허용 목록)`
       );
+    }
+    // ⑩-d 대기열 Pod는 api Pod가 있는 노드에 놓이지 않는다(IMP-038 동거 경합, IMP-047). requests가 지금은 분리를 만들지만
+    // 낮추면 동거가 돌아오므로 규칙으로 둔다: required podAntiAffinity, topologyKey hostname, selector app: flowticket-api.
+    {
+      const terms = q.doc.spec?.template?.spec?.affinity?.podAntiAffinity?.requiredDuringSchedulingIgnoredDuringExecution ?? [];
+      const ok = terms.some(isApiAvoid);
+      if (!ok) {
+        r.fail(
+          `대기열 Deployment에 api Pod 회피 규칙이 없다: ${path.relative(REPO_ROOT, q.file)}. ` +
+            `affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution에 ` +
+            `{ labelSelector: { matchLabels: { app: flowticket-api } }, topologyKey: kubernetes.io/hostname }만 담은 term을 둔다 ` +
+            `(namespaces·matchExpressions 등을 붙이지 않는다) — api·대기열 동거 경합(IMP-038, IMP-047)`
+        );
+      }
     }
     // ⑩-c 대기열 Deployment의 readiness에는 redis가 있어야 한다(ADR-030). 대기열 경로는 Redis 없이는 처리할 수 없어,
     // 빠지면 Redis 장애 중 대기열 Pod가 Ready로 남아 요청 스레드가 Redis 명령 시간 상한만큼씩 묶인다.

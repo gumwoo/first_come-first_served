@@ -1,4 +1,4 @@
-// 평시 조회 혼합 부하(docs/testing/traffic-profile.md §2): 화면 가중 메인 25%·상세 40%·검색 20%·내 예매 15%를 요청 단위로 펼친다(IMP-048).
+// 평시 조회 혼합 부하(docs/testing/traffic-profile.md §2): 화면 가중 메인 25%·상세 40%·검색 20%·내 예매 15%(IMP-048 가정)를 요청 단위로 펼친다.
 //   k6 run -e BASE=http://api:8080 -e RATE=33 -e DUR=120s -e IDS_FILE=/w/event-ids.json -e TOKENS_FILE=/w/tokens.json infra/k6/browse-mix.js
 //   event-ids.json: 공연 id 배열(JSON). tokens.json: infra/loadgen/mint-tokens.mjs 출력([{ n, t }]).
 import http from "k6/http";

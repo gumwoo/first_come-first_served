@@ -312,7 +312,7 @@ for (const apiDeployDoc of apiDeployDocs) {
 // 허용 차이(명시 목록 — docs/deployment/resource-sizing-plan.md §3 P1·P3): 대기열 쪽 자원 조정 후보만 뺀다.
 //   - 컨테이너 env `DB_POOL_MAX`(대기열 풀 축소 — 규칙 17이 queue-deployment.yaml 원문에서 읽어 DB 예산에 넣는다)
 //   - 컨테이너 env `HEALTH_READINESS_INCLUDE`(대기열만 readiness에 redis를 더한다 — ADR-030, 아래 ⑩-c가 값을 본다)
-//   - `affinity`(대기열만 api Pod 회피 anti-affinity를 둔다 — IMP-047, 아래 ⑩-d가 모양을 본다)
+//   - 대기열 `affinity`의 api Pod 회피 term 하나(IMP-047, 아래 ⑩-d가 모양을 본다). 다른 affinity는 그대로 비교한다
 //   - 컨테이너 `resources.requests.cpu`(대기열 requests 축소)
 //   - `topologySpreadConstraints` 중 topologyKey가 kubernetes.io/hostname인 항목(노드 단위 분산 — 위 requests 축소와 한 쌍)
 // 이 밖의 차이(메모리·limits·다른 env·probe·zone 분산·종료 유예 등)는 그대로 실패한다.

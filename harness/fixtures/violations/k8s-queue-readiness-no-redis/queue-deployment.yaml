@@ -31,6 +31,13 @@ spec:
       terminationGracePeriodSeconds: 45
 
       # 같은 노드/AZ에 replica가 몰리면 노드 하나가 죽을 때 용량이 통째로 빠진다.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: { app: flowticket-api }
+              topologyKey: kubernetes.io/hostname
+
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone

@@ -1,7 +1,7 @@
 # 대기열 전용 Deployment(ADR-027) — 대기열 두 경로만 받는다(flowticket-api-queue Service).
 # k8s/base/api-deployment.yaml과 같은 파드 사양이다(하네스 k8s 규칙 ⑩-b). 바꿀 때는 둘을 같이 바꾸고, 값의 이유는 그쪽 주석을 본다.
 # 예외(⑩-b 허용 목록 — docs/deployment/resource-sizing-plan.md §3 P1·P3): 대기열만 DB_POOL_MAX·HEALTH_READINESS_INCLUDE env,
-# requests.cpu, hostname topologySpread를 다르게 둘 수 있다. requests.cpu를 다르게 두면 대기열 파드만 고르는 hostname 분산
+# requests.cpu, hostname topologySpread, api Pod 회피 anti-affinity(⑩-d)를 다르게 둘 수 있다. requests.cpu를 다르게 두면 대기열 파드만 고르는 hostname 분산
 # (maxSkew 1·DoNotSchedule, selector에 app: flowticket-api-queue)이 함께 있어야 한다.
 apiVersion: apps/v1
 kind: Deployment
@@ -22,6 +22,16 @@ spec:
       labels: { app: flowticket-api-queue, flowticket.io/app: api }
     spec:
       terminationGracePeriodSeconds: 60
+
+      # api Pod가 있는 노드에는 놓이지 않는다(required). api·대기열이 한 노드를 나눠 쓰면 폴링 p99가 10ms대에서 0.6~1.3초로
+      # 늘었다(IMP-038). 지금은 requests 1100m라 원래 떨어져 놓이지만, requests를 낮춰도 이 분리가 유지되게 규칙으로 둔다(IMP-047).
+      # 대기열에만 둔다(⑩-b 허용 목록). required anti-affinity는 스케줄러가 양방향으로 지켜 api Pod도 대기열 노드에 놓이지 않는다.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: { app: flowticket-api }
+              topologyKey: kubernetes.io/hostname
 
       topologySpreadConstraints:
         - maxSkew: 1

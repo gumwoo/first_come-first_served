@@ -1,0 +1,11 @@
+# 위반 fixture: queue-peak를 queue-split보다 앞에 둔 overlay. component는 적힌 순서로 적용돼
+# queue-peak 패치가 대상(대기열 Deployment)을 못 찾고 조용히 무시된다 — 대기열은 평시 모양으로 남는다.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+components:
+  - "../../components/queue-peak"
+  - ../../components/queue-split
+patches:
+  - path: event-prescale.yaml

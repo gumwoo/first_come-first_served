@@ -42,7 +42,7 @@
 | 동작 | 방법 |
 |---|---|
 | 사전 확장(오픈 최소 15분 전) | 한 PR에서: overlay `kustomization.yaml`의 `- ../../components/queue-peak` 주석을 풀고(대기열 피크 모양 1100m·api 회피 required, ADR-031), `event-prescale.yaml`(대기열 HPA — B 기본값)의 `minReplicas`를 6으로, `# event:`·`# off-by:`(피크 모양을 끌 시각)를 채운다 → 머지 → ArgoCD 동기화(자동 — 위 0에서 자동 동기화를 꺼 뒀다면 수동 동기화) → 대기열이 롤링으로 피크 모양이 되며 새 Pod Pending → CA가 노드 추가. A'로 돌린 overlay에서는 queue-peak 없이 대상이 api HPA이고 9로 올린다 |
-| 정책에 넘기기(오픈 뒤) | `minReplicas`만 2로(A'면 3으로) 되돌리는 PR을 머지한다. 피크 모양과 `event`·`off-by`는 그대로 둔다 → 이후 HPA(대기열 2~6 — A'면 api 3~9)·CA가 폴링 부하를 따라 늘고 준다 |
+| 정책에 넘기기(오픈 뒤) | `minReplicas`만 2로(A'면 3으로) 되돌리는 PR을 머지한다. 피크 모양과 `event`·`off-by`는 그대로 둔다 → 이후 HPA(대기열 2~6 — A'면 api 3~9)·CA가 폴링 부하를 따라 늘고 준다. 피크 대기열이 2개까지 줄면 노드 5대다(IMP-049 시뮬레이션) |
 | 평시 모양으로(대기열이 빈 뒤) | 대기자 0을 확인한 뒤 `queue-peak` 줄을 다시 주석 처리하고 `event`·`off-by`를 `-`로 되돌리는 PR을 머지 → 대기열이 평시 모양(200m·api 회피 preferred)으로 롤링 → CA가 평시 3대로 줄인다(IMP-049 시뮬레이션). 폴링이 남은 채 돌리면 늘어난 대기열 Pod가 api 노드에 함께 놓일 수 있다(오픈 부하의 동거 경합, IMP-038) |
 
 - kubectl로 HPA를 patch하지 않는다(selfHeal이 되돌리고 기록이 남지 않는다). 노드 그룹 설정도 바꾸지 않는다 — Pending을 CA가 해소한다.

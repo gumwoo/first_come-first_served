@@ -1,0 +1,10 @@
+# 위반 fixture: 하한 6 + queue-peak(순서 잘못)
+# event: 1
+# off-by: 2099-01-01T00:00:00Z
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flowticket-api-queue
+  namespace: flowticket
+spec:
+  minReplicas: 6

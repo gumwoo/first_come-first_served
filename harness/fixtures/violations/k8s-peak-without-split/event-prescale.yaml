@@ -1,4 +1,4 @@
-# 위반 fixture: queue-peak가 패치할 대기열 Deployment가 없다(queue-split 꺼짐) — kustomize 빌드가 실패한다.
+# 위반 fixture: queue-peak가 패치할 대기열 Deployment가 없다(queue-split 꺼짐) — 패치가 조용히 무시되고 빌드는 통과한다.
 # event: 1
 # off-by: 2099-01-01T00:00:00Z
 apiVersion: autoscaling/v2

@@ -328,9 +328,10 @@ const HOSTNAME = "kubernetes.io/hostname";
 const isApiAvoid = (t) =>
   t && Object.keys(t).sort().join(",") === "labelSelector,topologyKey" && t.topologyKey === HOSTNAME &&
   JSON.stringify(canon(t.labelSelector)) === JSON.stringify({ matchLabels: { app: "flowticket-api" } });
-// 평시 모양(ADR-031)의 preferred 회피: { weight, podAffinityTerm: <위 term> }
+// 평시 모양(ADR-031)의 preferred 회피: { weight: 100, podAffinityTerm: <위 term> }. 시뮬레이션은 weight 100으로 확인했다(IMP-049) —
+// 낮은 weight는 다른 점수에 밀려 평시 배치가 달라질 수 있어 같은 term으로 보지 않는다.
 const isApiAvoidPreferred = (p) =>
-  p && Object.keys(p).sort().join(",") === "podAffinityTerm,weight" && Number.isInteger(p.weight) && isApiAvoid(p.podAffinityTerm);
+  p && Object.keys(p).sort().join(",") === "podAffinityTerm,weight" && p.weight === 100 && isApiAvoid(p.podAffinityTerm);
 {
   const byName = Object.fromEntries(apiDeployDocs.map(({ doc, file }) => [doc.metadata.name, { doc, file }]));
   const api = byName["flowticket-api"];
@@ -454,27 +455,57 @@ const isApiAvoidPreferred = (p) =>
     }
   }
 }
-// ⑩-d(피크 모양) 오픈 전에 켜는 components/queue-peak는 대기열 api 회피를 required로 바꿔야 한다(ADR-031). 평시 모양의 preferred만
-// 남으면 사전 확장 때 새 대기열 Pod가 api 노드에 놓일 수 있다 — 오픈 부하의 동거 경합(IMP-038). 인라인 JSON 패치의 affinity 값을 본다.
+// ⑩-d(피크 모양) 오픈 전에 켜는 components/queue-peak는 대기열을 측정한 피크 구성으로 바꿔야 한다(ADR-031): api 회피 required와
+// requests 1100m(ADR-025). preferred가 남으면 사전 확장 때 새 대기열 Pod가 api 노드에 놓일 수 있다(오픈 부하의 동거 경합, IMP-038).
+// 인라인 JSON 패치를 순서대로 보고, 각 경로를 마지막으로 건드린 op가 그 값을 넣는지 본다(뒤에서 지우거나 덮어쓰면 실패).
+// ⑩-e B의 예매 api는 노드마다 하나다(components/queue-split의 hostname 분산 패치). 없으면 피크 중 CA가 사용률 낮은 api 노드를 비워
+// api 둘이 한 노드에 모였다(IMP-049 시뮬레이션 C, 6/6).
 {
+  const patchOps = (f, kind, name) => {
+    const ops = [];
+    for (const p of yaml.load(read(f))?.patches ?? []) {
+      if (p?.target?.kind !== kind || p?.target?.name !== name || typeof p.patch !== "string") continue;
+      ops.push(...(yaml.load(p.patch) ?? []));
+    }
+    return ops;
+  };
+  const lastOn = (ops, prefix) => ops.filter((op) => typeof op?.path === "string" && (op.path === prefix || op.path.startsWith(prefix + "/") || prefix.startsWith(op.path + "/"))).at(-1);
   const peakFiles = manifests.filter((f) => /components[\\/]queue-peak[\\/]kustomization\.ya?ml$/.test(f));
   if (K8S === "k8s" && peakFiles.length === 0) r.fail("대기열 피크 모양(k8s/components/queue-peak/kustomization.yaml)이 없다: 규칙 ⑩-d·11이 무력화된 상태");
   for (const f of peakFiles) {
-    let ok = false;
-    try {
-      for (const p of yaml.load(read(f))?.patches ?? []) {
-        if (p?.target?.kind !== "Deployment" || p?.target?.name !== "flowticket-api-queue" || typeof p.patch !== "string") continue;
-        for (const op of yaml.load(p.patch) ?? []) {
-          if (!["replace", "add"].includes(op?.op) || op?.path !== "/spec/template/spec/affinity") continue;
-          if ((op.value?.podAntiAffinity?.requiredDuringSchedulingIgnoredDuringExecution ?? []).some(isApiAvoid)) ok = true;
-        }
-      }
-    } catch { ok = false; }
-    if (!ok) {
+    let ops = [];
+    try { ops = patchOps(f, "Deployment", "flowticket-api-queue"); } catch { ops = []; }
+    const aff = lastOn(ops, "/spec/template/spec/affinity");
+    const affOk = aff && ["replace", "add"].includes(aff.op) && aff.path === "/spec/template/spec/affinity" &&
+      (aff.value?.podAntiAffinity?.requiredDuringSchedulingIgnoredDuringExecution ?? []).some(isApiAvoid);
+    if (!affOk) {
       r.fail(
         `대기열 피크 모양에 api 회피 규칙이 없다: ${path.relative(REPO_ROOT, f)}. flowticket-api-queue Deployment 패치에서 ` +
           `/spec/template/spec/affinity를 requiredDuringSchedulingIgnoredDuringExecution ` +
           `[{ labelSelector: { matchLabels: { app: flowticket-api } }, topologyKey: kubernetes.io/hostname }]로 바꾼다 — 오픈 부하의 동거 경합(IMP-038, ADR-031)`
+      );
+    }
+    const cpu = lastOn(ops, "/spec/template/spec/containers/0/resources/requests/cpu");
+    const cpuOk = cpu && ["replace", "add"].includes(cpu.op) && cpu.path === "/spec/template/spec/containers/0/resources/requests/cpu" && String(cpu.value) === "1100m";
+    if (!cpuOk) {
+      r.fail(
+        `대기열 피크 모양에 requests 1100m 패치가 없다: ${path.relative(REPO_ROOT, f)}. /spec/template/spec/containers/0/resources/requests/cpu를 1100m로 바꾼다 — ` +
+          `오픈 순간 구성은 측정한 구성(대기열 1100m, ADR-025·IMP-035)과 같아야 한다(ADR-031). 값을 바꾸려면 ADR부터 고친다`
+      );
+    }
+  }
+  const splitFiles = manifests.filter((f) => /components[\\/]queue-split[\\/]kustomization\.ya?ml$/.test(f));
+  for (const f of splitFiles) {
+    let ops = [];
+    try { ops = patchOps(f, "Deployment", "flowticket-api"); } catch { ops = []; }
+    const spreadOk = ops.some((op) => ["add", "replace"].includes(op?.op) && /^\/spec\/template\/spec\/topologySpreadConstraints\/(-|\d+)$/.test(op?.path ?? "") &&
+      op.value?.topologyKey === HOSTNAME && op.value?.whenUnsatisfiable === "DoNotSchedule" && op.value?.maxSkew === 1 &&
+      JSON.stringify(canon(op.value?.labelSelector)) === JSON.stringify({ matchLabels: { app: "flowticket-api" } }));
+    if (!spreadOk) {
+      r.fail(
+        `B의 예매 api에 노드 단위 분산이 없다: ${path.relative(REPO_ROOT, f)}. flowticket-api Deployment 패치로 topologySpreadConstraints에 ` +
+          `{ maxSkew: 1, topologyKey: ${HOSTNAME}, whenUnsatisfiable: DoNotSchedule, labelSelector: { matchLabels: { app: flowticket-api } } }를 더한다 — ` +
+          `없으면 피크 중 CA가 api 노드를 비워 api 둘이 한 노드에 모인다(IMP-049, ADR-031)`
       );
     }
   }
@@ -645,7 +676,8 @@ if (fs.existsSync(ES_DIR)) {
 //   - base 하한보다 크면 "# event: <id>"와 "# off-by: <UTC>"가 있어야 하고, off-by가 지났으면 실패한다 — CI backend job이 도는 PR(apps/api·contracts·harness·k8s·ci.yml 변경)에서만 막는다. 상시 검사가 아니다.
 //   - B에서 대기열 하한을 올리면 같은 overlay가 피크 모양(components/queue-peak)도 켜야 한다(ADR-031). 평시 모양(200m·preferred)으로 늘리면
 //     대기열 Pod가 api 노드에 함께 놓인다. 피크 모양은 오픈 뒤 하한을 내린 다음에도 대기열이 빌 때까지 켜 두므로, 켜져 있는 동안에도
-//     event·off-by가 있어야 한다(잊으면 노드 9대 비용). 대기열 분리가 꺼진 채 켜면 패치 대상이 없어 빌드가 실패한다.
+//     event·off-by가 있어야 한다(잊으면 노드 9대 비용). 대기열 분리가 꺼졌거나 queue-peak가 queue-split보다 앞에 있으면 패치가
+//     조용히 무시돼 대기열이 평시 모양으로 남으므로 막는다.
 //   - 실제 저장소에서는 이 파일이 overlay에 있고 kustomization.yaml이 패치로 참조해야 한다(참조가 없으면 올려도 적용되지 않는다).
 {
   const prescaleFiles = manifests.filter((f) => path.basename(f) === "event-prescale.yaml");
@@ -684,10 +716,23 @@ if (fs.existsSync(ES_DIR)) {
     const componentOn = (name) =>
       new RegExp(`^\\s*-\\s*[^#\\n]*components/${name}/?\\s*(#.*)?$`, "m").test(kzText) ||
       new RegExp(`^\\s*components:\\s*\\[[^\\]#\\n]*components/${name}`, "m").test(kzText);
-    const splitOn = componentOn("queue-split");
-    const peakOn = componentOn("queue-peak");
+    // 순서·따옴표·여러 줄 흐름 표기는 YAML로 읽은 components 목록으로 본다(읽지 못하면 위 줄 단위 판정만 쓴다).
+    let comps = [];
+    try { const k = yaml.load(kzText); if (Array.isArray(k?.components)) comps = k.components.map((c) => String(c).trim()); } catch { comps = []; }
+    const compIdx = (name) => comps.findIndex((c) => new RegExp(`(^|/)components/${name}/?$`).test(c));
+    const splitOn = componentOn("queue-split") || compIdx("queue-split") >= 0;
+    const peakOn = componentOn("queue-peak") || compIdx("queue-peak") >= 0;
+    // queue-peak의 JSON 패치는 대상(대기열 Deployment)이 없으면 오류 없이 무시된다(kustomize 렌더링으로 확인). 그래서 빌드는 통과하고
+    // 대기열은 평시 모양으로 남는다 — 분리가 꺼졌거나, queue-peak가 queue-split보다 앞에 있으면(component는 적힌 순서로 적용) 그렇다.
     if (peakOn && !splitOn) {
-      r.fail(`대기열 분리가 꺼졌는데 피크 모양을 켰다: ${rel} → queue-peak는 queue-split의 대기열 Deployment를 패치한다. 둘 다 켜거나 queue-peak를 끈다(ADR-031)`);
+      r.fail(`대기열 분리가 꺼졌는데 피크 모양을 켰다: ${rel} → queue-peak는 queue-split의 대기열 Deployment를 패치하므로 패치가 조용히 무시된다. 둘 다 켜거나 queue-peak를 끈다(ADR-031)`);
+      continue;
+    }
+    if (peakOn && compIdx("queue-peak") >= 0 && compIdx("queue-split") >= 0 && compIdx("queue-peak") < compIdx("queue-split")) {
+      r.fail(
+        `피크 모양이 대기열 분리보다 앞에 있다: ${rel} → kustomization.yaml components:에서 queue-peak를 queue-split 다음 줄에 둔다. ` +
+          `component는 적힌 순서로 적용돼, 앞에 두면 패치할 대기열 Deployment가 아직 없어 조용히 무시되고 대기열이 평시 모양으로 남는다(ADR-031)`
+      );
       continue;
     }
     // 대기열 HPA는 queue-split이 켜졌을 때만 클러스터에 있다. 꺼진 채 대기열 HPA를 겨누면 kustomize가 대상을 못 찾는다.
@@ -736,7 +781,7 @@ if (fs.existsSync(ES_DIR)) {
     if (!event || !offBy || Number.isNaN(Date.parse(offBy))) {
       r.fail(`사전 확장을 켰는데 공연·기한이 없다: ${rel} → ${state}. "# event: <공연 id>"와 "# off-by: <UTC>"를 적는다(언제 끌지 모르면 켜 둔 채 잊힌다)`);
     } else if (Date.parse(offBy) < Date.now()) {
-      r.fail(`사전 확장이 기한을 넘겼다: ${rel} → event ${event}, off-by ${offBy}인데 ${state}. base 하한(${base.minReplicas})으로 되돌리고 queue-peak를 끄는 PR을 먼저 머지한다(늘어난 노드 비용이 계속 나간다)`);
+      r.fail(`사전 확장이 기한을 넘겼다: ${rel} → event ${event}, off-by ${offBy}인데 ${state}. base 하한(${base.minReplicas})으로 되돌리${peakOn ? "고 queue-peak를 끄" : ""}는 PR을 먼저 머지한다(늘어난 노드 비용이 계속 나간다)`);
     }
   }
 }

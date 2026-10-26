@@ -45,7 +45,7 @@ spec:
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels: { app: flowticket-api-queue }
-        # 대기열 Pod는 노드마다 하나. 평시 대기열 2개가 한 노드에 놓이면 그 노드를 비울 때 PDB(minAvailable 1)에 막혀
+        # 대기열 Pod는 노드마다 하나(Pod 수가 노드 수 이하일 때, maxSkew 1). 평시 대기열 2개가 한 노드에 놓이면 그 노드를 비울 때 PDB(minAvailable 1)에 막혀
         # 오픈 뒤 평시 3대로 돌아오지 않았다(IMP-049 시뮬레이션 C-s). requests.cpu가 api와 다를 때의 짝 조건(⑩-b)이기도 하다.
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname

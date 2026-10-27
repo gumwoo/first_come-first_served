@@ -1,4 +1,4 @@
-# 위반: 대기열 CPU 요청(550m)을 줄이고 대기열만 고르는 hostname 분산(DoNotSchedule·maxSkew 1)을 두었지만 matchLabelKeys(pod-template-hash)가 없다 — 롤링 중 옛·새 파드를 함께 세서 새 파드가 한 노드에 겹쳐 남을 수 있다(⑩-b 짝 조건, 20261027-qpeak 실측).
+# 위반: 대기열 CPU 요청(550m)을 줄이고 대기열만 고르는 hostname 분산(DoNotSchedule·maxSkew 1)을 두었지만 matchLabelKeys(pod-template-hash)가 없다 — 롤링 중 옛·새 파드를 함께 세서 새 파드가 한 노드에 겹쳐 남을 수 있다(⑩-b 짝 조건 — 20261027-qpeak에서 실측한 것은 api 쏠림이고, 대기열은 같은 메커니즘으로 본 추론).
 # 대기열 전용 Deployment(ADR-027) — api와 같은 이미지·같은 컨테이너 사양. 대기열 두 경로만 받는다(flowticket-api-queue Service).
 # 컨테이너 사양은 k8s/base/api-deployment.yaml을 그대로 따른다 — 바꿀 때는 둘을 같이 바꾼다(하네스 k8s 규칙 ⑩-b가 파드 사양을 비교한다 — 허용 목록 밖 차이는 실패).
 apiVersion: apps/v1

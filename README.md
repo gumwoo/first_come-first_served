@@ -88,6 +88,15 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 예매 순간 DB 풀을 늘리면 | 로컬, 디스크 지연 묶음을 걸러낸 교차 8묶음 | 4쌍 중 3쌍이 ±20% 안. 풀 8은 커넥션마다 점유가 길어져 처리량이 비슷함(계산) | 5 유지 ([IMP-042](docs/improvements/IMP-042-booking-db-pool-5-vs-8.md) · [IMP-043](docs/improvements/IMP-043-booking-burst-connection-wait-cause.md)) |
 | 장애 초기 원인 분석에 AI를 쓰면 | 로컬 장애 주입(Redis·DB·CPU, 정상), 규칙 분류기와 Claude Haiku 5.5를 같은 요약으로 채점 | 1차 23회: 장애 정답 규칙 13/17, AI 11/17(CPU 0/6). 요약에 CPU 할당량에 막힌 주기 비율을 넣은 2차 22회: 규칙 15/16, AI 16/16(CPU 6/6), 정상 오탐 규칙 0·AI 1. 호출당 약 $0.002 | 원인 판정은 규칙, AI는 근거·반대 지표·확인 항목 정리 ([IMP-044](docs/improvements/IMP-044-triage-rule-vs-ai-eval.md) · [IMP-045](docs/improvements/IMP-045-triage-eval-cpu-throttling.md) · [ADR-029](docs/decisions/ADR-029-ai-triage-boundary.md)) |
 
+고른 안인 대기열 평시·피크 모양 전환은 EKS에서 평시, 사전 확장, 오픈 부하, 되돌림을 한 세션 안에서 이어서 측정했습니다([IMP-050](docs/improvements/IMP-050-queue-peak-shape-cluster-verification.md)).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/qpeak-cycle-dark.png">
+  <img alt="2026-10-27 EKS 측정 세션의 노드 수와 대기열 Pod 수. 평시 노드 3대·대기열 2개에서 사전 확장 PR 반영 뒤 약 6분 만에 노드 9대·대기열 6개가 되고, 10만 명/10초 오픈 부하 4회 동안 유지된다. 하한 2 PR 뒤 대기열 2개·노드 5대, 평시 모양 PR 뒤 노드 3대로 돌아온다. 10시 15분쯤 분산 수정 반영 롤링으로 노드가 잠깐 4대가 되었다." src="docs/assets/qpeak-cycle-light.png">
+</picture>
+
+<sub>출처: IMP-050 측정 세션의 Prometheus 내보내기. 데이터 [`imp050-qpeak-nodes.csv`](docs/assets/imp050-qpeak-nodes.csv), 생성 스크립트 [`qpeak-chart.py`](docs/assets/qpeak-chart.py)</sub>
+
 ### 정합성을 지키는 방법
 
 | 단계 | 목적 | 방법 |

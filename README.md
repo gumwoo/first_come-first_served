@@ -12,10 +12,10 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 |---|---|---|
 | 동시성 정합성 | 입장자 100명이 동시에 좌석 선점·주문·결제(같은 좌석 경합, 중복 클릭, 결제 실패 후 재시도, 1인 한도 포함)를 수행해 판정 3회 모두 정합성 위반 0건 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) |
 | 10만 명 / 10초 진입 | ALB access log 기준 서버가 받은 진입 요청 100,000건을 모두 정상 처리, 정원 초과·정합성 위반 0건 (통합 구조 3회, 대기열 분리 구조 1회) | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) · [IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md) |
-| 평시 노드 5 → 3대 | 대기열 Pod를 평시에는 작게 두고 오픈 전 PR로 피크 모양으로 바꾸는 전환을 EKS에서 한 바퀴 측정. 평시 3대, 사전 확장 6분 26초에 9대, 되돌림 두 단계 뒤 다시 3대. 노드 EC2 월 약 $170 절감(계산) | [IMP-050](docs/improvements/IMP-050-queue-peak-shape-cluster-verification.md) · [ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md) |
+| 평시 노드 5 → 3대 | 대기열 Pod를 평시에는 작게 두고 오픈 전 PR로 피크 모양으로 바꾸는 전환을 EKS에서 한 바퀴 측정. 평시 3대, 사전 확장 6분 26초에 9대, 되돌림 두 단계 뒤 다시 3대. 평시를 상시 운영한다고 가정하면 노드 EC2 월 약 $170 절감(계산) | [IMP-050](docs/improvements/IMP-050-queue-peak-shape-cluster-verification.md) · [ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md) |
 | 자동 확장 | 폴링이 몰리자 Pod 3→9, Node 6→9로 확장한 뒤 부하가 끝나고 다시 축소. 노드 9대 고정 운영 대비 노드-시간 11~13% 절감 (계산) | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) · [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) |
 | 무중단 배포·장애 대응 | 롤링 배포 중 5xx 0건(web `preStop` 25s), RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구 | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) |
-| 비용 분석 | 측정 세션 비용을 항목별로 분해(시간당 약 $2.06, 계산)해 비용을 줄일 우선순위를 정함 | [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |
+| 비용 분석 | 측정 세션 비용을 항목별로 분해(평시 5대 기준 시간당 약 $2.06, 계산)해 비용을 줄일 우선순위를 정함 | [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |
 
 ## 서비스 흐름
 
@@ -72,14 +72,14 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 
 설정값 후보는 클러스터를 띄우지 않고 두 가지 방법으로 좁혔고, 고른 안은 클러스터 세션에서 다시 쟀습니다.
 
-- **kwok 스케줄링 시뮬레이션**: 실제 kube-scheduler에 가짜 노드를 붙이고, 실제 클러스터 스냅샷(시스템 Pod·데몬셋·노드 명세)과 현재 매니페스트를 올려 요청량을 바꿨을 때의 평시·사전 확장 노드 수를 계산했습니다. 시뮬레이션에 앞서 당시 구성에서 실제 클러스터와 같은 노드 수(평시 5대, 사전 확장 9대)가 나오는 것을 확인했습니다.
+- **kwok 스케줄링 시뮬레이션**: 실제 kube-scheduler에 가짜 노드를 붙이고, 실제 클러스터 스냅샷(시스템 Pod·데몬셋·노드 명세)과 당시 매니페스트를 올려 요청량을 바꿨을 때의 평시·사전 확장 노드 수를 계산했습니다. 시뮬레이션에 앞서 당시 구성에서 실제 클러스터와 같은 노드 수(평시 5대, 사전 확장 9대)가 나오는 것을 확인했습니다.
 - **로컬 코어 고정 실험**: 같은 이미지 컨테이너를 노드 크기(코어 2개)에 고정하고 조건을 하나씩 바꿔 비교했습니다. 판정 기준은 측정 전에 정했고, api·대기열 동거 비교([IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md))부터는 측정 순서를 교차하거나 배정을 맞바꿔 환경 차이를 줄였습니다. 예매 묶음은 PostgreSQL WAL 동기화 지연을 함께 기록해, 저장 장치가 느렸던 묶음은 무효로 두고 다시 쟀습니다([IMP-043](docs/improvements/IMP-043-booking-burst-connection-wait-cause.md)).
 
 | 질문 | 방법 | 결과 | 결정 |
 |---|---|---|---|
 | Tomcat 스레드를 늘리면 나아지는가 | 로컬, Redis만 느리게 한 조건 | 200 → 400에서 처리 성능 개선 없음 | 200 유지 ([IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md)) |
 | 예매 api CPU 요청량을 낮춰 노드를 줄일 수 있는가 | kwok + 로컬 | 300m로 낮추면 평시 5 → 4대지만, 줄어든 1대는 api와 대기열이 한 노드를 나눠 쓰는 배치였고 오픈 부하(폴링 3,000/s + 예매 묶음)에서 예매 p95가 41~87% 늘고 대기열 Tomcat 스레드가 200으로 포화됨 | 그때는 1100m 유지 ([IMP-037](docs/improvements/IMP-037-node-consolidation-scheduling-sim.md) · [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md)) |
-| api와 대기열을 같은 노드에 두지 않는 규칙 | kwok(실제 스케줄러) | 지금 요청량에서는 노드 수 변화 없음(평시 5, 사전 확장 9). api 요청량을 300m로 낮춘 조건에서도 api·대기열이 한 노드에 놓이지 않음 | 대기열 Pod에 api Pod 회피 규칙 적용 ([IMP-047](docs/improvements/IMP-047-queue-api-anti-affinity-sim.md)) |
+| api와 대기열을 같은 노드에 두지 않는 규칙 | kwok(실제 스케줄러) | 당시 요청량에서는 노드 수 변화 없음(평시 5, 사전 확장 9). api 요청량을 300m로 낮춘 조건에서도 api·대기열이 한 노드에 놓이지 않음 | 대기열 Pod에 api Pod 회피 규칙 적용 ([IMP-047](docs/improvements/IMP-047-queue-api-anti-affinity-sim.md)) |
 | 예매 api 요청량을 낮춰 평시 노드를 줄이면 | 로컬(가정 평시 조회) + kwok | 평시 조회에서 예매 api Pod당 CPU 평균 0.07~0.39코어. 요청량 후보 800m로는 평시 노드가 5대로 그대로였고, 평시 기준 200m는 평시 4대지만 오픈 순간에 api와 대기열이 한 노드에 놓임 | 그때는 1100m 유지. 평시 기준 200m는 아래 모양 전환에서 사용 ([IMP-048](docs/improvements/IMP-048-booking-api-requests-review.md)) |
 | 평시에만 합치고 오픈 전에 떼면 | kwok으로 평시 → 사전 확장 → 축소 한 바퀴 + 로컬 | api 변경을 먼저 끝내면 롤링이 노드 상한에 막히지 않음. 평시 가정 부하(폴링 300/s)에서 동거 시 예매 p95가 늘었고, 1,000/s에서는 판정이 갈림 | 채택 보류 ([IMP-039](docs/improvements/IMP-039-peace-consolidate-open-separate.md)) |
 | 평시 예매 api를 2개로 줄이면 | kwok + 로컬 | 평시 4대가 되는 경우와 5대가 남는 경우로 갈림 | 3개 유지 ([IMP-041](docs/improvements/IMP-041-peace-api-two.md)) |
@@ -143,7 +143,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | readiness는 예매 api DB만, 대기열 DB·Redis | 기존(DB·Redis 모두), 둘 다 제외 | Redis는 모든 Pod가 함께 써서 넣으면 장애 중 조회까지 끊김. 대기열은 Redis 없이 처리할 수 없어 장애 중 빠지는 편이 요청 스레드를 묶지 않음 | [ADR-030](docs/decisions/ADR-030-readiness-shared-dependencies.md) · [IMP-046](docs/improvements/IMP-046-redis-outage-readiness.md) |
 | AZ별 NAT 3개 | NAT 1개 | NAT를 하나만 두면 그 AZ 장애가 다른 AZ의 결제 호출까지 막음 | [ADR-012](docs/decisions/ADR-012-3az-eks-infra-cost-control.md) |
 | Tomcat 스레드 200 | 400 | 하위 의존성이 느린 조건에서 400으로 늘려도 처리 성능이 개선되지 않음 | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md) |
-| 평시 노드 3대(대기열 평시·피크 모양 전환) | 평시 5대 유지, CPU 요청량만 축소, 평시 api 2개, Deployment 두 개, 작은 Pod 개수 늘리기 | 오픈 순간 구성은 측정한 구성(대기열 1100m·api와 다른 노드) 그대로이고, 평시 3대 → 사전 확장 9대(6분 26초) → 평시 3대 전환을 EKS에서 확인. Deployment 두 개는 HPA가 0개로 줄지 않고, 작은 Pod를 늘리면 DB 커넥션 예산을 넘음 | [ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md) · [IMP-049](docs/improvements/IMP-049-queue-peace-peak-shape.md) · [IMP-050](docs/improvements/IMP-050-queue-peak-shape-cluster-verification.md) · [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md) |
+| 평시 노드 3대(대기열 평시·피크 모양 전환) | 평시 5대 유지, CPU 요청량만 축소, 평시 api 2개, Deployment 두 개, 작은 Pod 개수 늘리기 | 오픈 순간 대기열은 측정한 구성(1100m·api와 다른 노드) 그대로이고, 평시 3대 → 사전 확장 9대(6분 26초) → 평시 3대 전환을 EKS에서 확인. Deployment 두 개는 HPA가 0개로 줄지 않고, 작은 Pod를 늘리면 DB 커넥션 예산을 넘음 | [ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md) · [IMP-049](docs/improvements/IMP-049-queue-peace-peak-shape.md) · [IMP-050](docs/improvements/IMP-050-queue-peak-shape-cluster-verification.md) · [IMP-038](docs/improvements/IMP-038-api-queue-colocation-contention.md) |
 | CA 축소 대기 10분 | 5분 | 5분으로 줄이면 run당 약 $0.08 절감되지만 폭증 직전의 여유 노드가 먼저 제거됨(계산) | [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) §10 |
 
 ## 핵심 설계
@@ -153,7 +153,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 - **결제 상태 전이**: 주문·결제·좌석·hold 상태를 명시적으로 전이하고 멱등성 키를 사용합니다.
 - **이벤트 전달**: 비즈니스 트랜잭션과 Outbox 기록을 함께 저장하고, 릴레이가 Redis Pub/Sub(`sse:order`)으로 발행해 SSE로 전달합니다.
 - **실시간 반영**: 대기열은 서버가 다음 조회 시점(`retryAfterMs`)을 정하는 폴링으로, 좌석·주문 상태는 SSE와 재조회로 화면에 반영합니다.
-- **용량과 확장**: CPU 요청량 1100m는 진입 요청 1건당 처리 비용 측정값으로 계산했고([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md)), 오픈 순간에 진입을 받는 대기열의 피크 모양에 씁니다. 평시에는 열린 대기열이 없어 대기열과 예매 api를 200m로 두고(예매 api는 평시 조회 실측, [IMP-048](docs/improvements/IMP-048-booking-api-requests-review.md)), 오픈 전 사전 확장 PR에서 대기열을 피크 모양으로 바꿉니다([ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md), [설정값 근거](docs/deployment/optimization-targets.md)). HPA와 Cluster Autoscaler로 Pod와 Node를 늘리고 줄이며(api 3개 고정, 대기열 2~6개), 대기열 Pod가 늘기 시작하는 데 40~70초, 노드 추가에 100~150초가 걸리기 때문에 공연 오픈 전에는 Git PR로 대기열을 2개에서 6개로 미리 늘립니다. 이 사전 확장은 EKS에서 PR 반영부터 6분 26초에 끝났습니다([IMP-050](docs/improvements/IMP-050-queue-peak-shape-cluster-verification.md)).
+- **용량과 확장**: CPU 요청량 1100m는 진입 요청 1건당 처리 비용 측정값으로 계산했고([ADR-025](docs/decisions/ADR-025-api-requests-hpa-policy.md)), 오픈 순간에 진입을 받는 대기열의 피크 모양에 씁니다. 예매 api는 평시·피크 모두 200m(평시 조회 실측, [IMP-048](docs/improvements/IMP-048-booking-api-requests-review.md))이고, 대기열은 평시에 열린 대기열이 없어 200m로 두었다가 오픈 전 사전 확장 PR에서 피크 모양으로 바꿉니다([ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md), [설정값 근거](docs/deployment/optimization-targets.md)). HPA와 Cluster Autoscaler로 Pod와 Node를 늘리고 줄이며(api 3개 고정, 대기열 2~6개), 대기열 Pod가 늘기 시작하는 데 40~70초, 노드 추가에 100~150초가 걸리기 때문에 공연 오픈 전에는 Git PR로 대기열을 2개에서 6개로 미리 늘립니다. 이 사전 확장은 EKS에서 PR 반영부터 6분 26초에 끝났습니다([IMP-050](docs/improvements/IMP-050-queue-peak-shape-cluster-verification.md)).
 - **외부 데이터 분리**: KOPIS 호출은 요청 경로와 분리해 배치 동기화로 처리합니다.
 
 ## 백엔드 아키텍처
@@ -223,7 +223,7 @@ docker compose -f infra/docker-compose.prod.yml exec -T postgres psql -U flowtic
 
 ### AWS
 
-실행 중에는 시간당 약 $2(계산, [비용](#비용))가 발생합니다. 도메인, ECR, ACM, tfstate 같은 계정별 bootstrap이 먼저 필요합니다([terraform-design.md](docs/deployment/terraform-design.md)). 처음 한 번은 `environments/demo`에 `terraform.tfvars`(관리자 IP)와 `backend.hcl`(state-bootstrap 출력)을 만들고 `terraform init -backend-config=backend.hcl`로 초기화합니다([platform README](infra/terraform/platform/README.md) · [`backend.hcl.example`](infra/terraform/platform/environments/demo/backend.hcl.example)).
+실행 중에는 평시에 시간당 약 $1.2~1.8(발생기 여부에 따라, 계산, [비용](#비용))가 발생합니다. 도메인, ECR, ACM, tfstate 같은 계정별 bootstrap이 먼저 필요합니다([terraform-design.md](docs/deployment/terraform-design.md)). 처음 한 번은 `environments/demo`에 `terraform.tfvars`(관리자 IP)와 `backend.hcl`(state-bootstrap 출력)을 만들고 `terraform init -backend-config=backend.hcl`로 초기화합니다([platform README](infra/terraform/platform/README.md) · [`backend.hcl.example`](infra/terraform/platform/environments/demo/backend.hcl.example)).
 
 ```bash
 terraform -chdir=infra/terraform/platform/environments/demo apply -var-file=loadtest.tfvars

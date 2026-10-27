@@ -54,7 +54,7 @@ for name, c in THEMES.items():
     ax.set_facecolor(c["surface"])
     o = [hours(x) for x in OPENS]
     ax.axvspan(o[0] - 0.05, o[-1] + 0.2, color=c["band"], zorder=0)
-    ax.text((o[0] + o[-1]) / 2, 10.35, "10만 명/10초 오픈 부하 4회", ha="center", va="bottom", fontsize=9, color=c["ink2"])
+    ax.text((o[0] + o[-1]) / 2, 10.35, "10만 명/10초 오픈 부하(유효 run 4회)", ha="center", va="bottom", fontsize=9, color=c["ink2"])
     for x in o:
         ax.axvline(x, color=c["base"], lw=0.8, ls=(0, (1, 2)), zorder=1)
     for i, (utc, label) in enumerate(EVENTS):
@@ -67,6 +67,9 @@ for name, c in THEMES.items():
     ax.text(t[-1] + 0.05, nodes[-1] + 0.25, "노드 3", color=c["ink"], fontsize=9, va="bottom")
     ax.text(t[-1] + 0.05, queue[-1] - 0.25, "대기열 2", color=c["ink"], fontsize=9, va="top")
     ax.text(t[0] + 0.05, 3.25, "평시 3대", color=c["ink2"], fontsize=8.5, va="bottom")
+    # 노드 9 → 5는 하한 2 PR 동기화(04:57:17Z) 뒤 CA 축소(05:09:49Z)로 평시 모양 PR보다 먼저다(IMP-050 V6)
+    ax.text(hours("2026-10-27T05:12:00Z"), 5.3, "5대: 하한 2 PR\n뒤 12분 32초", ha="left", va="bottom", color=c["ink2"],
+            fontsize=8, linespacing=1.1)
     ax.text(hours("2026-10-27T01:16:30Z"), 4.25, "분산 수정 반영 롤링\n(잠깐 4대)", color=c["ink2"], fontsize=8, va="bottom",
             linespacing=1.1)
     ax.set_xlim(t[0], t[-1])

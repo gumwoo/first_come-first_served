@@ -55,8 +55,9 @@ spec:
             periodSeconds: 15
             failureThreshold: 3
           lifecycle:
-            # preStop이 등록 해제 전파(EndpointSlice → LB 컨트롤러 → ALB)보다 짧으면, ALB가 아직 정상으로 아는 파드가 먼저 죽어
-            # 롤링 중 504/502가 난다(TS-035). deregistration_delay와는 다른 값이다. 25s는 넉넉히 잡은 값이고 최소 필요값은 재지 않았다.
+            # 롤링 중 502/504가 10초 연결 타임아웃에 몰리고 애플리케이션 5xx는 0이어서, 등록 해제 전파(EndpointSlice → LB 컨트롤러 → ALB) 전에
+            # 파드가 먼저 응답을 멈춘 것으로 보고 5s에서 늘렸다(종료 유예 60s 함께, 실패 13·16건 → 0건). 기전은 추론이고 다른 환경에서는 5s도 0건이었다(TS-035 §9).
+            # deregistration_delay와는 다른 값이다. 25s는 넉넉히 잡은 값이고, 실패가 난 환경에서의 최소 필요값은 재지 못했다.
             preStop:
               exec: { command: ["sh", "-c", "sleep 25"] }
           resources:

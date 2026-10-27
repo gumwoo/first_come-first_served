@@ -114,7 +114,7 @@ Secrets Manager에 만든다. Deployment는 `secretRef: flowticket-api-secrets`�
 |---|---|---|
 | `maxUnavailable: 0` ↔ readiness | — | 1이면 새 Pod가 뜨기 전에 용량이 줄어 부하 중 에러 |
 | `SHUTDOWN_TIMEOUT(30s)` + api·대기열 `preStop(25s)` ↔ `terminationGracePeriodSeconds(60)` | 앱 + preStop < Pod | 뒤집히면 진행 중 요청 중 SIGKILL |
-| web·api·대기열 `preStop sleep 25` ↔ 등록 해제 **전파** 시간 | preStop > 전파 | 짧으면 컨테이너가 먼저 죽고, ALB가 아직 정상으로 아는 IP로 보내 502/504 — 2026-08-25 web 실측 13건([TS-035](../docs/troubleshooting/TS-035-rolling-deregistration-race.md)). `deregistration_delay`와 짝짓는 값이 **아니다**(그건 deregistering 이후의 드레이닝) |
+| web·api·대기열 `preStop sleep 25` ↔ 등록 해제 **전파** 시간 | preStop > 전파 | 짧으면 전파가 끝나기 전에 컨테이너가 응답을 멈춰, ALB가 보낸 요청이 502/504가 되는 것으로 본다(추론). 2026-08-25 web에서 실패가 10초 연결 타임아웃에 몰리고 `Target_5XX`는 0이었으며, preStop 5s → 25s(종료 유예 60s 함께)로 13·16건 → 0건([TS-035](../docs/troubleshooting/TS-035-rolling-deregistration-race.md)). 다른 환경에서는 5s도 0건이었다(TS-035 §9). `deregistration_delay`와 짝짓는 값이 **아니다**(그건 deregistering 이후의 드레이닝) |
 | web·api·대기열 `preStop(25s)` ↔ `terminationGracePeriodSeconds(60)` | preStop < Pod | 뒤집히면 preStop 도중 SIGKILL — 고치려던 것보다 나빠진다 |
 | probe 경로 ↔ `application.yml`의 health group | 예매 api readiness = `readinessState, db`, 대기열 Deployment = `readinessState, db, redis`(`HEALTH_READINESS_INCLUDE`) | 모든 Pod가 함께 쓰는 의존성을 readiness에 넣으면 그 하나가 흔들릴 때 API 전체가 빠진다. 조회는 Redis 장애 중에도 응답하므로 예매 api는 DB만 넣고, Redis 없이 처리할 수 없는 대기열만 redis를 더한다([ADR-030](../docs/decisions/ADR-030-readiness-shared-dependencies.md)) |
 | `API_ORIGIN`(**build-arg**) ↔ `next.config.mjs` rewrites | `http://flowticket-api` | 이름·포트가 틀리면 프록시가 엉뚱한 곳으로 간다 |

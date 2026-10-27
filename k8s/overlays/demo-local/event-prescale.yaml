@@ -8,8 +8,8 @@
 # 피크 모양인 동안에는 이미지가 바뀌는 PR을 머지하지 않는다 — 노드 9에서 롤링 surge가 10번째 노드를 못 얻어 멈춘다(ADR-025).
 #   event: <공연 id>          off-by: <피크 모양을 끌 UTC 시각, YYYY-MM-DDTHH:MM:SSZ>
 #
-# event: 138
-# off-by: 2026-10-27T09:00:00Z
+# event: -
+# off-by: -
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:

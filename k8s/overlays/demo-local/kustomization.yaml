@@ -13,7 +13,7 @@ resources:
 components:
   - ../../components/queue-split
   # 대기열 피크 모양(ADR-031). 사전 확장 때만 켠다 — 켜고 끄는 순서는 event-prescale.yaml 머리말(하네스 k8s 규칙 11).
-  - ../../components/queue-peak
+  # - ../../components/queue-peak
 
 # ── 이미지: base의 placeholder를 실제 레지스트리·태그로 ──────────────
 images:

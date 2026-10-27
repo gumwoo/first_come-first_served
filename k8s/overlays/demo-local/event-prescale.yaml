@@ -16,4 +16,4 @@ metadata:
   name: flowticket-api-queue
   namespace: flowticket
 spec:
-  minReplicas: 6
+  minReplicas: 2

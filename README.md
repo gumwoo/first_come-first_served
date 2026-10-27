@@ -12,7 +12,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 |---|---|---|
 | 동시성 정합성 | 입장자 100명이 동시에 좌석 선점·주문·결제(같은 좌석 경합, 중복 클릭, 결제 실패 후 재시도, 1인 한도 포함)를 수행해 판정 3회 모두 정합성 위반 0건 | [IMP-030](docs/improvements/IMP-030-booking-e2e-correctness.md) |
 | 10만 명 / 10초 진입 | ALB access log 기준 서버가 받은 진입 요청 100,000건을 모두 정상 처리, 정원 초과·정합성 위반 0건 (통합 구조 3회, 대기열 분리 구조 1회) | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) · [IMP-035](docs/improvements/IMP-035-b-config-100k-entry.md) |
-| 평시 노드 5 → 3대 | 대기열 분리로 평시 노드가 5대로 늘어(통합 구조 4대) 비용을 줄일 방법을 찾음. 평시에는 대기열 Pod가 일하지 않아 CPU 요청량을 평시 기준으로 맞추고 대기열과 예매 api를 한 노드에 같이 둠. 오픈 순간 대기열 구성은 그대로 두고 평시만 3대로 되돌림. EKS에서 평시 3대, 사전 확장 6분 26초에 9대, 되돌림 두 단계 뒤 다시 3대 확인. 평시를 상시 운영한다고 가정하면 노드 EC2 월 약 $170 절감(계산) | [IMP-050](docs/improvements/IMP-050-queue-peak-shape-cluster-verification.md) · [ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md) |
+| 평시 노드 5 → 3대 | 대기열 분리로 평시 노드가 5대로 늘어(통합 구조 4대) 비용을 줄일 방법을 찾음. 평시에는 대기열 Pod가 거의 일하지 않아 대기열과 예매 api의 CPU 요청량을 평시 기준(200m)으로 낮추고 한 노드에 같이 두어 평시를 3대로 줄임. 오픈 전에는 PR로 대기열만 측정한 구성(1100m, api와 다른 노드)으로 바꿈. EKS에서 평시 3대, 사전 확장 6분 26초에 9대, 되돌림 두 단계 뒤 다시 3대 확인. 평시를 상시 운영한다고 가정하면 노드 EC2 월 약 $170 절감(계산) | [IMP-050](docs/improvements/IMP-050-queue-peak-shape-cluster-verification.md) · [ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md) |
 | 자동 확장 | 폴링이 몰리자 Pod 3→9, Node 6→9로 확장한 뒤 부하가 끝나고 다시 축소. 노드 9대 고정 운영 대비 노드-시간 11~13% 절감 (계산) | [IMP-031](docs/improvements/IMP-031-integrated-platform-100k.md) · [IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md) |
 | 무중단 배포·장애 대응 | 롤링 배포 중 5xx 0건(web `preStop` 25s), RDS·Redis Multi-AZ 페일오버에서 파드 재시작 없이 자동 복구 | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) · [TS-037](docs/troubleshooting/TS-037-rds-redis-failover-app-behavior.md) |
 | 비용 분석 | 측정 세션 비용을 항목별로 분해(평시 5대 기준 시간당 약 $2.06, 계산)해 비용을 줄일 우선순위를 정함 | [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |
@@ -55,7 +55,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 
 통합 구조에서는 폭증으로 새로 생성된 Pod가 예매 요청의 약 61%를 받았고, 이 Pod들의 처리 시간이 기존 Pod보다 길었습니다. 분리 구조는 예매 Pod 수가 고정되어 이 영향을 받지 않습니다. 노드 비용이 늘어나는 것을 감안하고, 예매 응답 시간을 지키는 쪽을 택해 분리 구조를 운영 기본값으로 정했습니다([IMP-033](docs/improvements/IMP-033-queue-split-ab.md) · [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md)).
 
-분리 뒤 평시 노드는 통합 구조의 4대([IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md))에서 5대로 늘었습니다(CPU 요청량 1100m인 api 3개와 대기열 2개가 노드를 하나씩 사용). 평시에는 열린 대기열이 없어 대기열 Pod가 일하지 않기 때문에, 평시 기준으로 CPU 요청량을 맞추고 대기열과 예매 api를 한 노드에 같이 두어 평시 노드를 다시 3대로 줄였습니다. 오픈 전에는 PR로 대기열을 측정한 구성(1100m, api와 다른 노드)으로 바꿉니다([ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md) · [IMP-050](docs/improvements/IMP-050-queue-peak-shape-cluster-verification.md)).
+분리 뒤 평시 노드는 통합 구조의 4대([IMP-032](docs/improvements/IMP-032-autoscaling-node-hours.md))에서 5대로 늘었습니다(CPU 요청량 1100m인 api 3개와 대기열 2개가 노드를 하나씩 사용). 평시에는 열린 대기열이 없어 대기열 Pod가 거의 일하지 않기 때문에(CPU 0.01~0.02코어), 대기열과 예매 api의 CPU 요청량을 평시 기준(200m)으로 낮추고 한 노드에 같이 두어 평시 노드를 3대로 줄였습니다. 오픈 전에는 PR로 대기열을 측정한 구성(1100m, api와 다른 노드)으로 바꿉니다([ADR-031](docs/decisions/ADR-031-queue-peace-peak-shape.md) · [IMP-050](docs/improvements/IMP-050-queue-peak-shape-cluster-verification.md)).
 
 ### 롤링 배포 중 502 해결
 

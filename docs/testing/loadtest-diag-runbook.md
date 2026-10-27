@@ -139,6 +139,15 @@
 - **대기자**: 대기 상태까지 재려면 `run-entry.sh --poll-hold <초>` — 대기 토큰마다 프론트와 같은 규칙으로 상태를 묻는다(`poll-<gen>/`).
   입장 인지 지연은 `scripts/loadtest/admit-latency.mjs --audit <api 로그> <run>/poll-*/tokens.jsonl`.
 - **사후 검사**: `export-prom.mjs --end`는 run 종료 + 45초 이상, `check-correctness.sh`로 판정.
+- **판정 불가를 막는 run 규칙**(20261027 세션의 무효·판정 불가 원인, [[IMP-050]] §4.4). 드라이버의 사전 검사로 넣는다.
+  - 내보내기 시작은 since − 120초 그대로 둔다. 넓히면(since − 300초) 리셋 전 토큰이 "run 시작 시점 입장 중"으로 잡혀 판정 불가가 된다.
+  - 리셋한 뒤 직전 공연의 입장 지표가 사라진 것을 확인하고 since를 잡는다(`count(max_over_time(flowticket_queue_admitted[5m]) > 0)`이 비어야 함).
+    입장 지표는 리셋 뒤에도 약 3.5분 남았다(실측). run 끝부터 다음 since까지 6분 이상을 둔다.
+  - 예매 묶음은 [since, until] 안에서 입장하게 시각을 잡는다. since 전에 입장한 토큰은 판정 불가를 만든다.
+  - 예매 k6는 진입 폭증 전에 띄운다(예매 시작 시각 − 150초 이상). 발생기가 진입·폴링으로 바쁘면 setup이 늦어 "START_AT − ENTRY_LEAD 지남"으로 0명이 된다.
+  - Pod별 서버 지표는 시계열이 먼저 있어야 `increase()`에 잡힌다(새 시계열의 첫 증가분은 빠진다). api를 재시작했으면 측정 전에 같은 URI로 워밍업한다.
+  - `collect-api-logs`는 로컬 kubectl에 기대므로 run 중에는 로컬 앱·네트워크를 재시작하지 않는다. `ETIMEDOUT`이 보이면 그 run의 pod-coverage부터 본다.
+  - 드라이버를 고쳤으면 판정 run 전에 판정에서 뺀 시험 run을 한 번 돌린다. 실행 체크아웃에 드라이버가 쓰는 스크립트가 있는지 확인한다.
 - **반응형 확장·축소가 있는 run(Platform 축)**: HPA가 축소로 지운 파드의 감사 줄은 사후 `kubectl logs`로 읽을 수 없다. run 시작 직전부터
   `node scripts/loadtest/collect-api-logs.mjs --out <run>/api-logs --since <run 시작 UTC>`를 **run 시작 전에** 띄우고, **run 종료 + 45초 뒤에** 멈춘다
   (SIGINT 또는 `--for`). out 디렉터리는 비어 있어야 한다(이전 run과 섞임 방지). 사후 검사에 `check-correctness.sh ... --api-logs <run>/api-logs`를 주면

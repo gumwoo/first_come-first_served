@@ -3,7 +3,7 @@
 - 상태: Accepted
 - 날짜: 2026-10-26
 - 슬라이스: `S10`(부하·확장)
-- 관련: [[ADR-025]](1100m·Git 사전 확장), [[ADR-026]](배치 정책과 requests 분리), [[ADR-027]](대기열 전용 Deployment), [[IMP-038]](오픈 부하의 동거 경합), [[IMP-039]](평시 합치고 오픈 전 떼기), [[IMP-047]](api 회피 규칙), [[IMP-048]](예매 api 평시 기준 200m), [[IMP-049]](이 결정의 시뮬레이션·로컬 측정), `docs/testing/traffic-profile.md`
+- 관련: [[ADR-025]](1100m·Git 사전 확장), [[ADR-026]](배치 정책과 requests 분리), [[ADR-027]](대기열 전용 Deployment), [[IMP-038]](오픈 부하의 동거 경합), [[IMP-039]](평시 합치고 오픈 전 떼기), [[IMP-047]](api 회피 규칙), [[IMP-048]](예매 api 평시 기준 200m), [[IMP-049]](이 결정의 시뮬레이션·로컬 측정), [[IMP-050]](클러스터 검증), `docs/testing/traffic-profile.md`
 
 ## 1. 맥락
 운영 기본값 B에서 평시 노드는 5대였다. api 3개와 대기열 2개가 모두 requests 1100m라 Pod 하나가 노드 하나를 쓴다.
@@ -12,8 +12,8 @@
 - 오픈 부하에서 api·대기열 동거는 예매 p95를 41~87% 늘리고 대기열 Tomcat 스레드를 포화시켰다([[IMP-038]]). 오픈 순간에는 분리가 필요하다.
 
 ## 2. 결정
-1. **B의 예매 api**: requests 200m(평시 기준, [[IMP-048]]), 노드마다 하나(hostname 분산 maxSkew 1·DoNotSchedule). `components/queue-split`이 base 값을 바꾼다. A'(통합)에서는 base 1100m 그대로다.
-2. **대기열 평시 모양**(`components/queue-split/queue-deployment.yaml`): requests 200m, api 회피는 preferred(weight 100), 대기열 hostname 분산(maxSkew 1·DoNotSchedule).
+1. **B의 예매 api**: requests 200m(평시 기준, [[IMP-048]]), 노드마다 하나(hostname 분산 maxSkew 1·DoNotSchedule, `matchLabelKeys: [pod-template-hash]`로 같은 리비전만 센다). `components/queue-split`이 base 값을 바꾼다. A'(통합)에서는 base 1100m 그대로다.
+2. **대기열 평시 모양**(`components/queue-split/queue-deployment.yaml`): requests 200m, api 회피는 preferred(weight 100), 대기열 hostname 분산(maxSkew 1·DoNotSchedule, 같은 리비전만).
 3. **대기열 피크 모양**(`components/queue-peak`): requests 1100m, api 회피 required. 오픈 사전 확장 때만 overlay에서 켠다.
 4. **절차**(`docs/testing/loadtest-diag-runbook.md` §2b, 한 단계에 PR 하나):
    - 오픈 최소 15분 전: queue-peak를 켜고 대기열 HPA 하한을 6으로 올린다.
@@ -22,6 +22,7 @@
 5. **하네스**:
    - k8s ⑩-d: 평시 대기열은 api 회피 term이 preferred(weight 100)나 required로 있어야 하고, queue-peak는 required와 requests 1100m로 바꿔야 한다.
    - k8s ⑩-e: queue-split은 예매 api에 hostname 분산(DoNotSchedule)을 더해야 한다.
+   - ⑩-b·⑩-e: api·대기열 hostname 분산은 `matchLabelKeys: [pod-template-hash]`가 있어야 한다. 없으면 롤링 중 옛 Pod와 새 Pod를 함께 세어 한 노드에 쌓인다([[IMP-050]] §4.5).
    - k8s 11: 대기열 하한을 올리면 queue-peak도 켜야 한다. 하한을 올렸거나 queue-peak가 켜져 있으면 event·off-by가 있어야 하고, off-by가 지나면 실패한다.
      queue-split 없이 queue-peak만 켜거나 queue-peak를 queue-split보다 앞에 두면 실패한다(kustomize는 이때 패치를 조용히 무시해 대기열이 평시 모양으로 남는다).
    - ⑩-b 허용 목록에 대기열의 preferred 회피 term을 더한다.
@@ -29,7 +30,8 @@
 ## 3. 근거
 - **피크 구성이 측정한 구성과 같다.** queue-peak를 켠 렌더링은 대기열 1100m·required 6개, api 3개(노드마다 하나)로 지금까지 오픈 성능을 측정한 배치(api 3 + 대기열 6 = 노드 9, 동거 0)와 같다. 그래서 [[IMP-035]]·[[IMP-047]] 근거를 그대로 쓴다.
   다른 점은 예매 api가 200m라는 것이다. CPU limit이 없어 api 노드의 남는 CPU를 쓸 수 있고 api 노드에는 대기열이 없지만(api·web·시스템 Pod),
-  CPU가 부족해지면 몫은 requests 비율(api 200 대 web 300 등)로 나뉜다. 이 조건의 오픈 성능은 재지 않았다(추론).
+  CPU가 부족해지면 몫은 requests 비율(api 200 대 web 300 등)로 나뉜다.
+  클러스터에서 재 보니 진입·대기열·정합성은 차이가 없었지만 예매 ② p95가 200m 436.8·496.5ms, 1100m 310.7·317.8ms였다. 판정은 사전 등록 식(200m 최댓값 ÷ 1100m 최솟값) 1.60 ≥ 1.30으로 "차이 있음"이다(평균끼리는 약 1.49, 참고·계산)([[IMP-050]] V4). 원인은 위 몫 배분으로 본다(추론). §5 후속 참고.
 - **전환 한 바퀴가 된다**(kwok, [[IMP-049]], 세 적용 순서 × 2회 모두):
   - 평시 3대, 사전 확장 9대에서 정체·동거 0.
   - 피크 중 CA 축소 흉내에도 api 노드를 지우지 못했다.
@@ -39,6 +41,7 @@
   - api 분산이 없으면 피크 중 CA가 사용률 0.43~0.44인 api 노드를 비워 api 둘이 한 노드에 모였다(6/6).
   - 대기열 분산이 없으면 평시 대기열 둘이 한 노드에 놓여, 그 노드를 비울 때 PDB(minAvailable 1)에 막혀 오픈 뒤 4대에 머문 경우가 있었다(2/6).
 - **평시 동거 영향은 30% 기준 안이었다**(로컬, [[IMP-049]]). 평시 조회 33 req/s와 예매 묶음 100명을 걸고 대기열을 api와 같은 코어에 두었다. 4쌍 모두 예매 p95 비율 0.83~1.23, 조회 p95 비율 0.81~1.19였다(사전 등록 판정 "차이 작음"). 대기열 CPU는 0.01코어였다.
+  EKS에서는 방향이 달랐다([[IMP-050]] V2·V2b). V2는 "악화 있음"(예매 비율 1.30 이상 2/3회)이었지만 노드 차이와 섞였고, 배치가 바뀐 V2b(1회)에서 예매 p95의 느린 쪽이 대기열을 따라갔다(동거 355.3ms 대 혼자 132.4ms). 조회 p95는 V2와 V2b의 방향이 섞였다.
 - **DB 커넥션 예산은 그대로다.** Pod 수(api 3, 대기열 2~6)와 풀(5, 3)이 같아 (3+1)×5 + (6+1)×3 = 41 ≤ 56이다(하네스 backend 규칙 17).
 - **절감**(계산, 평시가 하루 종일이라는 가정, 노드 EC2만): (5 − 3) × 24시간 × 30일 × $0.118/h([[IMP-032]] 단가) ≈ 월 $170.
 
@@ -56,7 +59,12 @@
 - 평시 모양에서는 대기열 HPA 기준이 200m × 60% = 120m다. 사전 확장 없이 대기열 부하가 들어오면 HPA가 늘린 Pod는 preferred라 api 노드에 함께 놓일 수 있다.
   예전(1100m·required)에는 Pending → CA → 별도 노드였다. 사전 확장 없는 오픈은 이 구성의 전제 밖이다([[ADR-025]] Git 사전 확장).
 - 피크 → 평시 롤링 직후에는 새 JVM의 예열 CPU로 HPA가 잠깐 늘었다가 축소 안정화(300초) 뒤 줄 수 있다(추론).
-- 확인하지 못한 것:
-  - 실제 클러스터에서의 전환 시간(롤링·노드 추가)과 CA 축소. 시뮬레이션은 CA를 흉내 낸 근사다([[IMP-039]]와 같은 규칙).
-  - 평시 동거는 로컬 상대 비교이고, 평시 부하는 가정이다.
-  - 이 둘은 다음 클러스터 세션에서 확인한다(계획: `docs/testing/queue-peak-shape-cluster-verification.md`).
+- 클러스터 검증(2026-10-27, [[IMP-050]], 계획 `docs/testing/queue-peak-shape-cluster-verification.md`):
+  - 평시 3대, 사전 확장 6분 26초에 9대(동거 0), 피크 동안 api 노드 유지, 하한 2로 12분 32초에 5대, 평시 모양으로 13분 51초에 3대. 실제 CA로 한 바퀴가 된다.
+  - 피크의 예매 api 200m는 예매 p95가 1100m보다 길었다(사전 등록 식 1.60, 평균끼리 약 1.49). 진입·대기열·정합성은 차이가 없었다.
+  - 평시 동거 영향이 EKS에서 예매 p95에 보였다(V2 "악화 있음"은 노드 차이와 섞임, V2b 1회 관찰). 조회 p95는 방향이 섞였다.
+  - 롤링 중 hostname 분산이 옛·새 Pod를 함께 세어 api가 한 노드에 쌓였다. `matchLabelKeys`를 더했고(#473), 그 뒤 롤링의 마지막 surge Pod는 메모리 requests(1,536Mi) 때문에 잠깐 노드 1대를 더 불렀다.
+- 후속(결정은 측정 뒤):
+  - 피크에 예매 api requests도 올리는 안. 후보 값은 측정으로 정한다(예매 p95가 1100m 구성의 1.30배 안).
+  - 메모리 requests 재산정. api·대기열 working set 최대는 526·778Mi로 requests 1,536Mi의 34%·51%였다(계산). 재산정 뒤 평시 노드 수·AZ 구성과 평시 동거를 다시 본다.
+  - 노드 1대 장애(G1)는 아직 재지 않았다.

@@ -52,6 +52,8 @@ spec:
           whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels: { app: flowticket-api-queue }
+          # 같은 리비전 파드끼리만 센다(api·web과 같다). 롤링 중 옛 파드까지 세면 새 파드가 한 노드에 겹쳐 남을 수 있다(20261027-qpeak api 실측).
+          matchLabelKeys: [pod-template-hash]
 
       containers:
         - name: api

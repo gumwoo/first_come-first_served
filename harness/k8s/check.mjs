@@ -328,6 +328,9 @@ const HOSTNAME = "kubernetes.io/hostname";
 const isApiAvoid = (t) =>
   t && Object.keys(t).sort().join(",") === "labelSelector,topologyKey" && t.topologyKey === HOSTNAME &&
   JSON.stringify(canon(t.labelSelector)) === JSON.stringify({ matchLabels: { app: "flowticket-api" } });
+// 노드 단위 분산은 같은 리비전 파드끼리만 세야 한다(matchLabelKeys: [pod-template-hash]). 옛·새 파드를 함께 세면 롤링 재시작 뒤
+// 새 파드가 한 노드에 겹쳐 남았다(측정 세션 20261027-qpeak, api 2개가 한 노드 — 실측). web은 같은 이유로 이미 이 키를 쓴다.
+const sameRevisionOnly = (t) => Array.isArray(t?.matchLabelKeys) && t.matchLabelKeys.includes("pod-template-hash");
 // 평시 모양(ADR-031)의 preferred 회피: { weight: 100, podAffinityTerm: <위 term> }. 시뮬레이션은 weight 100으로 확인했다(IMP-049) —
 // 낮은 weight는 다른 점수에 밀려 평시 배치가 달라질 수 있어 같은 term으로 보지 않는다.
 const isApiAvoidPreferred = (p) =>
@@ -434,13 +437,14 @@ const isApiAvoidPreferred = (p) =>
         );
       };
       const spreadOk = (q.doc.spec?.template?.spec?.topologySpreadConstraints ?? []).some(
-        (t) => t?.topologyKey === HOSTNAME && t?.whenUnsatisfiable === "DoNotSchedule" && t?.maxSkew === 1 && selectsQueueOnly(t?.labelSelector)
+        (t) => t?.topologyKey === HOSTNAME && t?.whenUnsatisfiable === "DoNotSchedule" && t?.maxSkew === 1 && selectsQueueOnly(t?.labelSelector) &&
+          sameRevisionOnly(t)
       );
       if (!spreadOk) {
         r.fail(
           `대기열 CPU 요청을 api와 다르게 두었는데 노드 단위 분산이 없다: ${path.relative(REPO_ROOT, q.file)}. ` +
             `topologySpreadConstraints에 topologyKey ${HOSTNAME}·whenUnsatisfiable DoNotSchedule·maxSkew 1, ` +
-            `labelSelector.matchLabels가 대기열 파드 라벨의 부분집합이고 app: flowticket-api-queue를 포함하는 항목을 둔다 — ` +
+            `labelSelector.matchLabels가 대기열 파드 라벨의 부분집합이고 app: flowticket-api-queue를 포함하며 matchLabelKeys에 pod-template-hash가 있는 항목을 둔다 — ` +
             `없으면 대기열 파드 둘이 한 노드에 놓여 노드 1대 장애에 함께 사라진다(resource-sizing-plan.md §2.3)`
         );
       }
@@ -500,11 +504,11 @@ const isApiAvoidPreferred = (p) =>
     try { ops = patchOps(f, "Deployment", "flowticket-api"); } catch { ops = []; }
     const spreadOk = ops.some((op) => ["add", "replace"].includes(op?.op) && /^\/spec\/template\/spec\/topologySpreadConstraints\/(-|\d+)$/.test(op?.path ?? "") &&
       op.value?.topologyKey === HOSTNAME && op.value?.whenUnsatisfiable === "DoNotSchedule" && op.value?.maxSkew === 1 &&
-      JSON.stringify(canon(op.value?.labelSelector)) === JSON.stringify({ matchLabels: { app: "flowticket-api" } }));
+      JSON.stringify(canon(op.value?.labelSelector)) === JSON.stringify({ matchLabels: { app: "flowticket-api" } }) && sameRevisionOnly(op.value));
     if (!spreadOk) {
       r.fail(
         `B의 예매 api에 노드 단위 분산이 없다: ${path.relative(REPO_ROOT, f)}. flowticket-api Deployment 패치로 topologySpreadConstraints에 ` +
-          `{ maxSkew: 1, topologyKey: ${HOSTNAME}, whenUnsatisfiable: DoNotSchedule, labelSelector: { matchLabels: { app: flowticket-api } } }를 더한다 — ` +
+          `{ maxSkew: 1, topologyKey: ${HOSTNAME}, whenUnsatisfiable: DoNotSchedule, labelSelector: { matchLabels: { app: flowticket-api } }, matchLabelKeys: [pod-template-hash] }를 더한다 — ` +
           `없으면 피크 중 CA가 api 노드를 비워 api 둘이 한 노드에 모인다(IMP-049, ADR-031)`
       );
     }

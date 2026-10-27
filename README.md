@@ -59,7 +59,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 
 ### 롤링 배포 중 502 해결
 
-롤링 배포 중 502가 발생해 ALB 지표를 분석했습니다. ALB 지표에서 애플리케이션 5xx(`Target_5XX`)는 0이고 실패가 10초 연결 타임아웃(`10,000ms`)에 몰려, 종료 중인 파드로 요청이 간 구간으로 보고 `preStop`을 5초에서 25초로 늘렸습니다. 이 값 하나만 바꿔 실패가 13·16건에서 0건이 됐습니다.
+롤링 배포 중 502가 발생해 ALB 지표를 분석했습니다. 애플리케이션 5xx(`Target_5XX`)는 0이었고, 실패 요청의 응답 시간은 10초(`10,000ms`, 연결 타임아웃)에 몰렸습니다. 종료 중인 파드로 요청이 간 구간으로 보고 `preStop`을 5초에서 25초로 늘렸고(종료 유예 시간도 30초에서 60초로 함께), 실패가 13·16건에서 0건이 됐습니다.
 
 `deregistration_delay`는 타깃 해제가 시작된 뒤의 연결 정리 시간이라 조정하지 않고, 컨테이너가 살아 있는 시간을 늘렸습니다.
 
@@ -141,7 +141,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 같은 이미지의 대기열 전용 Deployment | 통합 구조 유지, 서비스 분리 | 폭증 중 예매 p95가 통합 구조 1.6~2.6초, 분리 구조 184~272ms(각 2회). 노드 비용 증가(+15~28%, 계산)를 감안하고 선택 | [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md) · [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) |
 | 대기열 상태는 폴링(`retryAfterMs`) | 대기열 SSE | 대기자 전원의 SSE 연결은 Pod 메모리 1Gi에서 약 3,300~3,500개 시점에 OOM이 발생 | [ADR-023](docs/decisions/ADR-023-burst-entry-and-waiting-two-axes.md) |
 | Outbox + Redis Pub/Sub | Kafka | 아웃박스 이벤트가 `order.paid` 하나뿐이어서 브로커 3대를 운영할 필요가 없다고 판단 | [ADR-028](docs/decisions/ADR-028-kafka-reevaluation.md) |
-| `preStop` 25s | `deregistration_delay` 조정 | 애플리케이션 5xx는 0건이고 실패가 10초 연결 타임아웃에 몰림. `preStop`만 바꿔 실패 0건 | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) |
+| `preStop` 25s | `deregistration_delay` 조정 | 애플리케이션 5xx는 0건이고 실패가 10초 연결 타임아웃에 몰림. `preStop` 25s(종료 유예 60s)로 바꿔 실패 0건 | [TS-035](docs/troubleshooting/TS-035-rolling-deregistration-race.md) |
 | readiness는 예매 api DB만, 대기열 DB·Redis | 기존(DB·Redis 모두), 둘 다 제외 | Redis는 모든 Pod가 함께 써서 넣으면 장애 중 조회까지 끊김. 대기열은 Redis 없이 처리할 수 없어 장애 중 빠지는 편이 요청 스레드를 묶지 않음 | [ADR-030](docs/decisions/ADR-030-readiness-shared-dependencies.md) · [IMP-046](docs/improvements/IMP-046-redis-outage-readiness.md) |
 | AZ별 NAT 3개 | NAT 1개 | NAT를 하나만 두면 그 AZ 장애가 다른 AZ의 결제 호출까지 막음 | [ADR-012](docs/decisions/ADR-012-3az-eks-infra-cost-control.md) |
 | Tomcat 스레드 200 | 400 | 하위 의존성이 느린 조건에서 400으로 늘려도 처리 성능이 개선되지 않음 | [IMP-036](docs/improvements/IMP-036-local-threads-and-booking-burst.md) |

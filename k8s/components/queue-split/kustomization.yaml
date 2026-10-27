@@ -43,3 +43,5 @@ patches:
           whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels: { app: flowticket-api }
+          # 같은 리비전 파드끼리만 센다(web과 같다). 없으면 롤링 재시작 뒤 api 2개가 한 노드에 남았다(측정 세션 20261027-qpeak, 실측).
+          matchLabelKeys: [pod-template-hash]

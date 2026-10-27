@@ -1,0 +1,15 @@
+# 위반 fixture: B의 예매 api 노드 단위 분산이 옛·새 리비전 파드를 함께 센다(matchLabelKeys 없음).
+# 롤링 재시작 뒤 api 2개가 한 노드에 남았다(측정 세션 20261027-qpeak, 실측).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target: { kind: Deployment, name: flowticket-api }
+    patch: |
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints/-
+        value:
+          maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app: flowticket-api }

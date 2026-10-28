@@ -23,6 +23,10 @@ export function firstSentence(s) {
   const t = String(s ?? "").trim().split(/(?<=[.;])\s+/)[0].replace(/[.;]$/, "");
   return t.length > 160 ? t.slice(0, 159) + "…" : t;
 }
+// AI 원문은 "확인한다"체라 메시지 본문(~요체)과 맞게 끝말만 바꾼다. 패턴에 없는 끝말은 그대로 둔다.
+export function softEnding(s) {
+  return s.replace(/확인한다$/, "확인해 보기").replace(/본다$/, "보기").replace(/한다$/, "하기");
+}
 
 // 규칙이 어느 갈래로 원인을 냈는지 사람 말로 푼다(rules.mjs classify의 갈래 순서와 같다).
 function ruleSentence(s, rule, t = THRESHOLDS) {
@@ -35,12 +39,16 @@ function ruleSentence(s, rule, t = THRESHOLDS) {
   return `규칙으로는 앱 CPU 부족으로 나와요. api 지표 응답이 최대 ${ms(s.api.scrape_rtt_ms_max)}ms까지 늦었는데, Redis랑 DB 수치는 괜찮았거든요.`;
 }
 
-export function slackText(runId, summary, rule, ai, reportPath) {
+// 기존 Alertmanager 웹훅을 같이 쓰므로 머리말로 자동 분석 메시지임을 구분한다.
+export const PREFIX = "[초기 분석]";
+
+export function slackText(runId, summary, rule, ai) {
   const b = summary.booking, acq = summary.api.hikari?.acquire_ms_mean;
   const lines = [];
   // CPU 할당량 갈래는 예매 p95가 이상 기준 아래여도 원인을 낸다(rules.mjs). 그때는 느려졌다고 쓰지 않는다.
   const slow = b.http5xx > 0 || b.p95_median_ms > THRESHOLDS.anomaly_p95_median_ms;
-  let first = slow ? `${runId} run에서 예매가 느려졌어요. p95가 ${ms(b.p95_median_ms)}ms까지 올라갔고` : `${runId} run은 예매 p95가 ${ms(b.p95_median_ms)}ms라 아직 느리진 않은데`;
+  let first = `${PREFIX} `;
+  first += slow ? `${runId} run에서 예매가 느려졌어요. p95가 ${ms(b.p95_median_ms)}ms까지 올라갔고` : `${runId} run은 예매 p95가 ${ms(b.p95_median_ms)}ms라 아직 느리진 않은데`;
   first += acq != null ? `, 커넥션 하나 받는 데 평균 ${ms(acq)}ms 기다렸어요.` : slow ? "요." : " 눈여겨볼 수치가 있어요.";
   if (b.http5xx > 0) first += ` 5xx도 ${num(b.http5xx)}건 났어요.`;
   lines.push(esc(first), esc(ruleSentence(summary, rule)));
@@ -51,10 +59,9 @@ export function slackText(runId, summary, rule, ai, reportPath) {
     let ask = `그런데 AI는 "${esc(h1.name)}" 쪽을 더 의심하고 있어서 한번 봐주시면 좋겠어요.`;
     if (h1.confidence === "low" || r.conclusion === "inconclusive") ask += " AI도 확정은 못 했대요.";
     lines.push(ask);
-    lines.push(`• ${esc(firstSentence(h1.confirm))}`);
-    if (h2) lines.push(`• 아니면 "${esc(h2.name)}" 쪽: ${esc(firstSentence(h2.confirm))}`);
+    lines.push(`• ${esc(softEnding(firstSentence(h1.confirm)))}`);
+    if (h2) lines.push(`• 아니면 "${esc(h2.name)}" 쪽: ${esc(softEnding(firstSentence(h2.confirm)))}`);
   }
-  lines.push(`리포트: ${esc(reportPath)}`);
   return lines.join("\n");
 }
 
@@ -74,7 +81,7 @@ export async function notify(runDir, { send = false, fetchImpl } = {}) {
   const rule = read("rule.json");
   const ai = fs.existsSync(path.join(dir, "ai.json")) ? read("ai.json") : null;
   if (!shouldNotify(rule, ai)) return { sent: false, reason: "사람 확인 표시 없음" };
-  const text = slackText(path.basename(path.resolve(runDir)), read("summary.json"), rule, ai, path.join(dir, "report.md").split(path.sep).join("/"));
+  const text = slackText(path.basename(path.resolve(runDir)), read("summary.json"), rule, ai);
   if (!send) return { sent: false, reason: "미리 보기", text };
   return { ...(await postSlack(text, { fetchImpl })), text };
 }

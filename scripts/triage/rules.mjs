@@ -6,6 +6,8 @@
 // 갈래는 "커넥션을 쥔 시간이 어디서 쓰였나"로 나눈다.
 // - api가 CPU 할당량에 막힌 주기 비율이 높으면 app_cpu. 앱이 CPU를 못 받으면 Redis 응답 처리·트랜잭션도 함께 늦어져
 //   Redis·DB 기준을 넘을 수 있어(추론, IMP-044 CPU run), 이 갈래를 먼저 본다.
+//   예매 p95로 이상을 가리기 전에 본다. CPU 강도 1 run 2회가 비율 0.23·0.21인데 p95 중앙값 1,408·999ms로
+//   이상 기준 아래라 정상으로 끝났다(IMP-045 §4.1·§8.4). 정상 run의 비율은 0~0.05였다.
 // - Redis 명령 완료가 느리면 redis.
 // - PostgreSQL 쪽에서 실제로 실행 중인 세션이 많으면(쿼리가 DB에서 오래 걸림) db.
 // - Redis·DB가 아닌데 커넥션 점유가 길면 app_cpu(커넥션을 쥔 스레드가 CPU를 못 받는다). 지표 응답 지연은 점유 값이 없을 때만 쓴다.
@@ -25,14 +27,14 @@ export const THRESHOLDS = {
 
 export function classify(s, t = THRESHOLDS) {
   if (!s.validity?.valid) return { verdict: "undetermined", cause: null, reasons: ["측정 무효: " + (s.validity?.reasons ?? []).join(", ")] };
-  const p95 = s.booking.p95_median_ms;
-  const anomalous = s.booking.http5xx > 0 || (p95 != null && p95 > t.anomaly_p95_median_ms);
-  if (!anomalous) return { verdict: "normal", cause: null, reasons: [`예매 p95 중앙값 ${p95}ms ≤ ${t.anomaly_p95_median_ms}ms, 5xx 0`] };
-
   const thr = s.api.cgroup?.throttled_period_ratio;
   if (thr != null && thr > t.app_throttled_ratio) {
     return { verdict: "cause", cause: "app_cpu", reasons: [`api CPU 할당량에 막힌 주기 비율 ${thr} > ${t.app_throttled_ratio}`] };
   }
+  const p95 = s.booking.p95_median_ms;
+  const anomalous = s.booking.http5xx > 0 || (p95 != null && p95 > t.anomaly_p95_median_ms);
+  if (!anomalous) return { verdict: "normal", cause: null, reasons: [`예매 p95 중앙값 ${p95}ms ≤ ${t.anomaly_p95_median_ms}ms, 5xx 0`] };
+
   const redisMs = s.api.redis.completion_ms_mean;
   if (redisMs != null && redisMs > t.redis_completion_ms) {
     return { verdict: "cause", cause: "redis", reasons: [`Redis 명령 완료 평균 ${redisMs}ms > ${t.redis_completion_ms}ms`] };

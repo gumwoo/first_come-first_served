@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { analyze, buildRequest, TOOL } from "./analyze.mjs";
 import { resolve, verify } from "./verify.mjs";
-import { finalVerdict, shouldCallAi } from "./triage.mjs";
+import { finalVerdict, pipelineVerdict, shouldCallAi } from "./triage.mjs";
 
 const summary = {
   validity: { valid: true, reasons: [] },
@@ -47,6 +47,20 @@ test("근거 경로와 값을 요약 JSON과 대조한다", async () => {
   assert.equal(finalVerdict({ result: wrong }, check).verdict, "undetermined");
   assert.equal(verify({ ...answer, evidence: [{ ...answer.evidence[0], value: "6.3" }] }, summary).ok, false); // 숫자가 아닌 값
   assert.equal(verify({ ...answer, candidates: [] }, summary).ok, false);                                       // 후보 없는 원인 판정
+});
+
+test("최종 판정: 규칙 원인을 쓰고 AI가 다르면 표시, 규칙이 판단 불가면 대조를 통과한 AI 판정", () => {
+  const ai = (verdict, cause, ok = true) => ({ final: { verdict, cause }, verification: { ok } });
+  const rCause = { verdict: "cause", cause: "app_cpu" }, rUnd = { verdict: "undetermined", cause: null };
+  assert.deepEqual(pipelineVerdict({ verdict: "normal", cause: null }, ai("cause", "redis")), { verdict: "normal", cause: null, source: "rule", disagree: false });
+  assert.deepEqual(pipelineVerdict(rCause, ai("cause", "app_cpu")), { verdict: "cause", cause: "app_cpu", source: "rule", disagree: false });
+  assert.equal(pipelineVerdict(rCause, ai("cause", "db")).disagree, true);
+  assert.equal(pipelineVerdict(rCause, ai("undetermined", null)).disagree, true);        // AI가 근거 부족으로 본 것도 표시
+  assert.equal(pipelineVerdict(rCause, ai("undetermined", null, false)).disagree, false); // 대조 실패한 답은 표시에 쓰지 않는다
+  assert.equal(pipelineVerdict(rCause, null).cause, "app_cpu");
+  assert.deepEqual(pipelineVerdict(rUnd, ai("cause", "db")), { verdict: "cause", cause: "db", source: "ai", disagree: false });
+  assert.equal(pipelineVerdict(rUnd, ai("cause", "db", false)).verdict, "undetermined");
+  assert.equal(pipelineVerdict(rUnd, { error: "x", final: { verdict: "undetermined", cause: null } }).verdict, "undetermined");
 });
 
 test("측정 무효이거나 규칙상 이상이 없으면 AI를 부르지 않는다", () => {

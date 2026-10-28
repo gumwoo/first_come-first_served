@@ -3,7 +3,8 @@
 //   ids.txt: 한 줄에 "id fault level try 판정 시각"(평가 측정 기록). 판정이 valid인 줄만 쓴다(invalid·excluded 줄은 뺀다).
 //
 // - 판정 순서를 섞고, AI 입력은 요약 JSON뿐이다(run id·라벨은 채점 때만 쓴다).
-// - AI는 유효 run 전부에 부른다(AI 단독). 파이프라인(규칙이 정상이면 AI를 부르지 않음, triage.mjs) 결과도 따로 계산한다.
+// - AI는 유효 run 전부에 부른다(AI 단독). 파이프라인(triage.mjs의 최종 판정) 결과도 따로 계산한다.
+// - 규칙 갈래를 만들 때 없던 장애(OUT_OF_RULES)는 원인 범주 채점과 따로 센다.
 // - 결과는 --out에만 쓴다. run 디렉터리의 triage/ 결과는 건드리지 않는다.
 import fs from "node:fs";
 import path from "node:path";
@@ -12,9 +13,11 @@ import { normalize } from "./normalize.mjs";
 import { classify } from "./rules.mjs";
 import { analyze } from "./analyze.mjs";
 import { verify } from "./verify.mjs";
-import { finalVerdict } from "./triage.mjs";
+import { finalVerdict, pipelineVerdict } from "./triage.mjs";
 
-const EXPECTED = { none: "normal", redis: "redis", db: "db", cpu: "app_cpu" };
+// dbnet(api와 PostgreSQL 사이 네트워크 지연)은 앱이 본 DB 접근 지연이라 가장 가까운 범주를 db로 둔다.
+const EXPECTED = { none: "normal", redis: "redis", db: "db", cpu: "app_cpu", dbnet: "db" };
+export const OUT_OF_RULES = new Set(["dbnet"]);
 // 공개 단가(100만 토큰당, 10만 토큰 이하 프롬프트). 모델이 바뀌면 함께 고친다.
 const PRICE = { "claude-haiku-5-5": { in: 0.10, out: 0.50 }, "claude-sonnet-5-5": { in: 2, out: 10 } };
 
@@ -33,6 +36,31 @@ export function score(rows) {
     };
   }
   return out;
+}
+
+// 규칙에 없던 장애: 가장 가까운 범주(expected), 판단 불가, 그 밖의 원인으로 단정(오판)을 센다.
+export function scoreOutOfRules(rows) {
+  const out = {};
+  for (const who of ["rule", "ai", "pipeline"]) {
+    out[who] = {
+      expected: rows.filter((r) => r[who] === r.expected).length,
+      undetermined: rows.filter((r) => r[who] === "undetermined").length,
+      wrong_cause: rows.filter((r) => r[who] !== r.expected && r[who] !== "undetermined").length,
+      total: rows.length,
+    };
+  }
+  return out;
+}
+
+// 규칙과 AI 판정이 달라 사람 확인으로 표시된 run이 규칙이 틀린 run이었는지 맞은 run이었는지 센다.
+export function flagStats(rows) {
+  const ruleCause = rows.filter((r) => r.rule !== "normal" && r.rule !== "undetermined");
+  const wrong = ruleCause.filter((r) => r.rule !== r.expected), right = ruleCause.filter((r) => r.rule === r.expected);
+  return {
+    rule_cause_runs: ruleCause.length,
+    flagged_rule_wrong: wrong.filter((r) => r.flag).length, rule_wrong: wrong.length,
+    flagged_rule_right: right.filter((r) => r.flag).length, rule_right: right.length,
+  };
 }
 
 function shuffle(xs) {
@@ -59,25 +87,30 @@ export async function evaluate({ ids, labels, runsDir, outDir, useAi = true, cli
       }
     }
     const lab = labels[id];
+    const pipe = pipelineVerdict(rule, ai); // 규칙이 정상이면 AI 결과를 보지 않는다(실제 파이프라인은 AI를 부르지 않는다)
     const r = {
-      id, fault: lab.fault, level: lab.level, expected: EXPECTED[lab.fault],
+      id, fault: lab.fault, level: lab.level, expected: EXPECTED[lab.fault], known: !OUT_OF_RULES.has(lab.fault),
       rule: label(rule), ai: ai ? label(ai.final) : null,
-      pipeline: rule.verdict === "normal" ? "normal" : ai ? label(ai.final) : null,
+      pipeline: useAi ? label(pipe) : null, flag: useAi ? pipe.disagree : null,
       ai_verify_ok: ai?.verification?.ok ?? null, ai_error: ai?.error ?? null,
       model: ai?.model ?? null, usage: ai?.usage ?? null,
     };
     rows.push(r);
     fs.writeFileSync(path.join(outDir, `${id}.json`), JSON.stringify({ ...r, summary, rule_detail: rule, ai_detail: ai }, null, 2) + "\n");
   }
-  const scored = rows.filter((r) => !r.skipped);
-  const tokens = scored.filter((r) => r.usage).map((r) => r.usage);
-  const price = PRICE[scored.find((r) => r.model)?.model];
+  const valid = rows.filter((r) => !r.skipped);
+  const scored = valid.filter((r) => r.known), outOfRules = valid.filter((r) => !r.known);
+  const tokens = valid.filter((r) => r.usage).map((r) => r.usage);
+  const price = PRICE[valid.find((r) => r.model)?.model];
   const cost = price ? tokens.reduce((a, u) => a + (u.input_tokens * price.in + u.output_tokens * price.out) / 1e6, 0) : null;
+  const ruleOnly = (xs) => xs.map((r) => ({ ...r, ai: r.rule, pipeline: r.rule }));
   const summary = {
     runs: rows.length, skipped: rows.filter((r) => r.skipped).map((r) => r.id),
-    score: useAi ? score(scored) : { rule: score(scored.map((r) => ({ ...r, ai: r.rule, pipeline: r.rule }))).rule, ai: null, pipeline: null },
-    ai_verify_failures: scored.filter((r) => r.ai_verify_ok === false).length,
-    ai_errors: scored.filter((r) => r.ai_error).length,
+    score: useAi ? score(scored) : { rule: score(ruleOnly(scored)).rule, ai: null, pipeline: null },
+    out_of_rules: !outOfRules.length ? null : useAi ? scoreOutOfRules(outOfRules) : { rule: scoreOutOfRules(ruleOnly(outOfRules)).rule, ai: null, pipeline: null },
+    flags: useAi ? flagStats(valid) : null,
+    ai_verify_failures: valid.filter((r) => r.ai_verify_ok === false).length,
+    ai_errors: valid.filter((r) => r.ai_error).length,
     tokens: tokens.length ? {
       calls: tokens.length,
       input_mean: Math.round(tokens.reduce((a, u) => a + u.input_tokens, 0) / tokens.length),

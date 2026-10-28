@@ -21,7 +21,7 @@ export const OUT_OF_RULES = new Set(["dbnet"]);
 // 공개 단가(100만 토큰당, 10만 토큰 이하 프롬프트). 모델이 바뀌면 함께 고친다.
 const PRICE = { "claude-haiku-5-5": { in: 0.10, out: 0.50 }, "claude-sonnet-5-5": { in: 2, out: 10 } };
 
-// 판정 하나를 범주 코드로: 원인이면 원인, 정상이면 normal, 그 밖(판단 불가)은 undetermined
+// 판정 하나를 범주 코드로: 원인이면 원인(AI의 범주 밖 원인은 other), 정상이면 normal, 그 밖(판단 불가)은 undetermined
 export const label = (v) => (v.verdict === "cause" ? v.cause : v.verdict === "normal" ? "normal" : "undetermined");
 
 export function score(rows) {
@@ -90,7 +90,7 @@ export async function evaluate({ ids, labels, runsDir, outDir, useAi = true, cli
     const pipe = pipelineVerdict(rule, ai); // 규칙이 정상이면 AI 결과를 보지 않는다(실제 파이프라인은 AI를 부르지 않는다)
     const r = {
       id, fault: lab.fault, level: lab.level, expected: EXPECTED[lab.fault], known: !OUT_OF_RULES.has(lab.fault),
-      rule: label(rule), ai: ai ? label(ai.final) : null,
+      rule: label(rule), ai: ai ? label(ai.final) : null, ai_name: ai?.final?.name ?? null, ai_conclusion: ai?.final?.conclusion ?? null,
       pipeline: useAi ? label(pipe) : null, flag: useAi ? pipe.disagree : null,
       ai_verify_ok: ai?.verification?.ok ?? null, ai_error: ai?.error ?? null,
       model: ai?.model ?? null, usage: ai?.usage ?? null,

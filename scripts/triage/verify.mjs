@@ -37,7 +37,10 @@ export function verify(result, summary) {
     if (!r.found) failures.push({ kind, field: e.field, value: e.value, reason: "경로 없음" });
     else if (!sameNumber(e.value, r.value)) failures.push({ kind, field: e.field, value: e.value, actual: r.value, reason: "값 불일치" });
   }
-  if (result.verdict === "cause" && !(result.evidence ?? []).length) failures.push({ kind: "evidence", reason: "원인 판정에 근거가 없다" });
-  if (result.verdict === "cause" && !(result.candidates ?? []).length) failures.push({ kind: "candidates", reason: "원인 판정에 후보가 없다" });
+  if (result.verdict === "anomaly" && !(result.evidence ?? []).length) failures.push({ kind: "evidence", reason: "이상 판정에 근거가 없다" });
+  if (result.verdict === "anomaly" && !(result.hypotheses ?? []).length) failures.push({ kind: "hypotheses", reason: "이상 판정에 의심 원인이 없다" });
+  for (const h of result.hypotheses ?? []) {
+    if (h.cause === "other" && !String(h.name ?? "").trim()) failures.push({ kind: "hypotheses", reason: "other 원인에 이름이 없다" });
+  }
   return { ok: failures.length === 0, checked: items.length, failures };
 }

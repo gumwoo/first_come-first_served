@@ -104,7 +104,9 @@ burst() { # <run 디렉터리>
   local dir=$1 sa sas w
   sa=$(date -u -d "+45 seconds" +%Y-%m-%dT%H:%M:%SZ); sas=$(date -u -d "$sa" +%s)
   w=$(cygpath -w "$ROOT" 2>/dev/null || echo "$ROOT")
-  node "$HERE/sampler.mjs" "$dir/sampler.jsonl" 85 & local sp=$!  # 예매 시작 +40초까지(분석 구간 최대 +30초보다 넉넉히)
+  # 예매 시작 +75초까지. 분석 구간은 최대 +30초지만, PostgreSQL이 느린 run은 지표 응답 하나가 30초 가까이 걸려
+  # +40초에 끝내면 구간 끝 뒤에 시작한 표본이 없어 run이 무효가 됐다(db 강도 2, IMP-045).
+  node "$HERE/sampler.mjs" "$dir/sampler.jsonl" 120 & local sp=$!
   MSYS_NO_PATHCONV=1 docker run --rm --cpuset-cpus "${LAB_PROBE_CPUS:-14}" -v "$w/infra/triage-lab:/lab:ro" debian:bookworm-slim \
     timeout 85 bash /lab/disk-probe.sh > "$dir/disk.txt" 2>/dev/null & local dp=$!
   MSYS_NO_PATHCONV=1 docker run --rm --privileged --cgroupns=host --cpuset-cpus "${LAB_PROBE_CPUS:-14}" -v "$w/infra/triage-lab:/lab:ro" debian:bookworm-slim \

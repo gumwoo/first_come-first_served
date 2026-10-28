@@ -24,6 +24,7 @@ bash infra/triage-lab/lab.sh down
 - 원인 라벨은 run 디렉터리 밖 `artifacts/triage-lab/labels.jsonl`에만 쓴다(강도 번호, 실제 주입값, 방법). 분석 도구가 라벨을 보지 않게 하기 위해서다.
 - 측정용 psql은 PostgreSQL 컨테이너 밖(프로브 코어)에서 접속한다. db 주입으로 줄인 CPU를 측정이 나눠 쓰지 않게 하기 위해서다.
 - 코어 번호는 `LAB_API_CPUS`·`LAB_PG_CPUS`·`LAB_REDIS_CPUS`·`LAB_QUEUE_CPUS`·`LAB_K6_CPUS`·`LAB_PROBE_CPUS`로 바꾼다(`2,3`·`2-3` 표기).
+- 호스트 포트가 다른 컨테이너와 겹치면 `LAB_API_PORT`·`LAB_QUEUE_PORT`로 바꾼다(lab.sh·sampler.mjs·compose.yml이 같은 값을 쓴다).
 
 ## 주입하는 장애
 
@@ -53,6 +54,7 @@ CPU 할당량으로 주입한 장애에서는 api CPU 사용량이 할당량(0.4
 호스트 저장소가 느린 run은 원인 분석에서 뺀다([IMP-043](../../docs/improvements/IMP-043-booking-burst-connection-wait-cause.md)).
 판정에는 측정 대상과 분리된 디스크 프로브(`dd`로 8KB 동기 쓰기 1회에 걸린 시간, 0.2초마다)를 쓴다. PostgreSQL의 WAL 동기화 시간은
 DB가 CPU를 못 받을 때도 부풀어(아래 db 주입에서 1회 44ms) 장애와 측정 환경을 가르지 못한다.
+분석 구간의 프로브 중앙값이 10ms를 넘거나 p95가 100ms를 넘으면 무효로 둔다(`normalize.mjs`). p95 조건은 꼬리 지연 run에 AI 오답과 정상 오탐이 몰려 넣었다([IMP-052](../../docs/improvements/IMP-052-triage-eval-hypotheses-slack.md) §5.4, [IMP-053](../../docs/improvements/IMP-053-triage-disk-tail-prompt-v6.md)).
 
 ## 주입 확인 (2026-10-21, 유형마다 1회, 로컬 실측)
 요약 값은 `scripts/triage/normalize.mjs` 기준(예매 시작 −2초부터 묶음이 끝날 때까지)이다. 이 run들과 아래 강도 시험 run으로 규칙 분류기(`scripts/triage/rules.mjs`)의 기준값을 정했다.

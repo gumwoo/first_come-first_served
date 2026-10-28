@@ -9,7 +9,7 @@ if (!out || !Number(secs)) {
   console.error("사용: node sampler.mjs <out.jsonl> <seconds>");
   process.exit(2);
 }
-const PORTS = { api: 18080, queue: 18081 };
+const PORTS = { api: Number(process.env.LAB_API_PORT || 18080), queue: Number(process.env.LAB_QUEUE_PORT || 18081) }; // lab.sh와 같은 환경변수
 const WANT = /^(process_cpu_time_ns_total|tomcat_threads_busy_threads|hikaricp_connections_active|hikaricp_connections_pending|hikaricp_connections_usage_seconds_(sum|count)|hikaricp_connections_acquire_seconds_(sum|count)|lettuce_command_completion_seconds_(sum|count))\b/;
 
 async function read(port) {

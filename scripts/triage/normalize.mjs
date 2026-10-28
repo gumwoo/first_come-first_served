@@ -17,6 +17,9 @@ const MAX_POST_S = 30;    // 분석 구간 끝의 상한. api 지표 수집기�
 // 측정 대상과 분리된 디스크 프로브(8KB 쓰기 + fdatasync)의 구간 중앙값이 이보다 느리면 저장소 지연이 낀 run이다.
 // 평소 중앙값은 약 2ms다(IMP-043 probe2·4). PostgreSQL WAL 동기화 시간은 DB가 CPU를 못 받을 때도 부풀어 기준으로 쓰지 않는다.
 const DISK_PROBE_LIMIT_MS = 10;
+// 꼬리(p95)도 본다. eval5 72회의 구간 p95는 65ms 이하(33회)와 108ms 이상(39회)으로 갈렸고, 108ms 이상 run에 AI 오답과
+// 정상 오탐이 몰렸다(IMP-052 §5.4). 예매 전 구간 p95 100ms 이상도 34회로 분석 구간(39회)과 비슷해 측정 환경 잡음으로 본다(추론, IMP-053).
+const DISK_PROBE_P95_LIMIT_MS = 100;
 const QUEUE_STEPS = new Set(["queue_entry", "queue_status"]);
 
 const round = (x, d = 1) => (x == null || !Number.isFinite(x) ? null : Math.round(x * 10 ** d) / 10 ** d);
@@ -202,6 +205,7 @@ export function normalize(runDir) {
   if (db.samples < postS * 2) reasons.push(`PostgreSQL 표본이 ${db.samples}개뿐이다`);
   if (disk.samples < postS) reasons.push(`디스크 프로브 표본이 ${disk.samples}개뿐이다`);
   else if (disk.fdatasync_ms_p50 > DISK_PROBE_LIMIT_MS) reasons.push(`디스크 프로브 fdatasync 중앙값 ${disk.fdatasync_ms_p50}ms(저장소 지연, 기준 ${DISK_PROBE_LIMIT_MS}ms)`);
+  else if (disk.fdatasync_ms_p95 > DISK_PROBE_P95_LIMIT_MS) reasons.push(`디스크 프로브 fdatasync p95 ${disk.fdatasync_ms_p95}ms(저장소 꼬리 지연, 기준 ${DISK_PROBE_P95_LIMIT_MS}ms)`);
 
   return {
     schema: SCHEMA,

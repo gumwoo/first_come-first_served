@@ -11,7 +11,7 @@ const SA = Date.parse("2026-10-21T12:00:00Z");
 const iso = (ms) => new Date(ms).toISOString();
 
 // 예매 시작 3초 전부터 20초 뒤까지 1초 표본. 구간 동안 CPU 1코어, 커넥션 100회·점유 합 1초(평균 10ms).
-function makeRun({ walMs = 1, diskMs = 2, users = 3, pgActive = 0 } = {}) {
+function makeRun({ walMs = 1, diskMs = 2, diskTailMs = null, users = 3, pgActive = 0 } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "triage-"));
   fs.writeFileSync(path.join(dir, "meta.json"), JSON.stringify({ startAt: iso(SA), eventId: 1, users: 3 }));
   const rows = [];
@@ -31,7 +31,7 @@ function makeRun({ walMs = 1, diskMs = 2, users = 3, pgActive = 0 } = {}) {
   fs.writeFileSync(path.join(dir, "pg.tsv"), pg.join("\n") + "\n");
   fs.writeFileSync(path.join(dir, "wal.tsv"), `before\tx\t100\t0\nafter\tx\t300\t${200 * walMs}\n`);
   const disk = [];
-  for (let ms = -2000; ms <= 15000; ms += 200) disk.push(`${iso(SA + ms)} ${diskMs} 201`);
+  for (let ms = -2000, i = 0; ms <= 15000; ms += 200, i++) disk.push(`${iso(SA + ms)} ${diskTailMs != null && i % 10 === 0 ? diskTailMs : diskMs} 201`); // 꼬리: 10개 중 1개
   fs.writeFileSync(path.join(dir, "disk.txt"), disk.join("\n") + "\n");
   const user = (ms) => `E2E ${JSON.stringify({ steps: [{ step: "queue_entry", ms: 5, status: 200 }, { step: "hold", ms, status: 200 }, { step: "order", ms, status: 200 }, { step: "pay", ms, status: 200 }] })}`;
   fs.writeFileSync(path.join(dir, "book.log"), Array.from({ length: users }, (_, i) => user(100 * (i + 1))).join("\n") + "\nrunning...\n");
@@ -56,6 +56,10 @@ test("디스크 프로브가 느리거나 예매 결과가 빠지면 무효다",
   const slow = normalize(makeRun({ diskMs: 40 }));
   assert.equal(slow.validity.valid, false);
   assert.match(slow.validity.reasons.join(), /fdatasync 중앙값 40ms/);
+  const tail = normalize(makeRun({ diskTailMs: 400 }));                  // 중앙값은 2ms지만 꼬리가 길다
+  assert.equal(tail.disk.fdatasync_ms_p50, 2);
+  assert.match(tail.validity.reasons.join(), /^디스크 프로브 fdatasync p95 400ms\(저장소 꼬리 지연, 기준 100ms\)$/);
+  assert.equal(normalize(makeRun({ diskTailMs: 90 })).validity.valid, true);
   const missing = normalize(makeRun({ users: 2 }));
   assert.match(missing.validity.reasons.join(), /2\/3명분/);
 });

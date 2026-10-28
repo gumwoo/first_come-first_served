@@ -18,7 +18,7 @@ const MAX_POST_S = 30;    // 분석 구간 끝의 상한. api 지표 수집기�
 // 평소 중앙값은 약 2ms다(IMP-043 probe2·4). PostgreSQL WAL 동기화 시간은 DB가 CPU를 못 받을 때도 부풀어 기준으로 쓰지 않는다.
 const DISK_PROBE_LIMIT_MS = 10;
 // 꼬리(p95)도 본다. eval5 72회의 구간 p95는 65ms 이하(33회)와 108ms 이상(39회)으로 갈렸고, 108ms 이상 run에 AI 오답과
-// 정상 오탐이 몰렸다(IMP-052 §5.4). 같은 run의 예매 전 구간에도 꼬리 지연이 있어 예매 부하가 아닌 측정 환경 잡음으로 본다(IMP-053).
+// 정상 오탐이 몰렸다(IMP-052 §5.4). 예매 전 구간 p95 100ms 이상도 34회로 분석 구간(39회)과 비슷해 측정 환경 잡음으로 본다(추론, IMP-053).
 const DISK_PROBE_P95_LIMIT_MS = 100;
 const QUEUE_STEPS = new Set(["queue_entry", "queue_status"]);
 

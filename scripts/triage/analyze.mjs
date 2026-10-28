@@ -9,12 +9,16 @@
 // - 설정 변경·조치를 실행하거나 지시하지 않는다. 후보와 근거, 확인할 항목만 낸다(ADR-029).
 //
 // 키는 환경변수 ANTHROPIC_API_KEY로만 받는다. 모델은 TRIAGE_MODEL(기본 claude-haiku-5-5).
-// 구간 집계 수치 약 35개와 초 단위 시계열(표본 8~17개)을 읽고 원인 3범주 중 고르는 일이라 Haiku를 기본으로 둔다.
+// 구간 집계 수치 약 35개와 초 단위 시계열(표본 8~17개)을 읽고 의심 원인 순위를 내는 일이라 Haiku를 기본으로 둔다.
 // 수치를 잘못 옮기면 verify.mjs가 걸러 판단 불가가 된다.
+//
+// v5 출력 형식: 이상이 있으면 의심 원인을 1~3개 순위로 반드시 낸다(근거가 약하면 conclusion=inconclusive, 확신도 low).
+// 알려진 세 범주에 맞지 않으면 other로 두고 원인 이름을 name에 직접 쓴다(IMP-051 §5.2: v4는 세 범주 밖 장애에서 후보를 비웠다).
 
-export const PROMPT_VERSION = "triage-prompt/v4";
+export const PROMPT_VERSION = "triage-prompt/v5";
 export const DEFAULT_MODEL = "claude-haiku-5-5";
 export const CAUSES = ["redis", "db", "app_cpu"];
+export const OTHER = "other";
 
 export const TOOL = {
   name: "report_diagnosis",
@@ -23,18 +27,22 @@ export const TOOL = {
   input_schema: {
     type: "object",
     additionalProperties: false,
-    required: ["verdict", "candidates", "evidence", "counter_evidence", "unchecked", "next_checks"],
+    required: ["verdict", "conclusion", "summary_line", "hypotheses", "evidence", "counter_evidence", "unchecked", "next_checks"],
     properties: {
-      verdict: { type: "string", enum: ["cause", "normal", "undetermined"], description: "cause: 원인 후보가 근거로 뒷받침됨, normal: 이상 없음, undetermined: 근거가 부족하거나 서로 모순됨" },
-      candidates: {
+      verdict: { type: "string", enum: ["anomaly", "normal"], description: "anomaly: 이상 있음, normal: 이상 없음" },
+      conclusion: { type: "string", enum: ["supported", "inconclusive"], description: "anomaly일 때 1순위 원인이 근거로 뒷받침되면 supported, 근거가 부족하거나 지표가 서로 모순되면 inconclusive. normal이면 supported" },
+      summary_line: { type: "string", description: "사람이 먼저 읽을 한 문장. anomaly면 1순위 의심 원인과 핵심 근거, normal이면 이상이 없다는 요지" },
+      hypotheses: {
         type: "array",
-        description: "원인 후보, 가능성이 높은 순. verdict가 cause가 아니면 빈 배열이어도 된다.",
+        description: "의심 원인, 가능성이 높은 순으로 1~3개. verdict가 anomaly면 비울 수 없다. normal이면 빈 배열.",
         items: {
-          type: "object", additionalProperties: false, required: ["cause", "confidence", "rationale"],
+          type: "object", additionalProperties: false, required: ["cause", "name", "confidence", "rationale", "confirm"],
           properties: {
-            cause: { type: "string", enum: CAUSES },
+            cause: { type: "string", enum: [...CAUSES, OTHER], description: "알려진 범주. 어느 범주에도 맞지 않으면 other" },
+            name: { type: "string", description: "의심 원인을 한 줄로. other면 원인 이름을 직접 쓴다" },
             confidence: { type: "string", enum: ["high", "medium", "low"] },
-            rationale: { type: "string" },
+            rationale: { type: "string", description: "이 원인을 의심하는 이유" },
+            confirm: { type: "string", description: "이 원인이 맞다면 추가로 확인될 것(확정하는 방법)" },
           },
         },
       },
@@ -52,7 +60,7 @@ export const TOOL = {
       },
       counter_evidence: {
         type: "array",
-        description: "1순위 후보와 맞지 않는 관측. 없으면 빈 배열.",
+        description: "1순위 의심 원인과 맞지 않는 관측. 없으면 빈 배열.",
         items: {
           type: "object", additionalProperties: false, required: ["claim", "field", "value"],
           properties: { claim: { type: "string" }, field: { type: "string" }, value: { type: "number" } },
@@ -68,14 +76,18 @@ export const SYSTEM = `너는 부하 테스트 결과의 초기 원인 분석을
 답은 반드시 report_diagnosis 도구를 한 번 호출해 낸다. 도구 밖에 따로 글을 쓰지 않는다.
 입력은 입장자 100명이 같은 순간 예매(좌석 선점·주문·결제)를 시작한 run 하나의 요약 JSON이다.
 구성: Spring Boot api 1개(HikariCP 풀 5, Tomcat), PostgreSQL, Redis(입장 검증·토큰 블랙리스트·좌석 알림 발행).
-원인 범주는 세 가지다: redis(Redis 응답 지연), db(PostgreSQL 쿼리 지연), app_cpu(api 컨테이너 CPU 부족).
+알려진 원인 범주는 세 가지다: redis(Redis 응답 지연), db(PostgreSQL 쿼리 지연), app_cpu(api 컨테이너 CPU 부족).
+어느 범주에도 맞지 않는 원인은 other로 두고 원인 이름을 name에 직접 쓴다.
 
 규칙
 - 입력 JSON에 있는 수치만 쓴다. 근거마다 필드 경로와 값을 그대로 단다. 계산한 값을 새로 만들지 않는다.
 - 근거에는 숫자 필드만 쓴다(validity 같은 참·거짓 필드는 근거로 쓰지 않는다).
 - 예매 지연이 크지 않고 오류가 없으면 normal로 답한다.
-- 지표가 서로 모순되거나 어느 범주도 뒷받침되지 않으면 undetermined로 답한다. 억지로 고르지 않는다.
-- 1순위 후보와 맞지 않는 관측이 있으면 counter_evidence에 적는다.
+- 이상이 있으면(anomaly) 가장 의심되는 원인부터 1~3개를 hypotheses에 반드시 적는다. 세 범주에 억지로 맞추지 않는다.
+- 근거가 부족하거나 지표가 서로 모순되면 conclusion을 inconclusive로 두고 확신도를 낮게 적는다. 이때도 의심 원인은 적는다.
+- 의심 원인마다 그 원인이 맞다면 추가로 확인될 것을 confirm에 적는다.
+- summary_line에는 사람이 먼저 읽을 한 문장을 쓴다.
+- 1순위 의심 원인과 맞지 않는 관측이 있으면 counter_evidence에 적는다.
 - 설정 변경을 지시하지 말고, 확인할 지표나 실험만 next_checks에 적는다.
 
 필드 뜻

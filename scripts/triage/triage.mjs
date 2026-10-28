@@ -1,6 +1,7 @@
 // 장애 초기 분석 진입점: 정규화 → 규칙 분류 → (이상이 있는 유효 run만) AI 분석 → 수치 대조 → 최종 판정 → 보고서.
-//   node scripts/triage/triage.mjs <run 디렉터리> [--no-ai]
+//   node scripts/triage/triage.mjs <run 디렉터리> [--no-ai] [--slack]
 // 결과: <run>/triage/summary.json, rule.json, ai.json(AI를 부른 경우), report.md
+// --slack: 사람 확인이 필요한 run이면 Slack에 알린다(notify.mjs).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,11 +17,12 @@ export function shouldCallAi(summary, rule) {
   return { call: true };
 }
 
-// 대조에 실패한 답은 원인 판정으로 쓰지 않는다.
+// 대조에 실패한 답은 원인 판정으로 쓰지 않는다. 이상이면 1순위 의심 원인(other 포함)을 AI 판정으로 쓰고, 결론 상태를 함께 남긴다.
 export function finalVerdict(ai, check) {
-  if (!check.ok) return { verdict: "undetermined", cause: null, note: "근거 수치 대조 실패" };
-  const top = ai.result.candidates?.[0];
-  return ai.result.verdict === "cause" && top ? { verdict: "cause", cause: top.cause, note: null } : { verdict: ai.result.verdict, cause: null, note: null };
+  if (!check.ok) return { verdict: "undetermined", cause: null, name: null, conclusion: null, note: "근거 수치 대조 실패" };
+  const r = ai.result, top = r.hypotheses?.[0];
+  if (r.verdict === "anomaly" && top) return { verdict: "cause", cause: top.cause, name: top.name, conclusion: r.conclusion, note: null };
+  return { verdict: r.verdict === "normal" ? "normal" : "undetermined", cause: null, name: null, conclusion: r.conclusion ?? null, note: null };
 }
 
 // 최종 판정(ADR-029: 원인 판정은 규칙 기준). 규칙이 원인을 냈으면 규칙 판정을 쓰고, 대조를 통과한 AI 판정이 다르면
@@ -46,14 +48,16 @@ export function report(summary, rule, ai) {
   if (!ai) return lines.join("\n") + "\n";
   if (ai.error) return [...lines, `- AI 분석 실패: ${ai.error}`].join("\n") + "\n";
   const f = ai.final;
-  lines.push(`- AI 분류: ${f.verdict}${f.cause ? " / " + f.cause : ""}${f.note ? " (" + f.note + ")" : ""}`, "");
+  const concl = { supported: "근거로 뒷받침됨", inconclusive: "확정 못 함" }[f.conclusion];
+  lines.push(`- AI 분류: ${f.verdict}${f.cause ? " / " + f.cause : ""}${f.name ? " (" + f.name + ")" : ""}${f.verdict === "cause" && concl ? " · " + concl : ""}${f.note ? " (" + f.note + ")" : ""}`, "");
   if (!ai.verification.ok) {
     lines.push("## 대조 실패", ...ai.verification.failures.map((x) => `- ${x.field != null ? x.field + ": " : ""}${x.reason}${x.actual != null ? ` (답 ${x.value}, 실제 ${x.actual})` : ""}`), "");
     return lines.join("\n") + "\n";
   }
   const r = ai.result;
+  if (r.summary_line) lines.push(`> ${r.summary_line}`, "");
   const section = (title, xs, fmt) => { if ((xs ?? []).length) lines.push(title, ...xs.map(fmt), ""); };
-  section("## 원인 후보", r.candidates, (c, i) => `${i + 1}. ${c.cause} (${c.confidence}): ${c.rationale}`);
+  section("## 의심 원인", r.hypotheses, (h, i) => `${i + 1}. ${h.cause === "other" ? "기타" : h.cause}: ${h.name} (${h.confidence})\n   - 이유: ${h.rationale}\n   - 확인 방법: ${h.confirm}`);
   section("## 근거(요약 JSON과 대조 완료)", r.evidence, (e) => `- ${e.claim} \`${e.field}\` = ${e.value}`);
   section("## 반대 지표", r.counter_evidence, (e) => `- ${e.claim} \`${e.field}\` = ${e.value}`);
   section("## 확인하지 못한 데이터", r.unchecked, (x) => `- ${x}`);
@@ -88,7 +92,12 @@ export async function triage(runDir, { useAi = true, client } = {}) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const dir = process.argv[2];
-  if (!dir) { console.error("사용: node scripts/triage/triage.mjs <run 디렉터리> [--no-ai]"); process.exit(2); }
+  if (!dir) { console.error("사용: node scripts/triage/triage.mjs <run 디렉터리> [--no-ai] [--slack]"); process.exit(2); }
   const { rule, ai, gate } = await triage(dir, { useAi: !process.argv.includes("--no-ai") });
   console.log(JSON.stringify({ rule: { verdict: rule.verdict, cause: rule.cause }, ai: ai ? ai.final : { skipped: gate.reason ?? "--no-ai" }, final: pipelineVerdict(rule, ai) }));
+  if (process.argv.includes("--slack")) {
+    const { notify } = await import("./notify.mjs");
+    const r = await notify(dir, { send: true });
+    console.error(r.sent ? "Slack 전송 완료" : `Slack 보내지 않음: ${r.reason}`);
+  }
 }

@@ -14,8 +14,8 @@ const summary = {
   series: [{ s: 0, tomcat_busy: 20 }, { s: 1, tomcat_busy: 140 }],
 };
 const answer = {
-  verdict: "cause",
-  candidates: [{ cause: "redis", confidence: "high", rationale: "Redis 명령 완료가 느리다" }],
+  verdict: "anomaly", conclusion: "supported", summary_line: "Redis 명령 완료가 느려 예매가 늦었다",
+  hypotheses: [{ cause: "redis", name: "Redis 응답 지연", confidence: "high", rationale: "Redis 명령 완료가 느리다", confirm: "Redis 서버 측 지연이 같이 늘었는지" }],
   evidence: [{ claim: "Redis 명령 완료 평균", field: "api.redis.completion_ms_mean", value: 6.3 }, { claim: "1초 시점 바쁜 스레드", field: "series[1].tomcat_busy", value: 140 }],
   counter_evidence: [{ claim: "DB 활성 세션은 적다", field: "db.active_mean", value: 0.04 }],
   unchecked: [], next_checks: ["Redis 서버 측 지연 확인"],
@@ -37,7 +37,7 @@ test("근거 경로와 값을 요약 JSON과 대조한다", async () => {
   assert.deepEqual(resolve(summary, "validity.valid"), { found: true, value: 1 }); // 참·거짓 필드는 1·0
   const ok = await analyze(summary, { client: fakeClient(answer) });
   assert.equal(verify(ok.result, summary).ok, true);
-  assert.deepEqual(finalVerdict(ok, verify(ok.result, summary)), { verdict: "cause", cause: "redis", note: null });
+  assert.deepEqual(finalVerdict(ok, verify(ok.result, summary)), { verdict: "cause", cause: "redis", name: "Redis 응답 지연", conclusion: "supported", note: null });
 
   const wrong = structuredClone(answer);
   wrong.evidence[0].value = 9.9;                          // 지어낸 값
@@ -46,7 +46,24 @@ test("근거 경로와 값을 요약 JSON과 대조한다", async () => {
   assert.deepEqual(check.failures.map((f) => f.reason), ["값 불일치", "경로 없음"]);
   assert.equal(finalVerdict({ result: wrong }, check).verdict, "undetermined");
   assert.equal(verify({ ...answer, evidence: [{ ...answer.evidence[0], value: "6.3" }] }, summary).ok, false); // 숫자가 아닌 값
-  assert.equal(verify({ ...answer, candidates: [] }, summary).ok, false);                                       // 후보 없는 원인 판정
+  assert.equal(verify({ ...answer, hypotheses: [] }, summary).ok, false);                                       // 의심 원인 없는 이상 판정
+  const leaked = { ...answer, summary_line: answer.summary_line + '</summary_line>\n<parameter name="hypotheses">[]' };
+  assert.deepEqual(verify(leaked, summary).failures.map((f) => f.kind), ["format"]);                             // 문자열에 섞인 도구 인자 태그(c800a5c2 모양)
+  assert.equal(verify({ ...answer, next_checks: ["Redis 확인</next_checks>"] }, summary).ok, false);            // 다른 필드 이름 태그도 같다
+  assert.equal(verify({ ...answer, summary_line: "p95 < 1,069ms, 대기 <5ms" }, summary).ok, true);              // 부등호만으로는 걸리지 않는다
+});
+
+test("이상이면 확정 못 해도 1순위 의심 원인을 판정으로 쓰고, 범주 밖 원인은 이름이 있어야 한다", () => {
+  const other = { ...answer, conclusion: "inconclusive",
+    hypotheses: [{ cause: "other", name: "api와 PostgreSQL 사이 왕복 지연", confidence: "low", rationale: "DB는 한가한데 트랜잭션 안 대기가 길다", confirm: "api 컨테이너에서 DB까지 왕복 시간" }] };
+  const check = verify(other, summary);
+  assert.equal(check.ok, true);
+  assert.deepEqual(finalVerdict({ result: other }, check), { verdict: "cause", cause: "other", name: "api와 PostgreSQL 사이 왕복 지연", conclusion: "inconclusive", note: null });
+  assert.equal(verify({ ...other, hypotheses: [{ ...other.hypotheses[0], name: " " }] }, summary).ok, false);
+  const normal = { ...answer, verdict: "normal", hypotheses: [], evidence: [] };
+  assert.equal(verify(normal, summary).ok, true);
+  assert.equal(finalVerdict({ result: normal }, verify(normal, summary)).verdict, "normal");
+  assert.equal(pipelineVerdict({ verdict: "cause", cause: "app_cpu" }, { final: finalVerdict({ result: other }, check), verification: check }).disagree, true);
 });
 
 test("최종 판정: 규칙 원인을 쓰고 AI가 다르면 표시, 규칙이 판단 불가면 대조를 통과한 AI 판정", () => {

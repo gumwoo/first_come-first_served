@@ -8,6 +8,7 @@ test("판정을 범주 코드로 바꾼다", () => {
   assert.equal(label({ verdict: "cause", cause: "db" }), "db");
   assert.equal(label({ verdict: "normal", cause: null }), "normal");
   assert.equal(label({ verdict: "undetermined", cause: null }), "undetermined");
+  assert.equal(label({ verdict: "cause", cause: "other", name: "왕복 지연" }), "other");
 });
 
 test("장애 정답·판단 불가, 정상 오탐을 따로 센다", () => {

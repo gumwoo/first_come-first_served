@@ -47,6 +47,8 @@ test("근거 경로와 값을 요약 JSON과 대조한다", async () => {
   assert.equal(finalVerdict({ result: wrong }, check).verdict, "undetermined");
   assert.equal(verify({ ...answer, evidence: [{ ...answer.evidence[0], value: "6.3" }] }, summary).ok, false); // 숫자가 아닌 값
   assert.equal(verify({ ...answer, hypotheses: [] }, summary).ok, false);                                       // 의심 원인 없는 이상 판정
+  const leaked = { ...answer, summary_line: answer.summary_line + '</summary_line>\n<parameter name="hypotheses">[]' };
+  assert.deepEqual(verify(leaked, summary).failures.map((f) => f.kind), ["format"]);                             // 문자열에 섞인 도구 인자 태그(c800a5c2 모양)
 });
 
 test("이상이면 확정 못 해도 1순위 의심 원인을 판정으로 쓰고, 범주 밖 원인은 이름이 있어야 한다", () => {

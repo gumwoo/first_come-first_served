@@ -1,6 +1,7 @@
 // 장애 초기 분석 진입점: 정규화 → 규칙 분류 → (이상이 있는 유효 run만) AI 분석 → 수치 대조 → 최종 판정 → 보고서.
-//   node scripts/triage/triage.mjs <run 디렉터리> [--no-ai]
+//   node scripts/triage/triage.mjs <run 디렉터리> [--no-ai] [--slack]
 // 결과: <run>/triage/summary.json, rule.json, ai.json(AI를 부른 경우), report.md
+// --slack: 사람 확인이 필요한 run이면 Slack에 알린다(notify.mjs).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,7 +92,12 @@ export async function triage(runDir, { useAi = true, client } = {}) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const dir = process.argv[2];
-  if (!dir) { console.error("사용: node scripts/triage/triage.mjs <run 디렉터리> [--no-ai]"); process.exit(2); }
+  if (!dir) { console.error("사용: node scripts/triage/triage.mjs <run 디렉터리> [--no-ai] [--slack]"); process.exit(2); }
   const { rule, ai, gate } = await triage(dir, { useAi: !process.argv.includes("--no-ai") });
   console.log(JSON.stringify({ rule: { verdict: rule.verdict, cause: rule.cause }, ai: ai ? ai.final : { skipped: gate.reason ?? "--no-ai" }, final: pipelineVerdict(rule, ai) }));
+  if (process.argv.includes("--slack")) {
+    const { notify } = await import("./notify.mjs");
+    const r = await notify(dir, { send: true });
+    console.error(r.sent ? "Slack 전송 완료" : `Slack 보내지 않음: ${r.reason}`);
+  }
 }

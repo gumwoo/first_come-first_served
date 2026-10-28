@@ -42,5 +42,7 @@ export function verify(result, summary) {
   for (const h of result.hypotheses ?? []) {
     if (h.cause === "other" && !String(h.name ?? "").trim()) failures.push({ kind: "hypotheses", reason: "other 원인에 이름이 없다" });
   }
+  // 모델이 다음 필드를 문자열 안에 태그째 써 넣는 경우가 있다(eval5 72회 중 3회, 의심 원인이 요약 안에 들어가 비기도 했다).
+  if (/<\/?(parameter|summary_line|hypotheses)\b/.test(JSON.stringify(result))) failures.push({ kind: "format", reason: "답 문자열에 도구 인자 태그가 섞였다" });
   return { ok: failures.length === 0, checked: items.length, failures };
 }

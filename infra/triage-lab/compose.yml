@@ -50,7 +50,7 @@ services:
   api:
     <<: *app
     cpuset: "${LAB_API_CPUS:-2,3}"
-    ports: ["18080:8080"]
+    ports: ["${LAB_API_PORT:-18080}:8080"]
 
   # 대기열 전용(운영 구조 B와 같은 이미지, 풀 3). 진입·상태 조회만 받는다.
   queue:
@@ -59,4 +59,4 @@ services:
     environment:
       <<: *env
       DB_POOL_MAX: "3"
-    ports: ["18081:8080"]
+    ports: ["${LAB_QUEUE_PORT:-18081}:8080"]

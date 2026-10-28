@@ -49,7 +49,7 @@ psqlx() {
 }
 
 wait_health() {
-  for port in 18080 18081; do
+  for port in "${LAB_API_PORT:-18080}" "${LAB_QUEUE_PORT:-18081}"; do # 다른 컨테이너가 쓰고 있으면 환경변수로 바꾼다
     for _ in $(seq 1 90); do curl -fs "localhost:$port/actuator/health" >/dev/null 2>&1 && break; sleep 2; done
     curl -fs "localhost:$port/actuator/health" >/dev/null || { echo "포트 $port 기동 실패" >&2; exit 1; }
   done

@@ -32,7 +32,12 @@ bash infra/triage-lab/lab.sh down
 | redis | Redis 컨테이너 네트워크 지연(`tc netem`, netshoot 보조 컨테이너) | 30 / 60ms | Redis 명령 완료 지연, Tomcat 바쁜 스레드 증가 |
 | db | PostgreSQL 컨테이너 CPU 할당량 | 0.05 / 0.03코어 | PostgreSQL 활성 세션 증가, 커넥션 점유·획득 대기 증가 |
 | cpu | 예매 api 컨테이너 CPU 할당량 | 0.4 / 0.25코어 | 커넥션을 쥔 스레드가 CPU를 못 받아 점유 증가, 지표 응답 지연 |
+| dbnet | PostgreSQL 컨테이너 네트워크 지연(`tc netem`) | 3 / 10ms | DB는 한가한데 쿼리 왕복마다 늦음. 트랜잭션 내 유휴 세션·커넥션 점유 증가 |
 | none | 주입 없음 | | 대조군 |
+
+dbnet은 규칙 분류기의 갈래를 만들 때 없던 장애다. 규칙이 모르는 장애에서 규칙·AI가 어떻게 답하는지 보려고 둔다([IMP-051](../../docs/improvements/IMP-051-triage-eval-out-of-rules.md)).
+측정용 psql도 같은 네트워크로 접속하므로 PostgreSQL 지표 표본의 응답도 같이 늦는다.
+강도는 개발 run(2026-10-28, `artifacts/triage-lab/dev-v5/`)으로 정했다: 3ms에서 예매 p95 중앙값 2,352ms, 10ms에서 3,050ms(같은 시기 대조군 1,162ms). 두 run 모두 규칙은 커넥션 점유 갈래로 app_cpu였다.
 
 할당량 해제는 `--cpus`를 고정 코어 수로 되돌리는 방식이다. `docker update --cpus 0`은 제한을 풀지 않는다.
 

@@ -14,8 +14,10 @@
 //
 // v5 출력 형식: 이상이 있으면 의심 원인을 1~3개 순위로 반드시 낸다(근거가 약하면 conclusion=inconclusive, 확신도 low).
 // 알려진 세 범주에 맞지 않으면 other로 두고 원인 이름을 name에 직접 쓴다(IMP-051 §5.2: v4는 세 범주 밖 장애에서 후보를 비웠다).
+// v6: idle_in_tx_mean 설명에서 "앱 쪽 작업을 기다리는"을 빼고 PostgreSQL 상태 정의만 둔다. 다음 명령을 기다리는 시간에는
+// 앱 처리와 앱–DB 왕복이 모두 들어가는데, 설명이 앱 쪽만 가리켜 의심 원인을 앱으로 이끌었을 수 있다(IMP-052 §7, 추측).
 
-export const PROMPT_VERSION = "triage-prompt/v5";
+export const PROMPT_VERSION = "triage-prompt/v6";
 export const DEFAULT_MODEL = "claude-haiku-5-5";
 export const CAUSES = ["redis", "db", "app_cpu"];
 export const OTHER = "other";
@@ -101,7 +103,7 @@ export const SYSTEM = `너는 부하 테스트 결과의 초기 원인 분석을
   점유 평균은 Redis를 부르지 않는 주문·결제의 커넥션 사용까지 합친 평균이다. Redis 지연과 크기를 직접 비교하지 말고 정상 기준 대비 얼마나 늘었는지 본다
 - api.redis.completion_ms_mean: Redis 명령 완료 평균(ms)
 - api.scrape_rtt_ms_max: 지표 응답 최대(ms). 앱이 CPU를 못 받으면 함께 늘어난다
-- db.active_mean: PostgreSQL에서 실행 중인 세션 평균, db.idle_in_tx_mean: 트랜잭션 안에서 앱 쪽 작업을 기다리는 세션 평균
+- db.active_mean: PostgreSQL에서 실행 중인 세션 평균, db.idle_in_tx_mean: 트랜잭션을 연 채 다음 명령을 기다리는 세션 평균(PostgreSQL state idle in transaction)
 - db.active_wait_events: 실행 중 세션의 대기 이벤트 표본 수(CPU는 대기 없이 실행 중)
 - db.wal_sync_ms_per_op: WAL 동기화 1회 평균(ms), db.wal_window_s: 그 측정 구간(예매 시작 기준 초)
 - disk: 측정 대상과 분리된 디스크 프로브(측정 환경 판정용, 이미 유효로 판정된 run만 들어온다)

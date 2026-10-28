@@ -18,6 +18,8 @@ export function shouldNotify(rule, ai) {
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const num = (x) => Number(x).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const ms = (x) => num(x >= 100 ? Math.round(x) : x); // 100ms 이상은 소수점이 읽는 데 도움이 안 된다
+// Slack 굵게(*…*). 한글이 바로 붙으면 굵게 처리되지 않을 수 있어 앞뒤에 폭 없는 공백(U+200B)을 둔다.
+export const bold = (s) => `​*${String(s).replace(/\*/g, "")}*​`;
 // AI 확인 방법은 여러 문장이라 첫 문장만 쓴다.
 export function firstSentence(s) {
   const t = String(s ?? "").trim().split(/(?<=[.;])\s+/)[0].replace(/[.;]$/, "");
@@ -30,13 +32,14 @@ export function softEnding(s) {
 
 // 규칙이 어느 갈래로 원인을 냈는지 사람 말로 푼다(rules.mjs classify의 갈래 순서와 같다).
 function ruleSentence(s, rule, t = THRESHOLDS) {
-  if (rule.cause === "redis") return `규칙으로는 Redis 지연으로 나와요. Redis 명령 완료가 평균 ${ms(s.api.redis.completion_ms_mean)}ms였거든요.`;
-  if (rule.cause === "db") return `규칙으로는 DB 쪽으로 나와요. PostgreSQL 활성 세션이 평균 ${num(s.db.active_mean)}로 평소보다 많았거든요.`;
+  if (rule.cause === "redis") return `규칙으로는 ${bold("Redis 지연")}으로 나와요. Redis 명령 완료가 평균 ${bold(ms(s.api.redis.completion_ms_mean) + "ms")}였거든요.`;
+  if (rule.cause === "db") return `규칙으로는 ${bold("DB 쪽")}으로 나와요. PostgreSQL 활성 세션이 평균 ${bold(num(s.db.active_mean))}로 평소보다 많았거든요.`;
+  const cpu = `규칙으로는 ${bold("앱 CPU 부족")}으로 나와요.`;
   const thr = s.api.cgroup?.throttled_period_ratio;
-  if (thr != null && thr > t.app_throttled_ratio) return `규칙으로는 앱 CPU 부족으로 나와요. api가 CPU 할당량에 막힌 주기가 ${Math.round(thr * 100)}%였거든요.`;
+  if (thr != null && thr > t.app_throttled_ratio) return `${cpu} api가 CPU 할당량에 막힌 주기가 ${bold(Math.round(thr * 100) + "%")}였거든요.`;
   const usage = s.api.hikari.usage_ms_mean;
-  if (usage != null) return `규칙으로는 앱 CPU 부족으로 나와요. 커넥션을 한 번 잡으면 평균 ${ms(usage)}ms씩 쥐고 있었는데, Redis랑 DB 수치는 괜찮았거든요.`;
-  return `규칙으로는 앱 CPU 부족으로 나와요. api 지표 응답이 최대 ${ms(s.api.scrape_rtt_ms_max)}ms까지 늦었는데, Redis랑 DB 수치는 괜찮았거든요.`;
+  if (usage != null) return `${cpu} 커넥션을 한 번 잡으면 평균 ${bold(ms(usage) + "ms")}씩 쥐고 있었는데, Redis랑 DB 수치는 괜찮았거든요.`;
+  return `${cpu} api 지표 응답이 최대 ${bold(ms(s.api.scrape_rtt_ms_max) + "ms")}까지 늦었는데, Redis랑 DB 수치는 괜찮았거든요.`;
 }
 
 // 기존 Alertmanager 웹훅을 같이 쓰므로 머리말로 자동 분석 메시지임을 구분한다.
@@ -47,16 +50,16 @@ export function slackText(runId, summary, rule, ai) {
   const lines = [];
   // CPU 할당량 갈래는 예매 p95가 이상 기준 아래여도 원인을 낸다(rules.mjs). 그때는 느려졌다고 쓰지 않는다.
   const slow = b.http5xx > 0 || b.p95_median_ms > THRESHOLDS.anomaly_p95_median_ms;
-  let first = `${PREFIX} `;
-  first += slow ? `${runId} run에서 예매가 느려졌어요. p95가 ${ms(b.p95_median_ms)}ms까지 올라갔고` : `${runId} run은 예매 p95가 ${ms(b.p95_median_ms)}ms라 아직 느리진 않은데`;
-  first += acq != null ? `, 커넥션 하나 받는 데 평균 ${ms(acq)}ms 기다렸어요.` : slow ? "요." : " 눈여겨볼 수치가 있어요.";
-  if (b.http5xx > 0) first += ` 5xx도 ${num(b.http5xx)}건 났어요.`;
+  const p95 = bold(ms(b.p95_median_ms) + "ms");
+  let first = slow ? `${bold(`${PREFIX} ${runId}`)} run에서 예매가 느려졌어요. p95가 ${p95}까지 올라갔고` : `${bold(`${PREFIX} ${runId}`)} run은 예매 p95가 ${p95}라 아직 느리진 않은데`;
+  first += acq != null ? `, 커넥션 하나 받는 데 평균 ${bold(ms(acq) + "ms")} 기다렸어요.` : slow ? "요." : " 눈여겨볼 수치가 있어요.";
+  if (b.http5xx > 0) first += ` 5xx도 ${bold(num(b.http5xx) + "건")} 났어요.`;
   lines.push(esc(first), esc(ruleSentence(summary, rule)));
   const r = ai.result, [h1, h2] = r.hypotheses ?? [];
   if (r.verdict === "normal" || !h1) {
-    lines.push("그런데 AI는 이상 없는 run으로 봤어요. 규칙 판정이 맞는지 한번 봐주시면 좋겠어요.");
+    lines.push(`그런데 AI는 ${bold("이상 없는 run")}으로 봤어요. 규칙 판정이 맞는지 한번 봐주시면 좋겠어요.`);
   } else {
-    let ask = `그런데 AI는 "${esc(h1.name)}" 쪽을 더 의심하고 있어서 한번 봐주시면 좋겠어요.`;
+    let ask = `그런데 AI는 ${bold(`"${esc(h1.name)}"`)} 쪽을 더 의심하고 있어서 한번 봐주시면 좋겠어요.`;
     if (h1.confidence === "low" || r.conclusion === "inconclusive") ask += " AI도 확정은 못 했대요.";
     lines.push(ask);
     lines.push(`• ${esc(softEnding(firstSentence(h1.confirm)))}`);

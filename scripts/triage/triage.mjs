@@ -1,4 +1,4 @@
-// 장애 초기 분석 진입점: 정규화 → 규칙 분류 → (이상이 있는 유효 run만) AI 분석 → 수치 대조 → 보고서.
+// 장애 초기 분석 진입점: 정규화 → 규칙 분류 → (이상이 있는 유효 run만) AI 분석 → 수치 대조 → 최종 판정 → 보고서.
 //   node scripts/triage/triage.mjs <run 디렉터리> [--no-ai]
 // 결과: <run>/triage/summary.json, rule.json, ai.json(AI를 부른 경우), report.md
 import fs from "node:fs";
@@ -23,11 +23,26 @@ export function finalVerdict(ai, check) {
   return ai.result.verdict === "cause" && top ? { verdict: "cause", cause: top.cause, note: null } : { verdict: ai.result.verdict, cause: null, note: null };
 }
 
+// 최종 판정(ADR-029: 원인 판정은 규칙 기준). 규칙이 원인을 냈으면 규칙 판정을 쓰고, 대조를 통과한 AI 판정이 다르면
+// 사람이 확인하도록 표시한다. 규칙이 이상은 보았지만 어느 갈래에도 해당하지 않으면(판단 불가) 대조를 통과한 AI 판정을 쓴다.
+export function pipelineVerdict(rule, ai) {
+  if (rule.verdict === "normal") return { verdict: "normal", cause: null, source: "rule", disagree: false };
+  const f = ai?.final ?? { verdict: "undetermined", cause: null };
+  const checked = !!ai && !ai.error && ai.verification?.ok === true; // 대조를 통과한 AI 답만 판정·표시에 쓴다
+  if (rule.verdict === "cause") {
+    const disagree = checked && !(f.verdict === "cause" && f.cause === rule.cause);
+    return { verdict: "cause", cause: rule.cause, source: "rule", disagree };
+  }
+  return checked ? { verdict: f.verdict, cause: f.cause, source: "ai", disagree: false } : { verdict: "undetermined", cause: null, source: "rule", disagree: false };
+}
+
 export function report(summary, rule, ai) {
   const lines = ["# 초기 원인 분석", ""];
   lines.push(`- 측정 유효: ${summary.validity.valid ? "예" : "아니오(" + summary.validity.reasons.join(", ") + ")"}`);
   lines.push(`- 예매 p95(세 단계 중앙값): ${summary.booking.p95_median_ms}ms, 5xx ${summary.booking.http5xx}건`);
   lines.push(`- 규칙 분류: ${rule.verdict}${rule.cause ? " / " + rule.cause : ""} (${rule.reasons.join("; ")})`);
+  const p = pipelineVerdict(rule, ai);
+  lines.push(`- 최종 판정: ${p.verdict}${p.cause ? " / " + p.cause : ""} (${p.source === "rule" ? "규칙" : "AI"})${p.disagree ? " · 규칙과 AI 판정이 달라 사람이 확인한다" : ""}`);
   if (!ai) return lines.join("\n") + "\n";
   if (ai.error) return [...lines, `- AI 분석 실패: ${ai.error}`].join("\n") + "\n";
   const f = ai.final;
@@ -75,5 +90,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const dir = process.argv[2];
   if (!dir) { console.error("사용: node scripts/triage/triage.mjs <run 디렉터리> [--no-ai]"); process.exit(2); }
   const { rule, ai, gate } = await triage(dir, { useAi: !process.argv.includes("--no-ai") });
-  console.log(JSON.stringify({ rule: { verdict: rule.verdict, cause: rule.cause }, ai: ai ? ai.final : { skipped: gate.reason ?? "--no-ai" } }));
+  console.log(JSON.stringify({ rule: { verdict: rule.verdict, cause: rule.cause }, ai: ai ? ai.final : { skipped: gate.reason ?? "--no-ai" }, final: pipelineVerdict(rule, ai) }));
 }

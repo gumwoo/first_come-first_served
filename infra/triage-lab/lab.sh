@@ -7,10 +7,12 @@
 #   bash infra/triage-lab/lab.sh clear              # 남은 주입 해제
 #   bash infra/triage-lab/lab.sh down               # 실험실 종료(볼륨 포함)
 #
-# fault: none | redis | db | cpu, 강도 1(약)·2(강)
+# fault: none | redis | db | cpu | dbnet, 강도 1(약)·2(강)
 #   redis  Redis 컨테이너에 네트워크 지연(netem): 명령마다 응답이 늦는 상태
 #   db     PostgreSQL 컨테이너 CPU 할당량 축소: DB가 CPU를 못 받아 쿼리가 느린 상태
 #   cpu    예매 api 컨테이너 CPU 할당량 축소: 앱 CPU가 모자란 상태
+#   dbnet  PostgreSQL 컨테이너에 네트워크 지연(netem): DB는 한가한데 쿼리 왕복마다 늦는 상태. 규칙 갈래를 만들 때 없던 장애다
+#          (규칙이 모르는 장애에서 규칙·AI가 어떻게 답하는지 보려고 둔다, IMP-051). 측정용 psql 응답도 같이 늦는다
 # 강도 근거는 infra/triage-lab/README.md "주입 확인".
 # 할당량 해제는 --cpus를 고정 코어 수로 되돌리는 방식이다(docker update --cpus 0은 제한을 풀지 않는다).
 #
@@ -54,32 +56,35 @@ wait_health() {
 }
 
 # 강도 1은 증상이 뚜렷한 수준, 2는 더 심한 수준이다.
-#   redis: 지연(ms) / db: PostgreSQL 할당 코어 / cpu: api 할당 코어
+#   redis: 지연(ms) / db: PostgreSQL 할당 코어 / cpu: api 할당 코어 / dbnet: PostgreSQL 네트워크 지연(ms)
 level_value() {
   case "$1:$2" in
     redis:1) echo 30 ;;   redis:2) echo 60 ;;
     db:1) echo 0.05 ;;    db:2) echo 0.03 ;;
     cpu:1) echo 0.4 ;;    cpu:2) echo 0.25 ;;
+    dbnet:1) echo 3 ;;    dbnet:2) echo 10 ;;
     *) echo "알 수 없는 주입: $1 강도 $2" >&2; exit 2 ;;
   esac
 }
 NETSHOOT=nicolaka/netshoot:v0.13
-netem() { MSYS_NO_PATHCONV=1 docker run --rm --net "container:$(cid redis)" --cap-add NET_ADMIN "$NETSHOOT" tc qdisc "$@"; }
+netem() { local svc=$1; shift; MSYS_NO_PATHCONV=1 docker run --rm --net "container:$(cid "$svc")" --cap-add NET_ADMIN "$NETSHOOT" tc qdisc "$@"; }
 
 inject() {
   local fault=$1 level=$2 v
   [ "$fault" = none ] && return 0
   v=$(level_value "$fault" "$level")
   case "$fault" in
-    redis) netem add dev eth0 root netem delay "${v}ms" ;;
+    redis) netem redis add dev eth0 root netem delay "${v}ms" ;;
     db) docker update --cpus "$v" "$(cid postgres)" >/dev/null ;;
     cpu) docker update --cpus "$v" "$(cid api)" >/dev/null ;;
-    *) echo "fault는 none|redis|db|cpu" >&2; exit 2 ;;
+    dbnet) netem postgres add dev eth0 root netem delay "${v}ms" ;;
+    *) echo "fault는 none|redis|db|cpu|dbnet" >&2; exit 2 ;;
   esac
 }
 
 clear_all() {
-  netem del dev eth0 root 2>/dev/null || true
+  netem redis del dev eth0 root 2>/dev/null || true
+  netem postgres del dev eth0 root 2>/dev/null || true
   docker update --cpus "$PG_N" "$(cid postgres)" >/dev/null
   docker update --cpus "$API_N" "$(cid api)" >/dev/null
 }
@@ -152,7 +157,7 @@ case "$cmd" in
     clear_all; trap - EXIT
     case "$fault" in
       none) value=null method=none ;;
-      redis) value="\"$(level_value redis "$level")ms\"" method=netem ;;
+      redis|dbnet) value="\"$(level_value "$fault" "$level")ms\"" method=netem ;;
       *) value="\"$(level_value "$fault" "$level") cpus\"" method=cpus ;;
     esac
     printf '{"id":"%s","fault":"%s","level":%s,"value":%s,"method":"%s","eventId":%s,"at":"%s"}\n' \

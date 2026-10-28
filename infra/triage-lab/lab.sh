@@ -56,7 +56,7 @@ wait_health() {
 }
 
 # 강도 1은 증상이 뚜렷한 수준, 2는 더 심한 수준이다.
-#   redis: 지연(ms) / db: PostgreSQL 할당 코어 / cpu: api 할당 코어
+#   redis: 지연(ms) / db: PostgreSQL 할당 코어 / cpu: api 할당 코어 / dbnet: PostgreSQL 네트워크 지연(ms)
 level_value() {
   case "$1:$2" in
     redis:1) echo 30 ;;   redis:2) echo 60 ;;

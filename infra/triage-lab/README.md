@@ -38,6 +38,7 @@ bash infra/triage-lab/lab.sh down
 dbnet은 규칙 분류기의 갈래를 만들 때 없던 장애다. 규칙이 모르는 장애에서 규칙·AI가 어떻게 답하는지 보려고 둔다([IMP-051](../../docs/improvements/IMP-051-triage-eval-out-of-rules.md)).
 측정용 psql도 같은 네트워크로 접속하므로 PostgreSQL 지표 표본의 응답도 같이 늦는다.
 강도는 개발 run(2026-10-28, `artifacts/triage-lab/dev-v5/`)으로 정했다: 3ms에서 예매 p95 중앙값 2,352ms, 10ms에서 3,050ms(같은 시기 대조군 1,162ms). 두 run 모두 규칙은 커넥션 점유 갈래로 app_cpu였다.
+평가 run(2026-10-28, 각 3회)에서는 3ms의 예매 p95 중앙값이 844~1,144ms로 이상 판단 기준(1,500ms) 아래였고, 10ms는 2,370~2,964ms였다.
 
 할당량 해제는 `--cpus`를 고정 코어 수로 되돌리는 방식이다. `docker update --cpus 0`은 제한을 풀지 않는다.
 

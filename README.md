@@ -90,6 +90,7 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 | 예매 순간 DB 풀을 늘리면 | 로컬, 디스크 지연 묶음을 걸러낸 교차 8묶음 | 4쌍 중 3쌍이 ±20% 안. 풀 8은 커넥션마다 점유가 길어져 처리량이 비슷함(계산) | 5 유지 ([IMP-042](docs/improvements/IMP-042-booking-db-pool-5-vs-8.md) · [IMP-043](docs/improvements/IMP-043-booking-burst-connection-wait-cause.md)) |
 | 장애 초기 원인 분석에 AI를 쓰면 | 로컬 장애 주입(Redis·DB·CPU, 정상), 규칙 분류기와 Claude Haiku 5.5를 같은 요약으로 채점 | 1차 23회: 장애 정답 규칙 13/17, AI 11/17(CPU 0/6). 요약에 CPU 할당량에 막힌 주기 비율을 넣은 2차 22회: 규칙 15/16, AI 16/16(CPU 6/6), 정상 오탐 규칙 0·AI 1. DB 지연 run 2회를 보완한 합산 24회: 규칙 17/18, AI 17/18. run당 처리 약 14초(중앙값), 호출당 약 $0.002 | 원인 판정은 규칙, AI는 근거·반대 지표·확인 항목 정리 ([IMP-044](docs/improvements/IMP-044-triage-rule-vs-ai-eval.md) · [IMP-045](docs/improvements/IMP-045-triage-eval-cpu-throttling.md) · [ADR-029](docs/decisions/ADR-029-ai-triage-boundary.md)) |
 | 규칙이 모르는 장애를 넣으면 | 로컬 30회(알려진 장애 18·정상 6·DB 네트워크 지연 6), 최종 판정은 규칙, AI 판정이 다르면 사람 확인 표시 | 알려진 장애는 규칙·AI 모두 18/18, 정상 오탐 0, 사람 확인 표시 0. DB 네트워크 지연 10ms 3회는 규칙이 앱 CPU로 판정했고, AI는 CPU 할당량 막힘이 0이고 DB 실행 세션은 적은데 트랜잭션 안 앱 대기가 크다는 근거를 들어 원인을 단정하지 않았고, 3회 모두 사람 확인으로 표시됨 | 규칙 기준 판정 + AI 교차 확인 채택 ([IMP-051](docs/improvements/IMP-051-triage-eval-out-of-rules.md) · [ADR-029](docs/decisions/ADR-029-ai-triage-boundary.md)) |
+| AI가 의심 원인과 확인 방법을 내게 하면 | 로컬 72회(알려진 장애 48·정상 12·DB 네트워크 지연 12), AI는 의심 원인 1~3순위와 이유·확인 방법을 냄 | 장애 정답 규칙 47/48, AI 40/48, 정상 오탐 각 1. DB 네트워크 지연에서 규칙이 원인을 낸 8회 중 5회 사람 확인 표시 | 규칙 기준 판정 유지, 규칙과 AI가 갈린 run만 Slack 알림 ([IMP-052](docs/improvements/IMP-052-triage-eval-hypotheses-slack.md) · [ADR-029](docs/decisions/ADR-029-ai-triage-boundary.md)) |
 
 고른 안인 대기열 평시·피크 모양 전환은 EKS에서 평시, 사전 확장, 오픈 부하, 되돌림을 한 세션 안에서 이어서 측정했습니다([IMP-050](docs/improvements/IMP-050-queue-peak-shape-cluster-verification.md)).
 
@@ -99,6 +100,10 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 </picture>
 
 <sub>출처: IMP-050 측정 세션의 Prometheus 내보내기. 데이터 [`imp050-qpeak-nodes.csv`](docs/assets/imp050-qpeak-nodes.csv), 생성 스크립트 [`qpeak-chart.py`](docs/assets/qpeak-chart.py)</sub>
+
+규칙과 AI의 판정이 갈린 run은 Slack으로 받습니다. 수치와 규칙 판정은 측정 요약 값을 그대로 넣고, AI가 의심하는 원인과 확인 방법을 붙입니다([IMP-052](docs/improvements/IMP-052-triage-eval-hypotheses-slack.md)).
+
+<img alt="DB 네트워크 지연을 넣은 run의 Slack 알림. 예매 p95 3,011ms와 커넥션 대기 평균 1,018ms, 규칙 판정 앱 CPU 부족과 근거, AI가 1순위로 의심한 좌석 행 잠금 경합과 확인 방법 두 줄이 표시된다." src="docs/assets/imp052-triage-slack.png">
 
 ### 정합성을 지키는 방법
 

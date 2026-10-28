@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # 장애 분석 도구용 로컬 실험실. 원인을 알고 주입한 예매 묶음 run을 만든다.
 #
 #   bash infra/triage-lab/lab.sh up                 # 이미지 빌드·기동·시드·토큰 발급·예열 1회(다시 실행해도 된다)

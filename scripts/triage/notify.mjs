@@ -25,9 +25,9 @@ export function firstSentence(s) {
   const t = String(s ?? "").trim().split(/(?<=[.;])\s+/)[0].replace(/[.;]$/, "");
   return t.length > 160 ? t.slice(0, 159) + "…" : t;
 }
-// AI 원문은 "확인한다"체라 메시지 본문(~요체)과 맞게 끝말만 바꾼다. 패턴에 없는 끝말은 그대로 둔다.
+// AI 원문은 "확인한다"체·명사형이 섞여 메시지 본문(~요체)과 맞게 끝말만 바꾼다. 패턴에 없는 끝말은 그대로 둔다.
 export function softEnding(s) {
-  return s.replace(/확인한다$/, "확인해 보기").replace(/본다$/, "보기").replace(/한다$/, "하기");
+  return s.replace(/해야 한다$/, "해야 해요").replace(/(확인|수집|대조|비교)(한다)?$/, "$1해 보기").replace(/본다$/, "보기").replace(/한다$/, "하기");
 }
 
 // 규칙이 어느 갈래로 원인을 냈는지 사람 말로 푼다(rules.mjs classify의 갈래 순서와 같다).
@@ -63,7 +63,7 @@ export function slackText(runId, summary, rule, ai) {
     if (h1.confidence === "low" || r.conclusion === "inconclusive") ask += " AI도 확정은 못 했대요.";
     lines.push(ask);
     lines.push(`• ${esc(softEnding(firstSentence(h1.confirm)))}`);
-    if (h2) lines.push(`• 아니면 "${esc(h2.name)}" 쪽: ${esc(softEnding(firstSentence(h2.confirm)))}`);
+    if (h2) lines.push(`• 아니면 "${esc(String(h2.name).replace(/\*/g, ""))}" 쪽: ${esc(softEnding(firstSentence(h2.confirm)))}`);
   }
   return lines.join("\n");
 }

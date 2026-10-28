@@ -55,8 +55,12 @@ test("확인 방법은 첫 문장만, 길면 자르고, 끝말은 본문 말투�
   assert.equal(firstSentence("가".repeat(200)).length, 160);
   assert.equal(softEnding("겹치는지 확인한다"), "겹치는지 확인해 보기");
   assert.equal(softEnding("일치하는지 본다"), "일치하는지 보기");
-  assert.equal(softEnding("시간대에 비교한다"), "시간대에 비교하기");
-  assert.equal(softEnding("대기 기록을 수집"), "대기 기록을 수집"); // 패턴 밖은 그대로
+  assert.equal(softEnding("시간대에 비교한다"), "시간대에 비교해 보기");
+  assert.equal(softEnding("대기 기록을 수집"), "대기 기록을 수집해 보기");     // 명사형 끝말
+  assert.equal(softEnding("정지 여부 확인"), "정지 여부 확인해 보기");
+  assert.equal(softEnding("먼저 재현해야 한다"), "먼저 재현해야 해요");
+  assert.equal(softEnding("시계열로 점검한다"), "시계열로 점검하기");
+  assert.equal(softEnding("pg_locks 대기 체인"), "pg_locks 대기 체인");         // 패턴 밖은 그대로
 });
 
 test("웹훅 URL이 없거나 Slack 주소가 아니면 보내지 않는다", async () => {

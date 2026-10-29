@@ -60,3 +60,44 @@ services:
       <<: *env
       DB_POOL_MAX: "3"
     ports: ["${LAB_QUEUE_PORT:-18081}:8080"]
+
+  # ── 알림 경로(프로필 alerting, lab.sh alerting으로 띄운다). 측정 대상과 다른 코어(기본 12·13)에 둔다. ──
+  prometheus:
+    profiles: [alerting]
+    image: prom/prometheus:v2.53.0
+    cpuset: "${LAB_MON_CPUS:-12,13}"
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=2d"]
+    volumes:
+      - ./alerting/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerting/lab-rules.yml:/etc/prometheus/lab-rules.yml:ro
+    ports: ["${LAB_PROM_PORT:-19090}:9090"]
+
+  alertmanager:
+    profiles: [alerting]
+    image: prom/alertmanager:v0.27.0
+    cpuset: "${LAB_MON_CPUS:-12,13}"
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    volumes: ["./alerting/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["${LAB_AM_PORT:-19093}:9093"]
+
+  pg-exporter:
+    profiles: [alerting]
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    cpuset: "${LAB_MON_CPUS:-12,13}"
+    command: ["--disable-default-metrics", "--disable-settings-metrics", "--extend.query-path=/etc/pg-queries.yml"]
+    environment:
+      DATA_SOURCE_NAME: postgresql://flowticket:flowticket@postgres:5432/flowticket?sslmode=disable
+    volumes: ["./alerting/pg-queries.yml:/etc/pg-queries.yml:ro"]
+
+  # api 컨테이너 id(API_CID)는 lab.sh alerting이 넘긴다. api를 다시 만들면 이것도 다시 띄운다.
+  cgroup-exporter:
+    profiles: [alerting]
+    image: node:20-bookworm-slim
+    cpuset: "${LAB_MON_CPUS:-12,13}"
+    privileged: true
+    cgroup: host
+    command: ["node", "/alerting/cgroup-exporter.mjs"]
+    environment:
+      CGROUP_ID: ${API_CID:-}
+    volumes: ["./alerting:/alerting:ro"]

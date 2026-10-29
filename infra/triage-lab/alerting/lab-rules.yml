@@ -1,0 +1,31 @@
+# 실험실 알림 규칙. 예매 묶음은 10~30초라 운영 규칙(5xx 비율 2분 지속)은 울리지 않는다.
+# 예매 세 단계(선점·주문·결제) 서버 p95가 분석 도구의 이상 기준(1.5초, scripts/triage/rules.mjs)을 넘으면 울린다.
+groups:
+  - name: triage-lab
+    rules:
+      - alert: FlowticketBookingSlow
+        expr: |
+          histogram_quantile(0.95, sum by(le) (rate(http_server_requests_seconds_bucket{job="flowticket-api", role="api", uri=~"/events/.+/seats/hold|/orders|/orders/.+/payments"}[20s]))) > 1.5
+        for: 5s
+        labels: { severity: warning }
+        annotations:
+          summary: "예매 p95가 1.5초를 넘었다"
+          description: "예매 세 단계(선점·주문·결제) 서버 p95 {{ $value | humanizeDuration }}."
+      # p95는 끝난 요청만 센다. DB가 CPU를 거의 못 받으면 요청이 30~60초 동안 끝나지 않아 위 알림이 울리지 않았다(IMP-054).
+      # 처리 중인 요청 중 가장 오래된 것의 나이로 멈춤을 잡는다. 예매 단계는 모두 POST라 GET인 지표 긁기 요청은 빠진다.
+      - alert: FlowticketBookingStalled
+        expr: max(http_server_requests_active_seconds_max{job="flowticket-api", role="api", method="POST"}) > 5
+        for: 5s
+        labels: { severity: warning }
+        annotations:
+          summary: "예매 요청이 5초 넘게 끝나지 않는다"
+          description: "처리 중인 예매 요청 중 가장 오래된 것 {{ $value | humanizeDuration }}."
+      # 실험실은 actuator가 요청과 같은 포트(8080)라 api가 밀리면 지표 긁기도 시간 초과로 실패하고, 그동안 위 두 알림의 지표가 없다
+      # (dbnet 10ms run에서 19초 연속 실패, IMP-054). 긁기 실패(up=0) 자체를 신호로 쓴다. 운영은 관리 포트(8081)를 따로 둔다(TS-041).
+      - alert: FlowticketApiUnresponsive
+        expr: max(up{job="flowticket-api", role="api"}) == 0
+        for: 5s
+        labels: { severity: warning }
+        annotations:
+          summary: "api가 5초 넘게 지표 요청에 응답하지 못한다"
+          description: "api 지표 긁기가 시간 초과(1초)로 계속 실패한다. 요청 스레드가 밀렸거나 프로세스가 멈췄다."

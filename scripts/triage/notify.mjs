@@ -4,6 +4,7 @@
 // triage.mjs가 만든 <run>/triage/summary.json, rule.json, ai.json을 읽는다.
 // 메시지는 템플릿으로 조립한다. 수치는 요약 JSON 값을 그대로 넣고, AI 답에서는 의심 원인 이름과 확인 방법만 가져온다.
 // 웹훅 URL은 비밀이라 환경변수로만 받고 출력하지 않는다(demo-alarms/lambda/slack_notify.py와 같은 원칙).
+// 장애 알림에 붙이는 메시지(alertSlackText)는 alert-hook.mjs가 쓴다. 이쪽은 규칙과 AI가 같아도 보낸다(ADR-029 결정 11).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,25 +46,72 @@ function ruleSentence(s, rule, t = THRESHOLDS) {
 // 기존 Alertmanager 웹훅을 같이 쓰므로 머리말로 자동 분석 메시지임을 구분한다.
 export const PREFIX = "[초기 분석]";
 
-export function slackText(runId, summary, rule, ai) {
+// 첫 줄: 예매 p95·커넥션 대기·5xx. head는 "<머리말> <id>"(굵게), unit은 "run"·"구간" 같은 대상 이름이다.
+function openingLine(head, unit, summary) {
   const b = summary.booking, acq = summary.api.hikari?.acquire_ms_mean;
-  const lines = [];
   // CPU 할당량 갈래는 예매 p95가 이상 기준 아래여도 원인을 낸다(rules.mjs). 그때는 느려졌다고 쓰지 않는다.
   const slow = b.http5xx > 0 || b.p95_median_ms > THRESHOLDS.anomaly_p95_median_ms;
   const p95 = bold(ms(b.p95_median_ms) + "ms");
-  let first = slow ? `${bold(`${PREFIX} ${runId}`)} run에서 예매가 느려졌어요. p95가 ${p95}까지 올라갔고` : `${bold(`${PREFIX} ${runId}`)} run은 예매 p95가 ${p95}라 아직 느리진 않은데`;
+  let first = slow ? `${bold(head)} ${unit}에서 예매가 느려졌어요. p95가 ${p95}까지 올라갔고` : `${bold(head)} ${unit}은 예매 p95가 ${p95}라 아직 느리진 않은데`;
   first += acq != null ? `, 커넥션 하나 받는 데 평균 ${bold(ms(acq) + "ms")} 기다렸어요.` : slow ? "요." : " 눈여겨볼 수치가 있어요.";
   if (b.http5xx > 0) first += ` 5xx도 ${bold(num(b.http5xx) + "건")} 났어요.`;
-  lines.push(esc(first), esc(ruleSentence(summary, rule)));
+  return first;
+}
+
+// AI 1·2순위 의심 원인의 확인 방법(첫 문장)
+function confirmLines(h1, h2) {
+  const lines = [`• ${esc(softEnding(firstSentence(h1.confirm)))}`];
+  if (h2) lines.push(`• 아니면 "${esc(String(h2.name).replace(/\*/g, ""))}" 쪽: ${esc(softEnding(firstSentence(h2.confirm)))}`);
+  return lines;
+}
+
+export function slackText(runId, summary, rule, ai) {
+  const lines = [esc(openingLine(`${PREFIX} ${runId}`, "run", summary)), esc(ruleSentence(summary, rule))];
   const r = ai.result, [h1, h2] = r.hypotheses ?? [];
   if (r.verdict === "normal" || !h1) {
     lines.push(`그런데 AI는 ${bold("이상 없는 run")}으로 봤어요. 규칙 판정이 맞는지 한번 봐주시면 좋겠어요.`);
   } else {
     let ask = `그런데 AI는 ${bold(`"${esc(h1.name)}"`)} 쪽을 더 의심하고 있어서 한번 봐주시면 좋겠어요.`;
     if (h1.confidence === "low" || r.conclusion === "inconclusive") ask += " AI도 확정은 못 했대요.";
-    lines.push(ask);
-    lines.push(`• ${esc(softEnding(firstSentence(h1.confirm)))}`);
-    if (h2) lines.push(`• 아니면 "${esc(String(h2.name).replace(/\*/g, ""))}" 쪽: ${esc(softEnding(firstSentence(h2.confirm)))}`);
+    lines.push(ask, ...confirmLines(h1, h2));
+  }
+  return lines.join("\n");
+}
+
+// 알림에 붙이는 분석은 규칙과 AI가 같은 답이어도 보낸다. 장애가 난 것은 이미 아는 상태라 "어느 쪽이 원인으로 보이는지"가 정보다.
+// 갈릴 때만 사람 확인을 부탁한다(slackText와 같은 문장).
+export const ALERT_PREFIX = "[장애 알림 분석]";
+
+// 알림 구간 지표가 모자라 분석하지 못했을 때도 알린다. api가 지표 요청에도 응답하지 못한 것 자체가 단서다.
+export function alertInvalidText(alertName, summary) {
+  const head = bold(`${ALERT_PREFIX} ${alertName}`);
+  const why = summary.validity.reasons.join(", ");
+  const lines = [esc(`${head} 알림 구간은 지표가 모자라 원인 분석을 못 했어요(${why}).`)];
+  // 지표 요청은 아웃박스 행 수 등을 DB에서 세므로(OperationalMetrics) DB가 느려도 늦어진다.
+  if (/api 지표/.test(why)) lines.push("api가 지표 요청에도 제때 응답하지 못한 구간이에요. 지표 요청은 DB 쿼리도 하니까 api 요청 스레드와 DB 상태를 같이 봐 주시면 좋겠어요.");
+  return lines.join("\n");
+}
+
+export function alertSlackText(alertName, summary, rule, ai) {
+  const lines = [esc(openingLine(`${ALERT_PREFIX} ${alertName}`, "알림 구간", summary))];
+  if (rule.verdict === "cause") lines.push(esc(ruleSentence(summary, rule)));
+  else if (rule.verdict === "normal") lines.push("규칙으로는 이 구간 수치가 이상 기준 아래로 나와요.");
+  else lines.push("규칙으로는 어느 원인 갈래에도 해당하지 않아 원인을 정하지 못했어요.");
+  const checked = !!ai && !ai.error && ai.verification?.ok === true;
+  if (!checked) {
+    lines.push(ai?.error ? "AI 분석은 실패해서 이번엔 빠졌어요." : ai ? "AI 답은 근거 수치가 요약과 맞지 않아 빼 뒀어요." : "AI 분석은 부르지 않았어요.");
+    return lines.join("\n");
+  }
+  const r = ai.result, [h1, h2] = r.hypotheses ?? [];
+  const unsure = h1 && (h1.confidence === "low" || r.conclusion === "inconclusive") ? " AI도 확정은 못 했대요." : "";
+  if (r.verdict === "normal" || !h1) {
+    lines.push(rule.verdict === "cause" ? `그런데 AI는 ${bold("이상 없는 구간")}으로 봤어요. 규칙 판정이 맞는지 한번 봐주시면 좋겠어요.` : `AI도 ${bold("이상 없는 구간")}으로 봤어요.`);
+  } else if (rule.verdict !== "cause") {
+    lines.push(`AI는 ${bold(`"${esc(h1.name)}"`)} 쪽을 가장 의심하고 있어요.${unsure}`, ...confirmLines(h1, h2));
+  } else if (pipelineVerdict(rule, ai).disagree) {
+    lines.push(`그런데 AI는 ${bold(`"${esc(h1.name)}"`)} 쪽을 더 의심하고 있어서 한번 봐주시면 좋겠어요.${unsure}`, ...confirmLines(h1, h2));
+  } else {
+    lines.push(`AI도 같은 쪽(${bold(`"${esc(h1.name)}"`)})으로 봤어요.${unsure}`, ...confirmLines(h1));
   }
   return lines.join("\n");
 }

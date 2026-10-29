@@ -5,6 +5,7 @@
 #   bash infra/triage-lab/lab.sh run <fault> [1|2]   # 주입 → 입장자 100명 예매 묶음 → 수집 → 주입 해제
 #   bash infra/triage-lab/lab.sh tokens             # 토큰만 다시 발급(유효 2시간)
 #   bash infra/triage-lab/lab.sh clear              # 남은 주입 해제
+#   bash infra/triage-lab/lab.sh alerting           # 알림 경로(Prometheus·Alertmanager·exporter) 기동
 #   bash infra/triage-lab/lab.sh down               # 실험실 종료(볼륨 포함)
 #
 # fault: none | redis | db | cpu | dbnet, 강도 1(약)·2(강)
@@ -166,6 +167,10 @@ case "$cmd" in
     ;;
   tokens) mint ;;
   clear) clear_all ;;
-  down) "${DC[@]}" down -v ;;
-  *) sed -n '2,9p' "$0"; exit 2 ;;
+  alerting)
+    # 알림 경로(Prometheus·Alertmanager·exporter)를 띄운다. 분석 훅은 호스트에서 따로 띄운다(scripts/triage/alert-hook.mjs).
+    API_CID="$(docker inspect -f '{{.Id}}' "$(cid api)")" "${DC[@]}" --profile alerting up -d --force-recreate prometheus alertmanager pg-exporter cgroup-exporter
+    ;;
+  down) "${DC[@]}" --profile alerting down -v ;;
+  *) sed -n '2,10p' "$0"; exit 2 ;;
 esac

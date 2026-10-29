@@ -46,7 +46,9 @@ bash infra/triage-lab/lab.sh run redis 1              # 장애를 넣으면 알�
 - 지표 이름은 운영과 같게 둔다. 앱 지표는 같은 actuator 이름이고, cgroup 지표는 쿠버네티스 kubelet(cAdvisor) 이름(`container_cpu_cfs_throttled_periods_total` 등)이다.
 - run 수집과 다른 점: 예매 p95는 서버 히스토그램 값이고(마지막 응답까지, 최대 90초), PostgreSQL 표본은 1초 간격이며, 디스크 프로브는 없다.
 - api가 바빠 긁기가 1초 안에 끝나지 않으면 그 사이 지표가 끊긴다. 구간 평균은 누적값 차분이라 구간 앞뒤에 긁기 성공이 있으면 쓸 수 있고, 끊긴 뒤 요청 수가 늘었으면 끊기기 직전부터 예매가 시작됐다고 본다. 앞뒤가 비면 분석하지 못한 이유를 메시지로 남긴다.
-- api 지표 응답은 아웃박스 행 수 등을 DB에서 센다. DB가 CPU를 거의 못 받으면(db 0.05코어) 지표가 통째로 끊겨, 긁기 실패 알림만 울리고 원인 분석은 하지 못한다([IMP-054](../../docs/improvements/IMP-054-triage-alert-hook-local.md) §5.2).
+- api 지표 응답은 아웃박스 행 수 등을 DB에서 센다. DB가 CPU를 거의 못 받으면(db 0.05코어) 지표가 통째로 끊겨(이 쿼리 때문으로 추론), 긁기 실패 알림만 울리고 원인 분석은 하지 못한다([IMP-054](../../docs/improvements/IMP-054-triage-alert-hook-local.md) §5.2).
+- 알림 경로 요약의 지표 응답 최대(`scrape_rtt_ms_max`)는 긁기 시간 초과(1초)에서 잘려, run 수집 값과 뜻이 다르다.
+- 멈춤 알림(`FlowticketBookingStalled`)은 세 차례 확인에서 울린 적이 없다. 멈춘 동안은 긁기 실패 알림이 대신 울렸다.
 - 운영 규칙(5xx 비율 2분 지속 등)은 10~30초 묶음에서는 울리지 않아 실험실 규칙을 따로 둔다.
 
 ## 주입하는 장애

@@ -44,6 +44,15 @@ export async function handleAlert(alert, { prom, useAi = true, send = false, cli
   const w = await bookingWindow(prom, at);
   if (w && windows.has(w.sa)) return { dir: null, sent: false, reason: "같은 예매 구간을 이미 분석했다" };
   if (w) windows.add(w.sa);
+  try {
+    return await analyzeAlert(alert, name, at, { prom, useAi, send, client, fetchImpl, out });
+  } catch (e) {
+    if (w) windows.delete(w.sa); // 실패한 구간은 다음 알림이 다시 분석할 수 있게 둔다
+    throw e;
+  }
+}
+
+async function analyzeAlert(alert, name, at, { prom, useAi, send, client, fetchImpl, out }) {
   const summary = await promSummary(prom, at);
   const rule = classify(summary);
   let ai = null;

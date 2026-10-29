@@ -60,7 +60,8 @@ export async function bookingWindow(prom, alertAt, lookbackS = LOOKBACK_S) {
     if (v > pv) busy.push({ start: t - pt > 1000 ? pt + 1000 : t, end: t });
   }
   // 요청이 끝나지 않고 멈추면 위 수가 늘지 않는다. 처리 중인 POST(예매 단계)가 있는 초도 묶음으로 센다.
-  for (const [t, v] of await prom.range(`sum(http_server_requests_active_seconds_active_count{${API}, method="POST"})`, from, to)) {
+  // 처리 중 요청 타이머(LongTaskTimer)도 percentiles-histogram 접두어(http.server.requests)에 걸려 _gcount(처리 중 수)로 나온다.
+  for (const [t, v] of await prom.range(`sum(http_server_requests_active_seconds_gcount{${API}, method="POST"})`, from, to)) {
     if (v > 0) busy.push({ start: t, end: t });
   }
   busy.sort((a, b) => a.start - b.start);
@@ -100,6 +101,7 @@ export async function promSummary(prom, alertAt) {
     const v = await prom.scalar(`histogram_quantile(0.95, sum by(le) (increase(http_server_requests_seconds_bucket{${API}, uri="${uri}"}[${WB}])))`, bookTo);
     p95[k] = v == null ? null : Math.round(v * 1000);
   }
+  // run 요약(k6)은 대기열 단계까지 모든 요청의 5xx를 세므로 대기열 인스턴스도 함께 센다.
   const http5xx = await prom.scalar(`sum(increase(http_server_requests_seconds_count{job="flowticket-api", outcome="SERVER_ERROR"}[${WB}]))`, bookTo);
   // 긁기에 성공한 표본(up=1). 구간 평균은 누적값 차분이라, run 요약처럼 구간 앞뒤에 표본이 있는지(감싸는지)를 본다.
   const ok = (await prom.range(`up{${API}}`, from, to)).filter(([, v]) => v > 0).map(([t]) => t);

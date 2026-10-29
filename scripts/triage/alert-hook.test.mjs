@@ -26,7 +26,7 @@ function fakeProm(values = {}, gap = null, stall = null, upGap = null) {
         if (gap && t >= gap[0] && t <= gap[1]) continue;
         const active = stall && t >= stall[0] && t <= stall[1] ? 3 : 0;
         const up = upGap && t >= upGap[0] && t <= upGap[1] ? 0 : 1;
-        out.push([t, query.includes("uri=~") ? count(t) : query.includes("active_count") ? active : query.startsWith("up{") ? up : 2]);
+        out.push([t, query.includes("uri=~") ? count(t) : query.includes("http_server_requests_active_seconds_gcount{") ? active : query.startsWith("up{") ? up : 2]);
       }
       return out;
     },
@@ -133,5 +133,10 @@ test("알림이면 규칙이 이상 없음으로 봐도 AI를 부르고, 결과 
   const again = await handleAlert({ labels: { alertname: "FlowticketBookingStalled" }, startsAt: new Date(T0 + 22_000).toISOString() }, opts);
   assert.equal(again.reason, "같은 예매 구간을 이미 분석했다");
   assert.equal(calls, 2);
+  // 분석이 실패하면 그 구간을 비워 다음 알림이 다시 분석할 수 있게 한다
+  const broken = { ...fakeProm(base), scalar: async () => { throw new Error("Prometheus 끊김"); } };
+  const w2 = new Set();
+  await assert.rejects(handleAlert({ labels: { alertname: "X" }, startsAt: new Date(T0 + 20_000).toISOString() }, { ...opts, prom: broken, windows: w2 }), /Prometheus 끊김/);
+  assert.equal(w2.size, 0);
   fs.rmSync(out, { recursive: true, force: true });
 });

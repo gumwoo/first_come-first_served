@@ -315,6 +315,7 @@ k8s/                   Kubernetes base, overlay, monitoring, Argo CD
 | 대기열 분리 비교 | [ADR-027](docs/decisions/ADR-027-queue-dedicated-deployment.md), [IMP-033](docs/improvements/IMP-033-queue-split-ab.md) |
 | 설정값 근거와 비용 | [optimization-targets.md](docs/deployment/optimization-targets.md), [IMP-040](docs/improvements/IMP-040-session-cost-breakdown.md) |
 | 장애 분석과 재발 방지 | [docs/troubleshooting](docs/troubleshooting/_index.md) |
+| 알림을 받았을 때 처음 볼 것 | [alert-runbook.md](docs/deployment/alert-runbook.md) |
 | 배포·E2E·성능 검증 | [docs/deployment](docs/deployment/_index.md), [docs/testing](docs/testing/e2e-rules.md) |
 
 ## 작업 원칙

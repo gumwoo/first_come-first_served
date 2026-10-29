@@ -72,7 +72,7 @@ tests:
               description: >-
                 재시도로 성공할 수 없어 DEAD로 격리된 행이다. 같은 aggregate의 후속 이벤트가 보류된다.
                 /admin/outbox 에서 payload와 lastError를 보고 재발행 또는 폐기를 판단한다.
-              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-032-outbox-poison-row-head-of-line.md"
+              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/deployment/alert-runbook.md#flowticketoutboxdeadrows"
 
   # ── 트래픽이 충분하면 같은 규칙이 울린다(위 음성 케이스와 짝) ──
   # 5xx 0.5/s, 전체 5/s → 비율 10%. 절대 건수 조건도 넘는다.
@@ -91,8 +91,8 @@ tests:
               severity: critical
             exp_annotations:
               summary: "API 5xx 비율이 5%를 넘었다"
-              description: "5분 평균 5xx 비율 10%. 사용자가 이미 실패를 보고 있다."
-              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/deployment/aws-eks-deploy-plan.md"
+              description: "5분 평균 5xx 비율 10%. 사용자가 이미 실패를 보고 있다. 먼저 직전 배포·Pod 교체, 대시보드 엔드포인트별 5xx, DB 커넥션 pending과 Redis 명령 완료 시간을 본다."
+              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/deployment/alert-runbook.md#flowtickethighservererrorrate"
 
   # ── 적체가 지속되면 울린다(위 스파이크 음성 케이스와 짝) ────────
   - interval: 1m
@@ -109,7 +109,7 @@ tests:
             exp_annotations:
               summary: "아웃박스 미발행 적체가 10분째 500건을 넘는다 (현재 600)"
               description: "발행 대상(Redis) 장애나 명령 시간 초과가 지속되고 있을 가능성이 높다. 릴레이 로그([outbox] 발행 실패)와 행의 attempts·lastError를 본다(ADR-028)."
-              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/improvements/IMP-011-outbox-delivery.md"
+              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/deployment/alert-runbook.md#flowticketoutboxbacklog"
 
   # ── 블랙리스트 조회 실패(ADR-016 fail-open의 유일한 신호) ───────
   # 카운터는 누적값이라 실패가 멈춘 뒤에도 0이 아니다. 표현식이 rate가 아니라 원값을 보면
@@ -139,4 +139,4 @@ tests:
             exp_annotations:
               summary: "토큰 블랙리스트 조회가 5분째 실패하고 있다"
               description: "Redis를 읽지 못해 fail-open으로 통과시키는 중이다. 이 구간에는 로그아웃된 access token이 남은 TTL(최대 30분) 동안 유효하다. Redis 상태를 확인한다."
-              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/decisions/ADR-016-redis-outage-auth-fail-open.md"
+              runbook_url: "https://github.com/gumwoo/first_come-first_served/blob/main/docs/deployment/alert-runbook.md#flowticketblacklistcheckfailing"

@@ -6,7 +6,7 @@
 - 우선순위: **S08 아웃박스(정합성)를 먼저** 끝낸 뒤 이 배포로. 배포는 "코드 선반영 완료"라 실증만 하고 동결.
 - 후속: S10 부하테스트·모니터링은 이 배포 위에서 실측.
 
-## 문서 9종 (상세)
+## 문서 10종 (상세)
 | 문서 | 내용 |
 |------|------|
 | [aws-eks-deploy-plan.md](aws-eks-deploy-plan.md) | EKS 배포 단계(Phase 1~8)·역할분담·DoD — Strimzi·Kafka 단계는 제거 전 기록([[ADR-028]]) |
@@ -18,6 +18,7 @@
 | [workload-responsibilities.md](workload-responsibilities.md) | **워크로드 역할과 장애 책임(분석)** — 같은 이미지의 api·대기열에서 도는 스케줄러(Kafka 리스너는 [[ADR-028]]로 제거), 락·멱등, 역할이 사라질 때 멈추는 것과 인계 |
 | [kafka-removal-design.md](kafka-removal-design.md) | **Kafka 제거 설계([[ADR-028]] — P1~P3 #409~#415, P4 `DROP` #428, P5 문서 #427 — 전 단계 완료)** — 전달 보장 변화(PUBLISHED = Redis 발행 호출 성공), 실패를 삼키지 않는 릴레이 발행, 아웃박스 유지 근거·직접 발행 비교, 프론트 이벤트 유실 보완, 영역별 의존성 목록, PR 순서·운영 게이트·롤백, 노드·EBS 계산 |
 | [resource-sizing-plan.md](resource-sizing-plan.md) | **자원 산정·측정 계획(측정 전 — 후보·계획만)** — Kafka 제거 뒤 B₁(새 기준선)·B′(대기열 풀·상한·requests·축소 정책·평시 2+2 후보)·가용성 G1 시험. DB 커넥션 예산(현재 B 55/56)·노드 자리·노드 장애 계산 제약, 기록할 지표, 세션 순서, 세션 전 사용자 결정(D1~D5) |
+| [alert-runbook.md](alert-runbook.md) | **알림 대응 runbook** — Prometheus 알림 4개와 ALB 알람 3종별로 받았을 때 처음 볼 것, 순서, 다음 문서. 알림 설명과 runbook 링크가 이 문서의 절을 가리킨다 |
 | [optimization-targets.md](optimization-targets.md) | **최적화 대상과 바꿀 때 지켜야 할 제약(2026-10-20, 최적화 전 출발점)** — 설정값별 근거 상태, 기존 세션 원자료 재분석 값(노드 할당량·역할별 CPU·메모리·DB 풀·진입 순간 Pod별 처리 시간·확장 반응 시간), AWS 비용 없이 진행하는 다음 순서 |
 
 ## 멀티팟 준비 체크리스트

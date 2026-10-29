@@ -46,9 +46,9 @@ variable "elb_5xx_threshold" {
 }
 
 variable "runbook_url" {
-  description = "알람 설명에 넣을 대응 문서. ALB 5xx가 앱 5xx 없이 나던 사건 기록(TS-035)."
+  description = "알람 설명에 넣을 대응 문서. 알람마다 이 문서의 절(#알람 이름)을 붙인다."
   type        = string
-  default     = "https://github.com/gumwoo/first_come-first_served/blob/main/docs/troubleshooting/TS-035-rolling-deregistration-race.md"
+  default     = "https://github.com/gumwoo/first_come-first_served/blob/main/docs/deployment/alert-runbook.md"
 }
 
 variable "slack_enabled" {

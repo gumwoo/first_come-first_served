@@ -59,7 +59,7 @@ resource "aws_cloudwatch_metric_alarm" "no_healthy_targets" {
   for_each = var.target_groups
 
   alarm_name          = "flowticket-alb-no-healthy-${each.key}"
-  alarm_description   = "${each.key} 대상 그룹(${each.value})의 정상 대상이 0 — 이 서비스로 가는 요청은 ALB가 503으로 끝낸다. 먼저 파드 READY와 readiness 실패 이벤트를 본다(api는 DB, api-queue는 DB·Redis에 달림, ADR-030). 대응: ${var.runbook_url}#flowticket-alb-no-healthy"
+  alarm_description   = "${each.key} 대상 그룹(${each.value})의 정상 대상이 0 — 이 서비스로 가는 요청은 ALB가 503으로 끝낸다. 먼저 파드 READY와 readiness 실패 이벤트를 본다(api-queue는 DB·Redis, web은 / 경로, ADR-030). 대응: ${var.runbook_url}#flowticket-alb-no-healthy"
   namespace           = "AWS/ApplicationELB"
   metric_name         = "HealthyHostCount"
   dimensions          = { LoadBalancer = var.alb_arn_suffix, TargetGroup = each.value }

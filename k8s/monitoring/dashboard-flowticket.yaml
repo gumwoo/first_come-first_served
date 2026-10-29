@@ -110,7 +110,7 @@ data:
         },
         {
           "type": "timeseries", "title": "Redis 명령 평균 완료 시간",
-          "description": "Redis 쪽 지연을 본다. 명령 시간 상한은 2초이고 넘으면 503으로 응답한다(ADR-030). 지표 이름은 장애 분석 실험실의 actuator 출력에서 확인했다(클러스터 스크랩은 미확인).",
+          "description": "Redis 쪽 지연을 본다. 명령 시간 상한은 2초이고 넘으면 503으로 응답한다(ADR-030). 클러스터 Prometheus에서 이 지표의 count를 쓴 측정이 있다(IMP-026). job 라벨이 지금과 같은지는 확인하지 않았다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
           "gridPos": { "h": 7, "w": 12, "x": 12, "y": 16 },
           "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },

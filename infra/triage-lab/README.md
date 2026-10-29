@@ -7,6 +7,7 @@
 |---|---|---|
 | api(예매) | 2·3 | 풀 5, 포트 18080 |
 | queue(대기열 전용) | 8·9 | 풀 3, 포트 18081 |
+| Prometheus·Alertmanager·exporter(프로필 alerting) | 12·13 | 아래 "알림 경로" |
 | PostgreSQL 16 | 6·7 | `track_wal_io_timing` 켬 |
 | Redis 7.4 | 4 | |
 | k6 | 10·11 | `infra/k6/booking-e2e.js`(입장자 100명 동시 예매) |
@@ -25,6 +26,28 @@ bash infra/triage-lab/lab.sh down
 - 측정용 psql은 PostgreSQL 컨테이너 밖(프로브 코어)에서 접속한다. db 주입으로 줄인 CPU를 측정이 나눠 쓰지 않게 하기 위해서다.
 - 코어 번호는 `LAB_API_CPUS`·`LAB_PG_CPUS`·`LAB_REDIS_CPUS`·`LAB_QUEUE_CPUS`·`LAB_K6_CPUS`·`LAB_PROBE_CPUS`로 바꾼다(`2,3`·`2-3` 표기).
 - 호스트 포트가 다른 컨테이너와 겹치면 `LAB_API_PORT`·`LAB_QUEUE_PORT`로 바꾼다(lab.sh·sampler.mjs·compose.yml이 같은 값을 쓴다).
+
+## 알림 경로
+장애가 나면 알림이 울리고, 그 알림에 원인 분석을 붙여 Slack으로 받는 흐름을 이 실험실에서 돌린다.
+
+```bash
+bash infra/triage-lab/lab.sh alerting                 # Prometheus(19090)·Alertmanager(19093)·PostgreSQL exporter·cgroup exporter
+node scripts/triage/alert-hook.mjs [--send]          # 분석 훅(:18099). 키·Slack 웹훅은 환경변수로만 받는다
+bash infra/triage-lab/lab.sh run redis 1              # 장애를 넣으면 알림 → 훅 → artifacts/triage-lab/alerts/<시각>-<알림>/
+```
+
+| 단계 | 하는 일 |
+|---|---|
+| Prometheus | api·대기열 actuator, PostgreSQL 세션·WAL(`alerting/pg-queries.yml`), api cgroup CPU(`alerting/cgroup-exporter.mjs`)를 1초마다 긁는다 |
+| 알림 규칙(`alerting/lab-rules.yml`) | `FlowticketBookingSlow`: 예매 세 단계 서버 p95(20초)가 1.5초를 넘고 5초 지속 / `FlowticketBookingStalled`: 처리 중인 POST 요청 중 가장 오래된 것이 5초 넘음 / `FlowticketApiUnresponsive`: api 지표 긁기 실패가 5초 지속 |
+| Alertmanager | 모든 알림을 호스트의 분석 훅으로 보낸다(`alerting/alertmanager.yml`) |
+| 분석 훅 | 알림 앞에서 예매 요청이 끝난 구간을 찾아 Prometheus 지표로 run 요약과 같은 형식을 만들고(`scripts/triage/prom-summary.mjs`), 규칙 → AI → 수치 대조 → Slack 메시지를 만든다 |
+
+- 지표 이름은 운영과 같게 둔다. 앱 지표는 같은 actuator 이름이고, cgroup 지표는 쿠버네티스 kubelet(cAdvisor) 이름(`container_cpu_cfs_throttled_periods_total` 등)이다.
+- run 수집과 다른 점: 예매 p95는 서버 히스토그램 값이고(마지막 응답까지, 최대 90초), PostgreSQL 표본은 1초 간격이며, 디스크 프로브는 없다.
+- api가 바빠 긁기가 1초 안에 끝나지 않으면 그 사이 지표가 끊긴다. 구간 평균은 누적값 차분이라 구간 앞뒤에 긁기 성공이 있으면 쓸 수 있고, 끊긴 뒤 요청 수가 늘었으면 끊기기 직전부터 예매가 시작됐다고 본다. 앞뒤가 비면 분석하지 못한 이유를 메시지로 남긴다.
+- api 지표 응답은 아웃박스 행 수 등을 DB에서 센다. DB가 CPU를 거의 못 받으면(db 0.05코어) 지표가 통째로 끊겨, 긁기 실패 알림만 울리고 원인 분석은 하지 못한다([IMP-054](../../docs/improvements/IMP-054-triage-alert-hook-local.md) §5.2).
+- 운영 규칙(5xx 비율 2분 지속 등)은 10~30초 묶음에서는 울리지 않아 실험실 규칙을 따로 둔다.
 
 ## 주입하는 장애
 

@@ -19,7 +19,7 @@ API 5xx 비율이 5분 평균 5%를 넘고(초당 0.1건 이상) 2분 지속됐�
 
 1. 직전 배포·Pod 교체가 있었는지 본다(공통 1). 배포 직후라면 그 변경을 먼저 의심하고, 되돌릴지 정한다.
 2. 대시보드 "엔드포인트별 5xx (상위 5)"에서 한 경로에 몰렸는지, 전체에 퍼졌는지 본다.
-   - 한 경로: 그 기능의 최근 변경과 로그. 이 알림은 예매 api와 대기열 Pod를 함께 세므로 두 Deployment 공통 라벨로 모든 Pod 로그를 본다(`kubectl -n flowticket logs -l flowticket.io/app=api --since=10m --prefix --max-log-requests=20`).
+   - 한 경로: 그 기능의 최근 변경과 로그. 이 알림은 예매 api와 대기열 Pod를 함께 세므로 두 Deployment 공통 라벨로 모든 Pod 로그를 본다(`kubectl -n flowticket logs -l flowticket.io/app=api --since=10m --tail=-1 --prefix --max-log-requests=20`).
    - 전체: 의존성 쪽(3)
 3. 의존성을 본다.
    - "DB 커넥션 (active / pending)": pending이 계속 서 있으면 DB나 커넥션 풀 쪽이다.
@@ -44,8 +44,8 @@ API 5xx 비율이 5분 평균 5%를 넘고(초당 0.1건 이상) 2분 지속됐�
 ## FlowticketBlacklistCheckFailing
 토큰 블랙리스트 조회가 5분째 실패해 fail-open으로 통과시키는 중이다. 이 동안 로그아웃된 access token이 남은 TTL(최대 30분) 동안 유효하다.
 
-1. Pod별로 실패를 나눠 본다(Prometheus: `sum by(pod) (rate(auth_blacklist_check_failures_total{job="flowticket-api"}[5m]))`). 여러 Pod가 같이 실패하면 Redis 자체 장애다.
-2. 특정 Pod만 실패하면 그 Pod의 Redis 연결 문제다. 예매 api Pod는 readiness에 Redis가 없어 Service에서 빠지지 않으므로 이 알림이 신호다([[ADR-030]] 결정 5). 대기열 Pod는 readiness에 Redis가 있어 Service에서 빠진다.
+1. Pod별로 실패를 나눠 본다(Prometheus: `sum by(pod) (rate(auth_blacklist_check_failures_total{job="flowticket-api"}[5m]))`). 여러 Pod가 같이 실패하면 Redis 쪽(Redis 자체 또는 그 네트워크 경로) 장애다.
+2. 특정 Pod만 실패하면 그 Pod의 Redis 연결 문제다. 예매 api Pod는 readiness에 Redis가 없어 Service에서 빠지지 않으므로 이 알림이 신호다([[ADR-030]] 결정 5). 대기열 Pod는 readiness에 Redis가 있어 Service에서 빠진다(대기열 전용 Deployment를 켠 B 구성).
 - 상세: [[ADR-016]]
 
 ## flowticket-alb-elb-5xx

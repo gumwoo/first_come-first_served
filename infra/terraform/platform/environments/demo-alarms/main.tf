@@ -20,7 +20,7 @@ locals {
 
 resource "aws_cloudwatch_metric_alarm" "elb_5xx" {
   alarm_name        = "flowticket-alb-elb-5xx"
-  alarm_description = "ALB가 직접 만든 5xx(대상에 닿지 못함)가 1분에 ${var.elb_5xx_threshold}건 이상. 앱 5xx 알람으로는 보이지 않는다. 대응: ${var.runbook_url}"
+  alarm_description = "ALB가 직접 만든 5xx(대상에 닿지 못함)가 1분에 ${var.elb_5xx_threshold}건 이상. 앱 5xx 알람으로는 보이지 않는다. 먼저 롤링 배포 중이었는지(TS-035), 정상 대상 0 알람이 같이 울렸는지 본다. 대응: ${var.runbook_url}#flowticket-alb-elb-5xx"
   namespace         = "AWS/ApplicationELB"
   metric_name       = "HTTPCode_ELB_5XX_Count"
   dimensions        = { LoadBalancer = var.alb_arn_suffix }
@@ -39,7 +39,7 @@ resource "aws_cloudwatch_metric_alarm" "elb_5xx" {
 
 resource "aws_cloudwatch_metric_alarm" "target_connection_errors" {
   alarm_name          = "flowticket-alb-target-connection-errors"
-  alarm_description   = "ALB가 대상(파드)과 연결을 맺지 못함 — 종료 중인 파드로 보낸 요청(TS-035) 등. 대응: ${var.runbook_url}"
+  alarm_description   = "ALB가 대상(파드)과 연결을 맺지 못함 — 종료 중인 파드로 보낸 요청(TS-035) 등. 먼저 롤링 배포 중이었는지, 아니면 파드 재시작·OOM이 있었는지 본다. 대응: ${var.runbook_url}#flowticket-alb-target-connection-errors"
   namespace           = "AWS/ApplicationELB"
   metric_name         = "TargetConnectionErrorCount"
   dimensions          = { LoadBalancer = var.alb_arn_suffix }
@@ -59,7 +59,7 @@ resource "aws_cloudwatch_metric_alarm" "no_healthy_targets" {
   for_each = var.target_groups
 
   alarm_name          = "flowticket-alb-no-healthy-${each.key}"
-  alarm_description   = "${each.key} 대상 그룹(${each.value})의 정상 대상이 0 — 이 서비스로 가는 요청은 ALB가 503으로 끝낸다. 대응: ${var.runbook_url}"
+  alarm_description   = "${each.key} 대상 그룹(${each.value})의 정상 대상이 0 — 이 서비스로 가는 요청은 ALB가 503으로 끝낸다. 먼저 파드 READY와 readiness 실패 이벤트를 본다(api-queue는 DB·Redis, web은 / 경로, ADR-030). 대응: ${var.runbook_url}#flowticket-alb-no-healthy"
   namespace           = "AWS/ApplicationELB"
   metric_name         = "HealthyHostCount"
   dimensions          = { LoadBalancer = var.alb_arn_suffix, TargetGroup = each.value }

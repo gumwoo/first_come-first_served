@@ -96,14 +96,40 @@ data:
           ]
         },
         {
+          "type": "timeseries", "title": "엔드포인트별 5xx (상위 5)",
+          "description": "5xx 비율 알림(FlowticketHighServerErrorRate)을 받았을 때 한 경로에 몰렸는지 전체에 퍼졌는지 가른다(docs/deployment/alert-runbook.md).",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 16 },
+          "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "topk(5, sum by(uri) (rate(http_server_requests_seconds_count{job=\"flowticket-api\", outcome=\"SERVER_ERROR\"}[5m])))",
+              "legendFormat": "{{uri}}", "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "timeseries", "title": "Redis 명령 평균 완료 시간",
+          "description": "Redis 쪽 지연을 본다. 명령 시간 상한은 2초이고 넘으면 503으로 응답한다(ADR-030). 클러스터 Prometheus에서 이 지표의 count를 쓴 측정이 있다(IMP-026). job 라벨이 지금과 같은지는 확인하지 않았다.",
+          "datasource": { "type": "prometheus", "uid": "${DS}" },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 16 },
+          "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+          "targets": [
+            {
+              "expr": "sum(rate(lettuce_command_completion_seconds_sum{job=\"flowticket-api\"}[5m])) / sum(rate(lettuce_command_completion_seconds_count{job=\"flowticket-api\"}[5m]))",
+              "legendFormat": "평균", "refId": "A"
+            }
+          ]
+        },
+        {
           "type": "row", "title": "아웃박스: 알림 이벤트(order.paid) 발행",
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 }
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 }
         },
         {
           "type": "timeseries", "title": "아웃박스 미발행·격리 (상태별)",
           "description": "PENDING이 줄지 않으면 발행 대상(Redis) 장애·시간 초과, DEAD가 생기면 재시도로 풀리지 않는 행이다(/admin/outbox). Kafka 제거(ADR-028) 뒤 실패는 소비자가 아니라 이 행에 남는다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
-          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 17 },
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 24 },
           "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
           "targets": [
             {
@@ -116,7 +142,7 @@ data:
           "type": "timeseries", "title": "미발행 최장 대기",
           "description": "개수와 달리 릴레이가 뒤처지는지를 본다(ADR-022). 100건이 1초 만에 빠지는 것과 3건이 10분째 남은 것은 개수로 구분되지 않는다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
-          "gridPos": { "h": 9, "w": 6, "x": 12, "y": 17 },
+          "gridPos": { "h": 9, "w": 6, "x": 12, "y": 24 },
           "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
           "targets": [
             {
@@ -129,7 +155,7 @@ data:
           "type": "timeseries", "title": "구독자 0으로 나간 발행",
           "description": "발행 호출은 성공했지만 받은 구독자가 없었다(실패 아님 — ADR-028 §6). 서면 모든 파드의 Redis 구독이 끊긴 순간이다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
-          "gridPos": { "h": 9, "w": 6, "x": 18, "y": 17 },
+          "gridPos": { "h": 9, "w": 6, "x": 18, "y": 24 },
           "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
           "targets": [
             {
@@ -140,12 +166,12 @@ data:
         },
         {
           "type": "row", "title": "런타임 / 용량",
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 }
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 33 }
         },
         {
           "type": "timeseries", "title": "힙 사용량 (파드별)",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 27 },
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 34 },
           "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
           "targets": [
             {
@@ -157,7 +183,7 @@ data:
         {
           "type": "timeseries", "title": "GC 정지 빈도",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 27 },
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 34 },
           "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
           "targets": [
             {
@@ -170,7 +196,7 @@ data:
           "type": "timeseries", "title": "프로세스 CPU",
           "description": "TS-020 때 파드 하나가 711m까지 태웠다. HPA가 이걸 부하로 오해해 스케일업했다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 27 },
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 34 },
           "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
           "targets": [
             {
@@ -183,7 +209,7 @@ data:
           "type": "timeseries", "title": "DB 커넥션 (active / pending)",
           "description": "pending이 서면 풀이 말랐다는 뜻: 커넥션 대기가 곧 응답 지연이 된다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 35 },
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 42 },
           "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
           "targets": [
             {
@@ -199,7 +225,7 @@ data:
         {
           "type": "timeseries", "title": "JVM 스레드",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 35 },
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 42 },
           "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
           "targets": [
             {
@@ -212,7 +238,7 @@ data:
           "type": "timeseries", "title": "HPA 레플리카 (현재 / 희망)",
           "description": "kube-state-metrics 출처. 앱 메트릭이 아니라 클러스터 상태다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 35 },
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 42 },
           "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
           "targets": [
             {
@@ -227,13 +253,13 @@ data:
         },
         {
           "type": "row", "title": "외부 연동 (KOPIS)",
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 }
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 }
         },
         {
           "type": "timeseries", "title": "KOPIS 호출률 (결과별)",
           "description": "실패해도 예외가 밖으로 나가지 않고 축약 응답으로 degrade하므로, 이 지표가 없으면 실패가 보이지 않는다. cause는 실패 종류다. http_400(차단) / timeout(응답 없음) / io(연결 실패) / parse(200은 받았는데 XML이 깨짐). 대응이 각각 다르므로 뭉치면 안 된다.",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 51 },
           "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
           "targets": [
             {
@@ -246,7 +272,7 @@ data:
           "type": "timeseries", "title": "KOPIS 평균 지연 (operation별)",
           "description": "동기화 배치가 느려지는 원인이 KOPIS 쪽인지 본다. 사용자 /events/{id}는 KOPIS를 호출하지 않으므로 이 선과 함께 오르면 안 된다(IMP-018).",
           "datasource": { "type": "prometheus", "uid": "${DS}" },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 51 },
           "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
           "targets": [
             {

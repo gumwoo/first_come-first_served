@@ -99,6 +99,7 @@ function main() {
   if (stale.length) problems.push(`샘플이 ${maxAge}초보다 오래된 점: ${stale.slice(0, 5).join(", ")}${stale.length > 5 ? ` 외 ${stale.length - 5}` : ""}`);
   // run 끝 상태 관측: 어떤 점에서 (점 시각 − 가장 오래된 샘플 나이) ≥ until이면, 그 시점에 항상 있어야 할 모든 시계열의
   // 최신 샘플이 run 종료 뒤의 것이다. 그런 점이 없으면 run 종료 뒤 스크랩을 하나도 확인하지 못한 것이다.
+  // 초과판매의 나이에는 앱이 값을 센 뒤 지난 시간이 더해져 있어(export-prom.mjs, TS-054) "run 종료 뒤에 센 값"까지 본다.
   const postUntil = agePts.find(([t, v]) => Number.isFinite(v) && t - v * 1000 >= until);
   if (agePts.length && !postUntil) {
     problems.push("run 종료 뒤에 스크랩된 샘플을 확인하지 못했다(모든 항상-있는 시계열 기준) — run 끝 상태를 관측하지 못했다");

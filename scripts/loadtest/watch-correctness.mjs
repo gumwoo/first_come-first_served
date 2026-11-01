@@ -118,8 +118,10 @@ function main() {
   // timestamp()는 지표를 직접 고른 식(벡터 셀렉터)에만 샘플 시각을 준다 — 그래서 지표마다 따로 건다. 또 timestamp()는
   // 지표 이름을 떼므로, 같은 파드의 두 지표는 레이블이 같아져 정규식 하나로 묶으면 "same labelset" 오류가 난다.
   // 지표마다 구분 레이블을 붙인 뒤 or로 합친다(G1이 promtool로 확인한 형태).
+  // 초과판매 값은 앱이 10초마다 DB에서 세어 두고 스크랩은 그 값을 낸다(TS-054). 스크랩이 성공해도 값은 묵을 수 있어
+  // 앱이 낸 "센 뒤 지난 시간"(flowticket_metrics_snapshot_age_seconds)을 더한다. 그 지표가 없는 이전 이미지는 0으로 본다.
   const SAMPLE_AGE =
-    'max(label_replace(time() - timestamp(flowticket_seat_oversold), "m", "oversold", "", "")' +
+    'max(label_replace((time() - timestamp(flowticket_seat_oversold)) + (flowticket_metrics_snapshot_age_seconds or (flowticket_seat_oversold * 0)), "m", "oversold", "", "")' +
     ' or label_replace(time() - timestamp(flowticket_queue_admit_tick_failures_total), "m", "tickfail", "", ""))';
 
   // Prometheus 즉시 질의. 시간 초과·HTTP 오류·status≠success는 예외로 올린다.

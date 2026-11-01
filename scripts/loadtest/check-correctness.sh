@@ -35,7 +35,7 @@
 #                        건너뛸 수 있어 보장은 아니다)). 파일이 없어도 판정 불가. 감시기 0과
 #                        4단계 통과가 함께 있어야 실시간 조건에 위반이 없었다.
 #   prom-recheck.json  — 실시간 조건(over-admit, 카운터 어긋남, 초과판매)과 승격 처리 실패를 내보낸 구간 데이터로
-#                        run 종료 + 30초까지 다시 본 결과(prom-recheck.mjs). 감시기는 run 끝을 보지 못하므로 여기서
+#                        run 종료 + 45초까지 다시 본 결과(prom-recheck.mjs). 감시기는 run 끝을 보지 못하므로 여기서
 #                        덮는다. 위반이면 1, 그 구간을 신선하게 관측하지 못했거나 승격 처리 실패가 있으면 2.
 #   summary.txt        — 항목별 위반 수와 종합 판정
 #
@@ -138,7 +138,8 @@ FAIL=0 BROKEN=0
 AO="" AO_RAW="" POD_OK=0
 
 echo "==> 0/4 내보낸 구간 확인(prom/_meta.json)"
-# 파드 대조와 4단계(실시간 조건 사후 재확인)는 내보낸 구간이 run 전체 + 꼬리를 덮어야 믿을 수 있다(재확인 30초, 파드 대조 여유 45초 — 큰 쪽).
+# 파드 대조와 4단계(실시간 조건 사후 재확인)는 내보낸 구간이 run 전체 + 꼬리를 덮어야 믿을 수 있다(재확인 45초, 파드 대조 여유 45초).
+# 내보내기는 run 종료 + 45초에서 스크랩 한 주기를 더 기다린 뒤 돌린다(그 전이면 재확인의 끝 구간 점이 비어 판정 불가).
 if node -e '
 const fs = require("fs");
 const [out, since, until] = process.argv.slice(1);
@@ -148,7 +149,7 @@ try { meta = JSON.parse(fs.readFileSync(out + "/prom/_meta.json", "utf8")); }
 catch { fail("prom/_meta.json을 읽지 못했다 — export-prom.mjs를 먼저 돌린다(도중에 죽었으면 다시 돌린다)"); }
 const s = Number(meta.startSec) * 1000, e = Number(meta.endSec) * 1000;
 if (!Number.isFinite(s) || !Number.isFinite(e)) fail("prom/_meta.json에 startSec·endSec가 없다 — export-prom.mjs로 다시 내보낸다");
-// 꼬리 30초(실시간 조건 재확인)와 pod-coverage 여유 45초 중 큰 쪽을 덮어야 한다.
+// 꼬리 45초(실시간 조건 재확인)와 pod-coverage 여유 45초를 덮어야 한다.
 const need = Date.parse(until) + 45000;
 console.log("export=" + new Date(s).toISOString() + "~" + new Date(e).toISOString() + " run=" + since + "~" + until);
 if (s > Date.parse(since)) fail("내보낸 구간이 run 시작보다 늦게 시작한다 — --start를 run 시작 이전으로 다시 내보낸다");
@@ -366,7 +367,7 @@ case $NR in
   *) echo "    구독자 부재를 판정하지 못했다(outbox-no-receivers.json)" >&2; BROKEN=1 ;;
 esac
 
-echo "==> 4/4 실시간 조건 사후 재확인(내보낸 구간 — run 종료 + 30초까지)"
+echo "==> 4/4 실시간 조건 사후 재확인(내보낸 구간 — run 종료 + 45초까지)"
 # 감시기는 run 끝을 보지 못한다. over-admit·카운터 어긋남·초과판매·승격 처리 실패를 내보낸 데이터로 다시 보고,
 # 그 구간을 실제로 신선하게 관측했는지(샘플 나이·점 연속성)도 확인한다(prom-recheck.mjs).
 rm -f "$D/prom-recheck.json" "$D/prom-recheck.err"
@@ -467,7 +468,7 @@ esac
   echo "--- 내보낸 구간(파드 대조·승격 처리 실패의 전제)"; cat "$D/export-window.txt" 2>/dev/null
   echo "--- run 시각 대조(발생기 시작·종료 기록 vs --since·--until)"; cat "$D/run-window.txt" 2>/dev/null
   echo "--- outbox-no-receivers"; cat "$D/outbox-no-receivers.json" 2>/dev/null
-  echo "--- 실시간 조건 사후 재확인(내보낸 구간, run 종료 + 30초까지)"; [ -s "$D/prom-recheck.err" ] && sed 's/^/  사유: /' "$D/prom-recheck.err"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.violations.length?"위반: "+r.violations.join("; ")+(r.problems.length?" / 판정 불가 사유도 있음: "+r.problems.join("; "):""):r.problems.length?"판정 불가: "+r.problems.join("; "):"위반 없음(관측 점 "+r.observedPoints+"개, 샘플 나이 최대 "+r.sampleAgeMaxSec+"초)")}catch{console.log("판정 불가(확인 실패)")}' "$D/prom-recheck.json" 2>/dev/null
+  echo "--- 실시간 조건 사후 재확인(내보낸 구간, run 종료 + 45초까지)"; [ -s "$D/prom-recheck.err" ] && sed 's/^/  사유: /' "$D/prom-recheck.err"; node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.violations.length?"위반: "+r.violations.join("; ")+(r.problems.length?" / 판정 불가 사유도 있음: "+r.problems.join("; "):""):r.problems.length?"판정 불가: "+r.problems.join("; "):"위반 없음(관측 점 "+r.observedPoints+"개, 샘플 나이 최대 "+r.sampleAgeMaxSec+"초)")}catch{console.log("판정 불가(확인 실패)")}' "$D/prom-recheck.json" 2>/dev/null
   echo "--- 실시간 감시기(watch-summary.json)"; cat "$D/watch-verdict.txt" 2>/dev/null
   # 검사 일부가 실패해도 이미 찾은 위반은 함께 보인다.
   if [ "$BROKEN" -ne 0 ] && [ "$FAIL" -ne 0 ]; then echo "판정: 정합성 위반 + 검사 일부 실패(결과 불완전)"

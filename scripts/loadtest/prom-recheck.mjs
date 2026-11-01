@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 실시간 조건 사후 재확인(loadtest-100k-plan §3.3). export-prom.mjs가 남긴 run 구간 데이터(prom/)로 실시간 감시기가
-// 보는 조건을 run 전체 + 꼬리 30초에 걸쳐 다시 본다.
+// 보는 조건을 run 전체 + 꼬리 45초에 걸쳐 다시 본다.
 //
 // 감시기는 구조상 run 끝을 보지 못한다. 마지막 조회가 run 종료보다 앞서고, run 마지막 순간의 게이지는 종료 뒤
 // 스크랩에야 Prometheus에 들어오기 때문이다. 그래서 over-admit·카운터 어긋남·초과판매·승격 처리 실패를 내보낸
@@ -8,23 +8,26 @@
 // step이 수집 주기(15초)에 가깝거나 넘으면 두 점 사이에 낀 샘플(순간적인 over-admit)을 못 본다.
 //
 // 판정의 전제는 "그 구간을 실제로 관측했다"는 것이다. 항상 있어야 할 지표(초과판매, 승격 실패 카운터)의 샘플 나이
-// (prom/sample_age_max.json — 감시기의 신선도 질의와 같은 식)가 [since, until + 30초]의 모든 step에 있고
-// --max-sample-age(기본 30초, 최대 60초, 잠정값) 이하여야 한다. 점이 빠졌거나 오래됐으면 그 구간은 관측 공백이라
+// (prom/sample_age_max.json — 감시기의 신선도 질의와 같은 식)가 [since, until + 45초]의 모든 step에 있고
+// --max-sample-age(기본 40초 = 스크랩 15초 + 초과판매 앱 갱신 주기 10초와 갱신에 걸린 시간(TS-054) + 스크랩 한 번 누락 15초, 최대 60초, 잠정값) 이하여야 한다. 점이 빠졌거나 오래됐으면 그 구간은 관측 공백이라
 // 판정 불가다. 또 run 종료 뒤에 항상 있어야 할 모든 시계열이 한 번 이상 스크랩됐어야 한다 — 어떤 점에서든
 // (점 시각 − 가장 오래된 샘플 나이) ≥ until이면 그 시점의 모든 시계열 샘플이 run 종료 뒤의 것이다. 이것이 없으면
-// run 끝 상태를 관측하지 못한 것이다(샘플 나이 30초 기준만으로는 run 종료 10초 전 샘플로도 통과할 수 있다 — G1 재현).
+// run 끝 상태를 관측하지 못한 것이다(샘플 나이 기준만으로는 run 종료 10초 전 샘플로도 통과할 수 있다 — G1 재현).
 // 대기열 게이지(admitted·admit_drift)가 구간 내내 하나도 없어도 판정 불가다 — 측정 run에는 활성
 // 이벤트가 있어야 하므로, 없다면 지표 미배포·수집 실패다(감시기의 "값이 한 번도 나오지 않은 조건"과 같은 기준).
 //
 //   node scripts/loadtest/prom-recheck.mjs --prom-dir <run>/prom --since <run 시작 UTC ISO> --until <run 종료 UTC ISO> \
-//     [--max-sample-age 30]
+//     [--max-sample-age 40]
 //
 // 종료 코드: 0 위반 없음(구간 전체를 신선하게 관측했고 조건이 모두 0), 1 위반(over-admit·카운터 어긋남·초과판매),
 //            2 판정 불가(관측 공백, 승격 처리 실패, 파일·인자 문제). 위반을 찾았으면 다른 문제가 있어도 1이다.
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
-const TAIL_MS = 30_000; // run 마지막 상태가 스크랩돼 들어오는 데 필요한 꼬리(스크랩 두 주기)
+// run 마지막 상태가 들어오는 데 필요한 꼬리. 초과판매는 앱이 10초마다 세어 두므로(TS-054) run 종료 뒤에 센 값이 스크랩돼
+// 내보내기 점에 찍히기까지 갱신 대기(10초 + 갱신 시간 d) + 게시까지 d + 스크랩 15초 + step 10초, 최악 35 + 2d초가 걸린다(계산).
+// 45초는 갱신 한 번이 5초 안에 끝나면 버틴다. run이 이 검사로 판정 불가가 되면 flowticket_metrics_snapshot_age_seconds부터 본다.
+const TAIL_MS = 45_000;
 const MAX_STEP_SEC = 10; // 내보내기 step 상한(수집 주기 15초보다 충분히 짧게, 잠정값)
 const MAX_SAMPLE_AGE_CAP = 60; // --max-sample-age 상한. 크게 주면 lookback(5분) 안의 오래된 값을 그대로 받아들인다
 
@@ -34,7 +37,7 @@ function main() {
       "prom-dir": { type: "string" },
       since: { type: "string" },
       until: { type: "string" },
-      "max-sample-age": { type: "string", default: "30" },
+      "max-sample-age": { type: "string", default: "40" },
     },
   });
   if (!a["prom-dir"] || !a.since || !a.until) throw new Error("--prom-dir, --since, --until이 필요하다");
@@ -67,10 +70,10 @@ function main() {
 
   const violations = [];
   const problems = [];
-  // 내보내기 조건: step 상한, 구간이 [since, until + 30초]를 덮음(사후 검사 0단계와 같은 확인 — 단독 실행 대비)
+  // 내보내기 조건: step 상한, 구간이 [since, until + 45초]를 덮음(사후 검사 0단계와 같은 확인 — 단독 실행 대비)
   if (stepMs > MAX_STEP_SEC * 1000) problems.push(`내보내기 step ${stepMs / 1000}초가 ${MAX_STEP_SEC}초를 넘는다 — 두 점 사이 샘플을 놓칠 수 있다(--step ${MAX_STEP_SEC} 이하로 다시 내보낸다)`);
   if (!(Number(meta.startSec) * 1000 <= since)) problems.push("내보낸 구간이 run 시작보다 늦게 시작한다(또는 startSec 없음)");
-  if (!(Number(meta.endSec) * 1000 >= winEnd)) problems.push("내보낸 구간이 run 종료 + 30초를 덮지 않는다(또는 endSec 없음)");
+  if (!(Number(meta.endSec) * 1000 >= winEnd)) problems.push("내보낸 구간이 run 종료 + 45초를 덮지 않는다(또는 endSec 없음)");
 
   // 1) 관측 연속성·신선도: sample_age_max는 시계열 하나(max)다. [since, winEnd]의 모든 step에 점이 있고 나이가 기준 이하.
   const ages = load("sample_age_max");
@@ -84,7 +87,7 @@ function main() {
   else {
     // 첫 점은 since에서 한 step 안, 마지막 점은 winEnd에서 한 step 안이어야 한다. 사이 간격은 step을 넘으면 안 된다.
     if (agePts[0][0] - since > stepMs) holes.push(`시작 ${a.since} ~ ${new Date(agePts[0][0]).toISOString()}`);
-    if (winEnd - agePts[agePts.length - 1][0] > stepMs) holes.push(`${new Date(agePts[agePts.length - 1][0]).toISOString()} ~ 끝(run 종료 + 30초)`);
+    if (winEnd - agePts[agePts.length - 1][0] > stepMs) holes.push(`${new Date(agePts[agePts.length - 1][0]).toISOString()} ~ 끝(run 종료 + 45초)`);
     for (let i = 1; i < agePts.length; i++) {
       if (agePts[i][0] - agePts[i - 1][0] > stepMs) holes.push(`${new Date(agePts[i - 1][0]).toISOString()} ~ ${new Date(agePts[i][0]).toISOString()}`);
     }
@@ -99,6 +102,7 @@ function main() {
   if (stale.length) problems.push(`샘플이 ${maxAge}초보다 오래된 점: ${stale.slice(0, 5).join(", ")}${stale.length > 5 ? ` 외 ${stale.length - 5}` : ""}`);
   // run 끝 상태 관측: 어떤 점에서 (점 시각 − 가장 오래된 샘플 나이) ≥ until이면, 그 시점에 항상 있어야 할 모든 시계열의
   // 최신 샘플이 run 종료 뒤의 것이다. 그런 점이 없으면 run 종료 뒤 스크랩을 하나도 확인하지 못한 것이다.
+  // 초과판매의 나이에는 앱이 값을 센 뒤 지난 시간이 더해져 있어(export-prom.mjs, TS-054) "run 종료 뒤에 센 값"까지 본다.
   const postUntil = agePts.find(([t, v]) => Number.isFinite(v) && t - v * 1000 >= until);
   if (agePts.length && !postUntil) {
     problems.push("run 종료 뒤에 스크랩된 샘플을 확인하지 못했다(모든 항상-있는 시계열 기준) — run 끝 상태를 관측하지 못했다");

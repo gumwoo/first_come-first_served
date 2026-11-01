@@ -30,15 +30,15 @@
 //     스크랩 실패·스테일로 관측이 끊긴 것이다(gap). 한 틱이라도 있으면 판정 불가다 — 그 구간에서는 대기열 게이지가
 //     비어 있어도 "활성 이벤트 없음"인지 "관측 공백"인지 구분할 수 없다.
 //   - 값이 있어도 오래된 샘플이면 관측 공백이다. Prometheus는 스크랩이 늦어지면 5분(lookback) 안의 마지막 샘플을
-//     그대로 돌려준다. 항상 있어야 할 두 지표의 가장 오래된 샘플 나이가 --max-sample-age(기본 30초 = 스크랩 주기 15초 +
-//     여유, 잠정값)를 넘으면 그 틱은 관측 공백(freshness)이다.
+//     그대로 돌려준다. 항상 있어야 할 두 지표의 가장 오래된 샘플 나이가 --max-sample-age(기본 40초 = 스크랩 주기 15초 +
+//     초과판매 앱 갱신 주기 10초와 갱신에 걸린 시간(TS-054) + 스크랩 한 번 누락 15초, 잠정값)를 넘으면 그 틱은 관측 공백(freshness)이다.
 // --interval(틱 시작 사이 간격, 기본 5초)은 10초 이하만 받는다. 그래도 조회가 느리면 실제 간격이 늘어나므로, 조건마다
 // 연속 조회 사이의 실제 간격을 재서 14초(스크랩 주기 15초 − 여유 1초, 잠정값)를 넘은 적이 있으면 판정 불가로 센다 —
 // 그 사이 스크랩된 샘플(예: 순간적인 over-admit)을 보지 못했을 수 있다.
 //
 // 감시기는 구조상 run 끝을 보지 못한다(마지막 조회가 run 종료보다 앞서고, 마지막 상태는 종료 뒤 스크랩에야 들어온다).
 // 그래서 감시기의 0만으로는 "위반 없음"이 아니다 — 사후 검사(check-correctness.sh → prom-recheck.mjs)가 내보낸 데이터로
-// 같은 조건을 run 종료 + 30초까지 다시 보고, 그 단계까지 통과해야 위반이 없었다고 말할 수 있다.
+// 같은 조건을 run 종료 + 45초까지 다시 보고, 그 단계까지 통과해야 위반이 없었다고 말할 수 있다.
 // 조건별 집계는 watch-summary.json에 남는다.
 //
 // 종료(SIGINT·SIGTERM·--for 경과) 시 진행 중인 틱은 끝까지 기다린 뒤 판정한다. 조회마다 --query-timeout(기본 10초)이
@@ -54,7 +54,7 @@
 //   kubectl -n monitoring port-forward svc/prometheus-operated 9090:9090
 //
 //   node scripts/loadtest/watch-correctness.mjs --out artifacts/loadtest/<session>/<run> \
-//     [--interval 5] [--for 600] [--query-timeout 10] [--max-sample-age 30] [--on-violation "bash scripts/loadtest/loadgen.sh exec -- pkill -INT k6"]
+//     [--interval 5] [--for 600] [--query-timeout 10] [--max-sample-age 40] [--on-violation "bash scripts/loadtest/loadgen.sh exec -- pkill -INT k6"]
 import { exec } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -75,7 +75,7 @@ try {
       interval: { type: "string", default: "5" },
       for: { type: "string" },
       "query-timeout": { type: "string", default: "10" },
-      "max-sample-age": { type: "string", default: "30" },
+      "max-sample-age": { type: "string", default: "40" },
       "on-violation": { type: "string" },
     },
   }));
@@ -118,8 +118,10 @@ function main() {
   // timestamp()는 지표를 직접 고른 식(벡터 셀렉터)에만 샘플 시각을 준다 — 그래서 지표마다 따로 건다. 또 timestamp()는
   // 지표 이름을 떼므로, 같은 파드의 두 지표는 레이블이 같아져 정규식 하나로 묶으면 "same labelset" 오류가 난다.
   // 지표마다 구분 레이블을 붙인 뒤 or로 합친다(G1이 promtool로 확인한 형태).
+  // 초과판매 값은 앱이 10초마다 DB에서 세어 두고 스크랩은 그 값을 낸다(TS-054). 스크랩이 성공해도 값은 묵을 수 있어
+  // 앱이 낸 "센 뒤 지난 시간"(flowticket_metrics_snapshot_age_seconds)을 더한다. 그 지표가 없는 이전 이미지는 0으로 본다.
   const SAMPLE_AGE =
-    'max(label_replace(time() - timestamp(flowticket_seat_oversold), "m", "oversold", "", "")' +
+    'max(label_replace((time() - timestamp(flowticket_seat_oversold)) + (flowticket_metrics_snapshot_age_seconds or (flowticket_seat_oversold * 0)), "m", "oversold", "", "")' +
     ' or label_replace(time() - timestamp(flowticket_queue_admit_tick_failures_total), "m", "tickfail", "", ""))';
 
   // Prometheus 즉시 질의. 시간 초과·HTTP 오류·status≠success는 예외로 올린다.

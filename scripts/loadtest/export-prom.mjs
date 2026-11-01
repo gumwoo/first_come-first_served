@@ -12,7 +12,7 @@
 // 시각이 조금만 흔들려도 한 샘플이 두 step 사이에 끼어 빠진다(G1이 실서버 백필로 재현: step 15는 놓치고 14는 잡았다).
 // 사후 재확인(prom-recheck.mjs)은 step이 10초를 넘으면 판정 불가로 끝낸다.
 //
-// --start는 run 시작 이전, --end는 run 종료 + 45초 이후로 잡는다(사후 검사가 요구 — 파드 대조 여유 45초, 스크랩 두 주기 30초 포함). run 마지막 순간의 상태(특히 승격 처리
+// --start는 run 시작 이전, --end는 run 종료 + 45초 이후로 잡는다(사후 검사가 요구 — 파드 대조 여유 45초, 사후 재확인 꼬리 45초). 내보내기는 run 종료 + 45초에서 스크랩 한 주기(15초)를 더 기다린 뒤 돌린다 — 그 전이면 끝 구간 점이 아직 없어 재확인이 판정 불가로 끝난다. run 마지막 순간의 상태(특히 승격 처리
 // 실패)는 종료 뒤 스크랩에야 Prometheus에 들어오므로, --end를 run 종료 시각에 맞추면 그 구간이 빠진다. 사후 검사
 // (check-correctness.sh)는 이 파일들로 run 구간의 파드·재시작·승격 처리 실패를 확인하고, --start가 run 시작보다
 // 늦으면 판정 불가로 끝낸다.
@@ -61,8 +61,9 @@ export const QUERIES = {
   seat_oversold: "max(flowticket_seat_oversold)",
   // 관측 신선도(prom-recheck.mjs). 항상 있어야 할 두 지표의 가장 오래된 샘플 나이 — 감시기의 신선도 질의와 같은 식.
   // timestamp()는 지표 이름을 떼므로 지표마다 따로 걸고 구분 레이블을 붙여 or로 합친다(같은 레이블 묶음 오류 방지).
+  // 초과판매는 앱이 미리 센 값이라 센 뒤 지난 시간을 더한다(TS-054, 지표가 없는 이전 이미지는 0).
   sample_age_max:
-    'max(label_replace(time() - timestamp(flowticket_seat_oversold), "m", "oversold", "", "")' +
+    'max(label_replace((time() - timestamp(flowticket_seat_oversold)) + (flowticket_metrics_snapshot_age_seconds or (flowticket_seat_oversold * 0)), "m", "oversold", "", "")' +
     ' or label_replace(time() - timestamp(flowticket_queue_admit_tick_failures_total), "m", "tickfail", "", ""))',
   // API 지연·처리량(§3.2 판정, §3.4 SLO)
   http_p95_by_uri: "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket[1m])))",

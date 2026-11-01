@@ -1,0 +1,31 @@
+# postgres-exporter 사용자 정의 쿼리. run 수집(pgwatch.sql)과 같은 세션 상태와 WAL 동기화를 지표로 낸다.
+# 측정용 연결(psql, 이 exporter 자신)은 뺀다.
+flowticket_pg:
+  query: |
+    SELECT count(*) FILTER (WHERE state = 'active') AS active,
+           count(*) FILTER (WHERE state = 'active' AND wait_event_type = 'Lock') AS lock_wait,
+           count(*) FILTER (WHERE state = 'idle in transaction') AS idle_in_tx,
+           coalesce(max(extract(epoch FROM clock_timestamp() - xact_start)) FILTER (WHERE state <> 'idle'), 0) AS max_xact_seconds
+    FROM pg_stat_activity
+    WHERE datname = 'flowticket' AND backend_type = 'client backend' AND pid <> pg_backend_pid() AND application_name <> 'psql'
+  metrics:
+    - active: { usage: GAUGE, description: "실행 중 세션" }
+    - lock_wait: { usage: GAUGE, description: "잠금 대기 중인 실행 세션" }
+    - idle_in_tx: { usage: GAUGE, description: "idle in transaction 세션" }
+    - max_xact_seconds: { usage: GAUGE, description: "가장 오래 열린 트랜잭션(초)" }
+
+flowticket_pg_wait:
+  query: |
+    SELECT coalesce(wait_event_type || ':' || wait_event, 'CPU') AS event, count(*) AS sessions
+    FROM pg_stat_activity
+    WHERE datname = 'flowticket' AND backend_type = 'client backend' AND pid <> pg_backend_pid() AND application_name <> 'psql' AND state = 'active'
+    GROUP BY 1
+  metrics:
+    - event: { usage: LABEL, description: "대기 이벤트(대기 없으면 CPU)" }
+    - sessions: { usage: GAUGE, description: "그 대기 이벤트의 실행 세션 수" }
+
+flowticket_pg_wal:
+  query: "SELECT wal_sync AS syncs, wal_sync_time AS sync_time_ms FROM pg_stat_wal"
+  metrics:
+    - syncs: { usage: COUNTER, description: "WAL 동기화 횟수" }
+    - sync_time_ms: { usage: COUNTER, description: "WAL 동기화 누적 시간(ms, track_wal_io_timing)" }

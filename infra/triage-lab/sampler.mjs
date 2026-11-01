@@ -14,7 +14,8 @@ const WANT = /^(process_cpu_time_ns_total|tomcat_threads_busy_threads|hikaricp_c
 
 async function read(port) {
   const t0 = Date.now();
-  const txt = await (await fetch(`http://localhost:${port}/actuator/prometheus`)).text();
+  // localhost는 IPv6(::1)로 먼저 풀리는데, 이 PC의 Docker 포트 전달은 IPv6 연결을 끊어 지표를 못 읽은 run이 있었다(2026-10-29).
+  const txt = await (await fetch(`http://127.0.0.1:${port}/actuator/prometheus`)).text();
   const t1 = Date.now();
   const row = { rtt: t1 - t0 };
   for (const line of txt.split("\n")) {

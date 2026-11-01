@@ -2,7 +2,7 @@
 // 실제 웹훅은 부르지 않는다(가짜 fetch). 의존성 없는 node 내장 테스트.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bold, firstSentence, postSlack, shouldNotify, slackText, softEnding } from "./notify.mjs";
+import { alertInvalidText, alertSlackText, bold, firstSentence, postSlack, shouldNotify, slackText, softEnding } from "./notify.mjs";
 
 const summary = {
   booking: { p95_median_ms: 3011, http5xx: 0 },
@@ -61,6 +61,27 @@ test("확인 방법은 첫 문장만, 길면 자르고, 끝말은 본문 말투�
   assert.equal(softEnding("먼저 재현해야 한다"), "먼저 재현해야 해요");
   assert.equal(softEnding("시계열로 점검한다"), "시계열로 점검하기");
   assert.equal(softEnding("pg_locks 대기 체인"), "pg_locks 대기 체인");         // 패턴 밖은 그대로
+});
+
+test("알림 분석 메시지는 규칙과 AI가 같아도 만들고, 갈릴 때만 확인을 부탁한다", () => {
+  const p = (...a) => plain(alertSlackText(...a)).split("\n");
+  const agree = ai({ verdict: "anomaly", conclusion: "supported", hypotheses: [hyp("app_cpu", "api CPU 부족", "스레드 덤프를 본다.")] });
+  assert.deepEqual(p("FlowticketBookingSlow", summary, rule, agree), [
+    "[장애 알림 분석] FlowticketBookingSlow 알림 구간에서 예매가 느려졌어요. p95가 3,011ms까지 올라갔고, 커넥션 하나 받는 데 평균 1,018ms 기다렸어요.",
+    "규칙으로는 앱 CPU 부족으로 나와요. 커넥션을 한 번 잡으면 평균 76.6ms씩 쥐고 있었는데, Redis랑 DB 수치는 괜찮았거든요.",
+    "AI도 같은 쪽(\"api CPU 부족\")으로 봤어요.",
+    "• 스레드 덤프를 보기",
+  ]);
+  assert.match(p("A", summary, rule, disagreeing)[2], /^그런데 AI는 "좌석 행 잠금 경합.+" 쪽을 더 의심하고 있어서 한번 봐주시면 좋겠어요\. AI도 확정은 못 했대요\.$/);
+  const normalRule = { verdict: "normal", cause: null };
+  assert.deepEqual(p("A", summary, normalRule, disagreeing).slice(1, 3), ["규칙으로는 이 구간 수치가 이상 기준 아래로 나와요.", "AI는 \"좌석 행 잠금 경합으로 커넥션 풀(5)이 고갈됨\" 쪽을 가장 의심하고 있어요. AI도 확정은 못 했대요."]);
+  assert.equal(p("A", summary, { verdict: "undetermined" }, null)[2], "AI 분석은 부르지 않았어요.");
+  assert.equal(p("A", summary, rule, { ...disagreeing, verification: { ok: false } })[2], "AI 답은 근거 수치가 요약과 맞지 않아 빼 뒀어요.");
+  assert.equal(p("A", summary, rule, { error: "x" })[2], "AI 분석은 실패해서 이번엔 빠졌어요.");
+  assert.equal(p("A", summary, normalRule, ai({ verdict: "normal", hypotheses: [] }))[2], "AI도 이상 없는 구간으로 봤어요.");
+  const invalid = plain(alertInvalidText("FlowticketApiUnresponsive", { validity: { reasons: ["api 지표가 분석 구간 앞뒤를 감싸지 못한다(긁기 성공 4/20회)"] } })).split("\n");
+  assert.equal(invalid[0], "[장애 알림 분석] FlowticketApiUnresponsive 알림 구간은 지표가 모자라 원인 분석을 못 했어요(api 지표가 분석 구간 앞뒤를 감싸지 못한다(긁기 성공 4/20회)).");
+  assert.match(invalid[1], /api 요청 스레드와 DB 상태를 같이/);
 });
 
 test("웹훅 URL이 없거나 Slack 주소가 아니면 보내지 않는다", async () => {

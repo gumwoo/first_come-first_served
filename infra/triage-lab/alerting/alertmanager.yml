@@ -1,0 +1,13 @@
+# 실험실 Alertmanager: 모든 알림을 호스트에서 도는 분석 훅으로 보낸다(Slack 전송은 훅이 한다).
+# 훅은 비밀(ANTHROPIC_API_KEY, Slack 웹훅)을 환경변수로 받아야 해서 컨테이너가 아니라 호스트 프로세스로 띄운다.
+route:
+  receiver: triage-hook
+  group_by: [alertname]
+  group_wait: 1s
+  group_interval: 30s
+  repeat_interval: 1h
+receivers:
+  - name: triage-hook
+    webhook_configs:
+      - url: http://host.docker.internal:18099/alert
+        send_resolved: false

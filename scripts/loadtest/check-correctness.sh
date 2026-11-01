@@ -139,6 +139,7 @@ AO="" AO_RAW="" POD_OK=0
 
 echo "==> 0/4 내보낸 구간 확인(prom/_meta.json)"
 # 파드 대조와 4단계(실시간 조건 사후 재확인)는 내보낸 구간이 run 전체 + 꼬리를 덮어야 믿을 수 있다(재확인 45초, 파드 대조 여유 45초).
+# 내보내기는 run 종료 + 45초에서 스크랩 한 주기를 더 기다린 뒤 돌린다(그 전이면 재확인의 끝 구간 점이 비어 판정 불가).
 if node -e '
 const fs = require("fs");
 const [out, since, until] = process.argv.slice(1);

@@ -25,7 +25,8 @@ import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 // run 마지막 상태가 들어오는 데 필요한 꼬리. 초과판매는 앱이 10초마다 세어 두므로(TS-054) run 종료 뒤에 센 값이 스크랩돼
-// 내보내기 점에 찍히기까지 갱신 대기 10초 + 갱신 시간 + 스크랩 15초 + step 10초가 걸린다(계산). 여유를 두어 45초로 둔다.
+// 내보내기 점에 찍히기까지 갱신 대기(10초 + 갱신 시간 d) + 게시까지 d + 스크랩 15초 + step 10초, 최악 35 + 2d초가 걸린다(계산).
+// 45초는 갱신 한 번이 5초 안에 끝나면 버틴다. run이 이 검사로 판정 불가가 되면 flowticket_metrics_snapshot_age_seconds부터 본다.
 const TAIL_MS = 45_000;
 const MAX_STEP_SEC = 10; // 내보내기 step 상한(수집 주기 15초보다 충분히 짧게, 잠정값)
 const MAX_SAMPLE_AGE_CAP = 60; // --max-sample-age 상한. 크게 주면 lookback(5분) 안의 오래된 값을 그대로 받아들인다

@@ -88,7 +88,7 @@
 - dbnet은 규칙이 모르는 장애라 규칙은 app_cpu로 냈고, AI가 다른 원인을 내 두 번 모두 사람 확인으로 표시됐다([[IMP-051]]~[[IMP-053]]과 같은 모양).
 
 ### 5.4 메시지 (3차)
-규칙과 AI가 같은 run(d7dca392)과 갈린 run(e59abf3f)의 메시지다. 측정 때 만든 메시지를 2026-11-01에 기존 Alertmanager 웹훅(SSM `/flowticket/SLACK_ALERT_WEBHOOK_URL`)으로 보내 채널 표시를 확인했다. 확인 방법은 AI 답의 첫 문장이다.
+규칙과 AI가 같은 run(d7dca392)과 갈린 run(e59abf3f)의 메시지다. 측정 때 만든 메시지를 2026-11-01에 기존 Alertmanager 웹훅(SSM `/flowticket/SLACK_ALERT_WEBHOOK_URL`)으로 보내 채널 표시를 확인했다. 확인 방법은 AI 답의 첫 문장이다. 메시지 원문은 레포 밖 `artifacts/triage-lab/alerts/20261029-152900-FlowticketBookingSlow/slack.txt`·`20261029-152306-FlowticketBookingSlow/slack.txt`에 있다.
 
 ![장애 알림 분석 메시지 두 개. 첫 메시지는 예매 p95 1,669ms와 커넥션 대기 평균 310ms, 규칙 판정 Redis 지연(명령 완료 평균 34.08ms), AI도 같은 쪽으로 봤다는 문장과 확인 방법 한 줄. 두 번째 메시지는 예매 p95 2,384ms와 커넥션 대기 평균 803ms, 규칙 판정 앱 CPU 부족(커넥션 점유 평균 60.1ms), AI가 api 프로세스 내부 정지를 더 의심해 확인을 부탁하는 문장과 확인 방법 두 줄.](../assets/imp054-alert-slack.png)
 

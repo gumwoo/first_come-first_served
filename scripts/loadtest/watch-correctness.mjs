@@ -30,8 +30,8 @@
 //     스크랩 실패·스테일로 관측이 끊긴 것이다(gap). 한 틱이라도 있으면 판정 불가다 — 그 구간에서는 대기열 게이지가
 //     비어 있어도 "활성 이벤트 없음"인지 "관측 공백"인지 구분할 수 없다.
 //   - 값이 있어도 오래된 샘플이면 관측 공백이다. Prometheus는 스크랩이 늦어지면 5분(lookback) 안의 마지막 샘플을
-//     그대로 돌려준다. 항상 있어야 할 두 지표의 가장 오래된 샘플 나이가 --max-sample-age(기본 30초 = 스크랩 주기 15초 +
-//     여유, 잠정값)를 넘으면 그 틱은 관측 공백(freshness)이다.
+//     그대로 돌려준다. 항상 있어야 할 두 지표의 가장 오래된 샘플 나이가 --max-sample-age(기본 40초 = 스크랩 주기 15초 +
+//     초과판매 앱 갱신 주기 10초(TS-054) + 스크랩 한 번 누락 15초, 잠정값)를 넘으면 그 틱은 관측 공백(freshness)이다.
 // --interval(틱 시작 사이 간격, 기본 5초)은 10초 이하만 받는다. 그래도 조회가 느리면 실제 간격이 늘어나므로, 조건마다
 // 연속 조회 사이의 실제 간격을 재서 14초(스크랩 주기 15초 − 여유 1초, 잠정값)를 넘은 적이 있으면 판정 불가로 센다 —
 // 그 사이 스크랩된 샘플(예: 순간적인 over-admit)을 보지 못했을 수 있다.
@@ -54,7 +54,7 @@
 //   kubectl -n monitoring port-forward svc/prometheus-operated 9090:9090
 //
 //   node scripts/loadtest/watch-correctness.mjs --out artifacts/loadtest/<session>/<run> \
-//     [--interval 5] [--for 600] [--query-timeout 10] [--max-sample-age 30] [--on-violation "bash scripts/loadtest/loadgen.sh exec -- pkill -INT k6"]
+//     [--interval 5] [--for 600] [--query-timeout 10] [--max-sample-age 40] [--on-violation "bash scripts/loadtest/loadgen.sh exec -- pkill -INT k6"]
 import { exec } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -75,7 +75,7 @@ try {
       interval: { type: "string", default: "5" },
       for: { type: "string" },
       "query-timeout": { type: "string", default: "10" },
-      "max-sample-age": { type: "string", default: "30" },
+      "max-sample-age": { type: "string", default: "40" },
       "on-violation": { type: "string" },
     },
   }));

@@ -124,6 +124,20 @@ class OperationalMetricsTest {
     }
 
     @Test
+    @DisplayName("값이 묵은 시간은 세기 시작한 시각부터 잰다(뒤 질의를 기다린 시간이 앞 값의 나이에 들어간다)")
+    void 묵은_시간은_세기_시작한_시각부터다() {
+        // 마지막 질의가 커넥션을 12초 기다린 상황
+        when(outboxRepository.findOldestCreatedAt(OutboxStatus.PENDING)).thenAnswer(inv -> {
+            clock.advance(Duration.ofSeconds(12));
+            return null;
+        });
+
+        metrics.refresh();
+
+        assertThat(registry.get("flowticket.metrics.snapshot.age").gauge().value()).isEqualTo(12.0);
+    }
+
+    @Test
     @DisplayName("DB 질의가 실패해도 그 값만 값 없음이 되고 나머지는 살아 있다")
     void 질의_실패는_격리된다() {
         when(outboxRepository.countByStatus(any())).thenThrow(new RuntimeException("db down"));

@@ -9,15 +9,15 @@
 //
 // 판정의 전제는 "그 구간을 실제로 관측했다"는 것이다. 항상 있어야 할 지표(초과판매, 승격 실패 카운터)의 샘플 나이
 // (prom/sample_age_max.json — 감시기의 신선도 질의와 같은 식)가 [since, until + 30초]의 모든 step에 있고
-// --max-sample-age(기본 30초, 최대 60초, 잠정값) 이하여야 한다. 점이 빠졌거나 오래됐으면 그 구간은 관측 공백이라
+// --max-sample-age(기본 40초 = 스크랩 15초 + 초과판매 앱 갱신 10초(TS-054) + 스크랩 한 번 누락 15초, 최대 60초, 잠정값) 이하여야 한다. 점이 빠졌거나 오래됐으면 그 구간은 관측 공백이라
 // 판정 불가다. 또 run 종료 뒤에 항상 있어야 할 모든 시계열이 한 번 이상 스크랩됐어야 한다 — 어떤 점에서든
 // (점 시각 − 가장 오래된 샘플 나이) ≥ until이면 그 시점의 모든 시계열 샘플이 run 종료 뒤의 것이다. 이것이 없으면
-// run 끝 상태를 관측하지 못한 것이다(샘플 나이 30초 기준만으로는 run 종료 10초 전 샘플로도 통과할 수 있다 — G1 재현).
+// run 끝 상태를 관측하지 못한 것이다(샘플 나이 기준만으로는 run 종료 10초 전 샘플로도 통과할 수 있다 — G1 재현).
 // 대기열 게이지(admitted·admit_drift)가 구간 내내 하나도 없어도 판정 불가다 — 측정 run에는 활성
 // 이벤트가 있어야 하므로, 없다면 지표 미배포·수집 실패다(감시기의 "값이 한 번도 나오지 않은 조건"과 같은 기준).
 //
 //   node scripts/loadtest/prom-recheck.mjs --prom-dir <run>/prom --since <run 시작 UTC ISO> --until <run 종료 UTC ISO> \
-//     [--max-sample-age 30]
+//     [--max-sample-age 40]
 //
 // 종료 코드: 0 위반 없음(구간 전체를 신선하게 관측했고 조건이 모두 0), 1 위반(over-admit·카운터 어긋남·초과판매),
 //            2 판정 불가(관측 공백, 승격 처리 실패, 파일·인자 문제). 위반을 찾았으면 다른 문제가 있어도 1이다.
@@ -34,7 +34,7 @@ function main() {
       "prom-dir": { type: "string" },
       since: { type: "string" },
       until: { type: "string" },
-      "max-sample-age": { type: "string", default: "30" },
+      "max-sample-age": { type: "string", default: "40" },
     },
   });
   if (!a["prom-dir"] || !a.since || !a.until) throw new Error("--prom-dir, --since, --until이 필요하다");

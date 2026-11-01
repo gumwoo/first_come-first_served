@@ -111,6 +111,8 @@ public class OperationalMetrics {
      * 알림이 오발화하지 않고, 0으로 두면 "적체 없음"과 "수집 실패"가 같은 값이 된다.
      */
     void refresh() {
+        // 세기 시작한 시각으로 찍는다. 끝난 시각으로 찍으면 앞 질의의 값이 뒤 질의를 기다린 만큼 실제보다 덜 묵어 보인다.
+        Instant countedAt = clock.instant();
         double dead = count("flowticket.outbox.events{status=DEAD}", () -> outboxRepository.countByStatus(OutboxStatus.DEAD));
         double pending = count("flowticket.outbox.events{status=PENDING}", () -> outboxRepository.countByStatus(OutboxStatus.PENDING));
         double oversold = count("flowticket.seat.oversold", orderRepository::countOversoldSeats);
@@ -122,7 +124,7 @@ public class OperationalMetrics {
             log.warn("[metrics] 미발행 최장 대기 수집 실패: {}", e.toString());
             oldestFailed = true;
         }
-        snapshot = new Snapshot(dead, pending, oldest, oldestFailed, oversold, clock.instant());
+        snapshot = new Snapshot(dead, pending, oldest, oldestFailed, oversold, countedAt);
     }
 
     /** 예약 실행은 예외가 한 번 나면 다음 실행이 멈춘다. 갱신이 조용히 끊기지 않게 모두 삼킨다. */

@@ -87,8 +87,8 @@ export function alertInvalidText(alertName, summary) {
   const head = bold(`${ALERT_PREFIX} ${alertName}`);
   const why = summary.validity.reasons.join(", ");
   const lines = [esc(`${head} 알림 구간은 지표가 모자라 원인 분석을 못 했어요(${why}).`)];
-  // 지표 요청은 아웃박스 행 수 등을 DB에서 세므로(OperationalMetrics) DB가 느려도 늦어진다.
-  if (/api 지표/.test(why)) lines.push("api가 지표 요청에도 제때 응답하지 못한 구간이에요. 지표 요청은 DB 쿼리도 하니까 api 요청 스레드와 DB 상태를 같이 봐 주시면 좋겠어요.");
+  // 실험실은 지표 요청과 사용자 요청이 같은 포트라, 요청 스레드가 밀리거나(DB가 느린 경우 포함) 프로세스가 멈추면 지표도 늦어진다.
+  if (/api 지표/.test(why)) lines.push("api가 지표 요청에도 제때 응답하지 못한 구간이에요. api 요청 스레드와 DB 상태를 같이 봐 주시면 좋겠어요.");
   return lines.join("\n");
 }
 

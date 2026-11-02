@@ -17,6 +17,7 @@ import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 좌석·가격 기본 시딩(멱등). KOPIS엔 좌석·가격이 없어 기본 템플릿으로 생성한다.
@@ -33,12 +34,14 @@ public class SeatSeeder {
     private final SeatRepository seatRepository;
     private final EventSeatPriceRepository priceRepository;
     private final EventRepository eventRepository;
+    private final TransactionTemplate tx;
 
     public SeatSeeder(SeatRepository seatRepository, EventSeatPriceRepository priceRepository,
-                      EventRepository eventRepository) {
+                      EventRepository eventRepository, TransactionTemplate tx) {
         this.seatRepository = seatRepository;
         this.priceRepository = priceRepository;
         this.eventRepository = eventRepository;
+        this.tx = tx;
     }
 
     /**
@@ -58,7 +61,9 @@ public class SeatSeeder {
                 continue;
             }
             try {
-                seedForEvent(eventId);
+                // 같은 빈의 @Transactional 메서드를 직접 부르면 프록시를 타지 않아 트랜잭션이 없다. 그러면 가격·좌석·
+                // 최저가가 따로 커밋돼 중간 실패가 부분 저장을 남긴다. 경계를 코드로 연다.
+                tx.executeWithoutResult(status -> seedForEvent(eventId));
                 seeded++;
             } catch (Exception e) {
                 log.warn("[seat] 좌석 시딩 실패 event={}: {}", eventId, e.getMessage());
@@ -84,6 +89,10 @@ public class SeatSeeder {
         }
         PriceTier tier = PriceTier.of(event.getGenre(), eventId);
 
+        // 좌석 없이 가격만 있는 공연이 있을 수 있다(트랜잭션 없이 돌던 시절의 부분 저장). 그대로 넣으면 unique에 걸려
+        // 그 공연은 시딩될 때마다 실패한다. 남은 값을 살리지 않고 지운다. 티어는 장르로 정해져 장르가 바뀌면 남은 값과
+        // 달라지고, 섞이면 VIP가 A보다 싸지거나 최저가 표시가 실제 가격과 어긋난다. 좌석이 없으니 판매된 적도 없다.
+        priceRepository.deleteByEventId(eventId);
         for (SeatGrade g : SeatGrade.values()) {
             priceRepository.save(EventSeatPrice.builder()
                     .eventId(eventId).grade(g).price(tier.priceOf(g)).build());

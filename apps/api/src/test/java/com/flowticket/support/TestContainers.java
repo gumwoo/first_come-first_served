@@ -14,7 +14,14 @@ import org.testcontainers.utility.DockerImageName;
  */
 public final class TestContainers {
 
-    private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+    /**
+     * 설정이 다른 테스트 클래스마다 Spring 컨텍스트가 하나씩 캐시되고 각자 커넥션 풀을 쥔다(IntegrationTestSupport).
+     * 기본 max_connections(100)는 컨텍스트가 늘면 넘어, 새 컨텍스트가 "too many clients"로 뜨지 못하고 그 클래스 전체가
+     * 실패한다. 어느 클래스가 걸릴지는 실행 순서가 정하므로 원인과 무관한 테스트가 실패한 것처럼 보인다.
+     * withCommand는 이미지 기본 명령을 대체하므로 Testcontainers 기본값인 fsync=off도 함께 넘긴다.
+     */
+    private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16")
+            .withCommand("postgres", "-c", "fsync=off", "-c", "max_connections=300");
     private static final GenericContainer<?> REDIS =
             new GenericContainer<>(DockerImageName.parse("redis:7.4")).withExposedPorts(6379);
 

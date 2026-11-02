@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -20,6 +21,7 @@ import com.flowticket.global.error.BusinessException;
 import com.flowticket.global.error.ErrorCode;
 import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.dto.PaymentResponse;
+import com.flowticket.order.gateway.PaymentGateway.ApproveResult;
 import com.flowticket.order.repository.OrderItemRepository;
 import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.order.repository.PaymentRepository;
@@ -207,6 +209,55 @@ class PaymentIntegrationTest extends IntegrationTestSupport {
         verify(gateway, times(1)).refund(eq("MOCK-" + key), anyInt(), eq("void-MOCK-" + key));
         assertThat(orderStat(c.orderId())).isEqualTo("PAID");
         assertThat(paymentStat(c.orderId())).isEqualTo("FAILED");
+    }
+
+    /** 보상 취소에 실패하면 승인 번호가 DB에 남아야 한다. 주문이 PAID면 정산도 보지 않아 이것이 유일한 단서다. */
+    @Test
+    void 보상_취소에_실패해도_결제_행에_승인_번호가_남는다() {
+        long user = 70L;
+        Ctx c = order(user, 1);
+        String key = "OK-" + c.orderId();
+        changeOrderStatusDuringApproval(c.orderId(), "PAID");
+        doReturn(ApproveResult.unknown("취소 결과 불명")).when(gateway).refund(anyString(), anyInt(), anyString());
+
+        assertThatThrownBy(() -> paymentService.pay(user, c.orderId(), "card", null, key))
+                .isInstanceOf(BusinessException.class);
+
+        assertThat(paymentStat(c.orderId())).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("select pg_tid from payments where order_id=?", String.class, c.orderId()))
+                .isEqualTo("MOCK-" + key);
+    }
+
+    /** 승인이 거절된 결제에는 승인 번호가 없다. 재시도 가능한 실패와 취소 대상을 구분하는 기준이다. */
+    @Test
+    void 승인_거절된_결제에는_승인_번호가_없다() {
+        long user = 71L;
+        Ctx c = order(user, 1);
+
+        paymentService.pay(user, c.orderId(), "card", null, "FAIL-" + c.orderId());
+
+        assertThat(jdbc.queryForObject("select pg_tid from payments where order_id=?", String.class, c.orderId()))
+                .isNull();
+    }
+
+    /** 가상계좌 발급을 기다리는 사이 주문이 끝난 경우. 계좌를 내주면 입금을 받을 주문이 없다. */
+    @Test
+    void 가상계좌_발급_중_주문이_만료되면_계좌를_내주지_않는다() {
+        long user = 72L;
+        Ctx c = order(user, 1);
+        doAnswer(inv -> {
+            jdbc.update("update orders set status='EXPIRED' where id=?", c.orderId());
+            return inv.callRealMethod();
+        }).when(gateway).issueVbank(eq(c.orderId()), anyInt());
+
+        assertThatThrownBy(() -> paymentService.pay(user, c.orderId(), "vbank", null, "VB-" + c.orderId()))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_STATE_TRANSITION);
+
+        assertThat(orderStat(c.orderId())).isEqualTo("EXPIRED");
+        assertThat(paymentStat(c.orderId())).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("select vbank_account from payments where order_id=?",
+                String.class, c.orderId())).isNull();
     }
 
     /** 같은 입금이 동시에 두 번 들어온 경우. 먼저 끝난 쪽이 이미 확정했으니 뒤쪽은 조용히 끝나야 한다. */

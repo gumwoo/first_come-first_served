@@ -16,7 +16,9 @@
    UPDATE orders SET status='PAID', paid_at=now()
    WHERE id=:id AND status='PENDING';
    ```
-   영향 1행이면 이 요청이 전이의 주인, 0행이면 이미 다른 경로가 전이함(무시/기존결과 반환).
+   영향 1행이면 이 요청이 전이의 주인, 0행이면 이미 다른 경로가 전이함. 0행의 뜻은 호출부가 정한다.
+   같은 시도의 재처리면 기존 결과를 반환하고, PG 승인을 들고 온 결제라면 반영할 주문이 없으니 승인을
+   보상 취소하고 실패로 끝낸다([[TS-055]]).
 2. **결제 멱등성**: `payments.idempotency_key` UNIQUE로 "같은 결제 시도"의 중복 생성을 DB가 차단.
    재시도(사용자 의도)는 **새 키 = 새 payment row**로 허용.
 3. **경합 규칙**: 승인(→PAID) vs 만료 sweep(→EXPIRED)이 동시에 와도 조건부 UPDATE로 **한쪽만** 성공.

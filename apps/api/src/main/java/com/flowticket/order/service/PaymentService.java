@@ -109,7 +109,13 @@ public class PaymentService {
             if ("vbank".equals(method)) {
                 // 발급도 외부 호출이다. 계좌를 받아 온 뒤 별도 트랜잭션에서 확정한다.
                 PaymentGateway.VbankIssue vb = gateway.issueVbank(orderId, started.amount());
-                return tx.execute(status -> assignVbankTx(started.paymentId(), orderId, vb));
+                try {
+                    return tx.execute(status -> assignVbankTx(started.paymentId(), orderId, vb));
+                } catch (BusinessException e) {
+                    // 계좌는 응답하지 않았으니 입금이 들어올 일이 없다. READY로 두면 입금 대기와 구분되지 않는다.
+                    tx.execute(status -> failPaymentTx(started.paymentId(), orderId, null));
+                    throw e;
+                }
             }
             ApproveResult res = gateway.approve(orderId, started.amount(), method, provider, idemKey);
             return settle(started.paymentId(), orderId, started.amount(), res, OrderStatus.PENDING);
@@ -173,6 +179,8 @@ public class PaymentService {
         while (true) {
             Payment winner = paymentRepository.findByIdempotencyKey(idemKey)
                     .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+            // UNIQUE 충돌로 온 경로는 위 존재 확인을 지나쳤으므로 여기서 다시 본다.
+            rejectIfKeyBelongsToAnotherOrder(winner, orderId);
             if (settled(winner) || System.nanoTime() >= deadline) {
                 if (!settled(winner)) {
                     log.warn("[payment] 중복 요청이 승자를 기다리다 상한 초과 orderId={} key={}", orderId, idemKey);
@@ -210,6 +218,7 @@ public class PaymentService {
         // 멱등: 같은 결제 시도가 이미 있으면 그 사실만 들고 나간다(순차 더블클릭 방어)
         var dup = paymentRepository.findByIdempotencyKey(idemKey);
         if (dup.isPresent()) {
+            rejectIfKeyBelongsToAnotherOrder(dup.get(), orderId);
             return new Started(dup.get().getId(), order.getAmount(), dup.get().getStatus());
         }
         if (order.getStatus() != OrderStatus.PENDING) {
@@ -236,7 +245,10 @@ public class PaymentService {
         payment.assignVbank(vb.account(), order.getExpiresAt(), vb.secret()); // 입금기한 = 결제 제한시각
         // 벌크 UPDATE(clearAutomatically)가 컨텍스트를 비우기 전에 계좌/기한/secret을 확정(TS-007)
         paymentRepository.saveAndFlush(payment);
-        orderRepository.markVbankWaiting(orderId); // PENDING→VBANK_WAITING
+        // PENDING→VBANK_WAITING. 발급을 기다리는 사이 만료되거나 다른 결제가 확정했으면 입금을 받을 주문이 없다.
+        if (orderRepository.markVbankWaiting(orderId) != 1) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
+        }
         return PaymentResponse.vbank(payment.getId(), OrderStatus.VBANK_WAITING.name(),
                 vb.account(), order.getExpiresAt());
     }
@@ -244,21 +256,22 @@ public class PaymentService {
     /**
      * 승인 결과를 반영한다. 트랜잭션 밖에서 불린다.
      *
-     * 확정이 실패하면(만료 sweep이 좌석을 먼저 풀었다) PG 승인만 남으므로 취소로 되돌린다. 그 취소도
+     * 확정이 실패하면(만료 sweep이 좌석이나 주문을 먼저 끝냈다) PG 승인만 남으므로 취소로 되돌린다. 그 취소도
      * 외부 호출이라 트랜잭션 밖인 여기서 한다. 예전에는 롤백 직전 트랜잭션 안에서 불렀다(TS-011).
      */
     private PaymentResponse settle(Long paymentId, Long orderId, int amount,
                                    ApproveResult res, OrderStatus from) {
         if (!res.success()) {
             // FAILED만 기록, 주문 PENDING 유지(재시도 가능)
-            return tx.execute(status -> failPaymentTx(paymentId, orderId));
+            return tx.execute(status -> failPaymentTx(paymentId, orderId, null));
         }
         try {
             return tx.execute(status -> finalizePaidTx(paymentId, orderId, from, res.pgTid()));
         } catch (RuntimeException e) {
             compensateApproval(orderId, amount, res.pgTid());
             // 승인만 취소하고 결제 행은 실패로 남긴다. READY로 두면 입금 대기와 구분되지 않는다.
-            tx.execute(status -> failPaymentTx(paymentId, orderId));
+            // 승인 번호는 남긴다. 확정 롤백으로 지워지면 PG에 났던 승인을 DB에서 찾을 길이 없다.
+            tx.execute(status -> failPaymentTx(paymentId, orderId, res.pgTid()));
             throw e;
         }
     }
@@ -266,15 +279,21 @@ public class PaymentService {
     /**
      * 확정하지 못한 승인을 되돌린다(TS-011 3)).
      *
-     * 취소에 실패해도 원 예외를 그대로 올린다. 승인 직후 크래시 구간과 마찬가지로
-     * PaymentReconciliationService가 다음 틱에 정리한다(ADR-011).
+     * 취소에 실패해도 원 예외를 그대로 올린다. 주문이 미확정(PENDING/EXPIRED)이면 승인 직후 크래시
+     * 구간과 마찬가지로 PaymentReconciliationService가 정리한다(ADR-011). 주문이 이미 PAID면 정산 후보가
+     * 아니어서 이 ERROR 로그와 결제 행의 승인 번호를 보고 사람이 처리해야 한다.
      */
     private void compensateApproval(Long orderId, int amount, String pgTid) {
         try {
             // 멱등키는 승인 단위로 고정한다(pgTid). 같은 승인을 두 번 취소하지 않는다.
-            gateway.refund(pgTid, amount, "void-" + pgTid);
+            // 게이트웨이는 실패를 예외가 아니라 결과로 돌려주므로 결과까지 본다.
+            ApproveResult cancelled = gateway.refund(pgTid, amount, "void-" + pgTid);
+            if (!cancelled.success()) {
+                log.error("[payment] 보상 취소 실패 orderId={} pgTid={} 사유={}",
+                        orderId, pgTid, cancelled.failReason());
+            }
         } catch (RuntimeException ex) {
-            log.warn("[payment] 보상 취소 실패 orderId={} pgTid={}: {}", orderId, pgTid, ex.getMessage());
+            log.error("[payment] 보상 취소 실패 orderId={} pgTid={}: {}", orderId, pgTid, ex.getMessage());
         }
     }
 
@@ -291,11 +310,12 @@ public class PaymentService {
         return "vbank".equals(payment.getMethod()) && payment.getVbankAccount() != null;
     }
 
-    private PaymentResponse failPaymentTx(Long paymentId, Long orderId) {
+    /** @param pgTid 취소 대상이 된 승인 번호. 승인이 나지 않았으면 null. */
+    private PaymentResponse failPaymentTx(Long paymentId, Long orderId, String pgTid) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
         if (payment.getStatus() == PaymentStatus.READY) {
-            payment.fail();
+            payment.fail(pgTid);
             paymentRepository.save(payment);
         }
         return PaymentResponse.of(payment.getId(), payment.getStatus().name(), currentStatus(orderId).name());
@@ -402,24 +422,43 @@ public class PaymentService {
         paymentRepository.saveAndFlush(payment); // 벌크 UPDATE의 컨텍스트 클리어 전에 확정(TS-007)
 
         int updated = orderRepository.markPaid(order.getId(), from);
-        if (updated == 1) {
-            List<Long> seatIds = orderItemRepository.findByOrderId(order.getId()).stream()
-                    .map(OrderItem::getSeatId).toList();
-            int sold = seatRepository.sellSeats(seatIds, SeatStatus.SOLD, SeatStatus.HELD);
-            int converted = holdRepository.convertHold(order.getHoldId());
-            // 영향 행 수 검증(ADR-003). 만료 sweep이 먼저 이겨 좌석/홀드가 이미 풀렸으면(HELD 아님) 0행 →
-            // 예외로 트랜잭션 전체 롤백(markPaid·approve 포함). "주문 PAID인데 좌석은 AVAILABLE"
-            // = 결제했는데 좌석이 재판매되는 반대 방향 레이스 차단(TS-011).
-            if (sold != seatIds.size() || converted != 1) {
-                // 확정 불가(TS-011). 예외로 이 트랜잭션 전체를 롤백한다(markPaid·approve 포함).
-                // PG 승인을 되돌리는 보상은 여기서 하지 않는다 — 그것도 외부 호출이라 트랜잭션
-                // 밖에서 해야 하고, 경로마다 주체가 다르다(승인 경로는 settle, 입금 경로는 래퍼).
-                throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
+        if (updated != 1) {
+            // 같은 입금이 동시에 두 번 들어온 경우만 정상이다. 먼저 끝난 쪽이 이미 확정했다.
+            if (from == OrderStatus.VBANK_WAITING && currentStatus(order.getId()) == OrderStatus.PAID) {
+                return;
             }
-            // 아웃박스 적재(ADR-010): 이 트랜잭션과 같은 커밋에 이벤트를 남긴다.
-            // 롤백되면 행도 사라져 유령 이벤트 0, 커밋되면 반드시 남아 릴레이가 재시도로 발행한다(유실 0).
-            // (구 AFTER_COMMIT 발행은 커밋 후 크래시/브로커 다운 시 이벤트가 영구 유실됐다.)
-            appendOutbox("order.paid", order.getId());
+            // 그 외에는 이 승인을 반영할 주문이 없다(주문 만료, 다른 결제가 먼저 확정). 정상 종료하면
+            // 승인이 PG에 남는다. 같은 멱등키의 재호출은 startPayment에서 걸러져 여기 오지 않는다.
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
+        }
+        List<Long> seatIds = orderItemRepository.findByOrderId(order.getId()).stream()
+                .map(OrderItem::getSeatId).toList();
+        int sold = seatRepository.sellSeats(seatIds, SeatStatus.SOLD, SeatStatus.HELD);
+        int converted = holdRepository.convertHold(order.getHoldId());
+        // 영향 행 수 검증(ADR-003). 만료 sweep이 먼저 이겨 좌석/홀드가 이미 풀렸으면(HELD 아님) 0행 →
+        // 예외로 트랜잭션 전체 롤백(markPaid·approve 포함). "주문 PAID인데 좌석은 AVAILABLE"
+        // = 결제했는데 좌석이 재판매되는 반대 방향 레이스 차단(TS-011).
+        if (sold != seatIds.size() || converted != 1) {
+            // 확정 불가(TS-011). 예외로 이 트랜잭션 전체를 롤백한다(markPaid·approve 포함).
+            // PG 승인을 되돌리는 보상은 여기서 하지 않는다 — 그것도 외부 호출이라 트랜잭션
+            // 밖에서 해야 하고, 경로마다 주체가 다르다(승인 경로는 settle, 입금 경로는 래퍼).
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
+        }
+        // 아웃박스 적재(ADR-010): 이 트랜잭션과 같은 커밋에 이벤트를 남긴다.
+        // 롤백되면 행도 사라져 유령 이벤트 0, 커밋되면 반드시 남아 릴레이가 재시도로 발행한다(유실 0).
+        // (구 AFTER_COMMIT 발행은 커밋 후 크래시/브로커 다운 시 이벤트가 영구 유실됐다.)
+        appendOutbox("order.paid", order.getId());
+    }
+
+    /**
+     * 같은 멱등키가 다른 주문에 묶여 있으면 PG를 부르기 전에 거절한다(RefundService와 같은 규칙).
+     *
+     * 멱등키는 클라이언트가 만들고 UNIQUE는 전역이다. 그대로 두면 결제하지 않은 주문이 다른 주문의
+     * 결제 결과를 응답으로 받는다. 주문 소유자는 이미 확인했으므로 주문이 같으면 같은 사용자의 재호출이다.
+     */
+    private void rejectIfKeyBelongsToAnotherOrder(Payment payment, Long orderId) {
+        if (!payment.getOrderId().equals(orderId)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR);
         }
     }
 

@@ -53,6 +53,8 @@ POST /orders(holdId)
 - 주문 상태 전이는 조건부 UPDATE(`... WHERE status='PENDING'`) — 최초 1회만 성공, 이후는 영향 0행.
 - 재시도(사용자 의도)는 **새 idempotencyKey = 새 payment row**로 허용(멱등은 "같은 시도"만 막음).
 - 측정: naive(중복 PAID) 재현 → idempotency_key + 조건부 전이 → 이중 PAID 0 (대표 IMP).
+- 멱등키의 주인이 다른 주문이면 PG를 부르기 전에 `VALIDATION_ERROR`로 거절한다(UNIQUE가 전역이라서). [T]
+- 승인 뒤 주문 전이가 0행이면(주문 만료, 다른 결제가 먼저 확정) 승인을 보상 취소하고 결제는 `FAILED`로 남긴다. 같은 입금이 동시에 두 번 들어온 경우만 그대로 끝낸다. [T] ([[TS-055]])
 
 ## 가격 스냅샷
 - `order_items.price` = **주문 시점 가격 스냅샷**. 이후 `event_seat_prices`가 바뀌어도 주문 금액 불변([[ADR-004]] 연장).

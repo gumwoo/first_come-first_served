@@ -406,12 +406,7 @@ public class PaymentService {
         try {
             finalizePaid(order, payment, from, pgTid);
         } catch (RuntimeException e) {
-            try {
-                gateway.refund(pgTid, order.getAmount(), "void-" + pgTid);
-            } catch (RuntimeException ex) {
-                log.warn("[payment] 보상 취소 실패 orderId={} pgTid={}: {}",
-                        order.getId(), pgTid, ex.getMessage());
-            }
+            compensateApproval(order.getId(), order.getAmount(), pgTid);
             throw e;
         }
     }

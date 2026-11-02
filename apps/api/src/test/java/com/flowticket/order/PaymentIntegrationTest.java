@@ -228,7 +228,7 @@ class PaymentIntegrationTest extends IntegrationTestSupport {
                 .isEqualTo("MOCK-" + key);
     }
 
-    /** 승인이 거절된 결제에는 승인 번호가 없다. 재시도 가능한 실패와 취소 대상을 구분하는 기준이다. */
+    /** PG가 승인을 거절한 결제에는 남길 승인 번호가 없다. */
     @Test
     void 승인_거절된_결제에는_승인_번호가_없다() {
         long user = 71L;

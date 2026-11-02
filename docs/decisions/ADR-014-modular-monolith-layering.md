@@ -74,7 +74,7 @@ controller → service → repository → domain
 **(a) 상태 전이는 엔티티 메서드로만**
 
 ```java
-SeatHold.release()   SeatHold.expire()   Payment.approve(pgTid)   Payment.fail()
+SeatHold.expire()   Payment.approve(pgTid)   Payment.fail(pgTid)
 private SeatHold(...)   // 생성자 private, 빌더로만
 // @Setter · @Data 없음
 ```

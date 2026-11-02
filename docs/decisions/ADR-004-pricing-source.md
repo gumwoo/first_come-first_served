@@ -16,7 +16,7 @@
 2. **KOPIS priceText로 결제 가격을 만들지 않는다.** 상세의 "원 공연 안내" 블록에 원문만 표시
    (무료/미정/숫자없음은 블록 숨김). 결제엔 미사용.
 3. 가격 생성 = **장르 기반 티어 + eventId 기반 fallback**. 등급 배수 고정(A=1.0/S=1.3/R=1.6/VIP=2.0).
-   시딩 시 절대값 계산·저장, 같은 eventId는 항상 같은 값(멱등, `unique(event_id,grade)`).
+   시딩 시 절대값 계산·저장, 같은 장르·eventId는 항상 같은 값(멱등, `unique(event_id,grade)`).
 4. `base_price = 등급 최저가`를 시딩 단계에서 events에 write → 목록 "가격 미정" 해소.
 
 ## 고려한 대안

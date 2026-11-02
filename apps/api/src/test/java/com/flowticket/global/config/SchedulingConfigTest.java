@@ -23,7 +23,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 class SchedulingConfigTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(TaskSchedulingAutoConfiguration.class))
+            .withConfiguration(AutoConfigurations.of(
+                    TaskSchedulingAutoConfiguration.class, TaskExecutionAutoConfiguration.class))
             .withUserConfiguration(SchedulingConfig.class, Probe.class);
 
     /** 외부 작업은 멈춰 있고 짧은 작업만 돈다. 스레드가 하나였다면 짧은 작업도 함께 멈춘다. */
@@ -71,11 +72,10 @@ class SchedulingConfigTest {
      */
     @Test
     void 스케줄러를_직접_만들어도_applicationTaskExecutor는_유지한다() {
-        runner.withConfiguration(AutoConfigurations.of(TaskExecutionAutoConfiguration.class))
-                .run(context -> {
-                    context.getBean(Probe.class).releaseExternal.countDown();
-                    assertThat(context).hasBean("applicationTaskExecutor");
-                });
+        runner.run(context -> {
+            context.getBean(Probe.class).releaseExternal.countDown();
+            assertThat(context).hasBean("applicationTaskExecutor");
+        });
     }
 
     /** 짧은 작업들은 지금처럼 스레드 하나에서 순서대로 돈다. 늘리면 서로 동시에 도는 조합이 새로 생긴다. */

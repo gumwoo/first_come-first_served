@@ -1,5 +1,6 @@
 package com.flowticket.order.service;
 
+import com.flowticket.global.config.SchedulingConfig;
 import com.flowticket.order.domain.Order;
 import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.gateway.PaymentGateway;
@@ -67,7 +68,8 @@ public class PaymentReconciliationService {
      * 한 틱은 배치 크기만큼만 보고, 본 주문에는 조회 시각을 남겨 다음 틱이 그다음 묶음으로 넘어가게 한다.
      */
     @Scheduled(fixedRateString = "${payment.reconcile-interval-ms:600000}",
-               initialDelayString = "${payment.reconcile-interval-ms:600000}")
+               initialDelayString = "${payment.reconcile-interval-ms:600000}",
+               scheduler = SchedulingConfig.EXTERNAL_IO)
     @SchedulerLock(name = "payment-reconcile", lockAtMostFor = "PT5M", lockAtLeastFor = "PT0S")
     public void reconcileOrphanApprovals() {
         LocalDateTime now = LocalDateTime.now(clock);

@@ -38,13 +38,14 @@ public class SeatSseRegistry implements MessageListener {
 
     public SseEmitter subscribe(Long eventId) {
         SseEmitter emitter = new SseEmitter(timeoutMs);
-        byEvent.computeIfAbsent(eventId, k -> ConcurrentHashMap.newKeySet()).add(emitter);
-        Runnable remove = () -> {
-            Set<SseEmitter> set = byEvent.get(eventId);
-            if (set != null) {
-                set.remove(emitter);
-            }
-        };
+        // 추가·제거를 키 단위 원자 연산으로 묶는다. 나눠 하면 제거가 빈 Set을 지운 뒤 새 구독자가 그 Set에
+        // 들어가, 연결은 살아 있는데 이벤트를 받지 못한다.
+        byEvent.compute(eventId, (k, set) -> {
+            Set<SseEmitter> emitters = set != null ? set : ConcurrentHashMap.newKeySet();
+            emitters.add(emitter);
+            return emitters;
+        });
+        Runnable remove = () -> remove(eventId, emitter);
         emitter.onCompletion(remove);
         emitter.onTimeout(() -> {
             remove.run();
@@ -60,6 +61,14 @@ public class SeatSseRegistry implements MessageListener {
             log.debug("SSE 초기 프레임 전송 실패 eventId={}", eventId, e);
         }
         return emitter;
+    }
+
+    /** 마지막 구독자가 빠지면 키도 지운다. /sse/** 는 공개라 빈 Set을 남기면 맵이 접속이 지나간 ID 수만큼 커진다. */
+    private void remove(Long eventId, SseEmitter emitter) {
+        byEvent.computeIfPresent(eventId, (k, set) -> {
+            set.remove(emitter);
+            return set.isEmpty() ? null : set;
+        });
     }
 
     /**
@@ -88,7 +97,7 @@ public class SeatSseRegistry implements MessageListener {
             try {
                 emitter.send(SseEmitter.event().name(event).data(data));
             } catch (Exception e) {
-                set.remove(emitter); // 전송 실패 → 격리
+                remove(eventId, emitter); // 전송 실패 → 격리
             }
         }
     }

@@ -28,7 +28,7 @@ import org.springframework.test.util.ReflectionTestUtils;
  * 없는 공연 ID로도 구독된다. 이벤트가 오지 않는 ID라 전달 실패로는 제거되지 않아, 시간 초과가 유일한 정리 경로다.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@TestPropertySource(properties = "seat.sse-timeout-ms=2000")
+@TestPropertySource(properties = "seat.sse-timeout-ms=6000") // 연결 6개를 다 열고 키를 확인할 여유를 둔다
 class SseRegistryTimeoutIntegrationTest extends IntegrationTestSupport {
 
     @LocalServerPort int port;

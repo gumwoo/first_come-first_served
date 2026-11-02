@@ -34,13 +34,13 @@ public class OrderSseRegistry implements MessageListener {
 
     public SseEmitter subscribe(Long orderId) {
         SseEmitter emitter = new SseEmitter(timeoutMs);
-        byOrder.computeIfAbsent(orderId, k -> ConcurrentHashMap.newKeySet()).add(emitter);
-        Runnable remove = () -> {
-            Set<SseEmitter> set = byOrder.get(orderId);
-            if (set != null) {
-                set.remove(emitter);
-            }
-        };
+        // 추가·제거를 키 단위 원자 연산으로 묶는다(SeatSseRegistry와 같은 이유).
+        byOrder.compute(orderId, (k, set) -> {
+            Set<SseEmitter> emitters = set != null ? set : ConcurrentHashMap.newKeySet();
+            emitters.add(emitter);
+            return emitters;
+        });
+        Runnable remove = () -> remove(orderId, emitter);
         emitter.onCompletion(remove);
         emitter.onTimeout(() -> {
             remove.run();
@@ -56,6 +56,14 @@ public class OrderSseRegistry implements MessageListener {
             log.debug("SSE 초기 프레임 전송 실패 orderId={}", orderId, e);
         }
         return emitter;
+    }
+
+    /** 마지막 구독자가 빠지면 키도 지운다. 주문 ID는 계속 늘어나므로 빈 Set을 남기면 맵이 끝없이 커진다. */
+    private void remove(Long orderId, SseEmitter emitter) {
+        byOrder.computeIfPresent(orderId, (k, set) -> {
+            set.remove(emitter);
+            return set.isEmpty() ? null : set;
+        });
     }
 
     /**
@@ -84,7 +92,7 @@ public class OrderSseRegistry implements MessageListener {
             try {
                 emitter.send(SseEmitter.event().name(event).data(data));
             } catch (Exception e) {
-                set.remove(emitter);
+                remove(orderId, emitter);
             }
         }
     }

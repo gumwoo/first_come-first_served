@@ -1,8 +1,7 @@
 package com.flowticket.seat;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyIterable;
-import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 
 import com.flowticket.event.domain.Event;
@@ -13,8 +12,8 @@ import com.flowticket.seat.repository.EventSeatPriceRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.service.SeatSeeder;
 import com.flowticket.support.IntegrationTestSupport;
-import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.SpyBean;
@@ -74,9 +73,12 @@ class SeatSeederTransactionIntegrationTest extends IntegrationTestSupport {
         assertThat(seatCount(failing)).isZero();
     }
 
-    /** 이전 코드의 부분 저장이 이미 DB에 있는 경우. 남은 가격은 그대로 두고 빠진 것만 채운다. */
+    /**
+     * 이전 코드의 부분 저장이 이미 DB에 있는 경우. 티어는 장르로 정해져 장르가 바뀌면 남은 값과 달라진다.
+     * 남은 값을 살리면 등급 가격이 뒤집히거나 최저가 표시가 어긋나므로 현재 티어로 다시 만든다.
+     */
     @Test
-    void 가격만_남은_공연도_시딩이_완성된다() {
+    void 가격만_남은_공연은_현재_티어로_다시_시딩된다() {
         Long eventId = event("TX5");
         jdbc.update("insert into event_seat_prices (event_id, grade, price) values (?, 'VIP', 77777)", eventId);
 
@@ -84,8 +86,10 @@ class SeatSeederTransactionIntegrationTest extends IntegrationTestSupport {
 
         assertThat(seeded).isEqualTo(1);
         assertSeeded(eventId);
-        assertThat(jdbc.queryForObject("select price from event_seat_prices where event_id=? and grade='VIP'",
-                Integer.class, eventId)).isEqualTo(77777);
+        int vip = price(eventId, "VIP");
+        int a = price(eventId, "A");
+        assertThat(vip).isNotEqualTo(77777).isGreaterThan(a);
+        assertThat(eventRepository.findById(eventId).orElseThrow().getBasePrice()).isEqualTo(a);
     }
 
     // --- helpers ---
@@ -97,13 +101,13 @@ class SeatSeederTransactionIntegrationTest extends IntegrationTestSupport {
 
     /** 이 공연의 좌석 저장만 실패시킨다. 실패 뒤의 처리가 이 테스트의 대상이다. */
     private void failSeatInsert(Long eventId) {
-        doAnswer(inv -> {
-            List<Seat> seats = inv.getArgument(0);
-            if (seats.get(0).getEventId().equals(eventId)) {
-                throw new IllegalStateException("좌석 저장 실패");
-            }
-            return inv.callRealMethod();
-        }).when(seatRepository).saveAll(anyIterable());
+        doThrow(new IllegalStateException("좌석 저장 실패")).when(seatRepository).saveAll(
+                ArgumentMatchers.<Iterable<Seat>>argThat(seats -> seats.iterator().next().getEventId().equals(eventId)));
+    }
+
+    private int price(Long eventId, String grade) {
+        return jdbc.queryForObject("select price from event_seat_prices where event_id=? and grade=?",
+                Integer.class, eventId, grade);
     }
 
     private void assertSeeded(Long eventId) {

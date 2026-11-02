@@ -77,7 +77,8 @@ class SseRegistryTimeoutIntegrationTest extends IntegrationTestSupport {
         return res.body();
     }
 
-    private static Map<?, ?> keys(Object registry, String field) {
-        return (Map<?, ?>) ReflectionTestUtils.getField(registry, field);
+    @SuppressWarnings("unchecked")
+    private static Map<Long, ?> keys(Object registry, String field) {
+        return (Map<Long, ?>) ReflectionTestUtils.getField(registry, field);
     }
 }

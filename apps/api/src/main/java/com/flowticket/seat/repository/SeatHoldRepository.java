@@ -26,6 +26,14 @@ public interface SeatHoldRepository extends JpaRepository<SeatHold, Long> {
             + "where h.id = :id and h.status = com.flowticket.seat.domain.SeatHoldStatus.HELD")
     int convertHold(@Param("id") Long id);
 
+    /**
+     * 수동 해제: HELD 홀드만 RELEASED로(조건부). 이 전이에 이긴 쪽만 좌석을 풀 수 있다.
+     * 만료 sweep에 지고도 좌석을 풀면 그사이 다른 사용자가 잡은 새 선점이 풀린다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("update SeatHold h set h.status = com.flowticket.seat.domain.SeatHoldStatus.RELEASED "
+            + "where h.id = :id and h.status = com.flowticket.seat.domain.SeatHoldStatus.HELD")
+    int releaseHold(@Param("id") Long id);
 
     /** 만료 sweep 대상. */
     List<SeatHold> findByStatusAndExpiresAtBefore(SeatHoldStatus status, LocalDateTime now);

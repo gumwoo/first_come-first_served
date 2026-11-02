@@ -6,6 +6,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -15,8 +18,10 @@ import com.flowticket.event.domain.Event;
 import com.flowticket.event.domain.EventStatus;
 import com.flowticket.event.repository.EventRepository;
 import com.flowticket.global.error.BusinessException;
+import com.flowticket.global.error.ErrorCode;
 import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.dto.PaymentResponse;
+import com.flowticket.order.gateway.PaymentGateway.ApproveResult;
 import com.flowticket.order.repository.OrderItemRepository;
 import com.flowticket.order.repository.OrderRepository;
 import com.flowticket.order.repository.PaymentRepository;
@@ -33,7 +38,14 @@ import com.flowticket.seat.repository.SeatHoldRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.service.SeatSeeder;
 import com.flowticket.seat.service.SeatService;
+import java.sql.Connection;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,6 +77,7 @@ class PaymentIntegrationTest extends IntegrationTestSupport {
     @Autowired SeatHoldItemRepository holdItemRepository;
     @Autowired EventSeatPriceRepository priceRepository;
     @Autowired JdbcTemplate jdbc;
+    @Autowired DataSource dataSource;
     @Autowired PlatformTransactionManager txManager;
     @SpyBean com.flowticket.order.gateway.PaymentGateway gateway;
     @Autowired com.flowticket.outbox.repository.OutboxEventRepository outboxRepository;
@@ -162,7 +175,211 @@ class PaymentIntegrationTest extends IntegrationTestSupport {
         assertThat(paymentRepository.count()).isEqualTo(1);
     }
 
+    /**
+     * PG 응답을 기다리는 동안 주문 만료 sweep이 먼저 돈 경우. 좌석 만료가 먼저인 경우(아래)와 달리 markPaid가
+     * 0행이다. 이 분기가 정상 종료하면 주문은 EXPIRED인데 승인이 PG에 그대로 남는다.
+     */
+    @Test
+    void PG_응답_대기_중_주문이_만료되면_승인을_취소하고_결제는_실패로_남는다() {
+        long user = 62L;
+        Ctx c = order(user, 1);
+        String key = "OK-" + c.orderId();
+        changeOrderStatusDuringApproval(c.orderId(), "EXPIRED");
+
+        assertThatThrownBy(() -> paymentService.pay(user, c.orderId(), "card", null, key))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_STATE_TRANSITION);
+
+        verify(gateway, times(1)).refund(eq("MOCK-" + key), anyInt(), eq("void-MOCK-" + key));
+        assertThat(orderStat(c.orderId())).isEqualTo("EXPIRED");
+        assertThat(paymentStat(c.orderId())).isEqualTo("FAILED");
+    }
+
+    /** 다른 멱등키의 결제가 먼저 확정한 경우. 주문이 PAID라 정산 후보도 아니어서, 여기서 취소하지 않으면 아무도 안 한다. */
+    @Test
+    void PG_응답_대기_중_다른_결제가_주문을_확정하면_늦은_승인을_취소한다() {
+        long user = 63L;
+        Ctx c = order(user, 1);
+        String key = "OK-" + c.orderId();
+        changeOrderStatusDuringApproval(c.orderId(), "PAID");
+
+        assertThatThrownBy(() -> paymentService.pay(user, c.orderId(), "card", null, key))
+                .isInstanceOf(BusinessException.class);
+
+        verify(gateway, times(1)).refund(eq("MOCK-" + key), anyInt(), eq("void-MOCK-" + key));
+        assertThat(orderStat(c.orderId())).isEqualTo("PAID");
+        assertThat(paymentStat(c.orderId())).isEqualTo("FAILED");
+    }
+
+    /** 보상 취소에 실패하면 승인 번호가 DB에 남아야 한다. 주문이 PAID면 정산도 보지 않아 이것이 유일한 단서다. */
+    @Test
+    void 보상_취소에_실패해도_결제_행에_승인_번호가_남는다() {
+        long user = 70L;
+        Ctx c = order(user, 1);
+        String key = "OK-" + c.orderId();
+        changeOrderStatusDuringApproval(c.orderId(), "PAID");
+        doReturn(ApproveResult.unknown("취소 결과 불명")).when(gateway).refund(anyString(), anyInt(), anyString());
+
+        assertThatThrownBy(() -> paymentService.pay(user, c.orderId(), "card", null, key))
+                .isInstanceOf(BusinessException.class);
+
+        assertThat(paymentStat(c.orderId())).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("select pg_tid from payments where order_id=?", String.class, c.orderId()))
+                .isEqualTo("MOCK-" + key);
+    }
+
+    /** PG가 승인을 거절한 결제에는 남길 승인 번호가 없다. */
+    @Test
+    void 승인_거절된_결제에는_승인_번호가_없다() {
+        long user = 71L;
+        Ctx c = order(user, 1);
+
+        paymentService.pay(user, c.orderId(), "card", null, "FAIL-" + c.orderId());
+
+        assertThat(jdbc.queryForObject("select pg_tid from payments where order_id=?", String.class, c.orderId()))
+                .isNull();
+    }
+
+    /** 가상계좌 발급을 기다리는 사이 주문이 끝난 경우. 계좌를 내주면 입금을 받을 주문이 없다. */
+    @Test
+    void 가상계좌_발급_중_주문이_만료되면_계좌를_내주지_않는다() {
+        long user = 72L;
+        Ctx c = order(user, 1);
+        doAnswer(inv -> {
+            jdbc.update("update orders set status='EXPIRED' where id=?", c.orderId());
+            return inv.callRealMethod();
+        }).when(gateway).issueVbank(eq(c.orderId()), anyInt());
+
+        assertThatThrownBy(() -> paymentService.pay(user, c.orderId(), "vbank", null, "VB-" + c.orderId()))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_STATE_TRANSITION);
+
+        assertThat(orderStat(c.orderId())).isEqualTo("EXPIRED");
+        assertThat(paymentStat(c.orderId())).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("select vbank_account from payments where order_id=?",
+                String.class, c.orderId())).isNull();
+    }
+
+    /** 같은 입금이 동시에 두 번 들어온 경우. 먼저 끝난 쪽이 이미 확정했으니 뒤쪽은 조용히 끝나야 한다. */
+    @Test
+    void 같은_입금이_동시에_들어오면_뒤쪽은_취소_없이_끝난다() throws Exception {
+        long user = 64L;
+        Ctx c = order(user, 1);
+        paymentService.pay(user, c.orderId(), "vbank", null, "VB-" + c.orderId());
+
+        depositWhileOrderBecomes(user, c.orderId(), "PAID").get(10, TimeUnit.SECONDS);
+
+        verify(gateway, never()).refund(anyString(), anyInt(), anyString());
+        assertThat(orderStat(c.orderId())).isEqualTo("PAID");
+    }
+
+    /** 입금이 주문 만료와 겹친 경우. 같은 0행이어도 이쪽은 확정된 적이 없으므로 롤백한다. */
+    @Test
+    void 입금_처리_중_주문이_만료되면_확정하지_않고_롤백한다() throws Exception {
+        long user = 65L;
+        Ctx c = order(user, 1);
+        paymentService.pay(user, c.orderId(), "vbank", null, "VB-" + c.orderId());
+
+        Future<?> deposit = depositWhileOrderBecomes(user, c.orderId(), "EXPIRED");
+
+        assertThatThrownBy(() -> deposit.get(10, TimeUnit.SECONDS))
+                .isInstanceOf(ExecutionException.class)
+                .hasCauseInstanceOf(BusinessException.class);
+        assertThat(orderStat(c.orderId())).isEqualTo("EXPIRED");
+        assertThat(paymentStat(c.orderId())).isEqualTo("READY");
+    }
+
+    /** 멱등키 UNIQUE는 전역이다. 다른 주문의 결제를 그대로 돌려주면 결제하지 않은 주문이 승인으로 보인다. */
+    @Test
+    void 다른_주문의_멱등키를_재사용하면_PG를_부르기_전에_거절한다() {
+        Ctx a = order(66L, 1);
+        Ctx b = order(67L, 1);
+        String key = "OK-SHARED-" + a.orderId();
+        paymentService.pay(66L, a.orderId(), "card", null, key);
+
+        assertThatThrownBy(() -> paymentService.pay(67L, b.orderId(), "card", null, key))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_ERROR);
+
+        verify(gateway, never()).approve(eq(b.orderId()), anyInt(), anyString(), any(), anyString());
+        assertThat(paymentRepository.count()).isEqualTo(1);
+        assertThat(orderStat(b.orderId())).isEqualTo("PENDING");
+    }
+
+    /** 순차 재사용과 다른 경로다. 앞 요청이 커밋되기 전이면 존재 확인을 지나 UNIQUE 충돌로 온다. */
+    @Test
+    void 다른_주문과_같은_멱등키가_동시에_충돌해도_거절한다() throws Exception {
+        Ctx a = order(68L, 1);
+        Ctx b = order(69L, 1);
+        String key = "OK-SHARED-" + a.orderId();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection lock = dataSource.getConnection()) {
+            lock.setAutoCommit(false);
+            lock.createStatement().execute("insert into payments (order_id, method, amount, idempotency_key) "
+                    + "values (" + a.orderId() + ", 'card', 1000, '" + key + "')");
+
+            Future<PaymentResponse> loser = pool.submit(
+                    () -> paymentService.pay(69L, b.orderId(), "card", null, key));
+            awaitBlockedOn("insert into payments");
+            lock.commit();
+
+            assertThatThrownBy(() -> loser.get(10, TimeUnit.SECONDS))
+                    .isInstanceOf(ExecutionException.class)
+                    .cause().isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_ERROR);
+        } finally {
+            pool.shutdownNow();
+        }
+        verify(gateway, never()).approve(eq(b.orderId()), anyInt(), anyString(), any(), anyString());
+    }
+
     // --- helpers ---
+
+    /** 승인 호출이 PG에서 돌아오기 전에 주문 상태가 바뀌는 순서를 고정한다. pay()는 이 구간에 트랜잭션이 없어 바로 커밋된다. */
+    private void changeOrderStatusDuringApproval(Long orderId, String status) {
+        doAnswer(inv -> {
+            jdbc.update("update orders set status=? where id=?", status, orderId);
+            return inv.callRealMethod();
+        }).when(gateway).approve(eq(orderId), anyInt(), anyString(), any(), anyString());
+    }
+
+    /**
+     * 입금 처리가 주문을 읽은 뒤 결제 행 쓰기에서 막힌 사이 주문 상태가 바뀌는 순서를 고정한다.
+     * 결제 행을 잠가 두고, 입금 처리가 그 잠금을 기다리는 것을 확인한 뒤 주문을 바꾸고 풀어 준다.
+     */
+    private Future<?> depositWhileOrderBecomes(long user, Long orderId, String status) throws Exception {
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection lock = dataSource.getConnection()) {
+            lock.setAutoCommit(false);
+            lock.createStatement().execute("select id from payments where order_id=" + orderId + " for update");
+
+            Future<?> deposit = pool.submit(() -> paymentService.confirmVbankDeposit(user, orderId));
+            awaitBlockedOn("update payments");
+            jdbc.update("update orders set status=? where id=?", status, orderId);
+            lock.commit();
+            return deposit;
+        } finally {
+            pool.shutdown();
+        }
+    }
+
+    /** 다른 세션이 이 문장에서 행 잠금을 기다릴 때까지 기다린다. */
+    private void awaitBlockedOn(String statement) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            Long blocked = jdbc.queryForObject("select count(*) from pg_stat_activity "
+                    + "where wait_event_type = 'Lock' and query ilike ?", Long.class, "%" + statement + "%");
+            if (blocked != null && blocked > 0) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("잠금 대기가 관측되지 않았다: " + statement);
+    }
+
+    private String paymentStat(Long orderId) {
+        return jdbc.queryForObject("select status from payments where order_id=?", String.class, orderId);
+    }
 
     @Test
     void 만료sweep이_먼저_이기면_결제는_실패하고_주문은_PAID로_남지_않는다() {

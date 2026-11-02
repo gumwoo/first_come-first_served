@@ -79,8 +79,10 @@ public class Payment {
         this.approvedAt = LocalDateTime.now();
     }
 
-    public void fail() {
+    /** @param pgTid 승인은 났지만 확정하지 못해 취소 대상이 된 경우의 승인 번호. 승인이 나지 않았으면 null. */
+    public void fail(String pgTid) {
         this.status = PaymentStatus.FAILED;
+        this.pgTid = pgTid;
     }
 
     /** 무통장: 가상계좌·입금기한·secret 배정(상태는 READY 유지, 입금 웹훅 확인 시 approve). */

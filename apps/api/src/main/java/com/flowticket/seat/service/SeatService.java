@@ -151,10 +151,11 @@ public class SeatService {
         }
         List<Long> seatIds = holdItemRepository.findByHoldId(holdId).stream()
                 .map(SeatHoldItem::getSeatId).toList();
-        // 홀드 상태를 먼저 확정 반영(saveAndFlush). releaseSeats는 @Modifying(clearAutomatically)라
-        // 실행 시 영속성 컨텍스트를 비워, 뒤에서 엔티티를 mutate하면 detached라 저장되지 않기 때문.
-        hold.release();
-        holdRepository.saveAndFlush(hold);
+        // 위 상태 검사는 읽은 시점의 값이다. 그 뒤 만료 sweep이 먼저 끝낼 수 있으므로 전이에 이긴 쪽만
+        // 좌석을 푼다. releaseSeats는 좌석 ID와 HELD만 보므로 그사이 잡힌 새 선점과 구분하지 못한다.
+        if (holdRepository.releaseHold(holdId) != 1) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
+        }
         seatRepository.releaseSeats(seatIds, SeatStatus.AVAILABLE, SeatStatus.HELD); // 수동 해제: HELD→AVAILABLE
         sse.broadcast(hold.getEventId(), "seat.hold.released", Map.of("seatIds", seatIds)); // 재고 복구 반영
     }

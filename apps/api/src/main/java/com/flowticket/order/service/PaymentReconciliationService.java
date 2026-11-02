@@ -25,7 +25,8 @@ import org.springframework.stereotype.Service;
  * PG에 직접 조회해 "우리는 미확정인데 PG엔 승인"인 미아 승인을 찾아 취소(void)한다.
  *
  * finalizePaid의 즉시 보상(TS-011 §7)이 1차 방어이고, 이 잡은 그 보상마저 실행되지 못한
- * 크래시 구간의 안전망이다.
+ * 크래시 구간의 안전망이다. 주문이 이미 PAID인 경우는 후보가 아니다. PAID는 승인이 남아 있는 게 정상이라
+ * 조회 결과만으로 그 승인이 늦게 온 다른 승인인지 가르지 못한다(PaymentService.compensateApproval).
  */
 @Slf4j
 @Service
@@ -40,6 +41,7 @@ public class PaymentReconciliationService {
     private final int graceMinutes;
     private final int lookbackHours;
     private final int batchSize;
+    private final int recheckMinutes;
 
     private final Clock clock;
 
@@ -47,6 +49,7 @@ public class PaymentReconciliationService {
                                         @Value("${payment.reconcile-grace-minutes:10}") int graceMinutes,
                                         @Value("${payment.reconcile-lookback-hours:24}") int lookbackHours,
                                         @Value("${payment.reconcile-batch-size:50}") int batchSize,
+                                        @Value("${payment.reconcile-recheck-minutes:60}") int recheckMinutes,
                                         Clock clock) {
         this.clock = clock;
         this.orderRepository = orderRepository;
@@ -54,11 +57,14 @@ public class PaymentReconciliationService {
         this.graceMinutes = graceMinutes;
         this.lookbackHours = lookbackHours;
         this.batchSize = batchSize;
+        this.recheckMinutes = recheckMinutes;
     }
 
     /**
-     * 미아 승인 정산. 트랜잭션을 걸지 않는다. 후보 조회 외에는 우리 DB를 바꾸지 않고, 건별로 외부 PG
+     * 미아 승인 정산. 트랜잭션을 걸지 않는다. 우리 DB에는 조회 표시만 남기고, 건별로 외부 PG
      * 호출(조회·취소)을 하므로 네트워크 I/O가 DB 트랜잭션을 오래 붙잡으면 안 된다.
+     *
+     * 한 틱은 배치 크기만큼만 보고, 본 주문에는 조회 시각을 남겨 다음 틱이 그다음 묶음으로 넘어가게 한다.
      */
     @Scheduled(fixedRateString = "${payment.reconcile-interval-ms:600000}",
                initialDelayString = "${payment.reconcile-interval-ms:600000}")
@@ -69,6 +75,7 @@ public class PaymentReconciliationService {
                 UNSETTLED,
                 now.minusMinutes(graceMinutes), // 유예: 진행 중인 결제를 건드리지 않음
                 now.minusHours(lookbackHours),  // 소급 한계: 오래된 건은 수동 정산 대상
+                now.minusMinutes(recheckMinutes), // 재조회 하한: 방금 본 주문은 건너뛴다
                 PageRequest.of(0, batchSize));
         if (candidates.isEmpty()) {
             return;
@@ -79,10 +86,13 @@ public class PaymentReconciliationService {
                 compensated++;
             }
         }
+        // 조회·취소에 실패한 건까지 포함해 표시한다. 실패를 표시하지 않으면 그 주문이 매 틱 선두로
+        // 돌아와 뒤쪽 후보를 다시 굶긴다. 재조회 간격이 지나면 다시 시도된다.
+        orderRepository.markReconcileChecked(candidates.stream().map(Order::getId).toList(), now);
         log.info("[reconcile] 후보 {}건 중 미아 승인 {}건 취소", candidates.size(), compensated);
     }
 
-    /** 미아 승인이면 취소하고 true. 조회/취소 실패는 삼키고 다음 틱에 다시 시도한다(주문이 후보로 남음). */
+    /** 미아 승인이면 취소하고 true. 조회/취소 실패는 삼키고 재조회 간격 뒤에 다시 시도한다(주문이 후보로 남음). */
     private boolean compensate(Order order) {
         try {
             Inquiry inquiry = gateway.inquire(order.getId());

@@ -20,6 +20,7 @@
 | expires_at | TIMESTAMP | N | | | 결제 제한시각(= hold 잔여 TTL) |
 | paid_at | TIMESTAMP | Y | | | 결제 확정 시각 |
 | created_at | TIMESTAMP | N | now() | | |
+| reconcile_checked_at | TIMESTAMP | Y | | | 결제 정산이 마지막으로 PG에 조회한 시각(후보 순회용, `V22__orders_reconcile_checked_at.sql`) |
 
 ## 인덱스 / 제약
 | 이름 | 종류 | 컬럼 | 이유 |

@@ -28,12 +28,16 @@ import com.flowticket.seat.repository.SeatHoldRepository;
 import com.flowticket.seat.repository.SeatRepository;
 import com.flowticket.seat.service.SeatSeeder;
 import com.flowticket.seat.service.SeatService;
+import java.sql.Connection;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -64,6 +68,7 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
     @Autowired QueueAdmissionService admissionService;
     @Autowired StringRedisTemplate redisTemplate;
     @Autowired JdbcTemplate jdbc;
+    @Autowired DataSource dataSource;
     @Autowired PlatformTransactionManager txManager;
     @SpyBean com.flowticket.seat.sse.SeatSseRegistry sse;
 
@@ -306,6 +311,39 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
                 .isInstanceOf(BusinessException.class); // INVALID_STATE_TRANSITION
     }
 
+    /**
+     * 해제 요청이 HELD를 읽은 뒤 쓰기 전에, 만료 sweep이 돌고 다른 사용자가 같은 좌석을 선점한 경우.
+     * 좌석 해제는 좌석 ID와 HELD만 보므로, 뒤늦은 해제가 진행되면 새 선점의 좌석을 풀어 버린다.
+     * 홀드 행을 잠가 해제를 쓰기 직전에 세운 뒤, 그 사이 일을 끝내고 풀어 주는 순서로 고정한다.
+     */
+    @Test
+    void 늦게_도착한_해제는_다른_사용자의_새_선점을_풀지_않는다() throws Exception {
+        String token = admittedToken(14L, eventId);
+        Long holdId = seatService.hold(14L, eventId, List.of(aSeatId), token).holdId();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection lock = dataSource.getConnection()) {
+            lock.setAutoCommit(false);
+            lock.createStatement().execute("select id from seat_holds where id=" + holdId + " for update");
+
+            Future<?> release = pool.submit(() -> seatService.release(holdId, 14L));
+            awaitBlockedOn("update seat_holds");
+            // 만료 sweep이 앞 홀드를 끝냈다. 좌석은 그사이 새 선점으로 다시 HELD라 상태 그대로다.
+            lock.createStatement().execute("update seat_holds set status='EXPIRED' where id=" + holdId);
+            lock.commit();
+
+            assertThatThrownBy(() -> release.get(10, TimeUnit.SECONDS))
+                    .isInstanceOf(ExecutionException.class)
+                    .cause().isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_STATE_TRANSITION);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(seatStatus(aSeatId)).isEqualTo("HELD");
+        assertThat(holdRepository.findById(holdId).orElseThrow().getStatus()).isEqualTo(SeatHoldStatus.EXPIRED);
+        verify(sse, never()).broadcast(eq(eventId), eq("seat.hold.released"), any());
+    }
+
     @Test
     void 입장창이_만료된_토큰으로_선점하면_거부된다() {
         // 상태기계 분기: 입장(ADMITTED) 후 입장창이 만료되면 좌석 선점 게이트가 막아야 함.
@@ -336,6 +374,20 @@ class SeatInventoryIntegrationTest extends IntegrationTestSupport {
     }
 
     // --- helpers ---
+
+    /** 다른 세션이 이 문장에서 행 잠금을 기다릴 때까지 기다린다. */
+    private void awaitBlockedOn(String statement) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            Long blocked = jdbc.queryForObject("select count(*) from pg_stat_activity "
+                    + "where wait_event_type = 'Lock' and query ilike ?", Long.class, "%" + statement + "%");
+            if (blocked != null && blocked > 0) {
+                return;
+            }
+            sleep(20);
+        }
+        throw new AssertionError("잠금 대기가 관측되지 않았다: " + statement);
+    }
 
     private String seatStatus(Long seatId) {
         return jdbc.queryForObject("select status from seats where id=?", String.class, seatId);

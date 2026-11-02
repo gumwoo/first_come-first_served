@@ -18,6 +18,7 @@
 - 선점 TTL: `seat.hold-ttl`(약 5분). 만료 sweep(`@Scheduled`)이 `expires_at<now` 홀드를
   `EXPIRED` 처리 + 좌석 `AVAILABLE` 복구 + `seat.hold.expired` 발행. [T]
 - 잘못된 상태전이 → `INVALID_STATE_TRANSITION`.
+- **홀드 전이에 이긴 쪽만 좌석을 푼다** — 해제·만료 모두 `WHERE status='HELD'` 조건부 UPDATE가 1행일 때만 좌석을 복구한다. 좌석 UPDATE는 어느 홀드의 `HELD`인지 구분하지 못해, 진 쪽이 풀면 새 선점이 풀린다. [T] ([[TS-055]])
 
 ## 게이트 / 제한
 - **입장 검증**: 선점은 S03 큐 토큰이 `ADMITTED`(그 이벤트)일 때만. 아니면 `QUEUE_NOT_ADMITTED`. [T]

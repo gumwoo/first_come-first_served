@@ -50,10 +50,6 @@ public class SeatHold {
         this.createdAt = LocalDateTime.now();
     }
 
-    public void release() {
-        this.status = SeatHoldStatus.RELEASED;
-    }
-
     public void expire() {
         this.status = SeatHoldStatus.EXPIRED;
     }

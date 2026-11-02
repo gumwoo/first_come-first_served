@@ -104,11 +104,26 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
      * PG 승인이 성공했는데 트랜잭션이 롤백되면 payments 행까지 사라지므로, 흔적이 남는 주문에서
      * 후보를 만든다. 유예(before)는 진행 중 결제를 건드리지 않기 위한 것이고, 소급 한계(after)와
      * 페이지 상한으로 PG 조회 비용을 바운드한다.
+     *
+     * 정렬은 마지막 조회 시각(NULLS FIRST = 한 번도 안 본 것 먼저), 그다음 오래된 순이다. 만료 주문은
+     * 조회해도 상태가 그대로라, 표시 없이 돌면 앞쪽만 반복하고 뒤쪽이 소급 한계 밖으로 밀려난다.
      */
     @Query("select o from Order o where o.status in :statuses "
-            + "and o.expiresAt < :before and o.expiresAt > :after order by o.expiresAt asc")
+            + "and o.expiresAt < :before and o.expiresAt > :after "
+            + "and (o.reconcileCheckedAt is null or o.reconcileCheckedAt < :recheckBefore) "
+            + "order by o.reconcileCheckedAt asc nulls first, o.expiresAt asc")
     List<Order> findReconcileCandidates(@Param("statuses") List<OrderStatus> statuses,
                                         @Param("before") java.time.LocalDateTime before,
                                         @Param("after") java.time.LocalDateTime after,
+                                        @Param("recheckBefore") java.time.LocalDateTime recheckBefore,
                                         Pageable pageable);
+
+    /**
+     * 조회한 후보에 표시를 남긴다. 확인 여부와 무관하게 남겨야 순회가 앞으로 나간다.
+     * 정산 잡은 트랜잭션 없이 돌므로 이 쓰기만 자체 트랜잭션으로 연다.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("update Order o set o.reconcileCheckedAt = :now where o.id in :ids")
+    int markReconcileChecked(@Param("ids") List<Long> ids, @Param("now") java.time.LocalDateTime now);
 }

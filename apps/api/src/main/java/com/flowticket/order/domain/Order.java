@@ -50,6 +50,10 @@ public class Order {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    /** 결제 정산이 마지막으로 PG에 조회한 시각(후보 순회용, ADR-011). */
+    @Column(name = "reconcile_checked_at")
+    private LocalDateTime reconcileCheckedAt;
+
     @Builder
     private Order(Long eventId, Long userId, Long holdId, int amount, LocalDateTime expiresAt) {
         this.eventId = eventId;

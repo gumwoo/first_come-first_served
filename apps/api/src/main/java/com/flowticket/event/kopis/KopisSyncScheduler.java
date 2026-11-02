@@ -1,5 +1,6 @@
 package com.flowticket.event.kopis;
 
+import com.flowticket.global.config.SchedulingConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -24,7 +25,7 @@ public class KopisSyncScheduler {
         this.kopisSyncService = kopisSyncService;
     }
 
-    @Scheduled(cron = "0 0 4 * * *")
+    @Scheduled(cron = "0 0 4 * * *", scheduler = SchedulingConfig.EXTERNAL_IO)
     public void scheduledSync() {
         Integer n = kopisSyncService.sync();
         if (n == null) {

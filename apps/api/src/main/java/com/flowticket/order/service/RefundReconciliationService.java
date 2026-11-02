@@ -1,5 +1,6 @@
 package com.flowticket.order.service;
 
+import com.flowticket.global.config.SchedulingConfig;
 import com.flowticket.order.domain.Order;
 import com.flowticket.order.domain.OrderStatus;
 import com.flowticket.order.domain.RefundAttempt;
@@ -76,7 +77,8 @@ public class RefundReconciliationService {
      * 앞쪽 묶음만 반복하고 뒤쪽은 소급 한계 밖으로 사라진다.
      */
     @Scheduled(fixedRateString = "${refund.reconcile-interval-ms:600000}",
-               initialDelayString = "${refund.reconcile-interval-ms:600000}")
+               initialDelayString = "${refund.reconcile-interval-ms:600000}",
+               scheduler = SchedulingConfig.EXTERNAL_IO)
     @SchedulerLock(name = "refund-reconcile", lockAtMostFor = "PT5M", lockAtLeastFor = "PT0S")
     public void reconcileOrphanCancellations() {
         LocalDateTime now = LocalDateTime.now(clock);

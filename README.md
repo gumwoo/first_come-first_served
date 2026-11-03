@@ -181,10 +181,10 @@ SI 프로젝트에서 요구사항에 맞춰 기능을 구현해 왔지만, 그 
 
 ## 인프라 아키텍처
 
-<picture>
+<a href="docs/assets/architecture-infra-light.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-infra-dark.png">
-  <img alt="사용자는 Route 53에서 ALB 주소를 받아 HTTPS로 ALB에 접속한다. ALB는 대기열 진입·상태 2개 경로를 대기열 Pod로 바로 보내고, 그 외 요청은 web을 거쳐 api로 보낸다. api는 RDS와 ElastiCache를, 대기열은 ElastiCache와 판매 상태 조회용 RDS를 쓴다. 3개 AZ마다 Public subnet에 NAT Gateway를, Private subnet에 Pod를 둔다. GitHub Actions가 이미지를 ECR에 올리고 k8s/overlays의 태그를 커밋하면 Argo CD가 동기화한다. 알림은 Prometheus·Alertmanager에서, 그리고 CloudWatch Alarm에서 SNS와 Lambda를 거쳐 Slack으로 간다." src="docs/assets/architecture-infra-light.png">
-</picture>
+  <img alt="사용자는 Route 53에서 ALB 주소를 받아 HTTPS로 ALB에 접속한다. ALB는 대기열 진입·상태 2개 경로를 대기열 Pod로 바로 보내고, 그 외 요청은 web을 거쳐 api로 보낸다. api는 RDS와 ElastiCache를, 대기열은 ElastiCache를 쓰고 요청 경로에서는 판매 상태만 RDS에서 읽는다. 3개 AZ마다 Public subnet에 NAT Gateway를, Private subnet에 Pod를 둔다. GitHub Actions가 이미지를 ECR에 올리고 k8s/overlays의 태그를 커밋하면 Argo CD가 동기화한다. 알림은 Prometheus·Alertmanager에서, 그리고 CloudWatch Alarm에서 SNS와 Lambda를 거쳐 Slack으로 간다." src="docs/assets/architecture-infra-light.png">
+</picture></a>
 
 <sub>원본: [`architecture-infra.html`](docs/assets/architecture-infra.html) ([stack-diagram](https://github.com/caru-ini/stack-diagram) 템플릿 기반)</sub>
 

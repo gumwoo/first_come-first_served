@@ -99,4 +99,4 @@ k6 run infra/k6/<scenario>.js
   - `@Modifying(clearAutomatically)` 벌크 UPDATE **전에** 로드한 엔티티는 `saveAndFlush`로 확정([[TS-007]]·[[TS-010]]).
 - **위험 도메인(대기열·좌석·결제/환불) 변경 시 "분석 먼저"**: 코드 수정 전, 해당 도메인 규칙
   (`docs/rules/domain/*`)과 관련 ADR을 읽고 **영향 범위·사이드 이펙트를 파악한 뒤 최소 범위로** 수정한다.
-  (백엔드 통합테스트는 로컬 gradle 없음 → CI(Testcontainers)로 검증 — §4 참고.)
+  (로컬 Testcontainers는 환경변수 `JAVA_TOOL_OPTIONS=-Dapi.version=1.44`가 필요하다. 전체 통합 테스트의 최종 판정은 CI다 — §4 참고.)

@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<!--
+FlowTicket AWS 인프라 다이어그램 원본. 렌더 결과는 architecture-infra-light.png, architecture-infra-dark.png(캔버스 1590x1270, 배율 2).
+%%ICON_*%%, %%FONT_*%% 자리는 caru-ini/stack-diagram의 build.py가 빌드할 때 채운다. 아이콘 파일은 저장소에 두지 않는다.
+ALB, NAT Gateway 아이콘은 AWS Architecture Icons 패키지의 Resource 아이콘이다.
+
+템플릿 출처: https://github.com/caru-ini/stack-diagram
+
+MIT License
+
+Copyright (c) 2026 caru-ini
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+<html lang="ko"><!-- set lang to the label language, e.g. "ja" for Japanese labels -->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlowTicket AWS 인프라</title>
+<style>
+/* engineered-paper theme (cool near-white, one accent, mono labels)
+ * All colors/fonts flow through the :root tokens — tweak tokens, not scattered values. */
+:root {
+  color-scheme: light;
+  --color-paper:   oklch(98.5% 0.004 250);
+  --color-paper-2: oklch(96.5% 0.005 252);
+  --color-rule:    oklch(93% 0.007 255);    /* graph-paper grid */
+  --color-rule-2:  oklch(83% 0.011 255);    /* hairline borders */
+  --color-muted:   oklch(56% 0.013 255);
+  --color-neutral: oklch(46% 0.015 255);    /* neutral edges */
+  --color-ink-2:   oklch(34% 0.018 257);
+  --color-ink:     oklch(24% 0.020 258);
+  --color-accent:  oklch(58% 0.20 256);     /* primary-flow edges, one signal color */
+  --color-graphite:oklch(24% 0.018 260);    /* dark tile for white/light logos */
+  /* group palette A — warm vendor (e.g. Cloudflare/AWS orange). Retune hue per vendor. */
+  --color-g1:      oklch(68% 0.15 55);
+  --color-g1-soft: oklch(78% 0.12 55);
+  --color-g1-ink:  oklch(52% 0.14 50);
+  --color-g1-tint: oklch(96.5% 0.015 60 / .5);
+  /* group palette B — accent-family (repo/tooling groups) */
+  --color-accent-soft: oklch(58% 0.20 256 / .45);
+  --color-accent-tint: oklch(97% 0.012 256 / .5);
+  /* JP glyphs: name JP faces explicitly — bare sans-serif fallback on Linux picks Chinese-variant CJK */
+  --font-display: "Geist", "Noto Sans KR", "Malgun Gothic", "Hiragino Sans", "Yu Gothic UI", "Noto Sans CJK JP", "Noto Sans JP", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Noto Sans KR", "Malgun Gothic", "Hiragino Sans", "Yu Gothic UI", "Noto Sans CJK JP", "Noto Sans JP", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Noto Sans KR", "Malgun Gothic", ui-monospace, "SF Mono", Menlo, monospace;
+  --space-xs: 4px; --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px;
+  --radius-card: 10px; --radius-tile: 12px;
+  /* translucent veil behind node label text: matches paper on plain canvas, blends into
+     group tints instead of punching an off-color rectangle through them */
+  --color-veil: oklch(98.5% 0.004 250 / .78);
+}
+/* Dark variant: set data-theme="dark" on <html>. Tiles stay white — brand logos are drawn
+   for light grounds. Everything (arrowheads via context-stroke, legend via border-color)
+   follows the tokens, so toggling the attribute is all it takes. */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-paper:   oklch(18% 0.012 255);
+  --color-paper-2: oklch(22% 0.014 255);
+  --color-rule:    oklch(24% 0.013 255);
+  --color-rule-2:  oklch(38% 0.018 255);
+  --color-muted:   oklch(65% 0.014 255);
+  --color-neutral: oklch(72% 0.012 255);
+  --color-ink-2:   oklch(85% 0.010 255);
+  --color-ink:     oklch(94% 0.008 255);
+  --color-accent:  oklch(70% 0.16 256);
+  --color-graphite:oklch(31% 0.020 260);
+  --color-g1:      oklch(70% 0.14 55);
+  --color-g1-soft: oklch(58% 0.11 55);
+  --color-g1-ink:  oklch(78% 0.12 55);
+  --color-g1-tint: oklch(26% 0.030 60 / .40);
+  --color-accent-soft: oklch(70% 0.16 256 / .5);
+  --color-accent-tint: oklch(28% 0.045 256 / .35);
+  --color-veil: oklch(18% 0.012 255 / .78);
+}
+@font-face { font-family:"Geist"; font-style:normal; font-weight:100 900; font-display:swap;
+  src:url(data:font/woff2;base64,%%FONT_DISPLAY%%) format("woff2"); }
+@font-face { font-family:"JetBrains Mono"; font-style:normal; font-weight:100 800; font-display:swap;
+  src:url(data:font/woff2;base64,%%FONT_JBM%%) format("woff2"); }
+/* JetBrains Mono reads cramped at 9.5–11px; open every mono label slightly */
+.kicker, .node .role, .el, .legend, .foot { letter-spacing: 0.04em; }
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { overflow-x: clip; }
+body { background: var(--color-paper); color: var(--color-ink); font-family: var(--font-body); padding: var(--space-xl) var(--space-lg) var(--space-2xl); }
+.page { width: fit-content; max-width: 100%; margin: 0 auto; }
+
+.head { display:grid; grid-template-columns: 1fr auto; gap: var(--space-lg); align-items:end;
+  padding-bottom: var(--space-md); border-bottom: 1px solid var(--color-rule-2); margin-bottom: var(--space-lg); }
+.kicker { font-family: var(--font-mono); font-size: 11px;
+  color: var(--color-accent); margin-bottom: var(--space-sm); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(22px, 4vw, 30px);
+  letter-spacing: -0.005em; line-height: 1.2; }
+.lede { max-width: 300px; font-size: 12px; line-height: 1.7; color: var(--color-neutral); padding-bottom: 2px; }
+@media (max-width: 680px) { .head { grid-template-columns: 1fr; align-items:start; } .lede { max-width:none; } }
+
+.scroller { overflow-x: auto; border: 1px solid var(--color-rule-2); border-radius: var(--radius-card); }
+/* CANVAS SIZE: set width/height here AND on svg.edges AND its viewBox — keep the three in sync */
+.canvas { position: relative; width: 1590px; height: 1270px; background: var(--color-paper);
+  background-image:
+    linear-gradient(var(--color-rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-rule) 1px, transparent 1px);
+  background-size: 24px 24px; background-position: -1px -1px; }
+
+.group { position:absolute; border-radius: var(--radius-tile); }
+/* group labels are names like node names (display font), written in the brand's own case.
+   They sit inside the top-left corner, so the border stays unbroken and needs no mask */
+.g-label { position:absolute; top:12px; left:12px; display:flex; align-items:center; gap:6px;
+  font-family: var(--font-display); font-size: 12px; font-weight: 600;
+  color: var(--color-neutral); white-space: nowrap; }
+.g-label img { width: 14px; height: 14px; }
+/* group labels sit on the group's tint, not on a white tile: in the dark theme swap in the brand's own
+   dark-theme logo (lt/dk pair), or give a mark with black parts a white plate */
+.g-label img.dk, .tile img.dk { display:none; }
+[data-theme="dark"] .g-label img.lt, [data-theme="dark"] .tile img.lt { display:none; }
+[data-theme="dark"] .g-label img.dk, [data-theme="dark"] .tile img.dk { display:block; }
+[data-theme="dark"] .g-label img.plate { background:#fff; border-radius:3px; padding:2px; width:18px; height:18px; }
+.group.ga { border:1.5px solid var(--color-g1); background: var(--color-g1-tint); }
+.group.ga-nested { border:1.5px dashed var(--color-g1-soft); }
+.group.gb { border:1.5px solid var(--color-accent-soft); background: var(--color-accent-tint); }
+.group.ga > .g-label, .group.ga-nested > .g-label { color: var(--color-g1-ink); }
+.group.gb > .g-label { color: var(--color-accent); }
+.group.aws { border:1.5px solid var(--color-ink); border-radius:0; }
+.group.aws > .g-label { top:-1.5px; left:-1.5px; gap:8px; color: var(--color-ink); }
+.group.aws > .g-label img { width:30px; height:30px; }
+.group.aws.az > .g-label { top:8px; left:12px; }
+.group.aws.region, .group.aws.az { border-color:#00A4A6; border-style:dashed; }
+.group.aws.vpc { border-color:#8C4FFF; }
+.group.aws.private { border-color:#00A4A6; }
+.group.aws.public { border-color:#7AA116; }
+.group.gcp { border:1.5px solid #4285F4; border-radius:6px; }
+.group.azure { border:1.5px solid #0078D4; border-radius:6px; }
+.group.gcp > .g-label, .group.azure > .g-label { gap:8px; color: var(--color-ink); }
+.group.gcp > .g-label img, .group.azure > .g-label img { width:20px; height:20px; }
+.group.gcp.region, .group.azure.region { border-color: var(--color-rule-2); background: var(--color-paper-2); }
+.group.gcp.vpc { border:1.5px dashed var(--color-ink-2); }
+.group.gcp.subnet { border:1px dashed var(--color-neutral); }
+.group.gcp.zone { border-color:#34A853; }
+.group.azure.rg { border:1.5px dashed #0096D7; }
+.group.azure.vnet { border:1.5px solid #A4CBFB; }
+.group.azure.subnet { border:1px solid #A4CBFB; }
+.group.azure.zone { border-color:#FFD965; }
+
+.node { position:absolute; width:132px; text-align:center; }
+.tile { width:60px; height:60px; margin:0 auto; border-radius: var(--radius-tile);
+  background:#fff; border:1px solid var(--color-rule-2); display:grid; place-items:center;
+  box-shadow: 0 1px 2px oklch(24% 0.02 258 / 0.05); transition: border-color .15s cubic-bezier(0.16,1,0.3,1); }
+.node:hover .tile { border-color: var(--color-accent); }
+.tile img { width:34px; height:34px; object-fit:contain; }
+.tile.wide img { width:44px; }                       /* wide-aspect logos */
+.tile.dark { background: var(--color-graphite); border-color: var(--color-graphite); }  /* white/light logos */
+.tile.bare { background:none; border:none; box-shadow:none; }
+.tile.bare img { width:60px; height:60px; }
+.tile.bare.res img { width:44px; height:44px; }
+.node .name { font-family: var(--font-display); font-weight:600; font-size:13px; margin-top: var(--space-sm); letter-spacing:0; }
+.node .role { font-family: var(--font-mono); font-size:9.5px; color: var(--color-muted); margin-top:2px; }
+/* veil behind label spans: crossing edges/grid fade behind text; translucent so it
+   blends into group tints (a solid paper rectangle looks pasted-on inside tinted groups) */
+.node .name span, .node .role span { background: var(--color-veil); backdrop-filter: blur(1.5px);
+  padding: 0 var(--space-xs); border-radius: 3px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+
+svg.edges { position:absolute; inset:0; width:1590px; height:1270px; pointer-events:none; }
+.e  { stroke: var(--color-accent); stroke-width:1.6; fill:none; }   /* primary flow */
+.n  { stroke: var(--color-neutral); stroke-width:1.4; fill:none; }  /* internal */
+path.aws { stroke: var(--color-ink); stroke-width:1.6; fill:none; }
+.dash { stroke-dasharray:4 5; }                                     /* dev / deploy */
+.el { font-family: var(--font-mono); font-size:10.5px; fill: var(--color-neutral);
+  paint-order: stroke; stroke: var(--color-paper); stroke-width:4px; stroke-linejoin:round; }  /* halo */
+.el.a { fill: var(--color-accent); }
+
+.legend { display:flex; gap: var(--space-lg); align-items:center; margin-top: var(--space-md);
+  font-family: var(--font-mono); font-size:10px; color: var(--color-muted); flex-wrap:wrap; }
+.legend .sw { display:inline-block; width:30px; vertical-align:middle; margin-right:6px;
+  border-top:1.6px solid var(--color-accent); }
+.legend .sw.n { border-color: var(--color-neutral); border-top-width:1.4px; }
+.legend .sw.dash { border-top-style: dashed; }
+
+.foot { margin-top: var(--space-xl); padding-top: var(--space-md); border-top: 1px solid var(--color-rule-2);
+  display:flex; justify-content:space-between; gap: var(--space-md); flex-wrap:wrap;
+  font-family: var(--font-mono); font-size:10px; color: var(--color-muted); }
+.foot a { color: inherit; text-decoration-color: var(--color-rule-2); text-underline-offset: 2px; }
+.foot a:hover { color: var(--color-accent); }
+
+.g-label .two { white-space:normal; line-height:1.3; }
+.node.pod { width:88px; }
+.group.addons { border:1.5px dashed var(--color-rule-2); }
+.note { position:absolute; font-size:11.5px; line-height:1.75; color:var(--color-ink-2); }
+.note i { font-style:normal; color:var(--color-muted); font-size:10.5px; }
+.note b { font-weight:600; }
+.note .lg { font-size:10.5px; color:var(--color-ink-2); line-height:1.7; }
+.note .lg .sw { display:inline-block; width:28px; vertical-align:middle; margin-right:8px; border-top:1.8px solid var(--color-accent); }
+.note .lg .sw.n { border-top-color:var(--color-neutral); }
+.note .lg .sw.dash { border-top-style:dashed; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="head">
+    <div>
+      <div class="kicker">flowticket</div>
+      <h1>FlowTicket AWS 인프라</h1>
+    </div>
+    
+  </header>
+
+  <div class="scroller">
+  <div class="canvas">
+
+    <!-- GROUPS -->
+    <div class="group aws" style="left:200px; top:24px; width:1234px; height:1222px;">
+      <div class="g-label"><img class="lt" src="%%ICON_aws%%" alt=""><img class="dk" src="%%ICON_aws_dark%%" alt="">AWS Cloud</div>
+    </div>
+    <div class="group aws region" style="left:214px; top:176px; width:1206px; height:1046px;">
+      <div class="g-label"><img src="%%ICON_region%%" alt="">ap-northeast-2 (서울)</div>
+    </div>
+    <div class="group aws vpc" style="left:384px; top:224px; width:1022px; height:842px;">
+      <div class="g-label"><img src="%%ICON_vpc%%" alt="">VPC 10.0.0.0/16</div>
+    </div>
+
+    <div class="group aws az" style="left:400px; top:272px; width:322px; height:380px;"><div class="g-label">ap-northeast-2a</div></div>
+    <div class="group aws az" style="left:734px; top:272px; width:322px; height:380px;"><div class="g-label">ap-northeast-2b</div></div>
+    <div class="group aws az" style="left:1068px; top:272px; width:322px; height:380px;"><div class="g-label">ap-northeast-2c</div></div>
+
+    <div class="group aws public" style="left:412px; top:304px; width:298px; height:164px;"><div class="g-label"><img src="%%ICON_public%%" alt="">Public subnet 10.0.0.0/24</div></div>
+    <div class="group aws public" style="left:746px; top:304px; width:298px; height:164px;"><div class="g-label"><img src="%%ICON_public%%" alt="">Public subnet 10.0.1.0/24</div></div>
+    <div class="group aws public" style="left:1080px; top:304px; width:298px; height:164px;"><div class="g-label"><img src="%%ICON_public%%" alt="">Public subnet 10.0.2.0/24</div></div>
+
+    <div class="group aws private" style="left:412px; top:484px; width:298px; height:156px;"><div class="g-label"><img src="%%ICON_private%%" alt=""><span class="two">Private subnet<br>EKS · 10.0.32.0/19</span></div></div>
+    <div class="group aws private" style="left:746px; top:484px; width:298px; height:156px;"><div class="g-label"><img src="%%ICON_private%%" alt=""><span class="two">Private subnet<br>EKS · 10.0.64.0/19</span></div></div>
+    <div class="group aws private" style="left:1080px; top:484px; width:298px; height:156px;"><div class="g-label"><img src="%%ICON_private%%" alt=""><span class="two">Private subnet<br>EKS · 10.0.96.0/19</span></div></div>
+
+    <div class="group aws private" style="left:400px; top:708px; width:990px; height:164px;"><div class="g-label"><img src="%%ICON_private%%" alt=""><span class="two">Private subnet ×3 · Data<br>10.0.16-18.0/24</span></div></div>
+    <div class="group addons" style="left:400px; top:888px; width:990px; height:162px;"><div class="g-label">클러스터 컴포넌트 · EKS 노드에 배치</div></div>
+
+    <div class="group gb" style="left:6px; top:880px; width:180px; height:366px;">
+      <div class="g-label"><img class="lt" src="%%ICON_github%%" alt=""><img class="dk" src="%%ICON_github_dark%%" alt="">GitHub</div>
+    </div>
+
+    <!-- EDGES -->
+    <svg class="edges" viewBox="0 0 1590 1270" aria-hidden="true">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="context-stroke"/>
+        </marker>
+        <marker id="open" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M1 1 L9 5 L1 9" fill="none" stroke="context-stroke" stroke-width="1.5"/>
+        </marker>
+      </defs>
+
+      <!-- 대기열 경로: web을 거치지 않는다 -->
+      <path class="n" d="M130 386 H454" marker-end="url(#ar)"/>
+      <text class="el" x="165" y="378" text-anchor="middle">HTTPS</text>
+      <path class="n dash" d="M96 352 V92 H268" marker-end="url(#ar)"/>
+      <text class="el" x="150" y="84" text-anchor="middle">DNS 조회</text>
+      <path class="aws dash" d="M340 92 H378 V372 H454" marker-end="url(#open)"/>
+      <text class="el" x="372" y="300" text-anchor="end">Alias</text>
+      <path class="e" d="M500 460 V472 H661 V532" marker-end="url(#open)"/>
+      <text class="el a" x="616" y="502" text-anchor="middle">진입·상태</text>
+      <text class="el a" x="616" y="516" text-anchor="middle">2개 경로 직결</text>
+      <path class="e" d="M681 641 V670 H850 V754" marker-end="url(#open)"/>
+      <text class="el a" x="768" y="664" text-anchor="middle">진입·상태(Lua)</text>
+
+      <!-- 그 외 요청 -->
+      <path class="aws" d="M480 460 V480 H571 V532" marker-end="url(#open)"/>
+      <text class="el" x="565" y="526" text-anchor="end">그 외 /*</text>
+      <path class="aws" d="M535 566 H505" marker-end="url(#open)"/>
+      <path class="aws" d="M460 636 V670 H625 V754" marker-end="url(#open)"/>
+      <text class="el" x="540" y="664" text-anchor="middle">SQL</text>
+      <path class="aws" d="M482 636 V694 H870 V754" marker-end="url(#open)"/>
+      <text class="el" x="768" y="688" text-anchor="middle">입장 확인·Pub/Sub</text>
+      <path class="aws dash" d="M651 641 V754" marker-end="url(#open)"/>
+      <text class="el" x="660" y="734">판매 상태 조회</text>
+
+      <!-- 배포 -->
+      <path class="aws dash" d="M434 970 H134" marker-end="url(#open)"/>
+      <text class="el" x="300" y="962" text-anchor="middle">pull·sync</text>
+      <path class="n dash" d="M96 1100 V1046" marker-end="url(#ar)"/>
+      <text class="el" x="106" y="1077">태그 커밋</text>
+      <path class="n dash" d="M130 1134 H268" marker-end="url(#ar)"/>
+      <text class="el" x="241" y="1112" text-anchor="middle">image</text>
+      <text class="el" x="241" y="1126" text-anchor="middle">push</text>
+      <path class="aws dash" d="M408 574 H378 V1119 H340" marker-end="url(#open)"/>
+      <text class="el" x="372" y="804" text-anchor="end">image pull</text>
+
+      <!-- 비밀값 -->
+      <path class="aws dash" d="M850 1046 V1082 H790 V1100" marker-end="url(#open)"/>
+      <path class="aws dash" d="M870 1046 V1082 H930 V1100" marker-end="url(#open)"/>
+      <text class="el" x="882" y="1062">비밀값 동기화</text>
+
+      <!-- 알림 -->
+      <path class="n" d="M1264 970 H1474" marker-end="url(#ar)"/>
+      <text class="el" x="1335" y="962" text-anchor="middle">알림</text>
+      <path class="aws" d="M1094 1134 H1154" marker-end="url(#open)"/>
+      <path class="aws" d="M1224 1134 H1284" marker-end="url(#open)"/>
+      <path class="n" d="M1354 1134 H1510 V1050" marker-end="url(#ar)"/>
+      <text class="el" x="1470" y="1126" text-anchor="middle">ALB 알람</text>
+    </svg>
+
+    <!-- NODES: 외부 -->
+    <div class="node" style="left:30px;top:356px">
+      <div class="tile"><img src="%%ICON_user%%" alt=""></div>
+      <div class="name"><span>사용자</span></div><div class="role"><span>browser</span></div>
+    </div>
+    <div class="node" style="left:30px;top:940px">
+      <div class="tile"><img src="%%ICON_github%%" alt=""></div>
+      <div class="name"><span>k8s/overlays</span></div><div class="role"><span>이미지 태그</span></div>
+    </div>
+    <div class="node" style="left:30px;top:1104px">
+      <div class="tile"><img src="%%ICON_githubactions%%" alt=""></div>
+      <div class="name"><span>GitHub Actions</span></div><div class="role"><span>CI·이미지 빌드</span></div>
+    </div>
+    <div class="node" style="left:1444px;top:940px">
+      <div class="tile"><img src="%%ICON_slack%%" alt=""></div>
+      <div class="name"><span>Slack</span></div><div class="role"><span>알림 채널</span></div>
+    </div>
+
+    <!-- NODES: 리전 공통 -->
+    <div class="node" style="left:238px;top:62px">
+      <div class="tile bare"><img src="%%ICON_route53%%" alt=""></div>
+      <div class="name"><span>Amazon Route 53</span></div><div class="role"><span>DNS</span></div>
+    </div>
+    <div class="node" style="left:238px;top:440px">
+      <div class="tile bare"><img src="%%ICON_acm%%" alt=""></div>
+      <div class="name"><span>AWS Certificate Manager</span></div><div class="role"><span>ACM</span></div>
+    </div>
+
+    <!-- NODES: public -->
+    <div class="node" style="left:414px;top:356px;width:152px">
+      <div class="tile bare"><img src="%%ICON_albres_light%%" alt=""></div>
+      <div class="name"><span>ALB</span></div><div class="role"><span>Application LB · 3 AZ</span></div>
+    </div>
+    <div class="node" style="left:574px;top:356px">
+      <div class="tile bare"><img src="%%ICON_natres_light%%" alt=""></div>
+      <div class="name"><span>NAT Gateway</span></div>
+    </div>
+    <div class="node" style="left:829px;top:356px">
+      <div class="tile bare"><img src="%%ICON_natres_light%%" alt=""></div>
+      <div class="name"><span>NAT Gateway</span></div>
+    </div>
+    <div class="node" style="left:1163px;top:356px">
+      <div class="tile bare"><img src="%%ICON_natres_light%%" alt=""></div>
+      <div class="name"><span>NAT Gateway</span></div>
+    </div>
+
+    <!-- NODES: Pod -->
+    <div class="node pod" style="left:427px;top:536px"><div class="tile"><img src="%%ICON_spring%%" alt=""></div><div class="name"><span>api</span></div><div class="role"><span>Spring Boot</span></div></div>
+    <div class="node pod" style="left:527px;top:536px"><div class="tile"><img src="%%ICON_nextjs%%" alt=""></div><div class="name"><span>web</span></div><div class="role"><span>Next.js</span></div></div>
+    <div class="node pod" style="left:617px;top:536px"><div class="tile"><img src="%%ICON_spring%%" alt=""></div><div class="name"><span>대기열</span></div><div class="role"><span>같은 이미지</span></div></div>
+    <div class="node pod" style="left:761px;top:536px"><div class="tile"><img src="%%ICON_spring%%" alt=""></div><div class="name"><span>api</span></div><div class="role"><span>Spring Boot</span></div></div>
+    <div class="node pod" style="left:861px;top:536px"><div class="tile"><img src="%%ICON_nextjs%%" alt=""></div><div class="name"><span>web</span></div><div class="role"><span>Next.js</span></div></div>
+    <div class="node pod" style="left:951px;top:536px"><div class="tile"><img src="%%ICON_spring%%" alt=""></div><div class="name"><span>대기열</span></div><div class="role"><span>같은 이미지</span></div></div>
+    <div class="node pod" style="left:1095px;top:536px"><div class="tile"><img src="%%ICON_spring%%" alt=""></div><div class="name"><span>api</span></div><div class="role"><span>Spring Boot</span></div></div>
+    <div class="note" style="left:1196px;top:528px;width:176px">
+      <b>평시</b> api 3 · 대기열 2 · web 2<br><i>놓이는 AZ는 스케줄러가 정함</i><br><b>오픈 사전 확장</b> 대기열 6<br><i>api와 다른 노드</i>
+    </div>
+
+    <!-- NODES: Data -->
+    <div class="node" style="left:555px;top:760px;width:170px">
+      <div class="tile bare"><img src="%%ICON_rds%%" alt=""></div>
+      <div class="name"><span>Amazon RDS</span></div><div class="role"><span>PostgreSQL 16 · Multi-AZ</span></div>
+    </div>
+    <div class="node" style="left:765px;top:760px;width:190px">
+      <div class="tile bare"><img src="%%ICON_elasticache%%" alt=""></div>
+      <div class="name"><span>Amazon ElastiCache</span></div><div class="role"><span>Redis 7.1 · Primary + Replica</span></div>
+    </div>
+    <div class="note" style="left:1010px;top:722px;width:366px">
+      <div class="lg"><span class="sw"></span>대기열 진입·상태 요청</div>
+      <div class="lg"><span class="sw n"></span>공용·그 외 요청·알림</div>
+      <div class="lg"><span class="sw n dash"></span>배포·제어·보조 조회</div>
+      <i>연결선은 대표로 2a에만 그렸습니다.</i><br>
+      <i>대기열은 api와 같은 이미지입니다.</i>
+    </div>
+
+    <!-- NODES: add-ons -->
+    <div class="node" style="left:404px;top:940px">
+      <div class="tile"><img src="%%ICON_argocd%%" alt=""></div>
+      <div class="name"><span>Argo CD</span></div><div class="role"><span>GitOps</span></div>
+    </div>
+    <div class="node" style="left:534px;top:940px">
+      <div class="tile"><img src="%%ICON_kubernetes%%" alt=""></div>
+      <div class="name"><span>Cluster Autoscaler</span></div><div class="role"><span>노드 증감</span></div>
+    </div>
+    <div class="node" style="left:664px;top:940px">
+      <div class="tile"><img src="%%ICON_kubernetes%%" alt=""></div>
+      <div class="name"><span>AWS LB Controller</span></div><div class="role"><span>Ingress → ALB</span></div>
+    </div>
+    <div class="node" style="left:794px;top:940px">
+      <div class="tile"><img src="%%ICON_externalsecrets%%" alt=""></div>
+      <div class="name"><span>External Secrets</span></div><div class="role"><span>K8s Secret 생성</span></div>
+    </div>
+    <div class="node" style="left:1004px;top:940px">
+      <div class="tile"><img src="%%ICON_grafana%%" alt=""></div>
+      <div class="name"><span>Grafana</span></div><div class="role"><span>대시보드</span></div>
+    </div>
+    <div class="node" style="left:1145px;top:940px;width:170px">
+      <div class="tile"><img src="%%ICON_prometheus%%" alt=""></div>
+      <div class="name"><span>Prometheus·Alertmanager</span></div><div class="role"><span>메트릭·알림</span></div>
+    </div>
+
+    <!-- NODES: VPC 밖 리전 서비스 -->
+    <div class="node" style="left:238px;top:1104px">
+      <div class="tile bare"><img src="%%ICON_ecr%%" alt=""></div>
+      <div class="name"><span>Amazon ECR</span></div><div class="role"><span>이미지 저장소</span></div>
+    </div>
+    <div class="node" style="left:414px;top:1104px">
+      <div class="tile bare"><img src="%%ICON_eks%%" alt=""></div>
+      <div class="name"><span>Amazon EKS</span></div><div class="role"><span>Control Plane</span></div>
+    </div>
+    <div class="node" style="left:724px;top:1104px">
+      <div class="tile bare"><img src="%%ICON_parameterstore%%" alt=""></div>
+      <div class="name"><span>Parameter Store</span></div><div class="role"><span>앱 비밀값</span></div>
+    </div>
+    <div class="node" style="left:864px;top:1104px">
+      <div class="tile bare"><img src="%%ICON_secretsmanager%%" alt=""></div>
+      <div class="name"><span>Secrets Manager</span></div><div class="role"><span>RDS 계정</span></div>
+    </div>
+    <div class="node" style="left:994px;top:1104px">
+      <div class="tile bare"><img src="%%ICON_cloudwatch%%" alt=""></div>
+      <div class="name"><span>CloudWatch Alarm</span></div><div class="role"><span>ALB 지표</span></div>
+    </div>
+    <div class="node" style="left:1124px;top:1104px">
+      <div class="tile bare"><img src="%%ICON_sns%%" alt=""></div>
+      <div class="name"><span>Amazon SNS</span></div>
+    </div>
+    <div class="node" style="left:1254px;top:1104px">
+      <div class="tile bare"><img src="%%ICON_lambda%%" alt=""></div>
+      <div class="name"><span>AWS Lambda</span></div><div class="role"><span>Slack 중계</span></div>
+    </div>
+  </div>
+  </div>
+
+  <div class="foot">
+    <span>FlowTicket</span>
+    <span>icons: AWS Architecture Icons / svgl / gilbarbara / CNCF · made with <a href="https://github.com/caru-ini/stack-diagram" target="_blank" rel="noopener">stack-diagram</a></span>
+  </div>
+
+</div>
+</body>
+</html>

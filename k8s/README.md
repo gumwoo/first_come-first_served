@@ -6,26 +6,37 @@
 
 ```
 k8s/base/
-  namespace · configmap · api(Deployment·Service·HPA·PDB) · web(Deployment·Service) · ingress
+  namespace · configmap · api(Deployment·Service·HPA·PDB) · api-queue(Service) · web(Deployment·Service·HPA·PDB) · ingress
+k8s/components/queue-split/
+  대기열 전용 Deployment·HPA·PDB (운영 기본값, ADR-027)
 ```
 
-## 라우팅 — ALB는 web만 본다
+## 라우팅 — ALB는 대기열 두 경로만 대기열 Pod로, 나머지는 web으로 보낸다
 
 ```
 브라우저  GET /api/auth/login
    └→ ALB → web Pod
         └→ Next rewrite: /api/:path* → ${API_ORIGIN}/:path*   ← /api를 떼어낸다
              └→ flowticket-api:80 → Spring @PostMapping("/auth/login")
+
+브라우저  POST /api/events/{id}/queue/token, GET /api/queue/status
+   └→ ALB URL rewrite   ← /api를 떼어낸다
+        └→ flowticket-api-queue:80 → 대기열 Pod
 ```
 
-**앱이 처음부터 이 구조를 전제로 짜여 있다**(`next.config.mjs`). Spring 쪽에는 `/api` 접두어가
+**앱이 처음부터 web 경로를 전제로 짜여 있다**(`next.config.mjs`). Spring 쪽에는 `/api` 접두어가
 없다 — `@PostMapping("/auth/login")` 형태다.
 
-> ⚠️ **ALB에서 `/api`를 API Service로 직접 보내면 안 된다.** ALB의 Prefix 라우팅은 접두어를
-> 제거하지 않아 Spring이 `/api/auth/login`을 받고 **전부 404**가 된다. 초안이 그렇게 작성됐다.
+대기열 진입·상태 두 경로는 Next 홉 비용 때문에 둔 예외다([ADR-024](../docs/decisions/ADR-024-queue-path-next-hop-bypass.md)).
+대기열 이탈(`DELETE /api/queue/token`)과 SSE는 web을 거친다.
 
-이 구조의 이점: API가 인터넷에 노출되지 않는다 / 접두어 문제가 없다 / OAuth 프록시가 기존 설계
-그대로다 / 브라우저 same-origin이라 CORS가 없다 / 타깃그룹과 Ingress가 각각 하나다.
+> ⚠️ **URL rewrite 없이 ALB에서 `/api`를 API Service로 직접 보내면 안 된다.** ALB의 Prefix 라우팅은
+> 접두어를 제거하지 않아 Spring이 `/api/auth/login`을 받고 **전부 404**가 된다. 초안이 그렇게 작성됐다.
+> 직결 경로의 허용 목록·rewrite·규칙 순서는 하네스 k8s 규칙 2가 강제한다.
+
+이 구조의 이점: 대기열 두 경로 외의 API는 인터넷에 노출되지 않는다 / 접두어 문제가 없다 / OAuth
+프록시가 기존 설계 그대로다 / 브라우저 same-origin이라 CORS가 없다 / Ingress가 하나다. 타깃그룹은
+web과 대기열 두 개다.
 
 ### ⚠️ `API_ORIGIN`은 매니페스트에 없다 — 빌드 시점에 굳는다
 
@@ -47,7 +58,7 @@ Deployment에 `API_ORIGIN`을 넣으면 **설정한 것처럼 보이지만 아�
 
 ## SSE가 Next 프록시를 통과하는가 — **확인됨(2026-08-08)**
 
-SSE도 같은 경로를 탄다.
+SSE도 web 경로를 탄다.
 
 ```
 useSeats.ts          new EventSource("/api/sse/events/{id}/seats")
@@ -71,10 +82,10 @@ SeatSseController    @GetMapping("/sse/events/{id}/seats", produces = TEXT_EVENT
 > 대조군(클러스터 내부에서 API 직접 구독)은 컨테이너에 도구가 없어 실패했다.
 > **프록시 통과 여부라는 원래 질문에는 답이 나왔지만, "프록시가 지연을 얼마나 더하는지"는 모른다.**
 
-## 아직 적용할 수 없다 — 남은 자리(REPLACE_*)
+## base에 남긴 자리(REPLACE_*) — 오버레이가 채운다
 
-**의도적으로 placeholder를 남겼다.** `platform` 스택을 apply해야 나오는 값들이고,
-지금 임의의 값을 박으면 "적용되는 것처럼 보이지만 틀린" 상태가 된다.
+**base에는 의도적으로 placeholder를 남겼다.** `platform` 스택을 apply해야 나오는 값들이고,
+실제 값은 [`overlays/demo-local`](overlays/README.md)이 채운다.
 
 | placeholder | 어디서 |
 |---|---|

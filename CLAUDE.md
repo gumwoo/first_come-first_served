@@ -31,7 +31,8 @@ FlowTicket(선착순 예매 시스템) 포트폴리오 프로젝트. 아래는 *
 - 계약/정적 가드: `npm run harness:check` (meta + schema + backend + frontend + k8s)
   - 규칙을 추가하면 `harness/fixtures/violations/`에 **위반 fixture를 함께 만들고**
     `harness/meta-test.mjs`에 등록한다 — 규칙이 실제로 잡는지 메타테스트가 판정한다.
-- 백엔드 컴파일/통합테스트: **로컬 gradle 없음 → CI(Testcontainers)에서만 검증**.
+- 백엔드 컴파일/테스트: `apps/api`에서 Gradle wrapper로 실행한다(`gradlew --offline test --tests '<클래스>'`). 전체 통합 테스트의 최종 판정은 CI다.
+  - 로컬 Testcontainers는 환경변수 `JAVA_TOOL_OPTIONS=-Dapi.version=1.44`가 필요하다. 없으면 `Could not find a valid Docker environment`로 실패한다.
 
 ## DB 마이그레이션 (무중단 배포 전제)
 롤링 배포 중에는 **구버전 Pod와 신버전 Pod가 같은 DB를 동시에 본다.** 파괴적 DDL

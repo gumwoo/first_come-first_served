@@ -1,7 +1,7 @@
 // TS-022 재현: RespectIgnoreDifferences가 sync에서 replicas를 지키는지 sync를 거는 방식별로 잰다.
 // 전용 KUBECONFIG와 kind 컨텍스트만 쓴다. 기본 컨텍스트는 건드리지 않는다. 결과는 현재 디렉터리에 쓴다.
 // 준비: kind create cluster --name ts022-repro --kubeconfig kind.kubeconfig 뒤 ArgoCD v3.5.0 install.yaml 적용.
-// 실행: node ts022-repro.mjs --runs=3 --out=results
+// 실행: 저장소 밖의 빈 디렉터리에서 node <경로>/ts022-repro.mjs --runs=3 --out=results (kubeconfig와 결과가 그 디렉터리에 남는다)
 import { execFileSync, spawn } from 'node:child_process';
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -147,6 +147,7 @@ async function runOne(cond, i) {
     phase: opState.phase, gitReplicas, replicasBefore, statusBefore, samples, finalReplicas,
     outcome: finalReplicas === 4 ? 'kept' : finalReplicas === gitReplicas ? 'reverted' : 'other', expect: c.expect,
     message: res?.message ?? null, revisionHistoryLimit: d.spec.revisionHistoryLimit,
+    // ownsReplicas는 fieldsV1 문자열 매칭이라 status.replicas도 잡는다. 판정에는 argocd-controller 항목만 쓴다.
     managedFields: (d.metadata.managedFields ?? []).map((f) => ({
       manager: f.manager, operation: f.operation, subresource: f.subresource ?? '-', ownsReplicas: JSON.stringify(f.fieldsV1 ?? {}).includes('"f:replicas"'),
     })),

@@ -7,7 +7,7 @@
   `k8s/base/api-deployment.yaml`, `harness/k8s/check.mjs`
 - 관련 PR: #204(도입) → #205(이 사건의 수정) → #206(자동화 활성화)
 - 상태: **해결** — 필드를 매니페스트에서 제거하는 방식으로 전환, 실측으로 확인 후 자동 동기화 활성화.
-  원인은 §9의 재현으로 확인했다.
+  원인은 당시 `operation` 기록과 코드, §9의 재현으로 판단했다.
 
 ## 1. 배경 — 왜 ArgoCD를 붙였나
 
@@ -93,7 +93,9 @@ kube-controller-manager      Update  status  2026-08-10T12:06:57Z   <== spec.rep
 ```
 
 `argocd-controller`가 `spec.replicas`를 소유하고 있었다. 즉 ArgoCD가 그 필드를 실제로 apply했다.
-operation이 `Apply`가 아니라 `Update`인 것은 server-side apply도 적용되지 않았다는 신호다(§9).
+이 출력은 §4-2 전, spec에 `ServerSideApply=true`가 있던 상태의 sync(12:06:49) 결과다. 그런데도 operation이
+`Apply`가 아니라 `Update`인 것은 server-side apply가 적용되지 않았다는 신호다(§9). `kube-controller-manager`
+항목은 subresource가 `status`이므로 spec이 아니라 `status.replicas`가 표시된 것으로 본다(추론).
 
 ### 4-4. 부분적으로는 동작했다
 
@@ -109,14 +111,15 @@ replicas가 4인데도 Application은 `Synced`로 표시됐다. **diff 단계의
 
 ## 5. 근본 원인
 
-**직접 원인.** 컨트롤러는 sync 옵션을 Application spec이 아니라 `operation.sync.syncOptions`에서
-읽는다. spec의 옵션을 `operation`으로 복사하는 것은 API 서버와 자동 sync이고, `kubectl patch`로
-`operation`을 직접 넣으면 이 복사를 거치지 않는다. 그래서 spec에 `RespectIgnoreDifferences=true`와
-`ServerSideApply=true`가 있어도 이 sync에는 둘 다 적용되지 않았다. 코드 위치와 재현 결과는 §9에 있다.
+**직접 원인.** sync 실행 단계(`controller/sync.go`)는 `RespectIgnoreDifferences`와 `ServerSideApply`를
+Application spec이 아니라 `operation.sync.syncOptions`로 판단한다. diff 계산처럼 spec의 옵션을 읽는 곳은 따로
+있다. spec의 옵션을 `operation`으로 복사하는 것은 API 서버와 자동 sync이고, `kubectl patch`로 `operation`을
+직접 넣으면 이 복사를 거치지 않는다. 그래서 spec에 두 옵션이 있어도 이 sync에는 적용되지 않은 것으로 판단한다.
+근거는 §4-2의 `operation`, §4-3의 소유 방식, §9의 코드 위치와 재현 결과다.
 
 더 깊은 원인은 따로 있다. **`replicas`를 Git에 둔 것 자체가 잘못이었다.** HPA가 붙는 순간 그 값은
 실효를 잃고 "HPA가 뜨기 전 한 번만 의미 있는 값"이 된다. 그런 값을 매니페스트에 남겨두고 도구
-옵션으로 무시하게 만드는 구조가, 옵션 하나가 안 먹으면 그대로 무너진다.
+옵션으로 무시하게 만드는 구조는, 옵션이 적용되지 않는 경로에서 그대로 무너진다.
 
 ## 6. 해결 — 필드를 없앤다
 
@@ -129,8 +132,9 @@ spec:
 desired state에 `replicas`가 없으면 apply가 그 필드를 건드리지 않는다. 잃는 것도 없다 —
 하한은 HPA `minReplicas: 3`이 정한다.
 
-- `RespectIgnoreDifferences=true`는 **제거**했다. Git에 필드가 없으면 이 옵션이 필요 없고, sync를
-  어떤 방식으로 걸어도 결과가 같다. 옵션에 기대면 §9처럼 sync 경로에 따라 결과가 달라진다.
+- `RespectIgnoreDifferences=true`는 **제거**했다. Git에 필드가 없으면 이 옵션에 기댈 일이 없다.
+  옵션에 기대면 §9처럼 sync 경로에 따라 결과가 달라진다. 필드를 뺀 뒤 HPA 값이 유지되는 것은 §6-2와 §6-3에서
+  확인했고, §9에는 필드를 뺀 조건이 없다.
 - `ignoreDifferences`는 **남기되 `name: flowticket-api`로 좁혔다.** Git에 `replicas`가 없으니
   클러스터의 실제 값이 늘 "추가된 필드"로 잡혀 diff 노이즈가 되는데, 그걸 죽이는 용도다.
   `web`은 HPA가 없어 Git이 replicas를 소유해야 하고, 거기서 드리프트가 나면 알아야 한다.
@@ -163,6 +167,8 @@ t=27s  spec.replicas=3   ready=3    <- 완전 회복
 
 `phase=Succeeded`만으로는 직전 sync의 잔상과 구분되지 않아 `startedAt`/`finishedAt`으로 대조했다.
 `managedFields`에서도 `argocd-controller`가 더 이상 `spec.replicas`를 소유하지 않는다.
+이 sync도 옵션 없는 `operation`으로 걸었고, 결과(`unchanged`, `Update`)로 보아 client-side apply였다.
+필드를 뺀 상태의 server-side apply는 이 문서에서 따로 시험하지 않았다.
 
 ```
 kubectl.exe               Update  scale   <== spec.replicas 소유 (수동 스케일 = HPA 자리)
@@ -261,9 +267,12 @@ Git에서 의미를 잃는 값이었다. 처음부터 없었다면 이 사건 �
 
 (RID = `RespectIgnoreDifferences=true`, SSA = `ServerSideApply=true`)
 
-- 결과를 가른 것은 spec이 아니라 `operation`의 옵션이다.
+- 같은 `ignoreDifferences` 아래에서 replicas 유지 여부는 spec의 `syncOptions`가 아니라 `operation`의 RID 유무로
+  갈렸다. SSA 유무는 결과 메시지와 소유 방식만 바꿨다.
+- `Apply` 행은 `argocd-controller`가 replicas를 소유하면서도 값이 4로 유지된다. RID가 live 값을 target에 복사해
+  apply하기 때문이다(`controller/sync.go:236-238`). 소유 자체가 덮어쓰기를 뜻하지는 않는다.
 - 드리프트 조건에서 `revisionHistoryLimit`은 5에서 Git 값 3으로 돌아오고 `replicas`만 유지됐다. sync가 실제로
   적용된 상태에서 무시가 동작했다는 대조다.
 - 범위: §4와 다른 클러스터·대상에서의 재현이고, HPA가 붙은 Deployment로는 시험하지 않았다. 실험 중 같은 Docker VM의
   부하로 추정되는 etcd 지연으로 13개 run이 결과 없이 끊겨 다시 돌렸으며, 33회에는 완료된 run만 들어 있다.
-- 스크립트: [`ts022-repro.mjs`](../assets/ts022-repro.mjs), 원본 결과: [`ts022-repro-results.jsonl`](../assets/ts022-repro-results.jsonl)
+- 스크립트: [`ts022-repro.mjs`](../assets/ts022-repro.mjs), 원본 결과: [`ts022-repro-results.jsonl`](../assets/ts022-repro-results.jsonl), 실행 환경: [`ts022-repro-meta.json`](../assets/ts022-repro-meta.json)

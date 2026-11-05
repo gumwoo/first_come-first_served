@@ -168,7 +168,7 @@ t=27s  spec.replicas=3   ready=3    <- 완전 회복
 `phase=Succeeded`만으로는 직전 sync의 잔상과 구분되지 않아 `startedAt`/`finishedAt`으로 대조했다.
 `managedFields`에서도 `argocd-controller`가 더 이상 `spec.replicas`를 소유하지 않는다.
 이 sync도 옵션 없는 `operation`으로 걸었고, 결과(`unchanged`, `Update`)로 보아 client-side apply였다.
-필드를 뺀 상태의 server-side apply는 이 문서에서 따로 시험하지 않았다. 위 출력의 `kube-controller-manager` 표시는
+필드를 뺀 상태의 server-side apply는 이 문서에서 따로 시험하지 않았다. 아래 출력의 `kube-controller-manager` 표시는
 §4-3과 같이 `status.replicas`로 본다(추론).
 
 ```

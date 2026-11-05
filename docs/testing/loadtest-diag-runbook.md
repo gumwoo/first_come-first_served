@@ -11,12 +11,13 @@
 | 동작 | 명령 |
 |---|---|
 | 끄기 | `kubectl patch application flowticket -n argocd --type merge -p '{"spec":{"syncPolicy":{"automated":null}}}'` |
-| 수동 동기화(머지된 PR 반영) | `kubectl patch application flowticket -n argocd --type merge -p '{"operation":{"initiatedBy":{"username":"loadtest-session"},"sync":{"revision":"main","prune":true}}}'` |
+| 수동 동기화(머지된 PR 반영) | `kubectl patch application flowticket -n argocd --type merge -p '{"operation":{"initiatedBy":{"username":"loadtest-session"},"sync":{"revision":"main","prune":true,"syncOptions":["CreateNamespace=true","ServerSideApply=true"]}}}'` |
 | 켜기(세션 끝) | `kubectl apply -f k8s/argocd/application.yaml` |
 
 - 끈 동안에는 **머지된 PR이 클러스터에 반영되지 않는다.** PR을 머지한 뒤 "반영" 단계는 수동 동기화 → `status.sync.revision`이 머지 커밋인지,
   배포의 이미지 태그(`kube_pod_container_info` 또는 `kubectl get deploy -o jsonpath`)가 기대값인지 확인하는 데까지다.
-- 수동 동기화는 Git에 있는 필드를 Git 값으로 되돌린다 — HPA min/max는 동기화로 복원되는 것을 확인했다(측정 세션 20261005-1440, 여러 번).
+- `kubectl patch`로 넣는 `operation`에는 Application spec의 `syncOptions`가 복사되지 않아, 위 명령에 직접 적는다([TS-022](../troubleshooting/TS-022-argocd-respectignoredifferences-ineffective.md) §9).
+- 수동 동기화는 Git에 있는 필드를 Git 값으로 되돌린다 — HPA min/max는 동기화로 복원되는 것을 확인했다(측정 세션 20261005-1440, 여러 번). 이 확인은 `syncOptions`를 넣기 전 명령 기준이고, 지금 명령은 다음 세션에서 확인한다.
   동기화 뒤 필요한 변경을 다시 건다. 단, 이 Application은 `ServerSideApply=true`라 **Git에 없는 필드**(kubectl이 더한 env 항목·어노테이션)는
   동기화로 지워지지 않을 수 있다 — kubectl로 더한 Ingress 어노테이션(ALB access log)은 자동 동기화를 다시 켜 Synced가 된 뒤에도 남아 있는 것을
   조회로 확인했다(측정 세션 20261005-1440 끝, `session.log`의 "보충 기록" 줄). 그래서 JFR env·Ingress 어노테이션·결제 mock은 동기화에 기대지 않고 아래 각 절의 명시 명령으로 원복한다.

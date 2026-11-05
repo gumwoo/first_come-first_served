@@ -1,0 +1,128 @@
+{
+  "startedAt": "2026-11-05T08:46:56.587Z",
+  "repo": "https://github.com/argoproj/argocd-example-apps.git",
+  "revision": "8088f4c0d970abb09e250248cc97e35623447cb5",
+  "runs": 3,
+  "conds": {
+    "A": {
+      "desc": "spec RID+SSA, patch 옵션 없음 (TS-022 1행)",
+      "spec": [
+        "RespectIgnoreDifferences=true",
+        "ServerSideApply=true"
+      ],
+      "trigger": "patch",
+      "op": null,
+      "expect": "reverted"
+    },
+    "B": {
+      "desc": "spec RID, patch 옵션 없음 (TS-022 2행)",
+      "spec": [
+        "RespectIgnoreDifferences=true"
+      ],
+      "trigger": "patch",
+      "op": null,
+      "expect": "reverted"
+    },
+    "C": {
+      "desc": "spec RID+SSA, patch 옵션 RID+SSA",
+      "spec": [
+        "RespectIgnoreDifferences=true",
+        "ServerSideApply=true"
+      ],
+      "trigger": "patch",
+      "op": [
+        "RespectIgnoreDifferences=true",
+        "ServerSideApply=true"
+      ],
+      "expect": "kept"
+    },
+    "D": {
+      "desc": "spec RID, patch 옵션 RID",
+      "spec": [
+        "RespectIgnoreDifferences=true"
+      ],
+      "trigger": "patch",
+      "op": [
+        "RespectIgnoreDifferences=true"
+      ],
+      "expect": "kept"
+    },
+    "E": {
+      "desc": "spec 없음, patch 옵션 없음 (음성 대조)",
+      "spec": [],
+      "trigger": "patch",
+      "op": null,
+      "expect": "reverted"
+    },
+    "F": {
+      "desc": "spec 없음, patch 옵션 RID",
+      "spec": [],
+      "trigger": "patch",
+      "op": [
+        "RespectIgnoreDifferences=true"
+      ],
+      "expect": "kept"
+    },
+    "G": {
+      "desc": "spec RID+SSA, patch 옵션 RID+SSA, 다른 필드 드리프트",
+      "spec": [
+        "RespectIgnoreDifferences=true",
+        "ServerSideApply=true"
+      ],
+      "trigger": "patch",
+      "op": [
+        "RespectIgnoreDifferences=true",
+        "ServerSideApply=true"
+      ],
+      "drift": true,
+      "expect": "kept"
+    },
+    "H": {
+      "desc": "spec RID, patch 옵션 RID, 다른 필드 드리프트",
+      "spec": [
+        "RespectIgnoreDifferences=true"
+      ],
+      "trigger": "patch",
+      "op": [
+        "RespectIgnoreDifferences=true"
+      ],
+      "drift": true,
+      "expect": "kept"
+    },
+    "I": {
+      "desc": "spec RID+SSA, API 옵션 미지정",
+      "spec": [
+        "RespectIgnoreDifferences=true",
+        "ServerSideApply=true"
+      ],
+      "trigger": "api",
+      "op": null,
+      "expect": "kept"
+    },
+    "J": {
+      "desc": "spec RID+SSA, API 옵션을 다른 값으로 지정",
+      "spec": [
+        "RespectIgnoreDifferences=true",
+        "ServerSideApply=true"
+      ],
+      "trigger": "api",
+      "op": [
+        "Validate=true"
+      ],
+      "expect": "reverted"
+    },
+    "K": {
+      "desc": "spec RID+SSA, 자동 sync, 다른 필드 드리프트",
+      "spec": [
+        "RespectIgnoreDifferences=true",
+        "ServerSideApply=true"
+      ],
+      "trigger": "auto",
+      "op": null,
+      "drift": true,
+      "expect": "kept"
+    }
+  },
+  "argocdImage": "quay.io/argoproj/argocd:v3.5.0",
+  "nodeVersion": "v1.37.0"
+}

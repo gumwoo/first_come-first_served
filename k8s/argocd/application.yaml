@@ -35,9 +35,9 @@ spec:
       - CreateNamespace=true
       # 필드 소유권 충돌을 줄인다.
       - ServerSideApply=true
-      # RespectIgnoreDifferences=true 는 쓰지 않는다. 이 클러스터에서 sync를 막지 못했다(TS-022).
-      # 실제 방어는 api-deployment.yaml에서 replicas 필드를 없앤 것이다.
-  # diff 노이즈 제거용이다(HPA가 정한 replicas를 OutOfSync로 띄우지 않음). sync를 막지는 못한다.
+      # RespectIgnoreDifferences=true 는 쓰지 않는다. api-deployment.yaml에서 replicas 필드를 없애
+      # sync 방식과 무관하게 HPA 값이 유지된다(TS-022). spec의 옵션은 operation에 복사될 때만 적용된다.
+  # diff 노이즈 제거용이다(HPA가 정한 replicas를 OutOfSync로 띄우지 않음). 이 설정만으로 sync를 막지는 못한다.
   # name으로 하나씩 명시한다. kind 전체로 넓히면 새 Deployment의 replicas 드리프트까지 무시된다.
   ignoreDifferences:
     - group: apps

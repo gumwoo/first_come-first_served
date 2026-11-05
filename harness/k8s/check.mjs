@@ -196,7 +196,7 @@ for (const apiDeploy of apiDeploys) {
 
 // ---------- 8) HPA가 소유하는 Deployment에 replicas를 두지 않는다 ----------
 // Git에 replicas가 있으면 ArgoCD sync가 HPA가 정한 파드 수를 Git 값으로 덮어써, 부하 중 스케일아웃이 취소된다.
-// RespectIgnoreDifferences로는 막히지 않았으므로(TS-022) 필드를 매니페스트에서 없애고 이 규칙으로 유지한다.
+// RespectIgnoreDifferences는 sync 경로에 따라 적용되지 않을 수 있으므로(TS-022) 필드를 매니페스트에서 없애고 이 규칙으로 유지한다.
 // 하한은 HPA의 minReplicas가 담당한다. HPA가 없는 Deployment(web)는 대상이 아니다.
 const docs = [];
 for (const f of manifests) {
